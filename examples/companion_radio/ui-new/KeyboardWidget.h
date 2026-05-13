@@ -55,7 +55,7 @@ struct KeyboardWidget {
     const char* disp_start = buf;
     int disp_len = len;
     if (disp_len > 20) { disp_start = buf + (disp_len - 20); disp_len = 20; }
-    char preview[32];
+    char preview[40];
     snprintf(preview, sizeof(preview), "%s%.*s_", label, disp_len, disp_start);
     display.setCursor(0, KB_TEXT_Y);
     display.print(preview);
@@ -147,7 +147,7 @@ struct KeyboardWidget {
       return NONE;
     }
 
-    if (c == KEY_CANCEL) return CANCELLED;
+    if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) return CANCELLED;
 
     if (c == KEY_UP) {
       if (row > 0) {
