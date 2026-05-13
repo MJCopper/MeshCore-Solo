@@ -573,9 +573,7 @@ public:
     if (isMsgSlot(_selected) && enter) {
       int slot = msgSlotIndex(_selected);
       _edit_slot = slot;
-      char lbl[6];
-      snprintf(lbl, sizeof(lbl), "M%d:", slot + 1);
-      _kb.begin(p ? p->custom_msgs[slot] : "", KB_MAX_LEN, lbl);
+      _kb.begin(p ? p->custom_msgs[slot] : "");
       return true;
     }
     return false;

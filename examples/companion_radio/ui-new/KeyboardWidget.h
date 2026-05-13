@@ -27,7 +27,6 @@ struct KeyboardWidget {
   char buf[KB_MAX_LEN + 1];
   int  len;
   int  max_len;
-  char label[16];
   int  row, col;
   bool caps;
   bool ph_mode;
@@ -35,9 +34,7 @@ struct KeyboardWidget {
 
   enum Result { NONE, DONE, CANCELLED };
 
-  void begin(const char* initial = "", int max = KB_MAX_LEN, const char* lbl = "") {
-    strncpy(label, lbl, sizeof(label) - 1);
-    label[sizeof(label) - 1] = '\0';
+  void begin(const char* initial = "", int max = KB_MAX_LEN) {
     max_len = (max > KB_MAX_LEN) ? KB_MAX_LEN : max;
     strncpy(buf, initial, max_len);
     buf[max_len] = '\0';
@@ -51,12 +48,12 @@ struct KeyboardWidget {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
 
-    // text preview: scroll so cursor is always visible (last 20 chars)
+    // text preview: last 20 chars + cursor
     const char* disp_start = buf;
     int disp_len = len;
     if (disp_len > 20) { disp_start = buf + (disp_len - 20); disp_len = 20; }
-    char preview[40];
-    snprintf(preview, sizeof(preview), "%s%.*s_", label, disp_len, disp_start);
+    char preview[24];
+    snprintf(preview, sizeof(preview), "%.*s_", disp_len, disp_start);
     display.setCursor(0, KB_TEXT_Y);
     display.print(preview);
     display.fillRect(0, KB_SEP_Y, display.width(), 1);

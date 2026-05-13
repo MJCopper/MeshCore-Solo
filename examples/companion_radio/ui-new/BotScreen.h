@@ -164,21 +164,17 @@ public:
       _kb_field = _sel;
       const char* initial;
       int max;
-      const char* lbl;
       if (_sel == 2) {
         initial = _prefs->bot_trigger;
         max     = sizeof(_prefs->bot_trigger) - 1;
-        lbl     = "Trigger:";
       } else if (_sel == 3) {
         initial = _prefs->bot_reply_dm;
         max     = sizeof(_prefs->bot_reply_dm) - 1;
-        lbl     = "Reply:";
       } else {
         initial = _prefs->bot_reply_ch;
         max     = sizeof(_prefs->bot_reply_ch) - 1;
-        lbl     = "Reply:";
       }
-      _kb.begin(initial, max, lbl);
+      _kb.begin(initial, max);
       return true;
     }
     return false;
