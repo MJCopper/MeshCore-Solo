@@ -671,6 +671,8 @@ class QuickMsgScreen : public UIScreen {
   DmHistEntry _dm_hist[DM_HIST_MAX];
   int _dm_hist_head, _dm_hist_count;
   int _dm_hist_sel, _dm_hist_scroll;
+  bool _dm_hist_fullscreen;
+  int  _dm_hist_fs_scroll;
 
   static const int VISIBLE      = 4;
   static const int ITEM_H       = 12;
@@ -918,6 +920,7 @@ public:
       _hist_head(0), _hist_count(0),
       _dm_hist_head(0), _dm_hist_count(0),
       _dm_hist_sel(-1), _dm_hist_scroll(0),
+      _dm_hist_fullscreen(false), _dm_hist_fs_scroll(0),
       _ctx_open(false), _ctx_dirty(false), _ctx_sel(0) {
     memset(_ch_unread, 0, sizeof(_ch_unread));
   }
@@ -1178,11 +1181,42 @@ public:
       }
 
     } else if (_phase == DM_HIST) {
-      char title[24];
       display.setTextSize(1);
-      display.setColor(DisplayDriver::LIGHT);
       char filtered_name[sizeof(_sel_contact.name)];
       display.translateUTF8ToBlocks(filtered_name, _sel_contact.name, sizeof(filtered_name));
+
+      if (_dm_hist_fullscreen && _dm_hist_sel >= 0) {
+        int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
+        if (ring_pos >= 0) {
+          const DmHistEntry& e = _dm_hist[ring_pos];
+          const char* sender = e.outgoing ? "Me" : filtered_name;
+          display.setColor(DisplayDriver::LIGHT);
+          display.fillRect(0, 0, display.width(), 10);
+          display.setColor(DisplayDriver::DARK);
+          display.drawTextEllipsized(2, 1, display.width() - 4, sender);
+          display.setColor(DisplayDriver::LIGHT);
+          char lines[12][FS_CHARS + 1];
+          int lcount = wrapLines(e.text, lines, 12);
+          int max_scroll = lcount > FS_VISIBLE ? lcount - FS_VISIBLE : 0;
+          if (_dm_hist_fs_scroll > max_scroll) _dm_hist_fs_scroll = max_scroll;
+          for (int i = 0; i < FS_VISIBLE && (_dm_hist_fs_scroll + i) < lcount; i++) {
+            display.setCursor(0, FS_START_Y + i * FS_LINE_H);
+            display.print(lines[_dm_hist_fs_scroll + i]);
+          }
+          if (_dm_hist_fs_scroll > 0) {
+            display.setCursor(display.width() - 6, FS_START_Y);
+            display.print("^");
+          }
+          if (_dm_hist_fs_scroll < max_scroll) {
+            display.setCursor(display.width() - 6, FS_START_Y + (FS_VISIBLE - 1) * FS_LINE_H);
+            display.print("v");
+          }
+        }
+        return 500;
+      }
+
+      char title[24];
+      display.setColor(DisplayDriver::LIGHT);
       snprintf(title, sizeof(title), "%.23s", filtered_name);
       display.drawTextCentered(display.width()/2, 0, title);
       display.fillRect(0, 9, display.width(), 1);
@@ -1482,6 +1516,7 @@ public:
           _task->clearDMUnread(_sel_contact.id.pub_key);
           _dm_hist_sel = -1;
           _dm_hist_scroll = 0;
+          _dm_hist_fullscreen = false;
           _phase = DM_HIST;
         }
         return true;
@@ -1547,6 +1582,20 @@ public:
 
     } else if (_phase == DM_HIST) {
       int dm_count = dmHistCountForContact(_sel_contact.id.pub_key);
+      if (_dm_hist_fullscreen) {
+        if (c == KEY_UP)   { if (_dm_hist_fs_scroll > 0) _dm_hist_fs_scroll--; return true; }
+        if (c == KEY_DOWN) { _dm_hist_fs_scroll++; return true; }
+        if (c == KEY_LEFT) {
+          if (_dm_hist_sel < dm_count - 1) { _dm_hist_sel++; _dm_hist_fs_scroll = 0; }
+          return true;
+        }
+        if (c == KEY_RIGHT) {
+          if (_dm_hist_sel > 0) { _dm_hist_sel--; _dm_hist_fs_scroll = 0; }
+          return true;
+        }
+        if (c == KEY_ENTER || c == KEY_CANCEL) { _dm_hist_fullscreen = false; return true; }
+        return true;
+      }
       if (c == KEY_CANCEL) { _phase = CONTACT_PICK; return true; }
       if (c == KEY_UP) {
         if (_dm_hist_sel > 0) {
@@ -1567,9 +1616,14 @@ public:
         return true;
       }
       if (c == KEY_ENTER) {
-        _sending_to_channel = false;
-        setupMsgPick();
-        _phase = MSG_PICK;
+        if (_dm_hist_sel >= 0) {
+          _dm_hist_fullscreen = true;
+          _dm_hist_fs_scroll = 0;
+        } else {
+          _sending_to_channel = false;
+          setupMsgPick();
+          _phase = MSG_PICK;
+        }
         return true;
       }
 
