@@ -98,6 +98,7 @@ static const uint16_t HP_SHUTDOWN  = 1 << 8;
 static const uint16_t HP_ALL       = 0x01FF;
 
 #include "KeyboardWidget.h"
+#include "FullscreenMsgView.h"
 
 class SettingsScreen : public UIScreen {
   UITask* _task;
@@ -621,37 +622,10 @@ class QuickMsgScreen : public UIScreen {
 
   // CHANNEL_HIST
   int _hist_sel, _hist_scroll;
-  bool _hist_fullscreen;
-  int  _hist_fs_scroll;
+  FullscreenMsgView _fs;
   int  _unread_at_entry;    // _ch_unread value when entering CHANNEL_HIST
   int  _viewing_max_seen;  // highest _hist_sel reached in current session
   static const int CH_HIST_MAX = 32;
-
-  static const int FS_CHARS   = 21;
-  static const int FS_LINE_H  = 9;
-  static const int FS_START_Y = 12;
-  static const int FS_VISIBLE = (64 - FS_START_Y) / FS_LINE_H;
-
-  int wrapLines(const char* text, char out[][FS_CHARS + 1], int max_lines) const {
-    int count = 0;
-    const char* p = text;
-    while (*p && count < max_lines) {
-      int len = strlen(p);
-      if (len <= FS_CHARS) {
-        strncpy(out[count++], p, FS_CHARS);
-        out[count-1][len] = '\0';
-        break;
-      }
-      int brk = FS_CHARS;
-      for (int i = FS_CHARS - 1; i > 0; i--) {
-        if (p[i] == ' ') { brk = i; break; }
-      }
-      strncpy(out[count], p, brk);
-      out[count++][brk] = '\0';
-      p += brk + (p[brk] == ' ' ? 1 : 0);
-    }
-    return count;
-  }
 
   // KEYBOARD
   KeyboardWidget _kb;
@@ -671,8 +645,7 @@ class QuickMsgScreen : public UIScreen {
   DmHistEntry _dm_hist[DM_HIST_MAX];
   int _dm_hist_head, _dm_hist_count;
   int _dm_hist_sel, _dm_hist_scroll;
-  bool _dm_hist_fullscreen;
-  int  _dm_hist_fs_scroll;
+  FullscreenMsgView _dm_fs;
 
   static const int VISIBLE      = 4;
   static const int ITEM_H       = 12;
@@ -915,12 +888,10 @@ public:
       _sel_channel_idx(0), _sending_to_channel(false),
       _msg_sel(0), _msg_scroll(0), _active_msg_count(0),
       _hist_sel(0), _hist_scroll(0),
-      _hist_fullscreen(false), _hist_fs_scroll(0),
       _unread_at_entry(0), _viewing_max_seen(0),
       _hist_head(0), _hist_count(0),
       _dm_hist_head(0), _dm_hist_count(0),
       _dm_hist_sel(-1), _dm_hist_scroll(0),
-      _dm_hist_fullscreen(false), _dm_hist_fs_scroll(0),
       _ctx_open(false), _ctx_dirty(false), _ctx_sel(0) {
     memset(_ch_unread, 0, sizeof(_ch_unread));
   }
@@ -1185,32 +1156,15 @@ public:
       char filtered_name[sizeof(_sel_contact.name)];
       display.translateUTF8ToBlocks(filtered_name, _sel_contact.name, sizeof(filtered_name));
 
-      if (_dm_hist_fullscreen && _dm_hist_sel >= 0) {
+      if (_dm_fs.active && _dm_hist_sel >= 0) {
         int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
         if (ring_pos >= 0) {
           const DmHistEntry& e = _dm_hist[ring_pos];
           const char* sender = e.outgoing ? "Me" : filtered_name;
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, 0, display.width(), 10);
-          display.setColor(DisplayDriver::DARK);
-          display.drawTextEllipsized(2, 1, display.width() - 4, sender);
-          display.setColor(DisplayDriver::LIGHT);
-          char lines[12][FS_CHARS + 1];
-          int lcount = wrapLines(e.text, lines, 12);
-          int max_scroll = lcount > FS_VISIBLE ? lcount - FS_VISIBLE : 0;
-          if (_dm_hist_fs_scroll > max_scroll) _dm_hist_fs_scroll = max_scroll;
-          for (int i = 0; i < FS_VISIBLE && (_dm_hist_fs_scroll + i) < lcount; i++) {
-            display.setCursor(0, FS_START_Y + i * FS_LINE_H);
-            display.print(lines[_dm_hist_fs_scroll + i]);
-          }
-          if (_dm_hist_fs_scroll > 0) {
-            display.setCursor(display.width() - 6, FS_START_Y);
-            display.print("^");
-          }
-          if (_dm_hist_fs_scroll < max_scroll) {
-            display.setCursor(display.width() - 6, FS_START_Y + (FS_VISIBLE - 1) * FS_LINE_H);
-            display.print("v");
-          }
+          int dm_count = dmHistCountForContact(_sel_contact.id.pub_key);
+          return _dm_fs.render(display, sender, e.text,
+                               _dm_hist_sel < dm_count - 1,
+                               _dm_hist_sel > 0);
         }
         return 500;
       }
@@ -1280,7 +1234,7 @@ public:
       return dm_count > 0 ? 500 : 2000;
 
     } else if (_phase == CHANNEL_HIST) {
-      if (_hist_fullscreen && _hist_sel >= 0) {
+      if (_fs.active && _hist_sel >= 0) {
         int fs_hist_count = histCountForChannel(_sel_channel_idx);
         int ring_pos = histEntryForChannel(_sel_channel_idx, _hist_sel);
         if (ring_pos >= 0) {
@@ -1295,36 +1249,9 @@ public:
             strncpy(fsender, "?", sizeof(fsender));
             strncpy(fmsg, ftext, sizeof(fmsg) - 1); fmsg[sizeof(fmsg)-1] = '\0';
           }
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, 0, display.width(), 10);
-          display.setColor(DisplayDriver::DARK);
-          display.drawTextEllipsized(2, 1, display.width() - 4, fsender);
-          display.setColor(DisplayDriver::LIGHT);
-
-          char lines[12][FS_CHARS + 1];
-          int lcount = wrapLines(fmsg, lines, 12);
-          int max_scroll = lcount > FS_VISIBLE ? lcount - FS_VISIBLE : 0;
-          if (_hist_fs_scroll > max_scroll) _hist_fs_scroll = max_scroll;
-          for (int i = 0; i < FS_VISIBLE && (_hist_fs_scroll + i) < lcount; i++) {
-            display.setCursor(0, FS_START_Y + i * FS_LINE_H);
-            display.print(lines[_hist_fs_scroll + i]);
-          }
-          if (_hist_fs_scroll > 0) {
-            display.setCursor(display.width() - 6, FS_START_Y);
-            display.print("^");
-          }
-          if (_hist_fs_scroll < max_scroll) {
-            display.setCursor(display.width() - 6, FS_START_Y + (FS_VISIBLE - 1) * FS_LINE_H);
-            display.print("v");
-          }
-          if (_hist_sel > 0) {
-            display.setCursor(0, 56);
-            display.print("<");
-          }
-          if (_hist_sel < fs_hist_count - 1) {
-            display.setCursor(display.width() - 6, 56);
-            display.print(">");
-          }
+          return _fs.render(display, fsender, fmsg,
+                            _hist_sel < fs_hist_count - 1,
+                            _hist_sel > 0);
         }
         return 300;
       }
@@ -1516,7 +1443,7 @@ public:
           _task->clearDMUnread(_sel_contact.id.pub_key);
           _dm_hist_sel = -1;
           _dm_hist_scroll = 0;
-          _dm_hist_fullscreen = false;
+          _dm_fs.active = false;
           _phase = DM_HIST;
         }
         return true;
@@ -1582,18 +1509,15 @@ public:
 
     } else if (_phase == DM_HIST) {
       int dm_count = dmHistCountForContact(_sel_contact.id.pub_key);
-      if (_dm_hist_fullscreen) {
-        if (c == KEY_UP)   { if (_dm_hist_fs_scroll > 0) _dm_hist_fs_scroll--; return true; }
-        if (c == KEY_DOWN) { _dm_hist_fs_scroll++; return true; }
-        if (c == KEY_LEFT) {
-          if (_dm_hist_sel < dm_count - 1) { _dm_hist_sel++; _dm_hist_fs_scroll = 0; }
-          return true;
+      if (_dm_fs.active) {
+        auto res = _dm_fs.handleInput(c);
+        if (res == FullscreenMsgView::PREV) {
+          if (_dm_hist_sel < dm_count - 1) { _dm_hist_sel++; _dm_fs.scroll = 0; }
+        } else if (res == FullscreenMsgView::NEXT) {
+          if (_dm_hist_sel > 0) { _dm_hist_sel--; _dm_fs.scroll = 0; }
+        } else if (res == FullscreenMsgView::CLOSE) {
+          _dm_fs.active = false;
         }
-        if (c == KEY_RIGHT) {
-          if (_dm_hist_sel > 0) { _dm_hist_sel--; _dm_hist_fs_scroll = 0; }
-          return true;
-        }
-        if (c == KEY_ENTER || c == KEY_CANCEL) { _dm_hist_fullscreen = false; return true; }
         return true;
       }
       if (c == KEY_CANCEL) { _phase = CONTACT_PICK; return true; }
@@ -1617,8 +1541,7 @@ public:
       }
       if (c == KEY_ENTER) {
         if (_dm_hist_sel >= 0) {
-          _dm_hist_fullscreen = true;
-          _dm_hist_fs_scroll = 0;
+          _dm_fs.begin();
         } else {
           _sending_to_channel = false;
           setupMsgPick();
@@ -1629,19 +1552,15 @@ public:
 
     } else if (_phase == CHANNEL_HIST) {
       int ch_hist_count = histCountForChannel(_sel_channel_idx);
-      if (_hist_fullscreen) {
-        if (c == KEY_UP)   { if (_hist_fs_scroll > 0) _hist_fs_scroll--; return true; }
-        if (c == KEY_DOWN) { _hist_fs_scroll++; return true; }
-        if (c == KEY_LEFT) {
-          if (_hist_sel > 0) { _hist_sel--; _hist_fs_scroll = 0; updateChannelUnread(); }
-          return true;
+      if (_fs.active) {
+        auto res = _fs.handleInput(c);
+        if (res == FullscreenMsgView::PREV) {
+          if (_hist_sel < ch_hist_count - 1) { _hist_sel++; _fs.scroll = 0; updateChannelUnread(); }
+        } else if (res == FullscreenMsgView::NEXT) {
+          if (_hist_sel > 0) { _hist_sel--; _fs.scroll = 0; updateChannelUnread(); }
+        } else if (res == FullscreenMsgView::CLOSE) {
+          _fs.active = false;
         }
-        if (c == KEY_RIGHT) {
-          int count = histCountForChannel(_sel_channel_idx);
-          if (_hist_sel < count - 1) { _hist_sel++; _hist_fs_scroll = 0; updateChannelUnread(); }
-          return true;
-        }
-        if (c == KEY_ENTER || c == KEY_CANCEL) { _hist_fullscreen = false; return true; }
         return true;
       }
       if (c == KEY_CANCEL) { _phase = CHANNEL_PICK; return true; }
@@ -1662,8 +1581,7 @@ public:
       }
       if (c == KEY_ENTER) {
         if (_hist_sel >= 0) {
-          _hist_fullscreen = true;
-          _hist_fs_scroll = 0;
+          _fs.begin();
           updateChannelUnread();
         } else {
           _sending_to_channel = true;
