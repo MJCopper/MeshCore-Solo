@@ -79,8 +79,8 @@ struct KeyboardWidget {
       }
     }
 
-    // special row: [^] [Sp] [Del] [{}] [OK]
-    const char* spec[] = { "[^]", "[Sp]", "[Del]", "[{}]", "[OK]" };
+    // special row: [^] [Sp] [Dl] [{}] [OK]
+    const char* spec[] = { "[^]", "[Sp]", "[Dl]", "[{}]", "[OK]" };
     for (int i = 0; i < KB_SPECIAL; i++) {
       bool sel    = (row == KB_ROWS_CHAR && col == i);
       bool active = (i == 0 && caps);
