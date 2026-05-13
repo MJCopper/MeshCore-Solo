@@ -12,9 +12,7 @@ static const char KB_CHARS[4][10] = {
 };
 static const int KB_ROWS_CHAR  = 4;
 static const int KB_COLS_CHAR  = 10;
-static const int KB_SPECIAL    = 5;   // [^] [Sp] [Del] [{}] [OK]
-static const char* KB_PH_LIST[] = { "{loc}", "{time}" };
-static const int KB_PH_COUNT   = 2;
+static const int KB_SPECIAL    = 5;   // [^] [Sp] [De] [{}] [OK]
 static const int KB_MAX_LEN    = 139;
 static const int KB_CELL_W     = 12;  // 10 cols × 12px = 120px of 128px display
 static const int KB_CELL_H     = 9;
@@ -22,6 +20,10 @@ static const int KB_TEXT_Y     = 0;
 static const int KB_SEP_Y      = 9;
 static const int KB_CHARS_Y    = 11;
 static const int KB_SPECIAL_Y  = 48;
+
+static const int KB_PH_MAX     = 12;  // max placeholders in list
+static const int KB_PH_LEN     = 9;   // max placeholder string length incl. null
+static const int KB_PH_VISIBLE = 3;   // items shown at once in overlay
 
 struct KeyboardWidget {
   char buf[KB_MAX_LEN + 1];
@@ -31,6 +33,9 @@ struct KeyboardWidget {
   bool caps;
   bool ph_mode;
   int  ph_sel;
+  int  ph_scroll;
+  char _ph_buf[KB_PH_MAX][KB_PH_LEN];
+  int  _ph_count;
 
   enum Result { NONE, DONE, CANCELLED };
 
@@ -41,7 +46,19 @@ struct KeyboardWidget {
     len = strlen(buf);
     row = col = 0;
     caps = ph_mode = false;
-    ph_sel = 0;
+    ph_sel = ph_scroll = 0;
+    // default placeholders — always available
+    _ph_count = 0;
+    addPlaceholder("{loc}");
+    addPlaceholder("{time}");
+  }
+
+  void addPlaceholder(const char* ph) {
+    if (_ph_count < KB_PH_MAX) {
+      strncpy(_ph_buf[_ph_count], ph, KB_PH_LEN - 1);
+      _ph_buf[_ph_count][KB_PH_LEN - 1] = '\0';
+      _ph_count++;
+    }
   }
 
   int render(DisplayDriver& display) {
@@ -99,16 +116,28 @@ struct KeyboardWidget {
 
     // placeholder picker overlay
     if (ph_mode) {
+      int box_h = 12 + KB_PH_VISIBLE * 10;
       display.setColor(DisplayDriver::DARK);
-      display.fillRect(20, 20, 88, 12 + KB_PH_COUNT * 10);
+      display.fillRect(20, 20, 88, box_h);
       display.setColor(DisplayDriver::LIGHT);
-      display.drawRect(20, 20, 88, 12 + KB_PH_COUNT * 10);
+      display.drawRect(20, 20, 88, box_h);
       display.setCursor(24, 21);
       display.print("Placeholder:");
       display.fillRect(20, 30, 88, 1);
-      for (int i = 0; i < KB_PH_COUNT; i++) {
-        int py = 33 + i * 10;
-        if (i == ph_sel) {
+
+      if (ph_scroll > 0) {
+        display.setCursor(100, 21);
+        display.print("^");
+      }
+      if (ph_scroll + KB_PH_VISIBLE < _ph_count) {
+        display.setCursor(100, 33 + (KB_PH_VISIBLE - 1) * 10);
+        display.print("v");
+      }
+
+      for (int i = 0; i < KB_PH_VISIBLE && (ph_scroll + i) < _ph_count; i++) {
+        int idx = ph_scroll + i;
+        int py  = 33 + i * 10;
+        if (idx == ph_sel) {
           display.setColor(DisplayDriver::LIGHT);
           display.fillRect(21, py - 1, 86, 10);
           display.setColor(DisplayDriver::DARK);
@@ -116,7 +145,7 @@ struct KeyboardWidget {
           display.setColor(DisplayDriver::LIGHT);
         }
         display.setCursor(24, py);
-        display.print(KB_PH_LIST[i]);
+        display.print(_ph_buf[idx]);
       }
       display.setColor(DisplayDriver::LIGHT);
     }
@@ -127,10 +156,18 @@ struct KeyboardWidget {
   Result handleInput(char c) {
     // placeholder overlay consumes all input
     if (ph_mode) {
-      if (c == KEY_UP   && ph_sel > 0)              { ph_sel--; return NONE; }
-      if (c == KEY_DOWN && ph_sel < KB_PH_COUNT - 1){ ph_sel++; return NONE; }
+      if (c == KEY_UP && ph_sel > 0) {
+        ph_sel--;
+        if (ph_sel < ph_scroll) ph_scroll = ph_sel;
+        return NONE;
+      }
+      if (c == KEY_DOWN && ph_sel < _ph_count - 1) {
+        ph_sel++;
+        if (ph_sel >= ph_scroll + KB_PH_VISIBLE) ph_scroll = ph_sel - KB_PH_VISIBLE + 1;
+        return NONE;
+      }
       if (c == KEY_ENTER) {
-        const char* ph = KB_PH_LIST[ph_sel];
+        const char* ph = _ph_buf[ph_sel];
         int ph_len = strlen(ph);
         if (len + ph_len <= max_len) {
           memcpy(buf + len, ph, ph_len);
@@ -189,8 +226,9 @@ struct KeyboardWidget {
             if (len > 0) buf[--len] = '\0';
             break;
           case 3:
-            ph_mode = true;
-            ph_sel  = 0;
+            ph_mode  = true;
+            ph_sel   = 0;
+            ph_scroll = 0;
             break;
           case 4:
             return DONE;

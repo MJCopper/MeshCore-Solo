@@ -99,6 +99,7 @@ static const uint16_t HP_ALL       = 0x01FF;
 
 #include "KeyboardWidget.h"
 #include "FullscreenMsgView.h"
+#include "SensorPlaceholders.h"
 
 class SettingsScreen : public UIScreen {
   UITask* _task;
@@ -575,6 +576,7 @@ public:
       int slot = msgSlotIndex(_selected);
       _edit_slot = slot;
       _kb.begin(p ? p->custom_msgs[slot] : "");
+      kbAddSensorPlaceholders(_kb, &sensors);
       return true;
     }
     return false;
@@ -667,9 +669,11 @@ class QuickMsgScreen : public UIScreen {
     }
 #endif
     NodePrefs* np = _task->getNodePrefs();
+    float batt = (float)board.getBattMilliVolts() / 1000.0f;
     ::expandMsg(tmpl, out, out_len, lat, lon, gps_valid,
                 rtc_clock.getCurrentTime(),
-                np ? np->tz_offset_hours : 0);
+                np ? np->tz_offset_hours : 0,
+                &sensors, batt);
   }
 
   void setupMsgPick() {
@@ -1624,6 +1628,7 @@ public:
       if (c == KEY_ENTER) {
         if (_msg_sel == 0) {
           _kb.begin();
+          kbAddSensorPlaceholders(_kb, &sensors);
           _phase = KEYBOARD;
           return true;
         }

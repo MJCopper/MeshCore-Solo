@@ -23,7 +23,8 @@ void MyMesh::tryBotReplyDM(const ContactInfo& from, const char* text) {
   expandMsg(_prefs.bot_reply_dm, expanded, sizeof(expanded),
             sensors.node_lat, sensors.node_lon,
             sensors.node_lat != 0.0 || sensors.node_lon != 0.0,
-            ts, _prefs.tz_offset_hours);
+            ts, _prefs.tz_offset_hours,
+            &sensors, (float)board.getBattMilliVolts() / 1000.0f);
   uint32_t expected_ack, est_timeout;
   if (sendMessage(from, ts, 0, expanded, expected_ack, est_timeout) != MSG_SEND_FAILED) {
     _bot_last_reply_ms = millis();
@@ -57,7 +58,8 @@ void MyMesh::tryBotReplyChannel(uint8_t channel_idx, const char* text) {
   expandMsg(_prefs.bot_reply_ch, expanded, sizeof(expanded),
             sensors.node_lat, sensors.node_lon,
             sensors.node_lat != 0.0 || sensors.node_lon != 0.0,
-            ts, _prefs.tz_offset_hours);
+            ts, _prefs.tz_offset_hours,
+            &sensors, (float)board.getBattMilliVolts() / 1000.0f);
   int rlen = strlen(expanded);
   if (sendGroupMessage(ts, ch.channel, _prefs.node_name, expanded, rlen)) {
     _bot_last_reply_ms = millis();

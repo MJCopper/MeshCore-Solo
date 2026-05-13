@@ -175,6 +175,8 @@ public:
         max     = sizeof(_prefs->bot_reply_ch) - 1;
       }
       _kb.begin(initial, max);
+      if (_sel != 2)  // trigger field doesn't support sensor placeholders
+        kbAddSensorPlaceholders(_kb, &sensors);
       return true;
     }
     return false;
