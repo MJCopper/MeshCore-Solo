@@ -97,25 +97,7 @@ static const uint16_t HP_TOOLS     = 1 << 7;
 static const uint16_t HP_SHUTDOWN  = 1 << 8;
 static const uint16_t HP_ALL       = 0x01FF;
 
-// On-screen keyboard layout (4 rows × 10 cols)
-static const char KB_CHARS[4][10] = {
-  {'a','b','c','d','e','f','g','h','i','j'},
-  {'k','l','m','n','o','p','q','r','s','t'},
-  {'u','v','w','x','y','z','.',' ','!','?'},
-  {'1','2','3','4','5','6','7','8','9','0'},
-};
-static const int KB_ROWS_CHAR  = 4;
-static const int KB_COLS_CHAR  = 10;
-static const int KB_SPECIAL    = 5;   // [^] [Sp] [Del] [{}] [OK]
-static const char* KB_PH_LIST[] = { "{loc}", "{time}" };
-static const int KB_PH_COUNT   = 2;
-static const int KB_MAX_LEN    = 139;
-static const int KB_CELL_W     = 12;  // 10 cols × 12px = 120px of 128px display
-static const int KB_CELL_H     = 9;
-static const int KB_TEXT_Y     = 0;
-static const int KB_SEP_Y      = 9;
-static const int KB_CHARS_Y    = 11;  // first char row
-static const int KB_SPECIAL_Y  = 48;
+#include "KeyboardWidget.h"
 
 class SettingsScreen : public UIScreen {
   UITask* _task;
@@ -425,21 +407,13 @@ class SettingsScreen : public UIScreen {
   }
 
   // Keyboard state for editing message slots
-  int  _edit_slot;              // -1 = not editing, 0..9 = slot being edited
-  char _edit_buf[KB_MAX_LEN + 1];
-  int  _edit_len;
-  int  _edit_kb_row, _edit_kb_col;
-  bool _edit_caps;
-  bool _edit_ph_mode;
-  int  _edit_ph_sel;
+  int           _edit_slot;  // -1 = not editing, 0..9 = slot being edited
+  KeyboardWidget _kb;
 
 public:
   SettingsScreen(UITask* task)
-    : _task(task), _selected(BRIGHTNESS), _scroll(0), _dirty(false),
-      _edit_slot(-1), _edit_len(0), _edit_kb_row(0), _edit_kb_col(0),
-      _edit_caps(false), _edit_ph_mode(false), _edit_ph_sel(0) {
-    _edit_buf[0] = '\0';
-  }
+    : _task(task), _selected(BRIGHTNESS), _scroll(0), _dirty(false), _edit_slot(-1) {}
+
 
   void markClean() { _dirty = false; }
 
@@ -447,83 +421,7 @@ public:
     display.setTextSize(1);
 
     if (_edit_slot >= 0) {
-      // Keyboard mode for editing a message slot
-      display.setColor(DisplayDriver::LIGHT);
-      // preview line with cursor
-      const char* disp_start = _edit_buf;
-      int disp_len = _edit_len;
-      if (disp_len > 20) { disp_start = _edit_buf + (disp_len - 20); disp_len = 20; }
-      char preview[26];
-      snprintf(preview, sizeof(preview), "M%d:%.*s_", _edit_slot + 1, disp_len, disp_start);
-      display.setCursor(0, KB_TEXT_Y);
-      display.print(preview);
-      display.fillRect(0, KB_SEP_Y, display.width(), 1);
-
-      // char rows
-      for (int row = 0; row < KB_ROWS_CHAR; row++) {
-        int y = KB_CHARS_Y + row * KB_CELL_H;
-        for (int col = 0; col < KB_COLS_CHAR; col++) {
-          bool sel = (_edit_kb_row == row && _edit_kb_col == col);
-          char ch = KB_CHARS[row][col];
-          if (_edit_caps && ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
-          char ch_buf[2] = { ch, '\0' };
-          if (ch_buf[0] == ' ') ch_buf[0] = '_';
-          int cx = col * KB_CELL_W;
-          if (sel) {
-            display.setColor(DisplayDriver::LIGHT);
-            display.fillRect(cx, y - 1, KB_CELL_W - 1, KB_CELL_H);
-            display.setColor(DisplayDriver::DARK);
-          } else {
-            display.setColor(DisplayDriver::LIGHT);
-          }
-          display.setCursor(cx + 3, y);
-          display.print(ch_buf);
-        }
-      }
-
-      // special row: [^] [Sp] [Del] [{}] [OK]  — 5 buttons at 25px each
-      const char* spec[] = { "[^]", "[Sp]", "[Del]", "[{}]", "[OK]" };
-      for (int i = 0; i < KB_SPECIAL; i++) {
-        bool sel = (_edit_kb_row == KB_ROWS_CHAR && _edit_kb_col == i);
-        bool active = (i == 0 && _edit_caps);
-        int sx = i * 25;
-        if (sel || active) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(sx, KB_SPECIAL_Y - 1, 24, KB_CELL_H);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-        }
-        display.setCursor(sx + 1, KB_SPECIAL_Y);
-        display.print(spec[i]);
-        display.setColor(DisplayDriver::LIGHT);
-      }
-
-      // placeholder picker overlay
-      if (_edit_ph_mode) {
-        display.setColor(DisplayDriver::DARK);
-        display.fillRect(20, 20, 88, 12 + KB_PH_COUNT * 10);
-        display.setColor(DisplayDriver::LIGHT);
-        display.drawRect(20, 20, 88, 12 + KB_PH_COUNT * 10);
-        display.setCursor(24, 21);
-        display.print("Placeholder:");
-        display.fillRect(20, 30, 88, 1);
-        for (int i = 0; i < KB_PH_COUNT; i++) {
-          int py = 33 + i * 10;
-          if (i == _edit_ph_sel) {
-            display.setColor(DisplayDriver::LIGHT);
-            display.fillRect(21, py - 1, 86, 10);
-            display.setColor(DisplayDriver::DARK);
-          } else {
-            display.setColor(DisplayDriver::LIGHT);
-          }
-          display.setCursor(24, py);
-          display.print(KB_PH_LIST[i]);
-        }
-        display.setColor(DisplayDriver::LIGHT);
-      }
-
-      return 50;
+      return _kb.render(display);
     }
 
     display.setColor(DisplayDriver::LIGHT);
@@ -554,88 +452,16 @@ public:
 
     // Keyboard editing mode for message slots
     if (_edit_slot >= 0) {
-      if (c == KEY_UP) {
-        if (_edit_kb_row > 0) {
-          _edit_kb_row--;
-          if (_edit_kb_row == KB_ROWS_CHAR - 1)  // leaving special row upward
-            _edit_kb_col = _edit_kb_col * KB_COLS_CHAR / KB_SPECIAL;
+      auto res = _kb.handleInput(c);
+      if (res == KeyboardWidget::DONE) {
+        if (p) {
+          strncpy(p->custom_msgs[_edit_slot], _kb.buf, sizeof(p->custom_msgs[0]) - 1);
+          p->custom_msgs[_edit_slot][sizeof(p->custom_msgs[0]) - 1] = '\0';
+          _dirty = true;
         }
-        return true;
-      }
-      if (c == KEY_DOWN) {
-        if (_edit_kb_row < KB_ROWS_CHAR) {
-          _edit_kb_row++;
-          if (_edit_kb_row == KB_ROWS_CHAR)  // entering special row
-            _edit_kb_col = _edit_kb_col * KB_SPECIAL / KB_COLS_CHAR;
-        }
-        return true;
-      }
-      if (c == KEY_LEFT) {
-        if (_edit_kb_col > 0) _edit_kb_col--;
-        return true;
-      }
-      if (c == KEY_RIGHT) {
-        int max_col = (_edit_kb_row == KB_ROWS_CHAR) ? KB_SPECIAL - 1 : KB_COLS_CHAR - 1;
-        if (_edit_kb_col < max_col) _edit_kb_col++;
-        return true;
-      }
-      if (_edit_ph_mode) {
-        if (c == KEY_UP   && _edit_ph_sel > 0) { _edit_ph_sel--; return true; }
-        if (c == KEY_DOWN && _edit_ph_sel < KB_PH_COUNT - 1) { _edit_ph_sel++; return true; }
-        if (c == KEY_ENTER) {
-          const char* ph = KB_PH_LIST[_edit_ph_sel];
-          int ph_len = strlen(ph);
-          if (_edit_len + ph_len <= KB_MAX_LEN) {
-            memcpy(_edit_buf + _edit_len, ph, ph_len);
-            _edit_len += ph_len;
-            _edit_buf[_edit_len] = '\0';
-          }
-          _edit_ph_mode = false;
-          return true;
-        }
-        if (c == KEY_CANCEL) { _edit_ph_mode = false; return true; }
-        return true;
-      }
-      if (c == KEY_ENTER) {
-        if (_edit_kb_row < KB_ROWS_CHAR) {
-          if (_edit_len < KB_MAX_LEN) {
-            char ch = KB_CHARS[_edit_kb_row][_edit_kb_col];
-            if (_edit_caps && ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
-            _edit_buf[_edit_len++] = ch;
-            _edit_buf[_edit_len] = '\0';
-          }
-        } else {
-          if (_edit_kb_col == 0) {
-            // Caps Lock toggle
-            _edit_caps = !_edit_caps;
-          } else if (_edit_kb_col == 1) {
-            // Space
-            if (_edit_len < KB_MAX_LEN) {
-              _edit_buf[_edit_len++] = ' ';
-              _edit_buf[_edit_len] = '\0';
-            }
-          } else if (_edit_kb_col == 2) {
-            // Del
-            if (_edit_len > 0) _edit_buf[--_edit_len] = '\0';
-          } else if (_edit_kb_col == 3) {
-            // Placeholder picker
-            _edit_ph_mode = true;
-            _edit_ph_sel  = 0;
-          } else {
-            // OK — commit to prefs, save deferred to settings exit
-            if (p) {
-              strncpy(p->custom_msgs[_edit_slot], _edit_buf, sizeof(p->custom_msgs[0]) - 1);
-              p->custom_msgs[_edit_slot][sizeof(p->custom_msgs[0]) - 1] = '\0';
-              _dirty = true;
-            }
-            _edit_slot = -1;
-          }
-        }
-        return true;
-      }
-      if (c == KEY_CANCEL) {
         _edit_slot = -1;
-        return true;
+      } else if (res == KeyboardWidget::CANCELLED) {
+        _edit_slot = -1;
       }
       return true;
     }
@@ -747,20 +573,9 @@ public:
     if (isMsgSlot(_selected) && enter) {
       int slot = msgSlotIndex(_selected);
       _edit_slot = slot;
-      _edit_len = 0;
-      _edit_buf[0] = '\0';
-      // Pre-fill with existing text
-      if (p && p->custom_msgs[slot][0]) {
-        int existing = strlen(p->custom_msgs[slot]);
-        if (existing > KB_MAX_LEN) existing = KB_MAX_LEN;
-        memcpy(_edit_buf, p->custom_msgs[slot], existing);
-        _edit_buf[existing] = '\0';
-        _edit_len = existing;
-      }
-      _edit_kb_row = 0;
-      _edit_kb_col = 0;
-      _edit_caps = false;
-      _edit_ph_mode = false;
+      char lbl[6];
+      snprintf(lbl, sizeof(lbl), "M%d:", slot + 1);
+      _kb.begin(p ? p->custom_msgs[slot] : "", KB_MAX_LEN, lbl);
       return true;
     }
     return false;
@@ -841,12 +656,7 @@ class QuickMsgScreen : public UIScreen {
   }
 
   // KEYBOARD
-  int _kb_row, _kb_col;
-  char _kb_text[KB_MAX_LEN + 1];
-  int _kb_len;
-  bool _kb_caps;
-  bool _kb_ph_mode;
-  int  _kb_ph_sel;
+  KeyboardWidget _kb;
 
   // Context menu (opened by long-press ENTER in CHANNEL_PICK)
   bool _ctx_open;
@@ -1110,10 +920,7 @@ public:
       _hist_head(0), _hist_count(0),
       _dm_hist_head(0), _dm_hist_count(0),
       _dm_hist_sel(-1), _dm_hist_scroll(0),
-      _kb_row(0), _kb_col(0), _kb_len(0),
-      _kb_caps(false), _kb_ph_mode(false), _kb_ph_sel(0),
       _ctx_open(false), _ctx_dirty(false), _ctx_sel(0) {
-    _kb_text[0] = '\0';
     memset(_ch_unread, 0, sizeof(_ch_unread));
   }
 
@@ -1170,9 +977,6 @@ public:
     _msg_sel = _msg_scroll = 0;
     _channel_sel = _channel_scroll = 0;
     _sending_to_channel = false;
-    _kb_row = _kb_col = _kb_len = 0;
-    _kb_caps = false; _kb_ph_mode = false; _kb_ph_sel = 0;
-    _kb_text[0] = '\0';
 
     _room_mode = false;
     buildContactList();
@@ -1575,83 +1379,7 @@ public:
       display.setColor(DisplayDriver::LIGHT);
 
     } else if (_phase == KEYBOARD) {
-      // text preview with cursor
-      display.setColor(DisplayDriver::LIGHT);
-      const char* disp_start = _kb_text;
-      int disp_len = _kb_len;
-      if (disp_len > 20) { disp_start = _kb_text + (disp_len - 20); disp_len = 20; }
-      char preview[24];
-      snprintf(preview, sizeof(preview), "%.*s_", disp_len, disp_start);
-      display.setCursor(0, KB_TEXT_Y);
-      display.print(preview);
-      display.fillRect(0, KB_SEP_Y, display.width(), 1);
-
-      // char rows
-      for (int row = 0; row < KB_ROWS_CHAR; row++) {
-        int y = KB_CHARS_Y + row * KB_CELL_H;
-        for (int col = 0; col < KB_COLS_CHAR; col++) {
-          bool sel = (_kb_row == row && _kb_col == col);
-          char ch = KB_CHARS[row][col];
-          if (_kb_caps && ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
-          char ch_buf[2] = { ch, '\0' };
-          if (ch_buf[0] == ' ') ch_buf[0] = '_';
-          int cx = col * KB_CELL_W;
-          if (sel) {
-            display.setColor(DisplayDriver::LIGHT);
-            display.fillRect(cx, y - 1, KB_CELL_W - 1, KB_CELL_H);
-            display.setColor(DisplayDriver::DARK);
-          } else {
-            display.setColor(DisplayDriver::LIGHT);
-          }
-          display.setCursor(cx + 3, y);
-          display.print(ch_buf);
-        }
-      }
-
-      // special row: [^] [Sp] [Del] [{}] [OK]  — 5 buttons at 25px each
-      const char* spec[] = { "[^]", "[Sp]", "[Del]", "[{}]", "[OK]" };
-      for (int i = 0; i < KB_SPECIAL; i++) {
-        bool sel = (_kb_row == KB_ROWS_CHAR && _kb_col == i);
-        bool active = (i == 0 && _kb_caps);  // caps indicator
-        int sx = i * 25;
-        if (sel || active) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(sx, KB_SPECIAL_Y - 1, 24, KB_CELL_H);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-        }
-        display.setCursor(sx + 1, KB_SPECIAL_Y);
-        display.print(spec[i]);
-        display.setColor(DisplayDriver::LIGHT);
-      }
-
-      // placeholder picker overlay
-      if (_kb_ph_mode) {
-        // Black box with white border
-        display.setColor(DisplayDriver::DARK);
-        display.fillRect(20, 20, 88, 12 + KB_PH_COUNT * 10);
-        display.setColor(DisplayDriver::LIGHT);
-        display.drawRect(20, 20, 88, 12 + KB_PH_COUNT * 10);
-        display.setCursor(24, 21);
-        display.print("Placeholder:");
-        display.fillRect(20, 30, 88, 1);  // separator
-        for (int i = 0; i < KB_PH_COUNT; i++) {
-          int py = 33 + i * 10;
-          if (i == _kb_ph_sel) {
-            // Selected: white fill + black text
-            display.setColor(DisplayDriver::LIGHT);
-            display.fillRect(21, py - 1, 86, 10);
-            display.setColor(DisplayDriver::DARK);
-          } else {
-            // Unselected: white text on black
-            display.setColor(DisplayDriver::LIGHT);
-          }
-          display.setCursor(24, py);
-          display.print(KB_PH_LIST[i]);
-        }
-        display.setColor(DisplayDriver::LIGHT);
-      }
+      return _kb.render(display);
 
     } else { // MSG_PICK
       char title[24];
@@ -1894,89 +1622,18 @@ public:
       }
 
     } else if (_phase == KEYBOARD) {
-      if (_kb_ph_mode) {
-        if (c == KEY_UP   && _kb_ph_sel > 0) { _kb_ph_sel--; return true; }
-        if (c == KEY_DOWN && _kb_ph_sel < KB_PH_COUNT - 1) { _kb_ph_sel++; return true; }
-        if (c == KEY_ENTER) {
-          const char* ph = KB_PH_LIST[_kb_ph_sel];
-          int ph_len = strlen(ph);
-          if (_kb_len + ph_len <= KB_MAX_LEN) {
-            memcpy(_kb_text + _kb_len, ph, ph_len);
-            _kb_len += ph_len;
-            _kb_text[_kb_len] = '\0';
-          }
-          _kb_ph_mode = false;
-          return true;
-        }
-        if (c == KEY_CANCEL) { _kb_ph_mode = false; return true; }
-        return true;
-      }
-      if (c == KEY_CANCEL) {
+      auto res = _kb.handleInput(c);
+      if (res == KeyboardWidget::CANCELLED) {
         _phase = MSG_PICK;
-        return true;
-      }
-      if (c == KEY_UP) {
-        if (_kb_row > 0) {
-          _kb_row--;
-          if (_kb_row == KB_ROWS_CHAR - 1)  // leaving special row upward
-            _kb_col = _kb_col * KB_COLS_CHAR / KB_SPECIAL;
+      } else if (res == KeyboardWidget::DONE) {
+        if (_kb.len > 0) {
+          char expanded[KB_MAX_LEN + 1];
+          expandMsg(_kb.buf, expanded, sizeof(expanded));
+          bool ok = sendText(expanded);
+          afterSend(ok, expanded);
         }
-        return true;
       }
-      if (c == KEY_DOWN) {
-        if (_kb_row < KB_ROWS_CHAR) {
-          _kb_row++;
-          if (_kb_row == KB_ROWS_CHAR)  // entering special row
-            _kb_col = _kb_col * KB_SPECIAL / KB_COLS_CHAR;
-        }
-        return true;
-      }
-      if (c == KEY_LEFT) {
-        if (_kb_col > 0) _kb_col--;
-        return true;
-      }
-      if (c == KEY_RIGHT) {
-        int max_col = (_kb_row == KB_ROWS_CHAR) ? KB_SPECIAL - 1 : KB_COLS_CHAR - 1;
-        if (_kb_col < max_col) _kb_col++;
-        return true;
-      }
-      if (c == KEY_ENTER) {
-        if (_kb_row < KB_ROWS_CHAR) {
-          if (_kb_len < KB_MAX_LEN) {
-            char ch = KB_CHARS[_kb_row][_kb_col];
-            if (_kb_caps && ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
-            _kb_text[_kb_len++] = ch;
-            _kb_text[_kb_len] = '\0';
-          }
-        } else {
-          if (_kb_col == 0) {
-            // Caps Lock toggle
-            _kb_caps = !_kb_caps;
-          } else if (_kb_col == 1) {
-            // Space
-            if (_kb_len < KB_MAX_LEN) {
-              _kb_text[_kb_len++] = ' ';
-              _kb_text[_kb_len] = '\0';
-            }
-          } else if (_kb_col == 2) {
-            // Delete
-            if (_kb_len > 0) _kb_text[--_kb_len] = '\0';
-          } else if (_kb_col == 3) {
-            // Placeholder picker
-            _kb_ph_mode = true;
-            _kb_ph_sel  = 0;
-          } else {
-            // OK — send (expand placeholders first)
-            if (_kb_len > 0) {
-              char expanded[KB_MAX_LEN + 1];
-              expandMsg(_kb_text, expanded, sizeof(expanded));
-              bool ok = sendText(expanded);
-              afterSend(ok, expanded);
-            }
-          }
-        }
-        return true;
-      }
+      return true;
 
     } else { // MSG_PICK
       int total_msg_items = 1 + _active_msg_count;
@@ -1996,9 +1653,7 @@ public:
       }
       if (c == KEY_ENTER) {
         if (_msg_sel == 0) {
-          _kb_row = _kb_col = _kb_len = 0;
-          _kb_caps = false; _kb_ph_mode = false; _kb_ph_sel = 0;
-          _kb_text[0] = '\0';
+          _kb.begin();
           _phase = KEYBOARD;
           return true;
         }
