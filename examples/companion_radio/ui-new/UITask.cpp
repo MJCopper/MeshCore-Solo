@@ -1904,6 +1904,10 @@ public:
             } else if (field == DASH_NODES) {
               strcpy(label, "Nodes");
               snprintf(val, sizeof(val), "%d", the_mesh.getNumContacts());
+            } else if (field == DASH_MSGS) {
+              strcpy(label, "Msgs");
+              int unread = _task->getDMUnreadTotal() + _task->getChannelUnreadCount() + _task->getRoomUnreadCount();
+              snprintf(val, sizeof(val), "%d", unread);
             } else {
               uint8_t lpp_type = 0;
               switch (field) {
