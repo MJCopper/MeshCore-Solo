@@ -13,7 +13,7 @@ class NearbyScreen : public UIScreen {
   static const int START_Y   = 12;
   static const int DIST_COL  = 86;
 
-  static const int FILTER_COUNT = 5;
+  static const int FILTER_COUNT = 6;
   static const char*    FILTER_LABELS[FILTER_COUNT];
   static const uint8_t  FILTER_TYPES[FILTER_COUNT];
 
@@ -64,6 +64,11 @@ class NearbyScreen : public UIScreen {
     return (int)(b + 0.5f) % 360;
   }
 
+  static const char* bearingCardinal(int deg) {
+    static const char* dirs[] = { "N","NE","E","SE","S","SW","W","NW" };
+    return dirs[((deg + 22) % 360) / 45];
+  }
+
   static void fmtDist(char* buf, int n, float km) {
     if      (km < 1.0f)   snprintf(buf, n, "%dm",   (int)(km * 1000 + 0.5f));
     else if (km < 100.0f) snprintf(buf, n, "%.1fkm", km);
@@ -104,7 +109,8 @@ class NearbyScreen : public UIScreen {
     for (int i = 0; i < nc && _count < MAX_NEARBY; i++) {
       ContactInfo ci;
       if (!the_mesh.getContactByIdx(i, ci)) continue;
-      if (_filter > 0 && ci.type != FILTER_TYPES[_filter]) continue;
+      if (_filter == 0 && !(ci.flags & 1)) continue;           // Fav: only starred
+      if (_filter >= 2 && ci.type != FILTER_TYPES[_filter]) continue; // type filter
 
       Entry& e = _entries[_count++];
       strncpy(e.name, ci.name, sizeof(e.name) - 1);
@@ -181,14 +187,18 @@ public:
       if (e.dist_km >= 0.0f) {
         char dist[12];
         fmtDist(dist, sizeof(dist), e.dist_km);
-        snprintf(buf, sizeof(buf), "Dist:%s %dd", dist, bearingDeg(_own_lat, _own_lon, e.lat_e6, e.lon_e6));
+        int az = bearingDeg(_own_lat, _own_lon, e.lat_e6, e.lon_e6);
+        snprintf(buf, sizeof(buf), "Dist: %s", dist);
         display.setCursor(2, 31); display.print(buf);
+        snprintf(buf, sizeof(buf), "Az: %dd (%s)", az, bearingCardinal(az));
+        display.setCursor(2, 40); display.print(buf);
       } else {
         display.setCursor(2, 31); display.print("Dist: no own GPS");
+        display.setCursor(2, 40); display.print("Az: unknown");
       }
 
       snprintf(buf, sizeof(buf), "Type:%s", typeName(e.type));
-      display.setCursor(2, 40); display.print(buf);
+      display.setCursor(2, 49); display.print(buf);
 
       return 2000;
     }
@@ -309,5 +319,5 @@ public:
   }
 };
 
-const char*   NearbyScreen::FILTER_LABELS[5] = { "ALL", "Comp", "Rpt", "Room", "Snsr" };
-const uint8_t NearbyScreen::FILTER_TYPES[5]  = { 0, ADV_TYPE_CHAT, ADV_TYPE_REPEATER, ADV_TYPE_ROOM, ADV_TYPE_SENSOR };
+const char*   NearbyScreen::FILTER_LABELS[6] = { "Fav", "ALL", "Comp", "Rpt", "Room", "Snsr" };
+const uint8_t NearbyScreen::FILTER_TYPES[6]  = { 0, 0, ADV_TYPE_CHAT, ADV_TYPE_REPEATER, ADV_TYPE_ROOM, ADV_TYPE_SENSOR };
