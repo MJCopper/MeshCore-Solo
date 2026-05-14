@@ -284,8 +284,9 @@ public:
     // ── detail view input ────────────────────────────────────────────────────
     if (_detail) {
       if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
-        _detail = false;
-        _ping_state = PING_IDLE;
+        _detail        = false;
+        _ping_state    = PING_IDLE;
+        _ping_ack_seen = false;
         return true;
       }
       if (c == KEY_ENTER && _ping_state == PING_IDLE) {
@@ -337,8 +338,9 @@ public:
       return true;
     }
     if (c == KEY_ENTER && _count > 0) {
-      _detail = true;
-      _ping_state = PING_IDLE;
+      _detail        = true;
+      _ping_state    = PING_IDLE;
+      _ping_ack_seen = false;
       return true;
     }
     if (c == KEY_LEFT) {
