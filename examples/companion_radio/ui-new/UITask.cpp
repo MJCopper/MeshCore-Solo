@@ -1802,7 +1802,7 @@ public:
         int spaceW = display.getTextWidth(" ");
         int aW     = display.getTextWidth("A");
         int ax     = display.getTextWidth(filtered_name) + spaceW;
-        display.fillRect(ax, 0, aW + 1, 8);
+        display.fillRect(ax - 1, 0, aW + 2, 8);
         display.setColor(DisplayDriver::DARK);
         display.setCursor(ax, 0);
         display.print("A");
@@ -2146,9 +2146,9 @@ public:
     bool auto_adv = _node_prefs && _node_prefs->advert_auto_interval_sec > 0;
     if (_page == HomePage::CLOCK) {
       bool show_sec = !_node_prefs || !_node_prefs->clock_hide_seconds;
-      return (auto_adv || show_sec) ? 1000 : 60000;
+      return auto_adv ? 300 : (show_sec ? 1000 : 60000);
     }
-    return auto_adv ? 1000 : 5000;
+    return auto_adv ? 300 : 5000;
   }
 
   bool handleInput(char c) override {
