@@ -2206,7 +2206,10 @@ void MyMesh::loop() {
   }
 
   if (_prefs.advert_auto_interval_sec > 0 && millisHasNowPassed(_next_auto_advert_ms)) {
-    advert();
+    mesh::Packet* pkt = (sensors.node_lat != 0 || sensors.node_lon != 0)
+      ? createSelfAdvert(_prefs.node_name, sensors.node_lat, sensors.node_lon)
+      : createSelfAdvert(_prefs.node_name);
+    if (pkt) sendZeroHop(pkt);
     _next_auto_advert_ms = futureMillis(_prefs.advert_auto_interval_sec * 1000UL);
   }
 

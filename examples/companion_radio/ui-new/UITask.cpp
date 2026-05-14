@@ -1658,7 +1658,7 @@ class HomeScreen : public UIScreen {
     return from;
   }
 
-  void renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts) {
+  int renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts) {
 #ifndef BATT_MIN_MILLIVOLTS
   #define BATT_MIN_MILLIVOLTS 3200
 #endif
@@ -1729,6 +1729,7 @@ class HomeScreen : public UIScreen {
 #endif
 
     // BT connection indicator (left of muted/battery icons)
+    int leftmostX = battLeftX;
     if (_task->isSerialEnabled()) {
 #ifdef PIN_BUZZER
       int btX = battLeftX - 18;
@@ -1737,7 +1738,7 @@ class HomeScreen : public UIScreen {
 #endif
       if (_task->hasConnection()) {
         display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(btX - 1, 0, 8, 9);
+        display.fillRect(btX - 1, 0, 7, 7);
         display.setColor(DisplayDriver::DARK);
         display.setCursor(btX, 0);
         display.print("B");
@@ -1747,7 +1748,23 @@ class HomeScreen : public UIScreen {
         display.setCursor(btX, 0);
         display.print("b");
       }
+      leftmostX = btX - 1;
+
+      // "A" indicator — left of BT, blinks 50% duty at 1s period
+      if (_node_prefs && _node_prefs->advert_auto_interval_sec > 0) {
+        int aX = leftmostX - 8;
+        if ((millis() % 4000) < 2000) {
+          display.setColor(DisplayDriver::LIGHT);
+          display.fillRect(aX - 1, 0, 7, 7);
+          display.setColor(DisplayDriver::DARK);
+          display.setCursor(aX, 0);
+          display.print("A");
+          display.setColor(DisplayDriver::LIGHT);
+        }
+        leftmostX = aX - 1;
+      }
     }
+    return leftmostX;
   }
 
   CayenneLPP sensors_lpp;
@@ -1796,19 +1813,9 @@ public:
       display.setColor(DisplayDriver::LIGHT);
       char filtered_name[sizeof(_node_prefs->node_name)];
       display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
-      display.setCursor(0, 0);
-      display.print(filtered_name);
-      if (_node_prefs->advert_auto_interval_sec > 0 && (millis() % 1000) < 500) {
-        int spaceW = display.getTextWidth(" ");
-        int aW     = display.getTextWidth("A");
-        int ax     = display.getTextWidth(filtered_name) + spaceW;
-        display.fillRect(ax - 1, 0, aW + 2, 8);
-        display.setColor(DisplayDriver::DARK);
-        display.setCursor(ax, 0);
-        display.print("A");
-        display.setColor(DisplayDriver::LIGHT);
-      }
-      renderBatteryIndicator(display, _task->getBattMilliVolts());
+      int rightEdge = renderBatteryIndicator(display, _task->getBattMilliVolts());
+      display.setColor(DisplayDriver::LIGHT);
+      display.drawTextEllipsized(0, 0, rightEdge - 2, filtered_name);
     }
 
     // ensure current page is visible (e.g. after settings change)
@@ -2115,13 +2122,13 @@ public:
     } else if (_page == HomePage::SETTINGS) {
       display.setColor(DisplayDriver::LIGHT);
       display.setTextSize(1);
-      display.drawTextCentered(display.width() / 2, 30, "Settings");
-      display.drawTextCentered(display.width() / 2, 46, PRESS_LABEL " to open");
+      display.drawTextCentered(display.width() / 2, 22, "Settings");
+      display.drawTextCentered(display.width() / 2, 50, PRESS_LABEL " to open");
     } else if (_page == HomePage::TOOLS) {
       display.setColor(DisplayDriver::LIGHT);
       display.setTextSize(1);
-      display.drawTextCentered(display.width() / 2, 30, "Tools");
-      display.drawTextCentered(display.width() / 2, 46, PRESS_LABEL " to open");
+      display.drawTextCentered(display.width() / 2, 22, "Tools");
+      display.drawTextCentered(display.width() / 2, 50, PRESS_LABEL " to open");
     } else if (_page == HomePage::QUICK_MSG) {
       display.setColor(DisplayDriver::LIGHT);
       display.setTextSize(1);
@@ -2146,9 +2153,9 @@ public:
     bool auto_adv = _node_prefs && _node_prefs->advert_auto_interval_sec > 0;
     if (_page == HomePage::CLOCK) {
       bool show_sec = !_node_prefs || !_node_prefs->clock_hide_seconds;
-      return auto_adv ? 300 : (show_sec ? 1000 : 60000);
+      return auto_adv ? 1000 : (show_sec ? 1000 : 60000);
     }
-    return auto_adv ? 300 : 5000;
+    return auto_adv ? 1000 : 5000;
   }
 
   bool handleInput(char c) override {
