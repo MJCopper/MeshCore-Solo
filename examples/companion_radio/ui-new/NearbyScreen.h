@@ -81,7 +81,7 @@ class NearbyScreen : public UIScreen {
 
   static const char* typeName(uint8_t t) {
     switch (t) {
-      case ADV_TYPE_CHAT:     return "Chat";
+      case ADV_TYPE_CHAT:     return "Companion";
       case ADV_TYPE_REPEATER: return "Repeater";
       case ADV_TYPE_ROOM:     return "Room";
       case ADV_TYPE_SENSOR:   return "Sensor";
@@ -113,26 +113,29 @@ class NearbyScreen : public UIScreen {
     for (int i = 0; i < nc && _count < MAX_NEARBY; i++) {
       ContactInfo ci;
       if (!the_mesh.getContactByIdx(i, ci)) continue;
-      if (ci.gps_lat == 0 && ci.gps_lon == 0) continue;
       if (_filter > 0 && ci.type != FILTER_TYPES[_filter]) continue;
 
       Entry& e = _entries[_count++];
       strncpy(e.name, ci.name, sizeof(e.name) - 1);
       e.name[sizeof(e.name) - 1] = '\0';
-      e.lat_e6      = ci.gps_lat;
-      e.lon_e6      = ci.gps_lon;
-      e.dist_km     = _own_gps ? haversineKm(_own_lat, _own_lon, ci.gps_lat, ci.gps_lon) : -1.0f;
+      e.lat_e6  = ci.gps_lat;
+      e.lon_e6  = ci.gps_lon;
+      bool remote_gps = (ci.gps_lat != 0 || ci.gps_lon != 0);
+      e.dist_km = (_own_gps && remote_gps)
+                    ? haversineKm(_own_lat, _own_lon, ci.gps_lat, ci.gps_lon)
+                    : -1.0f;
       e.type        = ci.type;
       e.contact_idx = i;
     }
 
-    if (_own_gps) {
-      for (int i = 0; i < _count - 1; i++) {
-        int best = i;
-        for (int j = i + 1; j < _count; j++)
-          if (_entries[j].dist_km < _entries[best].dist_km) best = j;
-        if (best != i) { Entry tmp = _entries[i]; _entries[i] = _entries[best]; _entries[best] = tmp; }
+    // sort by distance ascending; nodes without GPS (-1) go to the end
+    for (int i = 0; i < _count - 1; i++) {
+      int best = i;
+      for (int j = i + 1; j < _count; j++) {
+        float dj = _entries[j].dist_km, db = _entries[best].dist_km;
+        if (dj >= 0.0f && (db < 0.0f || dj < db)) best = j;
       }
+      if (best != i) { Entry tmp = _entries[i]; _entries[i] = _entries[best]; _entries[best] = tmp; }
     }
 
     if (_count == 0) {
@@ -235,7 +238,7 @@ public:
     display.fillRect(0, 10, display.width(), 1);
 
     if (_count == 0) {
-      display.drawTextCentered(display.width() / 2, 28, _scanning ? "Waiting..." : "No GPS contacts");
+      display.drawTextCentered(display.width() / 2, 28, _scanning ? "Waiting..." : "No contacts found");
       display.drawTextCentered(display.width() / 2, 40, "[M]=Scan");
     } else {
       for (int i = 0; i < VISIBLE && (_scroll + i) < _count; i++) {
@@ -357,5 +360,5 @@ public:
   }
 };
 
-const char*   NearbyScreen::FILTER_LABELS[5] = { "ALL", "Chat", "Rpt", "Room", "Snsr" };
+const char*   NearbyScreen::FILTER_LABELS[5] = { "ALL", "Comp", "Rpt", "Room", "Snsr" };
 const uint8_t NearbyScreen::FILTER_TYPES[5]  = { 0, ADV_TYPE_CHAT, ADV_TYPE_REPEATER, ADV_TYPE_ROOM, ADV_TYPE_SENSOR };
