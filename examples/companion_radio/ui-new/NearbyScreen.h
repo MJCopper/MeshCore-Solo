@@ -43,15 +43,6 @@ class NearbyScreen : public UIScreen {
   // context menu (list view)
   PopupMenu _ctx_menu;
 
-  // ping state (detail view)
-  enum PingState { PING_IDLE, PING_WAIT, PING_OK, PING_TIMEOUT };
-  PingState     _ping_state;
-  uint32_t      _ping_expected_ack;
-  unsigned long _ping_start_ms;
-  unsigned long _ping_rtt_ms;
-  bool          _ping_ack_seen;  // true once ACK entry confirmed in table
-  static const unsigned long PING_TIMEOUT_MS = 30000UL;
-
   static float haversineKm(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2) {
     static const float DEG2RAD = (float)M_PI / 180.0f;
     float la1 = lat1 * (1e-6f * DEG2RAD);
@@ -148,7 +139,7 @@ class NearbyScreen : public UIScreen {
 
 public:
   NearbyScreen(UITask* task)
-    : _task(task), _filter(0), _scanning(false), _ping_state(PING_IDLE) {}
+    : _task(task), _filter(0), _scanning(false) {}
 
   void enter() {
     _sel = _scroll = 0;
@@ -156,8 +147,6 @@ public:
     _filter = 0;
     _scanning = false;
     _ctx_menu.active = false;
-    _ping_state    = PING_IDLE;
-    _ping_ack_seen = false;
     refresh();
   }
 
@@ -168,19 +157,6 @@ public:
     if (_scanning && !_detail && millis() - _scan_started_ms >= SCAN_DURATION_MS) {
       _scanning = false;
       refresh();
-    }
-
-    // poll ping ack
-    if (_ping_state == PING_WAIT) {
-      bool pending = the_mesh.isAckPending(_ping_expected_ack);
-      if (pending) {
-        _ping_ack_seen = true;
-      } else if (_ping_ack_seen) {
-        _ping_rtt_ms = millis() - _ping_start_ms;
-        _ping_state  = PING_OK;
-      } else if (millis() - _ping_start_ms >= PING_TIMEOUT_MS) {
-        _ping_state = PING_TIMEOUT;
-      }
     }
 
     // ── detail view ──────────────────────────────────────────────────────────
@@ -211,19 +187,10 @@ public:
         display.setCursor(2, 31); display.print("Dist: no own GPS");
       }
 
-      display.setCursor(2, 40);
-      switch (_ping_state) {
-        case PING_IDLE:    display.print("[OK]=Ping");                              break;
-        case PING_WAIT:    display.print("Pinging...");                             break;
-        case PING_OK:      snprintf(buf,sizeof(buf),"RTT:%lums",_ping_rtt_ms);
-                           display.print(buf);                                      break;
-        case PING_TIMEOUT: display.print("Ping timeout");                           break;
-      }
-
       snprintf(buf, sizeof(buf), "Type:%s", typeName(e.type));
-      display.setCursor(2, 49); display.print(buf);
+      display.setCursor(2, 40); display.print(buf);
 
-      return (_ping_state == PING_WAIT) ? 100 : 2000;
+      return 2000;
     }
 
     // ── list view ────────────────────────────────────────────────────────────
@@ -287,24 +254,7 @@ public:
     // ── detail view input ────────────────────────────────────────────────────
     if (_detail) {
       if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
-        _detail        = false;
-        _ping_state    = PING_IDLE;
-        _ping_ack_seen = false;
-        return true;
-      }
-      if (c == KEY_ENTER && _ping_state == PING_IDLE) {
-        ContactInfo ci;
-        if (the_mesh.getContactByIdx(_entries[_sel].contact_idx, ci)) {
-          uint32_t expected_ack, est_timeout;
-          int res = the_mesh.sendMessage(ci, rtc_clock.getCurrentTime(), 0, "", expected_ack, est_timeout);
-          if (res != MSG_SEND_FAILED && expected_ack != 0) {
-            the_mesh.registerExpectedAck(expected_ack);
-            _ping_expected_ack = expected_ack;
-            _ping_start_ms     = millis();
-            _ping_ack_seen     = false;
-            _ping_state        = PING_WAIT;
-          }
-        }
+        _detail = false;
         return true;
       }
       return true;
@@ -342,9 +292,7 @@ public:
       return true;
     }
     if (c == KEY_ENTER && _count > 0) {
-      _detail        = true;
-      _ping_state    = PING_IDLE;
-      _ping_ack_seen = false;
+      _detail = true;
       return true;
     }
     if (c == KEY_LEFT) {
