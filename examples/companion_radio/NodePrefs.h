@@ -61,4 +61,5 @@ struct NodePrefs {  // persisted to file
   static const int DM_NOTIF_TABLE_MAX = 16;
   DmNotifEntry dm_notif[DM_NOTIF_TABLE_MAX]; // 16*5 = 80 bytes
   uint8_t  dashboard_fields[3]; // 0=None,1=Batt,2=Temp,3=Hum,4=Pres,5=GPS,6=Alt,7=Lux,8=CO2,9=Nodes
+  uint32_t advert_auto_interval_sec; // periodic 0-hop advert with GPS: 0=off, else seconds
 };

@@ -1594,6 +1594,7 @@ public:
 #include "BotScreen.h"
 #include "NearbyScreen.h"
 #include "DashboardConfigScreen.h"
+#include "AutoAdvertScreen.h"
 #include "ToolsScreen.h"
 
 // ── HomeScreen ────────────────────────────────────────────────────────────────
@@ -2252,6 +2253,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   bot_screen    = new BotScreen(this, node_prefs);
   nearby_screen = new NearbyScreen(this);
   dashboard_config = new DashboardConfigScreen(this, node_prefs);
+  auto_advert_screen = new AutoAdvertScreen(this, node_prefs);
   setCurrScreen(splash);
 
   applyBrightness();
@@ -2284,6 +2286,11 @@ void UITask::gotoNearbyScreen() {
 void UITask::gotoDashboardConfig() {
   ((DashboardConfigScreen*)dashboard_config)->enter();
   setCurrScreen(dashboard_config);
+}
+
+void UITask::gotoAutoAdvertScreen() {
+  ((AutoAdvertScreen*)auto_advert_screen)->enter();
+  setCurrScreen(auto_advert_screen);
 }
 
 void UITask::playMelody(const char* melody) {

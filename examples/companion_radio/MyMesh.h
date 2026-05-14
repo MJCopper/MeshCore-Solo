@@ -242,6 +242,7 @@ private:
   uint32_t sign_data_len;
   unsigned long dirty_contacts_expiry;
   unsigned long _bot_last_reply_ms;
+  unsigned long _next_auto_advert_ms;
 
   TransportKey send_scope;
 

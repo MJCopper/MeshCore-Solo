@@ -268,6 +268,9 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
                     file.read((uint8_t *)_prefs.dm_notif, sizeof(_prefs.dm_notif));
                     if (file.available()) {
                       file.read((uint8_t *)_prefs.dashboard_fields, sizeof(_prefs.dashboard_fields));
+                      if (file.available()) {
+                        file.read((uint8_t *)&_prefs.advert_auto_interval_sec, sizeof(_prefs.advert_auto_interval_sec));
+                      }
                     }
                   }
                 }
@@ -342,6 +345,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.buzzer_auto, sizeof(_prefs.buzzer_auto));
     file.write((uint8_t *)_prefs.dm_notif, sizeof(_prefs.dm_notif));
     file.write((uint8_t *)_prefs.dashboard_fields, sizeof(_prefs.dashboard_fields));
+    file.write((uint8_t *)&_prefs.advert_auto_interval_sec, sizeof(_prefs.advert_auto_interval_sec));
 
     file.close();
   }

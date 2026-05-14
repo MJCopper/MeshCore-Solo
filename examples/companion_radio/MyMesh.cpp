@@ -854,6 +854,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   offline_queue_len = 0;
   app_target_ver = 0;
   _bot_last_reply_ms = 0;
+  _next_auto_advert_ms = 0;
   clearPendingReqs();
   next_ack_idx = 0;
   sign_data = NULL;
@@ -2202,6 +2203,11 @@ void MyMesh::loop() {
   if (dirty_contacts_expiry && millisHasNowPassed(dirty_contacts_expiry)) {
     saveContacts();
     dirty_contacts_expiry = 0;
+  }
+
+  if (_prefs.advert_auto_interval_sec > 0 && millisHasNowPassed(_next_auto_advert_ms)) {
+    advert();
+    _next_auto_advert_ms = futureMillis(_prefs.advert_auto_interval_sec * 1000UL);
   }
 
 #ifdef DISPLAY_CLASS

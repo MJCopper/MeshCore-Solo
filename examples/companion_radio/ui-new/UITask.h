@@ -65,6 +65,7 @@ class UITask : public AbstractUITask {
   UIScreen* bot_screen;
   UIScreen* nearby_screen;
   UIScreen* dashboard_config;
+  UIScreen* auto_advert_screen;
   UIScreen* curr;
 
   void userLedHandler();
@@ -102,6 +103,7 @@ public:
   void gotoBotScreen();
   void gotoNearbyScreen();
   void gotoDashboardConfig();
+  void gotoAutoAdvertScreen();
   void playMelody(const char* melody);
   void stopMelody();
   bool isMelodyPlaying();
