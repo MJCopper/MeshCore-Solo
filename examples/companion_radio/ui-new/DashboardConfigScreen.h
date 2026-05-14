@@ -26,17 +26,19 @@ class DashboardConfigScreen : public UIScreen {
 
   static const char* OPTION_NAMES[DASH_COUNT];
 
-  int _sel;
+  int  _sel;
+  bool _dirty;
 
   void cycle(int slot, int dir) {
     uint8_t& f = _prefs->dashboard_fields[slot];
     f = (uint8_t)((f + DASH_COUNT + dir) % DASH_COUNT);
+    _dirty = true;
   }
 
 public:
   DashboardConfigScreen(UITask* task, NodePrefs* prefs) : _task(task), _prefs(prefs) {}
 
-  void enter() { _sel = 0; }
+  void enter() { _sel = 0; _dirty = false; }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
@@ -67,7 +69,7 @@ public:
 
   bool handleInput(char c) override {
     if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
-      the_mesh.savePrefs();
+      if (_dirty) the_mesh.savePrefs();
       _task->gotoHomeScreen();
       return true;
     }

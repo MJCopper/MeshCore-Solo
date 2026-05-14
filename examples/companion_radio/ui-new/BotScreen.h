@@ -13,6 +13,7 @@ class BotScreen : public UIScreen {
   static const int VAL_X      = 70;
 
   int  _sel;
+  bool _dirty;
 
   // keyboard state (reused for trigger and reply fields)
   int            _kb_field;   // -1=off, 2=trigger, 3=reply DM, 4=reply Ch
@@ -45,6 +46,7 @@ public:
   void enter() {
     _sel      = 0;
     _kb_field = -1;
+    _dirty    = false;
     refreshChannels();
   }
 
@@ -119,6 +121,7 @@ public:
           strncpy(_prefs->bot_reply_ch, _kb.buf, sizeof(_prefs->bot_reply_ch) - 1);
           _prefs->bot_reply_ch[sizeof(_prefs->bot_reply_ch) - 1] = '\0';
         }
+        _dirty    = true;
         _kb_field = -1;
       } else if (res == KeyboardWidget::CANCELLED) {
         _kb_field = -1;
@@ -127,7 +130,7 @@ public:
     }
 
     if (cancel) {
-      the_mesh.savePrefs();
+      if (_dirty) the_mesh.savePrefs();
       _task->gotoToolsScreen();
       return true;
     }
@@ -136,6 +139,7 @@ public:
 
     if (_sel == 0 && (enter || left || right)) {
       _prefs->bot_enabled ^= 1;
+      _dirty = true;
       return true;
     }
     if (_sel == 1) {
@@ -157,6 +161,7 @@ public:
           _prefs->bot_channel_enabled = 1;
           _prefs->bot_channel_idx = _channel_indices[idx];
         }
+        _dirty = true;
         return true;
       }
     }
