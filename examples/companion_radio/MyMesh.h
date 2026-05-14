@@ -168,6 +168,12 @@ public:
   void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
   void saveRTCTime() { _store->saveRTCTime(); }
 
+  bool isAckPending(uint32_t expected_ack) const {
+    for (int i = 0; i < EXPECTED_ACK_TABLE_SIZE; i++)
+      if (expected_ack_table[i].ack == expected_ack) return true;
+    return false;
+  }
+
 #if ENV_INCLUDE_GPS == 1
   void applyGpsPrefs() {
     sensors.setSettingValue("gps", _prefs.gps_enabled ? "1" : "0");

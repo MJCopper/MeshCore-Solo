@@ -1592,6 +1592,8 @@ public:
 // ── Custom screens (separate files to ease upstream merges) ───────────────────
 #include "RingtoneEditorScreen.h"
 #include "BotScreen.h"
+#include "NearbyScreen.h"
+#include "DashboardConfigScreen.h"
 #include "ToolsScreen.h"
 
 // ── HomeScreen ────────────────────────────────────────────────────────────────
@@ -1787,16 +1789,16 @@ public:
 
   int render(DisplayDriver& display) override {
     char tmp[80];
-    // node name
-    display.setTextSize(1);
-    display.setColor(DisplayDriver::LIGHT);
-    char filtered_name[sizeof(_node_prefs->node_name)];
-    display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
-    display.setCursor(0, 0);
-    display.print(filtered_name);
-
-    // battery voltage
-    renderBatteryIndicator(display, _task->getBattMilliVolts());
+    // node name + battery — hidden on CLOCK page (full screen used for dashboard)
+    if (_page != CLOCK) {
+      display.setTextSize(1);
+      display.setColor(DisplayDriver::LIGHT);
+      char filtered_name[sizeof(_node_prefs->node_name)];
+      display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
+      display.setCursor(0, 0);
+      display.print(filtered_name);
+      renderBatteryIndicator(display, _task->getBattMilliVolts());
+    }
 
     // ensure current page is visible (e.g. after settings change)
     if (!isPageVisible(_page)) _page = navPage(_page, +1);
@@ -1842,17 +1844,90 @@ public:
           sprintf(buf, "%02d:%02d:%02d", ti->tm_hour, ti->tm_min, ti->tm_sec);
         else
           sprintf(buf, "%02d:%02d", ti->tm_hour, ti->tm_min);
-        display.drawTextCentered(display.width() / 2, 18, buf);
+        display.drawTextCentered(display.width() / 2, 0, buf);
 
         display.setTextSize(1);
-        const char* wd[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
-        const char* mo[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
+        static const char* wd[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
+        static const char* mo[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
         sprintf(buf, "%s %d %s %d", wd[ti->tm_wday], ti->tm_mday, mo[ti->tm_mon], 1900 + ti->tm_year);
-        display.drawTextCentered(display.width() / 2, 40, buf);
+        display.drawTextCentered(display.width() / 2, 19, buf);
 
-        if (tz >= 0) sprintf(buf, "UTC+%d", (int)tz);
-        else         sprintf(buf, "UTC%d",  (int)tz);
-        display.drawTextCentered(display.width() / 2, 54, buf);
+        display.fillRect(0, 28, display.width(), 1);
+
+        // dashboard data fields
+        if (_node_prefs) {
+          refresh_sensors();
+          static const int FIELD_Y[] = { 31, 41, 51 };
+          for (int fi = 0; fi < 3; fi++) {
+            uint8_t field = _node_prefs->dashboard_fields[fi];
+            if (field == DASH_NONE) continue;
+
+            char label[10], val[20];
+            label[0] = '\0';
+            val[0] = '\0';
+
+            if (field == DASH_BATT) {
+              strcpy(label, "Batt");
+              uint16_t mv = _task->getBattMilliVolts();
+              if (mv > 0) snprintf(val, sizeof(val), "%u.%02uV", mv/1000, (mv%1000)/10);
+              else strcpy(val, "--");
+            } else if (field == DASH_GPS) {
+              strcpy(label, "GPS");
+#if ENV_INCLUDE_GPS == 1
+              LocationProvider* loc = sensors.getLocationProvider();
+              if (loc && loc->isValid())
+                snprintf(val, sizeof(val), "%.3f %.3f",
+                  loc->getLatitude()/1000000.0f, loc->getLongitude()/1000000.0f);
+              else
+                strcpy(val, "no fix");
+#else
+              strcpy(val, "--");
+#endif
+            } else if (field == DASH_NODES) {
+              strcpy(label, "Nodes");
+              snprintf(val, sizeof(val), "%d", the_mesh.getNumContacts());
+            } else {
+              uint8_t lpp_type = 0;
+              switch (field) {
+                case DASH_TEMP: strcpy(label, "Temp"); lpp_type = LPP_TEMPERATURE;        break;
+                case DASH_HUM:  strcpy(label, "Hum");  lpp_type = LPP_RELATIVE_HUMIDITY;  break;
+                case DASH_PRES: strcpy(label, "Pres"); lpp_type = LPP_BAROMETRIC_PRESSURE; break;
+                case DASH_ALT:  strcpy(label, "Alt");  lpp_type = LPP_ALTITUDE;           break;
+                case DASH_LUX:  strcpy(label, "Lux");  lpp_type = LPP_LUMINOSITY;         break;
+                case DASH_CO2:  strcpy(label, "CO2");  lpp_type = LPP_CONCENTRATION;      break;
+              }
+              if (lpp_type) {
+                LPPReader r(sensors_lpp.getBuffer(), sensors_lpp.getSize());
+                uint8_t ch, type;
+                while (r.readHeader(ch, type)) {
+                  if (type == lpp_type) {
+                    float v;
+                    switch (lpp_type) {
+                      case LPP_TEMPERATURE:         r.readTemperature(v);      snprintf(val, sizeof(val), "%.1f\xf8""C", v); break;
+                      case LPP_RELATIVE_HUMIDITY:   r.readRelativeHumidity(v); snprintf(val, sizeof(val), "%.0f%%", v);      break;
+                      case LPP_BAROMETRIC_PRESSURE: r.readPressure(v);         snprintf(val, sizeof(val), "%.0fhPa", v);     break;
+                      case LPP_ALTITUDE:            r.readAltitude(v);         snprintf(val, sizeof(val), "%.0fm", v);       break;
+                      case LPP_LUMINOSITY:          r.readLuminosity(v);       snprintf(val, sizeof(val), "%.0flux", v);     break;
+                      case LPP_CONCENTRATION:       r.readConcentration(v);    snprintf(val, sizeof(val), "%.0fppm", v);     break;
+                    }
+                    break;
+                  }
+                  r.skipData(type);
+                }
+              }
+              if (!val[0]) strcpy(val, "--");
+            }
+
+            if (val[0] && label[0]) {
+              display.setColor(DisplayDriver::LIGHT);
+              display.setCursor(0, FIELD_Y[fi]);
+              display.print(label);
+              int vw = display.getTextWidth(val);
+              display.setCursor(display.width() - vw - 1, FIELD_Y[fi]);
+              display.print(val);
+            }
+          }
+        }
       }
     } else if (_page == HomePage::RECENT) {
       the_mesh.getRecentlyHeard(recent, UI_RECENT_LIST_SIZE);
@@ -2122,6 +2197,10 @@ public:
       _shutdown_init = true;  // need to wait for button to be released
       return true;
     }
+    if (c == KEY_CONTEXT_MENU && _page == HomePage::CLOCK) {
+      _task->gotoDashboardConfig();
+      return true;
+    }
     return false;
   }
 };
@@ -2171,6 +2250,8 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   tools_screen  = new ToolsScreen(this);
   ringtone_edit = new RingtoneEditorScreen(this, node_prefs);
   bot_screen    = new BotScreen(this, node_prefs);
+  nearby_screen = new NearbyScreen(this);
+  dashboard_config = new DashboardConfigScreen(this, node_prefs);
   setCurrScreen(splash);
 
   applyBrightness();
@@ -2193,6 +2274,16 @@ void UITask::gotoRingtoneEditor() {
 void UITask::gotoBotScreen() {
   ((BotScreen*)bot_screen)->enter();
   setCurrScreen(bot_screen);
+}
+
+void UITask::gotoNearbyScreen() {
+  ((NearbyScreen*)nearby_screen)->enter();
+  setCurrScreen(nearby_screen);
+}
+
+void UITask::gotoDashboardConfig() {
+  ((DashboardConfigScreen*)dashboard_config)->enter();
+  setCurrScreen(dashboard_config);
 }
 
 void UITask::playMelody(const char* melody) {
