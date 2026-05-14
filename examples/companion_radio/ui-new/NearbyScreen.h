@@ -18,11 +18,12 @@ class NearbyScreen : public UIScreen {
   static const uint8_t  FILTER_TYPES[FILTER_COUNT];
 
   struct Entry {
-    char    name[32];
-    int32_t lat_e6, lon_e6;
-    float   dist_km;
-    uint8_t type;
-    int     contact_idx;
+    char     name[32];
+    int32_t  lat_e6, lon_e6;
+    float    dist_km;
+    uint8_t  type;
+    int      contact_idx;
+    uint32_t lastmod;   // our RTC timestamp of last received packet
   };
 
   static const int MAX_NEARBY = 32;
@@ -39,6 +40,10 @@ class NearbyScreen : public UIScreen {
   bool          _scanning;
   unsigned long _scan_started_ms;
   static const unsigned long SCAN_DURATION_MS = 4000UL;
+
+  // detail view periodic refresh
+  unsigned long _detail_refresh_ms;
+  static const unsigned long DETAIL_REFRESH_MS = 10000UL;
 
   // context menu (list view)
   PopupMenu _ctx_menu;
@@ -67,6 +72,16 @@ class NearbyScreen : public UIScreen {
   static const char* bearingCardinal(int deg) {
     static const char* dirs[] = { "N","NE","E","SE","S","SW","W","NW" };
     return dirs[((deg + 22) % 360) / 45];
+  }
+
+  static void fmtAge(char* buf, int n, uint32_t lastmod) {
+    uint32_t now = rtc_clock.getCurrentTime();
+    if (now < lastmod || lastmod == 0) { snprintf(buf, n, "unknown"); return; }
+    uint32_t age = now - lastmod;
+    if      (age < 60)     snprintf(buf, n, "%us ago",  age);
+    else if (age < 3600)   snprintf(buf, n, "%um ago",  age / 60);
+    else if (age < 86400)  snprintf(buf, n, "%uh ago",  age / 3600);
+    else                   snprintf(buf, n, ">1d ago");
   }
 
   static void fmtDist(char* buf, int n, float km) {
@@ -123,6 +138,7 @@ class NearbyScreen : public UIScreen {
                     : -1.0f;
       e.type        = ci.type;
       e.contact_idx = i;
+      e.lastmod     = ci.lastmod;
     }
 
     // sort by distance ascending; nodes without GPS (-1) go to the end
@@ -165,6 +181,20 @@ public:
       refresh();
     }
 
+    // periodic refresh in detail view — preserve selected contact by idx
+    if (_detail && millis() - _detail_refresh_ms >= DETAIL_REFRESH_MS) {
+      int saved_contact_idx = (_sel < _count) ? _entries[_sel].contact_idx : -1;
+      refresh();
+      bool found = false;
+      if (saved_contact_idx >= 0) {
+        for (int i = 0; i < _count; i++) {
+          if (_entries[i].contact_idx == saved_contact_idx) { _sel = i; found = true; break; }
+        }
+      }
+      if (!found) _detail = false;  // contact left the filtered list — return to list view
+      _detail_refresh_ms = millis();
+    }
+
     // ── detail view ──────────────────────────────────────────────────────────
     if (_detail && _sel < _count) {
       const Entry& e = _entries[_sel];
@@ -177,28 +207,34 @@ public:
       display.drawTextEllipsized(2, 1, display.width() - 4, filtered);
       display.setColor(DisplayDriver::LIGHT);
 
+      // 6 rows in 54px (y=10..63): spacing 9px, start at y=11
       char buf[32];
       snprintf(buf, sizeof(buf), "Lat: %.5f", e.lat_e6 / 1e6);
-      display.setCursor(2, 13); display.print(buf);
+      display.setCursor(2, 11); display.print(buf);
 
       snprintf(buf, sizeof(buf), "Lon: %.5f", e.lon_e6 / 1e6);
-      display.setCursor(2, 22); display.print(buf);
+      display.setCursor(2, 20); display.print(buf);
 
       if (e.dist_km >= 0.0f) {
         char dist[12];
         fmtDist(dist, sizeof(dist), e.dist_km);
         int az = bearingDeg(_own_lat, _own_lon, e.lat_e6, e.lon_e6);
         snprintf(buf, sizeof(buf), "Dist: %s", dist);
-        display.setCursor(2, 31); display.print(buf);
+        display.setCursor(2, 29); display.print(buf);
         snprintf(buf, sizeof(buf), "Az: %dd (%s)", az, bearingCardinal(az));
-        display.setCursor(2, 40); display.print(buf);
+        display.setCursor(2, 38); display.print(buf);
       } else {
-        display.setCursor(2, 31); display.print("Dist: no own GPS");
-        display.setCursor(2, 40); display.print("Az: unknown");
+        display.setCursor(2, 29); display.print("Dist: no own GPS");
+        display.setCursor(2, 38); display.print("Az: unknown");
       }
 
       snprintf(buf, sizeof(buf), "Type:%s", typeName(e.type));
-      display.setCursor(2, 49); display.print(buf);
+      display.setCursor(2, 47); display.print(buf);
+
+      char age[16];
+      fmtAge(age, sizeof(age), e.lastmod);
+      snprintf(buf, sizeof(buf), "Seen:%s", age);
+      display.setCursor(2, 56); display.print(buf);
 
       return 2000;
     }
@@ -303,6 +339,7 @@ public:
     }
     if (c == KEY_ENTER && _count > 0) {
       _detail = true;
+      _detail_refresh_ms = millis();
       return true;
     }
     if (c == KEY_LEFT) {
