@@ -1713,7 +1713,7 @@ class HomeScreen : public UIScreen {
       display.setCursor(battLeftX, 0);
       display.print(buf);
     } else {  // icon
-      const int iconWidth = 24, iconHeight = 10;
+      const int iconWidth = 24, iconHeight = 8;
       battLeftX = display.width() - iconWidth - 5;
       display.drawRect(battLeftX, 0, iconWidth, iconHeight);
       display.fillRect(battLeftX + iconWidth, iconHeight / 4, 3, iconHeight / 2);
@@ -1724,7 +1724,7 @@ class HomeScreen : public UIScreen {
 #ifdef PIN_BUZZER
     if (_task->isBuzzerQuiet()) {
       display.setColor(DisplayDriver::LIGHT);
-      display.drawXbm(battLeftX - 9, 1, muted_icon, 8, 8);
+      display.drawXbm(battLeftX - 9, 0, muted_icon, 8, 8);
     }
 #endif
 
@@ -1739,12 +1739,12 @@ class HomeScreen : public UIScreen {
         display.setColor(DisplayDriver::LIGHT);
         display.fillRect(btX - 1, 0, 8, 9);
         display.setColor(DisplayDriver::DARK);
-        display.setCursor(btX, 1);
+        display.setCursor(btX, 0);
         display.print("B");
         display.setColor(DisplayDriver::LIGHT);
       } else {
         display.setColor(DisplayDriver::LIGHT);
-        display.setCursor(btX, 1);
+        display.setCursor(btX, 0);
         display.print("b");
       }
     }
