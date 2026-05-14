@@ -242,7 +242,7 @@ public:
     // ── list view ────────────────────────────────────────────────────────────
     display.setColor(DisplayDriver::LIGHT);
     if (_scanning) {
-      display.drawTextCentered(display.width() / 2, 0, "SCANNING...");
+      display.drawTextCentered(display.width() / 2, 0, "ADVERTISING...");
     } else {
       char title[22];
       snprintf(title, sizeof(title), "NEARBY[%s]", FILTER_LABELS[_filter]);
@@ -252,7 +252,7 @@ public:
 
     if (_count == 0) {
       display.drawTextCentered(display.width() / 2, 28, _scanning ? "Waiting..." : "No contacts found");
-      display.drawTextCentered(display.width() / 2, 40, "[M]=Scan");
+      display.drawTextCentered(display.width() / 2, 40, "[M]=Advert");
     } else {
       for (int i = 0; i < VISIBLE && (_scroll + i) < _count; i++) {
         int idx = _scroll + i;
@@ -323,7 +323,7 @@ public:
     if (c == KEY_CANCEL) { _task->gotoToolsScreen(); return true; }
     if (c == KEY_CONTEXT_MENU) {
       _ctx_menu.begin("Options", 2);
-      _ctx_menu.addItem("Scan for nodes");
+      _ctx_menu.addItem("Send my advert");
       _ctx_menu.addItem("Back");
       return true;
     }
