@@ -85,6 +85,8 @@ struct AdvertPath {
   uint8_t path[MAX_PATH_SIZE];
 };
 
+#define EXPECTED_ACK_TABLE_SIZE 8
+
 class MyMesh : public BaseChatMesh, public DataStoreHost {
 public:
   MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMeshTables &tables, DataStore& store, AbstractUITask* ui=NULL);
@@ -253,7 +255,6 @@ private:
     uint32_t ack;
     ContactInfo* contact;
   };
-  #define EXPECTED_ACK_TABLE_SIZE 8
   AckTableEntry expected_ack_table[EXPECTED_ACK_TABLE_SIZE]; // circular table
   int next_ack_idx;
 
