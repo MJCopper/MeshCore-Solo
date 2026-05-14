@@ -1798,6 +1798,14 @@ public:
       display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
       display.setCursor(0, 0);
       display.print(filtered_name);
+      if (_node_prefs->advert_auto_interval_sec > 0 && (millis() / 250) % 2) {
+        int ax = display.getTextWidth(filtered_name);
+        display.fillRect(ax, 0, display.getTextWidth("~") + 1, 9);
+        display.setColor(DisplayDriver::DARK);
+        display.setCursor(ax, 0);
+        display.print("~");
+        display.setColor(DisplayDriver::LIGHT);
+      }
       renderBatteryIndicator(display, _task->getBattMilliVolts());
     }
 
