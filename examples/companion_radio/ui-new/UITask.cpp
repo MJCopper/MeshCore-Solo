@@ -632,10 +632,10 @@ class QuickMsgScreen : public UIScreen {
   // KEYBOARD
   KeyboardWidget _kb;
 
-  // Context menu (opened by long-press ENTER in CHANNEL_PICK)
-  bool _ctx_open;
-  bool _ctx_dirty;
-  int  _ctx_sel;
+  // Context menu (opened by KEY_CONTEXT_MENU in CHANNEL_PICK / CONTACT_PICK)
+  PopupMenu _ctx_menu;
+  bool      _ctx_dirty;
+  char      _ctx_notif_item[22];
 
   struct ChHistEntry { uint8_t ch_idx; char text[140]; };
   ChHistEntry _hist[CH_HIST_MAX];
@@ -896,7 +896,7 @@ public:
       _hist_head(0), _hist_count(0),
       _dm_hist_head(0), _dm_hist_count(0),
       _dm_hist_sel(-1), _dm_hist_scroll(0),
-      _ctx_open(false), _ctx_dirty(false), _ctx_sel(0) {
+      _ctx_dirty(false) {
     memset(_ch_unread, 0, sizeof(_ch_unread));
   }
 
@@ -958,9 +958,8 @@ public:
     buildContactList();
     buildChannelList();
 
-    _ctx_open = false;
+    _ctx_menu.active = false;
     _ctx_dirty = false;
-    _ctx_sel = 0;
     _unread_at_entry = 0;
     _viewing_max_seen = 0;
   }
@@ -1048,38 +1047,8 @@ public:
       display.setColor(DisplayDriver::LIGHT);
       renderScrollHints(display, _contact_scroll, _num_contacts);
 
-      // Context menu overlay (long-press ENTER), DM mode only
-      if (_ctx_open && _num_contacts > 0 && !_room_mode) {
-        static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
-        ContactInfo ci;
-        the_mesh.getContactByIdx(_sorted[_contact_sel], ci);
-        uint8_t nstate = dmNotifState(ci.id.pub_key);
-        char notif_item[22];
-        snprintf(notif_item, sizeof(notif_item), "Notif: %s", NOTIF_LABELS[nstate]);
-        const char* items[] = { "Mark as read", notif_item };
-        const int CTX_COUNT = 2;
-
-        display.setColor(DisplayDriver::DARK);
-        display.fillRect(15, 14, 98, 34);
-        display.setColor(DisplayDriver::LIGHT);
-        display.drawRect(15, 14, 98, 34);
-        display.setCursor(19, 15);
-        display.print("Contact options");
-        display.fillRect(15, 24, 98, 1);
-        for (int i = 0; i < CTX_COUNT; i++) {
-          int py = 27 + i * 10;
-          if (i == _ctx_sel) {
-            display.setColor(DisplayDriver::LIGHT);
-            display.fillRect(16, py - 1, 96, 10);
-            display.setColor(DisplayDriver::DARK);
-          } else {
-            display.setColor(DisplayDriver::LIGHT);
-          }
-          display.setCursor(19, py);
-          display.print(items[i]);
-        }
-        display.setColor(DisplayDriver::LIGHT);
-      }
+      // Context menu overlay
+      if (_ctx_menu.active) _ctx_menu.render(display);
 
     } else if (_phase == CHANNEL_PICK) {
       display.drawTextCentered(display.width()/2, 0, "SELECT CHANNEL");
@@ -1123,37 +1092,8 @@ public:
       display.setColor(DisplayDriver::LIGHT);
       renderScrollHints(display, _channel_scroll, _num_channels);
 
-      // Context menu overlay (long-press ENTER)
-      if (_ctx_open && _num_channels > 0) {
-        static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
-        uint8_t ch_idx = _channel_indices[_channel_sel];
-        uint8_t nstate = chNotifState(ch_idx);
-        char notif_item[22];
-        snprintf(notif_item, sizeof(notif_item), "Notif: %s", NOTIF_LABELS[nstate]);
-        const char* items[] = { "Mark all read", notif_item };
-        const int CTX_COUNT = 2;
-
-        display.setColor(DisplayDriver::DARK);
-        display.fillRect(15, 14, 98, 34);
-        display.setColor(DisplayDriver::LIGHT);
-        display.drawRect(15, 14, 98, 34);
-        display.setCursor(19, 15);
-        display.print("Channel options");
-        display.fillRect(15, 24, 98, 1);
-        for (int i = 0; i < CTX_COUNT; i++) {
-          int py = 27 + i * 10;
-          if (i == _ctx_sel) {
-            display.setColor(DisplayDriver::LIGHT);
-            display.fillRect(16, py - 1, 96, 10);
-            display.setColor(DisplayDriver::DARK);
-          } else {
-            display.setColor(DisplayDriver::LIGHT);
-          }
-          display.setCursor(19, py);
-          display.print(items[i]);
-        }
-        display.setColor(DisplayDriver::LIGHT);
-      }
+      // Context menu overlay
+      if (_ctx_menu.active) _ctx_menu.render(display);
 
     } else if (_phase == DM_HIST) {
       display.setTextSize(1);
@@ -1408,18 +1348,12 @@ public:
 
     } else if (_phase == CONTACT_PICK) {
       // Context menu consumes all input while open
-      if (_ctx_open) {
-        if (c == KEY_CANCEL) {
-          if (_ctx_dirty) { the_mesh.savePrefs(); _ctx_dirty = false; }
-          _ctx_open = false;
-          return true;
-        }
-        if (c == KEY_UP   && _ctx_sel > 0) { _ctx_sel--; return true; }
-        if (c == KEY_DOWN && _ctx_sel < 1) { _ctx_sel++; return true; }
-        if (c == KEY_ENTER && _num_contacts > 0) {
+      if (_ctx_menu.active) {
+        auto res = _ctx_menu.handleInput(c);
+        if (res == PopupMenu::SELECTED && _num_contacts > 0) {
           ContactInfo ci;
           if (the_mesh.getContactByIdx(_sorted[_contact_sel], ci)) {
-            if (_ctx_sel == 0) {
+            if (_ctx_menu.selectedIndex() == 0) {
               _task->clearDMUnread(ci.id.pub_key);
             } else {
               uint8_t nstate = dmNotifState(ci.id.pub_key);
@@ -1427,7 +1361,9 @@ public:
               _ctx_dirty = true;
             }
           }
-          return true;
+        }
+        if (res != PopupMenu::NONE && _ctx_dirty) {
+          the_mesh.savePrefs(); _ctx_dirty = false;
         }
         return true;
       }
@@ -1453,32 +1389,34 @@ public:
         return true;
       }
       if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && !_room_mode) {
-        _ctx_sel = 0;
+        static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
+        ContactInfo ci;
+        the_mesh.getContactByIdx(_sorted[_contact_sel], ci);
+        snprintf(_ctx_notif_item, sizeof(_ctx_notif_item), "Notif: %s",
+                 NOTIF_LABELS[dmNotifState(ci.id.pub_key)]);
+        _ctx_menu.begin("Contact options", 2);
+        _ctx_menu.addItem("Mark as read");
+        _ctx_menu.addItem(_ctx_notif_item);
         _ctx_dirty = false;
-        _ctx_open = true;
         return true;
       }
 
     } else if (_phase == CHANNEL_PICK) {
       // Context menu consumes all input while open
-      if (_ctx_open) {
-        if (c == KEY_CANCEL) {
-          if (_ctx_dirty) { the_mesh.savePrefs(); _ctx_dirty = false; }
-          _ctx_open = false;
-          return true;
-        }
-        if (c == KEY_UP   && _ctx_sel > 0) { _ctx_sel--; return true; }
-        if (c == KEY_DOWN && _ctx_sel < 1) { _ctx_sel++; return true; }
-        if (c == KEY_ENTER && _num_channels > 0) {
+      if (_ctx_menu.active) {
+        auto res = _ctx_menu.handleInput(c);
+        if (res == PopupMenu::SELECTED && _num_channels > 0) {
           uint8_t ch_idx = _channel_indices[_channel_sel];
-          if (_ctx_sel == 0) {
+          if (_ctx_menu.selectedIndex() == 0) {
             _ch_unread[ch_idx] = 0;
           } else {
             uint8_t nstate = chNotifState(ch_idx);
             setChNotifState(ch_idx, (nstate + 1) % 3);
             _ctx_dirty = true;
           }
-          return true;
+        }
+        if (res != PopupMenu::NONE && _ctx_dirty) {
+          the_mesh.savePrefs(); _ctx_dirty = false;
         }
         return true;
       }
@@ -1505,9 +1443,14 @@ public:
         return true;
       }
       if (c == KEY_CONTEXT_MENU && _num_channels > 0) {
-        _ctx_sel = 0;
+        uint8_t ch_idx = _channel_indices[_channel_sel];
+        static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
+        snprintf(_ctx_notif_item, sizeof(_ctx_notif_item), "Notif: %s",
+                 NOTIF_LABELS[chNotifState(ch_idx)]);
+        _ctx_menu.begin("Channel options", 2);
+        _ctx_menu.addItem("Mark all read");
+        _ctx_menu.addItem(_ctx_notif_item);
         _ctx_dirty = false;
-        _ctx_open = true;
         return true;
       }
 

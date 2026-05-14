@@ -72,7 +72,7 @@ inline void expandMsg(const char* tmpl, char* out, int out_len,
     // helper macro: append a buffer whose length is already known
     #define APPEND(s, slen) do { \
       int _l = (slen); \
-      if (oi + _l < out_len - 1) { memcpy(out + oi, (s), _l); oi += _l; } \
+      if (oi + _l < out_len) { memcpy(out + oi, (s), _l); oi += _l; } \
     } while(0)
 
     if (strncmp(p, "{loc}", 5) == 0) {

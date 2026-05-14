@@ -175,8 +175,11 @@ public:
         max     = sizeof(_prefs->bot_reply_ch) - 1;
       }
       _kb.begin(initial, max);
-      if (_sel != 2)  // trigger field doesn't support sensor placeholders
+      if (_sel == 2) {
+        _kb._ph_count = 0;  // trigger is literal text — placeholders never match incoming msgs
+      } else {
         kbAddSensorPlaceholders(_kb, &sensors);
+      }
       return true;
     }
     return false;

@@ -2,6 +2,7 @@
 
 #include <helpers/ui/DisplayDriver.h>
 #include <Arduino.h>
+#include "PopupMenu.h"
 
 // Layout constants shared by all keyboard users
 static const char KB_CHARS[4][10] = {
@@ -31,11 +32,9 @@ struct KeyboardWidget {
   int  max_len;
   int  row, col;
   bool caps;
-  bool ph_mode;
-  int  ph_sel;
-  int  ph_scroll;
   char _ph_buf[KB_PH_MAX][KB_PH_LEN];
   int  _ph_count;
+  PopupMenu _ph_menu;
 
   enum Result { NONE, DONE, CANCELLED };
 
@@ -45,8 +44,8 @@ struct KeyboardWidget {
     buf[max_len] = '\0';
     len = strlen(buf);
     row = col = 0;
-    caps = ph_mode = false;
-    ph_sel = ph_scroll = 0;
+    caps = false;
+    _ph_menu.active = false;
     // default placeholders — always available
     _ph_count = 0;
     addPlaceholder("{loc}");
@@ -114,70 +113,26 @@ struct KeyboardWidget {
       display.setColor(DisplayDriver::LIGHT);
     }
 
-    // placeholder picker overlay
-    if (ph_mode) {
-      int box_h = 12 + KB_PH_VISIBLE * 10;
-      display.setColor(DisplayDriver::DARK);
-      display.fillRect(20, 20, 88, box_h);
-      display.setColor(DisplayDriver::LIGHT);
-      display.drawRect(20, 20, 88, box_h);
-      display.setCursor(24, 21);
-      display.print("Placeholder:");
-      display.fillRect(20, 30, 88, 1);
-
-      if (ph_scroll > 0) {
-        display.setCursor(100, 21);
-        display.print("^");
-      }
-      if (ph_scroll + KB_PH_VISIBLE < _ph_count) {
-        display.setCursor(100, 33 + (KB_PH_VISIBLE - 1) * 10);
-        display.print("v");
-      }
-
-      for (int i = 0; i < KB_PH_VISIBLE && (ph_scroll + i) < _ph_count; i++) {
-        int idx = ph_scroll + i;
-        int py  = 33 + i * 10;
-        if (idx == ph_sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(21, py - 1, 86, 10);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-        }
-        display.setCursor(24, py);
-        display.print(_ph_buf[idx]);
-      }
-      display.setColor(DisplayDriver::LIGHT);
-    }
+    // placeholder picker overlay (drawn on top of keyboard)
+    if (_ph_menu.active) _ph_menu.render(display);
 
     return 50;
   }
 
   Result handleInput(char c) {
     // placeholder overlay consumes all input
-    if (ph_mode) {
-      if (c == KEY_UP && ph_sel > 0) {
-        ph_sel--;
-        if (ph_sel < ph_scroll) ph_scroll = ph_sel;
-        return NONE;
-      }
-      if (c == KEY_DOWN && ph_sel < _ph_count - 1) {
-        ph_sel++;
-        if (ph_sel >= ph_scroll + KB_PH_VISIBLE) ph_scroll = ph_sel - KB_PH_VISIBLE + 1;
-        return NONE;
-      }
-      if (c == KEY_ENTER) {
-        const char* ph = _ph_buf[ph_sel];
+    if (_ph_menu.active) {
+      auto res = _ph_menu.handleInput(c);
+      if (res == PopupMenu::SELECTED) {
+        int idx = _ph_menu.selectedIndex();
+        const char* ph = _ph_buf[idx];
         int ph_len = strlen(ph);
         if (len + ph_len <= max_len) {
           memcpy(buf + len, ph, ph_len);
           len += ph_len;
           buf[len] = '\0';
         }
-        ph_mode = false;
-        return NONE;
       }
-      ph_mode = false;  // CANCEL or any other key closes the overlay
       return NONE;
     }
 
@@ -226,9 +181,8 @@ struct KeyboardWidget {
             if (len > 0) buf[--len] = '\0';
             break;
           case 3:
-            ph_mode  = true;
-            ph_sel   = 0;
-            ph_scroll = 0;
+            _ph_menu.begin("Placeholder:", KB_PH_VISIBLE);
+            for (int i = 0; i < _ph_count; i++) _ph_menu.addItem(_ph_buf[i]);
             break;
           case 4:
             return DONE;
