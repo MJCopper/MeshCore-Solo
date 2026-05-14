@@ -1798,13 +1798,8 @@ public:
       display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
       display.setCursor(0, 0);
       display.print(filtered_name);
-      if (_node_prefs->advert_auto_interval_sec > 0 && (millis() / 250) % 2) {
-        int ax = display.getTextWidth(filtered_name);
-        display.fillRect(ax, 0, display.getTextWidth("~") + 1, 9);
-        display.setColor(DisplayDriver::DARK);
-        display.setCursor(ax, 0);
-        display.print("~");
-        display.setColor(DisplayDriver::LIGHT);
+      if (_node_prefs->advert_auto_interval_sec > 0 && (millis() % 2000) < 500) {
+        display.print(" A");
       }
       renderBatteryIndicator(display, _task->getBattMilliVolts());
     }
@@ -2141,11 +2136,12 @@ public:
         display.drawTextCentered(display.width() / 2, 64 - 11, "hibernate:" PRESS_LABEL);
       }
     }
+    bool auto_adv = _node_prefs && _node_prefs->advert_auto_interval_sec > 0;
     if (_page == HomePage::CLOCK) {
       bool show_sec = !_node_prefs || !_node_prefs->clock_hide_seconds;
-      return show_sec ? 1000 : 60000;
+      return auto_adv ? 500 : (show_sec ? 1000 : 60000);
     }
-    return 5000;
+    return auto_adv ? 500 : 5000;
   }
 
   bool handleInput(char c) override {
