@@ -1803,8 +1803,8 @@ public:
     // ensure current page is visible (e.g. after settings change)
     if (!isPageVisible(_page)) _page = navPage(_page, +1);
 
-    // curr page indicator — only visible pages get a dot
-    {
+    // curr page indicator — hidden on CLOCK page (full screen used for dashboard)
+    if (_page != CLOCK) {
       int vis_count = 0, curr_vis = 0;
       for (int i = 0; i < (int)Count; i++) {
         if (!isPageVisible(i)) continue;

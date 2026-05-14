@@ -49,6 +49,7 @@ class NearbyScreen : public UIScreen {
   uint32_t      _ping_expected_ack;
   unsigned long _ping_start_ms;
   unsigned long _ping_rtt_ms;
+  bool          _ping_ack_seen;  // true once ACK entry confirmed in table
   static const unsigned long PING_TIMEOUT_MS = 30000UL;
 
   static float haversineKm(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2) {
@@ -152,7 +153,8 @@ public:
     _filter = 0;
     _scanning = false;
     _ctx_menu.active = false;
-    _ping_state = PING_IDLE;
+    _ping_state    = PING_IDLE;
+    _ping_ack_seen = false;
     refresh();
   }
 
@@ -167,9 +169,12 @@ public:
 
     // poll ping ack
     if (_ping_state == PING_WAIT) {
-      if (!the_mesh.isAckPending(_ping_expected_ack)) {
+      bool pending = the_mesh.isAckPending(_ping_expected_ack);
+      if (pending) {
+        _ping_ack_seen = true;
+      } else if (_ping_ack_seen) {
         _ping_rtt_ms = millis() - _ping_start_ms;
-        _ping_state = PING_OK;
+        _ping_state  = PING_OK;
       } else if (millis() - _ping_start_ms >= PING_TIMEOUT_MS) {
         _ping_state = PING_TIMEOUT;
       }
@@ -197,7 +202,7 @@ public:
       if (e.dist_km >= 0.0f) {
         char dist[12];
         fmtDist(dist, sizeof(dist), e.dist_km);
-        snprintf(buf, sizeof(buf), "Dist:%s %d\xb0", dist, bearingDeg(_own_lat, _own_lon, e.lat_e6, e.lon_e6));
+        snprintf(buf, sizeof(buf), "Dist:%s %dd", dist, bearingDeg(_own_lat, _own_lon, e.lat_e6, e.lon_e6));
         display.setCursor(2, 31); display.print(buf);
       } else {
         display.setCursor(2, 31); display.print("Dist: no own GPS");
@@ -290,8 +295,9 @@ public:
           int res = the_mesh.sendMessage(ci, rtc_clock.getCurrentTime(), 0, "", expected_ack, est_timeout);
           if (res != MSG_SEND_FAILED && expected_ack != 0) {
             _ping_expected_ack = expected_ack;
-            _ping_start_ms = millis();
-            _ping_state = PING_WAIT;
+            _ping_start_ms     = millis();
+            _ping_ack_seen     = false;
+            _ping_state        = PING_WAIT;
           }
         }
         return true;
