@@ -65,11 +65,11 @@ struct FullscreenMsgView {
       display.setCursor(display.width() - 6, FS_START_Y + (FS_VISIBLE - 1) * FS_LINE_H);
       display.print("v");
     }
-    if (has_prev) {
+    if (has_next) {
       display.setCursor(0, 56);
       display.print("<");
     }
-    if (has_next) {
+    if (has_prev) {
       display.setCursor(display.width() - 6, 56);
       display.print(">");
     }
@@ -79,8 +79,8 @@ struct FullscreenMsgView {
   Result handleInput(char c) {
     if (c == KEY_UP)     { if (scroll > 0) scroll--; return NONE; }
     if (c == KEY_DOWN)   { scroll++; return NONE; }
-    if (c == KEY_LEFT)   return PREV;
-    if (c == KEY_RIGHT)  return NEXT;
+    if (c == KEY_LEFT)   return NEXT;
+    if (c == KEY_RIGHT)  return PREV;
     if (c == KEY_ENTER || c == KEY_CANCEL) return CLOSE;
     return NONE;
   }

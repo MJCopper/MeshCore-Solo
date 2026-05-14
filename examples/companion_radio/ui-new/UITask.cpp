@@ -1203,7 +1203,7 @@ public:
       ChannelDetails ch;
       the_mesh.getChannel(_sel_channel_idx, ch);
       char title[24];
-      snprintf(title, sizeof(title), "#%.21s", ch.name);
+      snprintf(title, sizeof(title), "%.23s", ch.name);
       display.drawTextCentered(display.width()/2, 0, title);
       display.fillRect(0, 9, display.width(), 1);
 
@@ -1289,7 +1289,7 @@ public:
       if (_sending_to_channel) {
         ChannelDetails ch;
         the_mesh.getChannel(_sel_channel_idx, ch);
-        snprintf(title, sizeof(title), "#%.21s", ch.name);
+        snprintf(title, sizeof(title), "%.23s", ch.name);
       } else {
         snprintf(title, sizeof(title), "TO:%.14s", _sel_contact.name);
       }
