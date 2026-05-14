@@ -176,6 +176,14 @@ public:
     return false;
   }
 
+  void registerExpectedAck(uint32_t expected_ack) {
+    if (!expected_ack) return;
+    expected_ack_table[next_ack_idx].msg_sent = millis();
+    expected_ack_table[next_ack_idx].ack      = expected_ack;
+    expected_ack_table[next_ack_idx].contact  = nullptr;
+    next_ack_idx = (next_ack_idx + 1) % EXPECTED_ACK_TABLE_SIZE;
+  }
+
 #if ENV_INCLUDE_GPS == 1
   void applyGpsPrefs() {
     sensors.setSettingValue("gps", _prefs.gps_enabled ? "1" : "0");

@@ -298,6 +298,7 @@ public:
           uint32_t expected_ack, est_timeout;
           int res = the_mesh.sendMessage(ci, rtc_clock.getCurrentTime(), 0, "", expected_ack, est_timeout);
           if (res != MSG_SEND_FAILED && expected_ack != 0) {
+            the_mesh.registerExpectedAck(expected_ack);
             _ping_expected_ack = expected_ack;
             _ping_start_ms     = millis();
             _ping_ack_seen     = false;
