@@ -36,11 +36,11 @@ class SplashScreen : public UIScreen {
   UITask* _task;
   unsigned long dismiss_after;
   char _version_info[12];
+  char _plus_ver[12];
 
 public:
   SplashScreen(UITask* task) : _task(task) {
-    // strip off dash and commit hash by changing dash to null terminator
-    // e.g: v1.2.3-abcdef -> v1.2.3
+    // strip off dash and commit hash: v1.2.3-abcdef -> v1.2.3
     const char *ver = FIRMWARE_VERSION;
     const char *dash = strchr(ver, '-');
 
@@ -48,6 +48,18 @@ public:
     if (len >= sizeof(_version_info)) len = sizeof(_version_info) - 1;
     memcpy(_version_info, ver, len);
     _version_info[len] = 0;
+
+    // extract plus version: v1.15-plus.1.4-SHA -> "1.4"
+    _plus_ver[0] = '\0';
+    const char *plus = strstr(ver, "plus.");
+    if (plus) {
+      plus += 5;  // skip "plus."
+      const char *end = strchr(plus, '-');
+      int plen = end ? end - plus : strlen(plus);
+      if (plen >= (int)sizeof(_plus_ver)) plen = sizeof(_plus_ver) - 1;
+      memcpy(_plus_ver, plus, plen);
+      _plus_ver[plen] = '\0';
+    }
 
     dismiss_after = millis() + BOOT_SCREEN_MILLIS;
   }
@@ -68,7 +80,12 @@ public:
 #ifdef FIRMWARE_PLUS_BUILD
     display.fillRect(0, 53, display.width(), 10);
     display.setColor(DisplayDriver::DARK);
-    display.drawTextCentered(display.width()/2, 54, "Plus for Wio");
+    char plus_label[24];
+    if (_plus_ver[0])
+      snprintf(plus_label, sizeof(plus_label), "Plus %s for Wio", _plus_ver);
+    else
+      snprintf(plus_label, sizeof(plus_label), "Plus for Wio");
+    display.drawTextCentered(display.width()/2, 54, plus_label);
     display.setColor(DisplayDriver::LIGHT);
 #endif
 
