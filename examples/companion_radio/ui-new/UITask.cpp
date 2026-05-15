@@ -183,8 +183,9 @@ class SettingsScreen : public UIScreen {
     const int box_w = 7, box_h = 7, gap = 2;
     for (int i = 0; i < max_val; i++) {
       int bx = x + i * (box_w + gap);
-      if (i < value) display.fillRect(bx, y, box_w, box_h);
-      else           display.drawRect(bx, y, box_w, box_h);
+      display.drawRect(bx, y, box_w, box_h);
+      if (i < value)
+        display.fillRect(bx + 1, y + 1, box_w - 2, box_h - 2);
     }
   }
 
