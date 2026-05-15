@@ -2527,7 +2527,7 @@ switch(t){
   case UIEventType::channelMessage: {
     bool play = false;
     bool force = false;
-    if (_last_notif_ch_idx >= 0 && _node_prefs) {
+    if (_last_notif_ch_idx >= 0 && _last_notif_ch_idx < 64 && _node_prefs) {
       uint64_t mask = 1ULL << _last_notif_ch_idx;
       if (_node_prefs->ch_notif_override & mask) {
         if (!(_node_prefs->ch_notif_muted & mask)) { play = true; force = true; }
@@ -2539,7 +2539,7 @@ switch(t){
     }
     if (play) {
       int slot = _node_prefs ? (int)_node_prefs->notif_melody_ch : 0;
-      if (_last_notif_ch_idx >= 0 && _node_prefs) {
+      if (_last_notif_ch_idx >= 0 && _last_notif_ch_idx < 64 && _node_prefs) {
         uint64_t mask = 1ULL << _last_notif_ch_idx;
         if (_node_prefs->ch_notif_melody_set & mask)
           slot = (_node_prefs->ch_notif_melody_2 & mask) ? 2 : 1;
@@ -2664,7 +2664,7 @@ void UITask::shutdown(bool restart){
   */
   buzzer.shutdown();
   uint32_t buzzer_timer = millis(); // fail-safe shutdown
-  while (buzzer.isPlaying() && (millis() - 2500) < buzzer_timer)
+  while (buzzer.isPlaying() && (millis() - buzzer_timer) < 2500)
     buzzer.loop();
 
   #endif // PIN_BUZZER

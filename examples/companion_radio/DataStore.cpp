@@ -273,6 +273,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
                         if (file.available()) {
                           file.read((uint8_t *)&_prefs.ringtone2_bpm_idx, sizeof(_prefs.ringtone2_bpm_idx));
                           file.read((uint8_t *)&_prefs.ringtone2_len, sizeof(_prefs.ringtone2_len));
+                          if (_prefs.ringtone2_len > 32) _prefs.ringtone2_len = 0;
                           file.read((uint8_t *)_prefs.ringtone2_notes, sizeof(_prefs.ringtone2_notes));
                           if (file.available()) {
                             file.read((uint8_t *)&_prefs.notif_melody_dm, sizeof(_prefs.notif_melody_dm));
