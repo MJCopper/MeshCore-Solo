@@ -34,6 +34,7 @@ class UITask : public AbstractUITask {
   unsigned long _next_refresh, _auto_off;
   NodePrefs* _node_prefs;
   char _alert[80];
+  char _notif_mel_buf[220];  // persistent RTTTL buffer for custom notification melodies
   unsigned long _alert_expiry;
   int _msgcount;
   int _room_unread;
@@ -99,7 +100,7 @@ public:
   void gotoSettingsScreen();
   void gotoQuickMsgScreen();
   void gotoToolsScreen();
-  void gotoRingtoneEditor();
+  void gotoRingtoneEditor(int slot = 0);
   void gotoBotScreen();
   void gotoNearbyScreen();
   void gotoDashboardConfig();

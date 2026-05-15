@@ -32,11 +32,16 @@ bool genericBuzzer::isPlaying() {
 }
 
 void genericBuzzer::applyVolume() {
+#if !defined(NRF52_PLATFORM)
     // After tone() sets 50% duty, analogWrite overrides duty cycle on the same PWM channel.
     // Level 4 = 50% (leave tone as-is), lower levels reduce duty = quieter output.
     static const uint8_t duty[] = { 6, 20, 50, 90, 128 };
     uint8_t d = duty[_volume_level < 5 ? _volume_level : 4];
     if (d < 128) analogWrite(PIN_BUZZER, d);
+#endif
+    // On nRF52, tone() uses NRF_PWM2 with DECODER.MODE=Auto. The DMA reads duty at SEQSTART
+    // before software can write, and TASKS_NEXTSTEP only works in NextStep mode — so duty
+    // cannot be changed mid-note without patching the Arduino core. Volume has no effect.
 }
 
 void genericBuzzer::setVolume(uint8_t level) {

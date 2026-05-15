@@ -62,4 +62,18 @@ struct NodePrefs {  // persisted to file
   DmNotifEntry dm_notif[DM_NOTIF_TABLE_MAX]; // 16*5 = 80 bytes
   uint8_t  dashboard_fields[3]; // 0=None,1=Batt,2=Temp,3=Hum,4=Pres,5=GPS,6=Alt,7=Lux,8=CO2,9=Nodes
   uint32_t advert_auto_interval_sec; // periodic 0-hop advert with GPS: 0=off, else seconds
+  // Second melody slot (same packing as ringtone_*)
+  uint8_t  ringtone2_bpm_idx;
+  uint8_t  ringtone2_len;
+  uint8_t  ringtone2_notes[32];
+  // Global melody for notifications: 0=built-in, 1=melody1, 2=melody2
+  uint8_t  notif_melody_dm;
+  uint8_t  notif_melody_ch;
+  // Per-channel melody override (2 bitmasks, 1 bit per channel)
+  uint64_t ch_notif_melody_set;  // bit i = channel i has explicit melody
+  uint64_t ch_notif_melody_2;    // bit i = use melody 2 (else melody 1, when set bit is set)
+  // Per-DM melody table
+  struct DmMelodyEntry { uint8_t prefix[4]; uint8_t slot; }; // slot: 0=global,1=melody1,2=melody2
+  static const int DM_MELODY_TABLE_MAX = 16;
+  DmMelodyEntry dm_melody[DM_MELODY_TABLE_MAX];
 };

@@ -270,6 +270,22 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
                       file.read((uint8_t *)_prefs.dashboard_fields, sizeof(_prefs.dashboard_fields));
                       if (file.available()) {
                         file.read((uint8_t *)&_prefs.advert_auto_interval_sec, sizeof(_prefs.advert_auto_interval_sec));
+                        if (file.available()) {
+                          file.read((uint8_t *)&_prefs.ringtone2_bpm_idx, sizeof(_prefs.ringtone2_bpm_idx));
+                          file.read((uint8_t *)&_prefs.ringtone2_len, sizeof(_prefs.ringtone2_len));
+                          file.read((uint8_t *)_prefs.ringtone2_notes, sizeof(_prefs.ringtone2_notes));
+                          if (file.available()) {
+                            file.read((uint8_t *)&_prefs.notif_melody_dm, sizeof(_prefs.notif_melody_dm));
+                            file.read((uint8_t *)&_prefs.notif_melody_ch, sizeof(_prefs.notif_melody_ch));
+                            if (file.available()) {
+                              file.read((uint8_t *)&_prefs.ch_notif_melody_set, sizeof(_prefs.ch_notif_melody_set));
+                              file.read((uint8_t *)&_prefs.ch_notif_melody_2, sizeof(_prefs.ch_notif_melody_2));
+                              if (file.available()) {
+                                file.read((uint8_t *)_prefs.dm_melody, sizeof(_prefs.dm_melody));
+                              }
+                            }
+                          }
+                        }
                       }
                     }
                   }
@@ -346,6 +362,14 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)_prefs.dm_notif, sizeof(_prefs.dm_notif));
     file.write((uint8_t *)_prefs.dashboard_fields, sizeof(_prefs.dashboard_fields));
     file.write((uint8_t *)&_prefs.advert_auto_interval_sec, sizeof(_prefs.advert_auto_interval_sec));
+    file.write((uint8_t *)&_prefs.ringtone2_bpm_idx, sizeof(_prefs.ringtone2_bpm_idx));
+    file.write((uint8_t *)&_prefs.ringtone2_len, sizeof(_prefs.ringtone2_len));
+    file.write((uint8_t *)_prefs.ringtone2_notes, sizeof(_prefs.ringtone2_notes));
+    file.write((uint8_t *)&_prefs.notif_melody_dm, sizeof(_prefs.notif_melody_dm));
+    file.write((uint8_t *)&_prefs.notif_melody_ch, sizeof(_prefs.notif_melody_ch));
+    file.write((uint8_t *)&_prefs.ch_notif_melody_set, sizeof(_prefs.ch_notif_melody_set));
+    file.write((uint8_t *)&_prefs.ch_notif_melody_2, sizeof(_prefs.ch_notif_melody_2));
+    file.write((uint8_t *)_prefs.dm_melody, sizeof(_prefs.dm_melody));
 
     file.close();
   }

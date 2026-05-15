@@ -115,6 +115,8 @@ class SettingsScreen : public UIScreen {
     SECTION_SOUND,
     BUZZER,
     BUZZER_VOLUME,
+    DM_MELODY,
+    CH_MELODY,
     // Home pages section
     SECTION_HOME_PAGES,
     HOME_CLOCK, HOME_RECENT, HOME_RADIO, HOME_BT, HOME_ADVERT,
@@ -349,6 +351,18 @@ class SettingsScreen : public UIScreen {
       display.setCursor(VAL_X, y);
       display.print("N/A");
 #endif
+    } else if (item == DM_MELODY) {
+      display.print("DM sound");
+      display.setCursor(VAL_X, y);
+      { static const char* L[] = { "built-in", "M1", "M2" };
+        uint8_t v = p ? p->notif_melody_dm : 0;
+        display.print(L[v < 3 ? v : 0]); }
+    } else if (item == CH_MELODY) {
+      display.print("Ch sound");
+      display.setCursor(VAL_X, y);
+      { static const char* L[] = { "built-in", "M1", "M2" };
+        uint8_t v = p ? p->notif_melody_ch : 0;
+        display.print(L[v < 3 ? v : 0]); }
     } else if (isHomePage(item)) {
       display.print(homePageLabel(item));
       display.setCursor(VAL_X, y);
@@ -513,6 +527,14 @@ public:
 #endif
       return right || left;
     }
+    if (_selected == DM_MELODY && p && (left || right || enter)) {
+      p->notif_melody_dm = (p->notif_melody_dm + (left ? 2 : 1)) % 3;
+      _dirty = true; return true;
+    }
+    if (_selected == CH_MELODY && p && (left || right || enter)) {
+      p->notif_melody_ch = (p->notif_melody_ch + (left ? 2 : 1)) % 3;
+      _dirty = true; return true;
+    }
     if (isHomePage(_selected) && p && (left || right || enter)) {
       p->home_pages_mask ^= homePageBit(_selected);
       _dirty = true;
@@ -636,6 +658,7 @@ class QuickMsgScreen : public UIScreen {
   PopupMenu _ctx_menu;
   bool      _ctx_dirty;
   char      _ctx_notif_item[22];
+  char      _ctx_melody_item[20];
 
   struct ChHistEntry { uint8_t ch_idx; char text[140]; };
   ChHistEntry _hist[CH_HIST_MAX];
@@ -882,6 +905,61 @@ class QuickMsgScreen : public UIScreen {
     // table full — overwrite slot 0
     memcpy(p->dm_notif[0].prefix, pub_key, 4);
     p->dm_notif[0].state = state;
+  }
+
+  uint8_t chNotifMelody(uint8_t ch_idx) const {
+    NodePrefs* p = _task->getNodePrefs();
+    if (!p) return 0;
+    uint64_t mask = 1ULL << ch_idx;
+    if (!(p->ch_notif_melody_set & mask)) return 0;
+    return (p->ch_notif_melody_2 & mask) ? 2 : 1;
+  }
+
+  void setChNotifMelody(uint8_t ch_idx, uint8_t slot) {
+    NodePrefs* p = _task->getNodePrefs();
+    if (!p) return;
+    uint64_t mask = 1ULL << ch_idx;
+    if (slot == 0) {
+      p->ch_notif_melody_set &= ~mask;
+      p->ch_notif_melody_2   &= ~mask;
+    } else if (slot == 1) {
+      p->ch_notif_melody_set |= mask;
+      p->ch_notif_melody_2   &= ~mask;
+    } else {
+      p->ch_notif_melody_set |= mask;
+      p->ch_notif_melody_2   |= mask;
+    }
+  }
+
+  uint8_t dmMelodySlot(const uint8_t* pub_key) const {
+    NodePrefs* p = _task->getNodePrefs();
+    if (!p) return 0;
+    for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++)
+      if (p->dm_melody[i].slot && memcmp(p->dm_melody[i].prefix, pub_key, 4) == 0)
+        return p->dm_melody[i].slot;
+    return 0;
+  }
+
+  void setDmMelody(const uint8_t* pub_key, uint8_t slot) {
+    NodePrefs* p = _task->getNodePrefs();
+    if (!p) return;
+    for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++) {
+      if (p->dm_melody[i].slot && memcmp(p->dm_melody[i].prefix, pub_key, 4) == 0) {
+        if (slot == 0) memset(&p->dm_melody[i], 0, sizeof(p->dm_melody[i]));
+        else           p->dm_melody[i].slot = slot;
+        return;
+      }
+    }
+    if (slot == 0) return;
+    for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++) {
+      if (p->dm_melody[i].slot == 0) {
+        memcpy(p->dm_melody[i].prefix, pub_key, 4);
+        p->dm_melody[i].slot = slot;
+        return;
+      }
+    }
+    memcpy(p->dm_melody[0].prefix, pub_key, 4);
+    p->dm_melody[0].slot = slot;
   }
 
 public:
@@ -1355,9 +1433,13 @@ public:
           if (the_mesh.getContactByIdx(_sorted[_contact_sel], ci)) {
             if (_ctx_menu.selectedIndex() == 0) {
               _task->clearDMUnread(ci.id.pub_key);
-            } else {
+            } else if (_ctx_menu.selectedIndex() == 1) {
               uint8_t nstate = dmNotifState(ci.id.pub_key);
               setDmNotifState(ci.id.pub_key, (nstate + 1) % 3);
+              _ctx_dirty = true;
+            } else {
+              uint8_t slot = dmMelodySlot(ci.id.pub_key);
+              setDmMelody(ci.id.pub_key, (slot + 1) % 3);
               _ctx_dirty = true;
             }
           }
@@ -1394,9 +1476,13 @@ public:
         the_mesh.getContactByIdx(_sorted[_contact_sel], ci);
         snprintf(_ctx_notif_item, sizeof(_ctx_notif_item), "Notif: %s",
                  NOTIF_LABELS[dmNotifState(ci.id.pub_key)]);
-        _ctx_menu.begin("Contact options", 2);
+        { static const char* ML[] = { "global", "M1", "M2" };
+          snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s",
+                   ML[dmMelodySlot(ci.id.pub_key)]); }
+        _ctx_menu.begin("Contact options", 3);
         _ctx_menu.addItem("Mark as read");
         _ctx_menu.addItem(_ctx_notif_item);
+        _ctx_menu.addItem(_ctx_melody_item);
         _ctx_dirty = false;
         return true;
       }
@@ -1409,9 +1495,13 @@ public:
           uint8_t ch_idx = _channel_indices[_channel_sel];
           if (_ctx_menu.selectedIndex() == 0) {
             _ch_unread[ch_idx] = 0;
-          } else {
+          } else if (_ctx_menu.selectedIndex() == 1) {
             uint8_t nstate = chNotifState(ch_idx);
             setChNotifState(ch_idx, (nstate + 1) % 3);
+            _ctx_dirty = true;
+          } else {
+            uint8_t slot = chNotifMelody(ch_idx);
+            setChNotifMelody(ch_idx, (slot + 1) % 3);
             _ctx_dirty = true;
           }
         }
@@ -1447,9 +1537,13 @@ public:
         static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
         snprintf(_ctx_notif_item, sizeof(_ctx_notif_item), "Notif: %s",
                  NOTIF_LABELS[chNotifState(ch_idx)]);
-        _ctx_menu.begin("Channel options", 2);
+        { static const char* ML[] = { "global", "M1", "M2" };
+          snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s",
+                   ML[chNotifMelody(ch_idx)]); }
+        _ctx_menu.begin("Channel options", 3);
         _ctx_menu.addItem("Mark all read");
         _ctx_menu.addItem(_ctx_notif_item);
+        _ctx_menu.addItem(_ctx_melody_item);
         _ctx_dirty = false;
         return true;
       }
@@ -2290,8 +2384,8 @@ void UITask::gotoToolsScreen() {
   setCurrScreen(tools_screen);
 }
 
-void UITask::gotoRingtoneEditor() {
-  ((RingtoneEditorScreen*)ringtone_edit)->enter();
+void UITask::gotoRingtoneEditor(int slot) {
+  ((RingtoneEditorScreen*)ringtone_edit)->enter(slot);
   setCurrScreen(ringtone_edit);
 }
 
@@ -2365,6 +2459,27 @@ void UITask::showAlert(const char* text, int duration_millis) {
   _alert_expiry = millis() + duration_millis;
 }
 
+static void buildMelodyFromPrefs(const NodePrefs* p, int slot, char* buf, int size) {
+  static const uint16_t BPM_OPTS[]  = { 60, 90, 120, 150, 180 };
+  static const uint8_t  DUR_VALS[]  = { 4, 8, 16, 32 };
+  static const char     PITCHES[]   = { 'p', 'c', 'd', 'e', 'f', 'g', 'a', 'b' };
+  const uint8_t* notes  = (slot == 2) ? p->ringtone2_notes  : p->ringtone_notes;
+  uint8_t        len    = (slot == 2) ? p->ringtone2_len     : p->ringtone_len;
+  uint8_t        bpm_i  = (slot == 2) ? p->ringtone2_bpm_idx : p->ringtone_bpm_idx;
+  if (len == 0) { buf[0] = '\0'; return; }
+  uint16_t bpm = BPM_OPTS[bpm_i < 5 ? bpm_i : 2];
+  int pos = snprintf(buf, size, "Ring:d=8,o=5,b=%u:", bpm);
+  for (int i = 0; i < len && pos < size - 8; i++) {
+    if (i > 0 && pos < size - 1) buf[pos++] = ',';
+    uint8_t pitch   = notes[i] & 0x07;
+    uint8_t octave  = ((notes[i] >> 3) & 0x03) + 4;
+    uint8_t dur_val = DUR_VALS[(notes[i] >> 5) & 0x03];
+    if (pitch == 0) pos += snprintf(buf + pos, size - pos, "%dp", dur_val);
+    else            pos += snprintf(buf + pos, size - pos, "%d%c%d", dur_val, PITCHES[pitch], octave);
+  }
+  if (pos < size) buf[pos] = '\0';
+}
+
 void UITask::notify(UIEventType t) {
 #if defined(PIN_BUZZER)
 switch(t){
@@ -2387,8 +2502,25 @@ switch(t){
     }
     _last_notif_dm_valid = false;
     if (play) {
-      if (force) buzzer.playForced("MsgRcv3:d=4,o=6,b=200:32e,32g,32b,16c7");
-      else       buzzer.play("MsgRcv3:d=4,o=6,b=200:32e,32g,32b,16c7");
+      int slot = _node_prefs ? (int)_node_prefs->notif_melody_dm : 0;
+      if (_node_prefs) {
+        for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++)
+          if (_node_prefs->dm_melody[i].slot &&
+              memcmp(_node_prefs->dm_melody[i].prefix, _last_notif_dm_prefix, 4) == 0)
+            { slot = _node_prefs->dm_melody[i].slot; break; }
+      }
+      bool custom_played = false;
+      if (slot > 0 && _node_prefs) {
+        buildMelodyFromPrefs(_node_prefs, slot, _notif_mel_buf, sizeof(_notif_mel_buf));
+        if (_notif_mel_buf[0]) {
+          if (force) buzzer.playForced(_notif_mel_buf); else buzzer.play(_notif_mel_buf);
+          custom_played = true;
+        }
+      }
+      if (!custom_played) {
+        if (force) buzzer.playForced("MsgRcv3:d=4,o=6,b=200:32e,32g,32b,16c7");
+        else       buzzer.play("MsgRcv3:d=4,o=6,b=200:32e,32g,32b,16c7");
+      }
     }
     break;
   }
@@ -2398,19 +2530,34 @@ switch(t){
     if (_last_notif_ch_idx >= 0 && _node_prefs) {
       uint64_t mask = 1ULL << _last_notif_ch_idx;
       if (_node_prefs->ch_notif_override & mask) {
-        if (!(_node_prefs->ch_notif_muted & mask)) { play = true; force = true; }  // state 2: force-on
-        // state 1: muted — play stays false
+        if (!(_node_prefs->ch_notif_muted & mask)) { play = true; force = true; }
       } else {
-        play = !buzzer.isQuiet();  // state 0: follow global
+        play = !buzzer.isQuiet();
       }
     } else {
       play = !buzzer.isQuiet();
     }
-    _last_notif_ch_idx = -1;
     if (play) {
-      if (force) buzzer.playForced("kerplop:d=16,o=6,b=120:32g#,32c#");
-      else       buzzer.play("kerplop:d=16,o=6,b=120:32g#,32c#");
+      int slot = _node_prefs ? (int)_node_prefs->notif_melody_ch : 0;
+      if (_last_notif_ch_idx >= 0 && _node_prefs) {
+        uint64_t mask = 1ULL << _last_notif_ch_idx;
+        if (_node_prefs->ch_notif_melody_set & mask)
+          slot = (_node_prefs->ch_notif_melody_2 & mask) ? 2 : 1;
+      }
+      bool custom_played = false;
+      if (slot > 0 && _node_prefs) {
+        buildMelodyFromPrefs(_node_prefs, slot, _notif_mel_buf, sizeof(_notif_mel_buf));
+        if (_notif_mel_buf[0]) {
+          if (force) buzzer.playForced(_notif_mel_buf); else buzzer.play(_notif_mel_buf);
+          custom_played = true;
+        }
+      }
+      if (!custom_played) {
+        if (force) buzzer.playForced("kerplop:d=16,o=6,b=120:32g#,32c#");
+        else       buzzer.play("kerplop:d=16,o=6,b=120:32g#,32c#");
+      }
     }
+    _last_notif_ch_idx = -1;
     break;
   }
   case UIEventType::ack:

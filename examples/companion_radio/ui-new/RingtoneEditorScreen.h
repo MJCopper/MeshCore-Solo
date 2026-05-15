@@ -21,6 +21,7 @@ class RingtoneEditorScreen : public UIScreen {
   uint8_t _notes[MAX_NOTES];
   uint8_t _len;
   uint8_t _bpm_idx;
+  int     _slot;   // 0=melody1, 1=melody2
   int     _cursor;
   int     _scroll;
   bool    _menu_open;
@@ -29,7 +30,7 @@ class RingtoneEditorScreen : public UIScreen {
   char    _play_buf[220];  // persistent RTTTL buffer — library holds a pointer into it
 
   enum MenuOpt {
-    M_PLAY_STOP, M_DURATION, M_BPM_UP, M_BPM_DOWN,
+    M_PLAY_STOP, M_SWITCH, M_DURATION, M_BPM_UP, M_BPM_DOWN,
     M_INSERT, M_DELETE, M_SAVE, M_DISCARD, M_COUNT
   };
   static const char* MENU_LABELS[M_COUNT];
@@ -71,12 +72,16 @@ class RingtoneEditorScreen : public UIScreen {
   }
 
 public:
-  RingtoneEditorScreen(UITask* task, NodePrefs* prefs) : _task(task), _prefs(prefs) {}
+  RingtoneEditorScreen(UITask* task, NodePrefs* prefs) : _task(task), _prefs(prefs), _slot(0) {}
 
-  void enter() {
-    _bpm_idx    = (_prefs && _prefs->ringtone_bpm_idx < 5) ? _prefs->ringtone_bpm_idx : 2;
-    _len        = (_prefs && _prefs->ringtone_len <= (uint8_t)MAX_NOTES) ? _prefs->ringtone_len : 0;
-    if (_prefs) memcpy(_notes, _prefs->ringtone_notes, sizeof(_notes));
+  void enter(int slot = 0) {
+    _slot    = (slot == 1) ? 1 : 0;
+    bool s2  = (_slot == 1);
+    _bpm_idx = (_prefs && (s2 ? _prefs->ringtone2_bpm_idx : _prefs->ringtone_bpm_idx) < 5)
+                 ? (s2 ? _prefs->ringtone2_bpm_idx : _prefs->ringtone_bpm_idx) : 2;
+    uint8_t rlen = _prefs ? (s2 ? _prefs->ringtone2_len : _prefs->ringtone_len) : 0;
+    _len     = (rlen <= (uint8_t)MAX_NOTES) ? rlen : 0;
+    if (_prefs) memcpy(_notes, s2 ? _prefs->ringtone2_notes : _prefs->ringtone_notes, sizeof(_notes));
     _cursor     = 0;
     _scroll     = 0;
     _menu_open  = false;
@@ -89,7 +94,7 @@ public:
     display.setColor(DisplayDriver::LIGHT);
 
     char hdr[32];
-    snprintf(hdr, sizeof(hdr), "BPM:%u  %d/%d", BPM_OPTS[_bpm_idx], _len, MAX_NOTES);
+    snprintf(hdr, sizeof(hdr), "M%d BPM:%u %d/%d", _slot + 1, BPM_OPTS[_bpm_idx], _len, MAX_NOTES);
     display.setCursor(0, 0);
     display.print(hdr);
     display.fillRect(0, 10, display.width(), 1);
@@ -171,6 +176,8 @@ public:
         display.setCursor(mx + 4, iy);
         if (item == M_PLAY_STOP)
           display.print(_task->isMelodyPlaying() ? "Stop" : "Play");
+        else if (item == M_SWITCH)
+          display.print(_slot == 0 ? "Edit Melody 2" : "Edit Melody 1");
         else
           display.print(MENU_LABELS[item]);
         display.setColor(DisplayDriver::LIGHT);
@@ -215,6 +222,10 @@ public:
             _task->playMelody(_play_buf);
           }
           break;
+        case M_SWITCH:
+          _task->stopMelody();
+          this->enter(1 - _slot);
+          break;
         case M_DURATION:
           if (_cursor < _len) {
             uint8_t p  = notePitch(_notes[_cursor]);
@@ -246,9 +257,15 @@ public:
           break;
         case M_SAVE:
           if (_prefs) {
-            _prefs->ringtone_bpm_idx = _bpm_idx;
-            _prefs->ringtone_len     = _len;
-            memcpy(_prefs->ringtone_notes, _notes, sizeof(_notes));
+            if (_slot == 1) {
+              _prefs->ringtone2_bpm_idx = _bpm_idx;
+              _prefs->ringtone2_len     = _len;
+              memcpy(_prefs->ringtone2_notes, _notes, sizeof(_notes));
+            } else {
+              _prefs->ringtone_bpm_idx = _bpm_idx;
+              _prefs->ringtone_len     = _len;
+              memcpy(_prefs->ringtone_notes, _notes, sizeof(_notes));
+            }
             the_mesh.savePrefs();
           }
           _task->stopMelody();
@@ -313,5 +330,5 @@ const uint8_t  RingtoneEditorScreen::DUR_VALS[4]    = { 4, 8, 16, 32 };
 const char*    RingtoneEditorScreen::DUR_LABELS[4]  = { "1/4", "1/8", "1/16", "1/32" };
 const char     RingtoneEditorScreen::PITCH_NAMES[8] = { 'p', 'c', 'd', 'e', 'f', 'g', 'a', 'b' };
 const char*    RingtoneEditorScreen::MENU_LABELS[RingtoneEditorScreen::M_COUNT] = {
-  "Play/Stop", "Duration", "BPM+", "BPM-", "Insert", "Delete", "Save & Exit", "Discard"
+  "Play/Stop", "Switch Melody", "Duration", "BPM+", "BPM-", "Insert", "Delete", "Save & Exit", "Discard"
 };
