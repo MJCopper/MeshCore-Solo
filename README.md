@@ -10,7 +10,7 @@ View and send messages using the on-screen keyboard or predefined quick replies.
 
 Press Enter on a message to open it in fullscreen. Navigate between messages with left (newer) and right (older).
 
-Hold Enter on a message or channel to open a context menu: change per-channel notification settings (overrides the global sound setting) or mark messages as read.
+Hold Enter on a message or channel to open a context menu: change per-channel notification settings (mute, follow global, or force-on) and per-channel melody override (follow global, Melody 1, or Melody 2), or mark messages as read.
 
 ### Settings Screen
 
@@ -23,7 +23,9 @@ All settings are saved to flash and restored on next boot.
   - Clock seconds (show/hide — hiding reduces display refresh from 1 s to 60 s)
 - **Sound**
   - Buzzer: On / Off / **Auto** — Auto mode silences the device while connected via Bluetooth, and re-enables sound when the connection drops
-  - Volume
+  - Volume (1–5; preview tone plays on each change)
+  - DM Melody — notification sound for incoming private messages: built-in, Melody 1, or Melody 2
+  - Channel Melody — notification sound for incoming channel messages: built-in, Melody 1, or Melody 2
 - **Home Pages** — toggle visibility of individual home screen pages
 - **Radio**
   - TX power
@@ -36,7 +38,7 @@ All settings are saved to flash and restored on next boot.
   - Show all DMs or favourites only
   - Show all room servers or favourites only
 - **Messages**
-  - Edit up to 10 quick reply templates
+  - Edit up to 10 quick reply templates (Q1–Q10)
 
 ### Clock Screen
 
@@ -60,9 +62,9 @@ A blinking **A** indicator appears in the status bar while Auto-Advert is active
 
 #### Ringtone Editor
 
-A step sequencer for composing custom ringtones stored on the device. Supports up to 32 notes with adjustable pitch, octave, duration, and BPM. Playback preview is available directly from the editor menu.
+A step sequencer for composing custom notification melodies stored on the device. Two independent melody slots are available — **Melody 1** and **Melody 2** — switchable from within the editor. Each melody supports up to 32 notes with adjustable pitch (C–B + pause), octave (4–7), duration (whole / half / quarter / eighth), and BPM (60 / 90 / 120 / 150 / 180). Playback preview is available directly from the editor.
 
-> Custom ringtones as per-channel or per-contact notification sounds are planned for a future update.
+Melodies can be assigned as notification sounds per message type (DM / channel) in Settings, and individually overridden per channel or per contact from the message screen context menu.
 
 #### Auto-Reply Bot
 

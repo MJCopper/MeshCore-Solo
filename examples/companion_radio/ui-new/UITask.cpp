@@ -416,7 +416,7 @@ class SettingsScreen : public UIScreen {
     } else if (isMsgSlot(item)) {
       int slot = msgSlotIndex(item);
       char label[5];
-      snprintf(label, sizeof(label), "M%d:", slot + 1);
+      snprintf(label, sizeof(label), "Q%d:", slot + 1);
       display.print(label);
       const char* tmpl = (p && p->custom_msgs[slot][0]) ? p->custom_msgs[slot] : "(empty)";
       display.drawTextEllipsized(VAL_X - 20, y, display.width() - VAL_X + 18, tmpl);
@@ -667,7 +667,7 @@ class QuickMsgScreen : public UIScreen {
 
   // DM_HIST
   struct DmHistEntry { uint8_t prefix[4]; uint8_t outgoing; char text[80]; };
-  static const int DM_HIST_MAX = 32;
+  static const int DM_HIST_MAX = 64;
   DmHistEntry _dm_hist[DM_HIST_MAX];
   int _dm_hist_head, _dm_hist_count;
   int _dm_hist_sel, _dm_hist_scroll;
