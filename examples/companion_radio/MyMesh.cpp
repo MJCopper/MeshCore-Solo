@@ -875,8 +875,9 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.gps_interval = 0;      // No automatic GPS updates by default
   _prefs.display_brightness = 2; // medium brightness by default
   _prefs.buzzer_volume = 4;      // max volume by default
-  _prefs.ringtone_bpm_idx = 2;  // 120 bpm default
+  _prefs.ringtone_bpm_idx = 2;   // 120 bpm default
   _prefs.ringtone_len = 0;       // no custom ringtone by default
+  _prefs.ringtone2_bpm_idx = 2;  // 120 bpm default
   _prefs.home_pages_mask = 0x01FF;  // all pages visible
   _prefs.bot_enabled = 0;
   _prefs.bot_channel_enabled = 0;
