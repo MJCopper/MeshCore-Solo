@@ -2,56 +2,226 @@
 #include "buzzer.h"
 
 void genericBuzzer::begin() {
-//    Serial.print("DBG: Setting up buzzer on pin ");
-//    Serial.println(PIN_BUZZER);
     #ifdef PIN_BUZZER_EN
       pinMode(PIN_BUZZER_EN, OUTPUT);
       digitalWrite(PIN_BUZZER_EN, HIGH);
     #endif
-
     pinMode(PIN_BUZZER, OUTPUT);
-    digitalWrite(PIN_BUZZER, LOW); // need to pull low by default to avoid extreme power draw
+    digitalWrite(PIN_BUZZER, LOW);
     startup();
 }
 
-void genericBuzzer::play(const char *melody) {
-    if (isPlaying()) rtttl::stop();
-    if (_is_quiet) return;
-    rtttl::begin(PIN_BUZZER, melody);
-//    Serial.print("DBG: Playing melody - isQuiet: ");
-//    Serial.println(isQuiet());
+void genericBuzzer::quiet(bool buzzer_state) {
+    _is_quiet = buzzer_state;
+#ifdef PIN_BUZZER_EN
+    digitalWrite(PIN_BUZZER_EN, _is_quiet ? LOW : HIGH);
+#endif
 }
 
-void genericBuzzer::playForced(const char *melody) {
-    if (isPlaying()) rtttl::stop();
-    rtttl::begin(PIN_BUZZER, melody);
+bool genericBuzzer::isQuiet() { return _is_quiet; }
+
+void genericBuzzer::startup()  { play(startup_song); }
+void genericBuzzer::shutdown() { play(shutdown_song); }
+
+// ---------------------------------------------------------------------------
+// nRF52 path — direct NRF_PWM2 control, bypasses tone()
+// ---------------------------------------------------------------------------
+#if defined(NRF52_PLATFORM)
+
+// Chromatic frequencies for octave 4 (Hz): C C# D D# E F F# G G# A A# B
+static const uint16_t CHROM4[12] = { 262, 277, 294, 311, 330, 349, 370, 392, 415, 440, 466, 494 };
+
+// Map 'a'-'g' → chromatic index within octave
+static const uint8_t NOTE_IDX[7] = { 9, 11, 0, 2, 4, 5, 7 };  // a b c d e f g
+
+uint16_t genericBuzzer::_noteFreq(char letter, bool sharp, uint8_t octave) {
+    if (letter == 'p') return 0;
+    if (letter < 'a' || letter > 'g') return 0;
+    uint8_t idx = NOTE_IDX[letter - 'a'];
+    if (sharp) { if (++idx >= 12) { idx = 0; octave++; } }
+    if (octave < 4) octave = 4;
+    if (octave > 7) octave = 7;
+    uint32_t f = (uint32_t)CHROM4[idx] << (octave - 4);
+    return (uint16_t)(f > 25000 ? 25000 : f);
 }
 
-bool genericBuzzer::isPlaying() {
-    return rtttl::isPlaying();
+void genericBuzzer::_parseHeader(const char* melody, uint8_t& def_dur, uint8_t& def_oct,
+                                  uint16_t& bpm, const char*& notes) {
+    def_dur = 4; def_oct = 5; bpm = 120;
+    const char* p = melody;
+    while (*p && *p != ':') p++;
+    if (*p == ':') p++;
+    while (*p && *p != ':') {
+        while (*p == ' ' || *p == ',') p++;
+        if      (p[0]=='d' && p[1]=='=') { p+=2; def_dur=(uint8_t)atoi(p); while(*p&&*p!=','&&*p!=':')p++; }
+        else if (p[0]=='o' && p[1]=='=') { p+=2; def_oct=(uint8_t)atoi(p); while(*p&&*p!=','&&*p!=':')p++; }
+        else if (p[0]=='b' && p[1]=='=') { p+=2; bpm=(uint16_t)atoi(p);    while(*p&&*p!=','&&*p!=':')p++; }
+        else { while(*p&&*p!=','&&*p!=':')p++; }
+    }
+    if (*p == ':') p++;
+    notes = p;
+}
+
+bool genericBuzzer::_parseNext(const char*& p, uint8_t def_dur, uint8_t def_oct, uint16_t bpm,
+                                uint16_t& freq, uint32_t& dur_ms) {
+    while (*p == ' ' || *p == ',') p++;
+    if (*p == '\0') return false;
+
+    uint8_t dur = def_dur;
+    if (*p >= '0' && *p <= '9') { dur=(uint8_t)atoi(p); while(*p>='0'&&*p<='9')p++; }
+    if (dur == 0) dur = 4;
+
+    if (*p == '\0') return false;
+    char note = *p++;
+    bool sharp = (*p == '#') ? (p++, true) : false;
+    uint8_t oct = def_oct;
+    if (*p >= '4' && *p <= '8') oct = (uint8_t)(*p++ - '0');
+    bool dot = (*p == '.') ? (p++, true) : false;
+
+    dur_ms = (60000UL * 4UL) / ((uint32_t)bpm * dur);
+    if (dot) dur_ms = dur_ms * 3 / 2;
+
+    freq = _noteFreq(note, sharp, oct);
+    return true;
+}
+
+uint8_t genericBuzzer::_dutyPct() const {
+    static const uint8_t PCT[5] = { 2, 8, 20, 35, 50 };
+    return PCT[_volume_level < 5 ? _volume_level : 4];
+}
+
+void genericBuzzer::_nrfStartPwm(uint16_t freq) {
+    if (freq < 20 || freq > 25000) { _nrfStopPwm(); return; }
+
+    uint32_t nrf_pin = g_ADigitalPinMap[PIN_BUZZER];
+    uint16_t top = 125000 / freq;
+    uint16_t cmp = (uint16_t)(((uint32_t)top * _dutyPct()) / 100);
+
+    // Write duty BEFORE SEQSTART so DMA reads our value on the very first period
+    _duty_buf = 0x8000U | cmp;
+    __DMB();
+
+    NRF_PWM2->TASKS_STOP = 1;
+    // Wait for STOPPED (short busy-wait, typically < 1 PWM period)
+    uint32_t t = millis();
+    while (!(NRF_PWM2->EVENTS_STOPPED) && (millis() - t) < 2) {}
+    NRF_PWM2->EVENTS_STOPPED = 0;
+
+    NRF_PWM2->PSEL.OUT[0] = nrf_pin;
+    NRF_PWM2->PSEL.OUT[1] = 0xFFFFFFFFUL;
+    NRF_PWM2->PSEL.OUT[2] = 0xFFFFFFFFUL;
+    NRF_PWM2->PSEL.OUT[3] = 0xFFFFFFFFUL;
+    NRF_PWM2->ENABLE      = PWM_ENABLE_ENABLE_Enabled << PWM_ENABLE_ENABLE_Pos;
+    NRF_PWM2->MODE        = PWM_MODE_UPDOWN_Up << PWM_MODE_UPDOWN_Pos;
+    // DIV_128 on 16 MHz = 125 kHz — same clock as tone(), so same frequency math
+    NRF_PWM2->PRESCALER   = PWM_PRESCALER_PRESCALER_DIV_128 << PWM_PRESCALER_PRESCALER_Pos;
+    NRF_PWM2->COUNTERTOP  = top;
+    NRF_PWM2->DECODER     = (PWM_DECODER_LOAD_Common     << PWM_DECODER_LOAD_Pos) |
+                             (PWM_DECODER_MODE_RefreshCount << PWM_DECODER_MODE_Pos);
+    NRF_PWM2->SHORTS      = PWM_SHORTS_LOOPSDONE_SEQSTART0_Msk;
+    NRF_PWM2->LOOP        = 0xFFFFUL << PWM_LOOP_CNT_Pos;
+
+    // Both SEQ0 and SEQ1 point to the same buffer; REFRESH=0 means DMA re-reads every period
+    NRF_PWM2->SEQ[0].PTR      = (uint32_t)&_duty_buf;
+    NRF_PWM2->SEQ[0].CNT      = 1;
+    NRF_PWM2->SEQ[0].REFRESH  = 0;
+    NRF_PWM2->SEQ[0].ENDDELAY = 0;
+    NRF_PWM2->SEQ[1].PTR      = (uint32_t)&_duty_buf;
+    NRF_PWM2->SEQ[1].CNT      = 1;
+    NRF_PWM2->SEQ[1].REFRESH  = 0;
+    NRF_PWM2->SEQ[1].ENDDELAY = 0;
+
+    NRF_PWM2->TASKS_SEQSTART[0] = 1;
+    _pwm_on = true;
+}
+
+void genericBuzzer::_nrfStopPwm() {
+    NRF_PWM2->TASKS_STOP  = 1;
+    NRF_PWM2->PSEL.OUT[0] = 0xFFFFFFFFUL;
+    NRF_PWM2->ENABLE      = 0;
+    digitalWrite(PIN_BUZZER, LOW);
+    _pwm_on = false;
+}
+
+void genericBuzzer::_nrfBegin(const char* melody) {
+    _nrfStopPwm();
+    if (!melody || !*melody) { _rtttl_done = true; return; }
+    const char* notes;
+    _parseHeader(melody, _def_dur, _def_oct, _def_bpm, notes);
+    _rtttl_pos  = notes;
+    _rtttl_done = false;
+    _nrfAdvance();
+}
+
+void genericBuzzer::_nrfAdvance() {
+    uint16_t freq; uint32_t dur_ms;
+    if (_parseNext(_rtttl_pos, _def_dur, _def_oct, _def_bpm, freq, dur_ms)) {
+        _note_end_ms = millis() + dur_ms;
+        if (freq > 0) _nrfStartPwm(freq); else _nrfStopPwm();
+    } else {
+        _nrfStopPwm();
+        _rtttl_done = true;
+    }
 }
 
 void genericBuzzer::applyVolume() {
-#if !defined(NRF52_PLATFORM)
-    // After tone() sets 50% duty, analogWrite overrides duty cycle on the same PWM channel.
-    // Level 4 = 50% (leave tone as-is), lower levels reduce duty = quieter output.
-    static const uint8_t duty[] = { 6, 20, 50, 90, 128 };
-    uint8_t d = duty[_volume_level < 5 ? _volume_level : 4];
-    if (d < 128) analogWrite(PIN_BUZZER, d);
-#endif
-    // On nRF52, tone() uses NRF_PWM2 with DECODER.MODE=Auto. The DMA reads duty at SEQSTART
-    // before software can write, and TASKS_NEXTSTEP only works in NextStep mode — so duty
-    // cannot be changed mid-note without patching the Arduino core. Volume has no effect.
+    if (!_pwm_on) return;
+    uint16_t top = (uint16_t)NRF_PWM2->COUNTERTOP;
+    uint16_t cmp = (uint16_t)(((uint32_t)top * _dutyPct()) / 100);
+    _duty_buf = 0x8000U | cmp;  // DMA picks this up within one period (< 2.3 ms at A4)
+}
+
+void genericBuzzer::play(const char* melody) {
+    if (_is_quiet) return;
+    _nrfBegin(melody);
+}
+
+void genericBuzzer::playForced(const char* melody) {
+    _nrfBegin(melody);
+}
+
+bool genericBuzzer::isPlaying() { return !_rtttl_done; }
+
+void genericBuzzer::stop() {
+    _nrfStopPwm();
+    _rtttl_done = true;
+}
+
+void genericBuzzer::loop() {
+    if (!_rtttl_done && (millis() >= _note_end_ms)) _nrfAdvance();
 }
 
 void genericBuzzer::setVolume(uint8_t level) {
     _volume_level = level < 5 ? level : 4;
-    if (isPlaying()) applyVolume();
+    applyVolume();
 }
 
-void genericBuzzer::stop() {
-    rtttl::stop();
+// ---------------------------------------------------------------------------
+// Non-nRF52 path — NonBlockingRtttl + analogWrite for volume
+// ---------------------------------------------------------------------------
+#else
+
+void genericBuzzer::applyVolume() {
+    // After tone() sets 50% duty, analogWrite overrides duty on the same PWM channel.
+    static const uint8_t duty[5] = { 6, 20, 50, 90, 128 };
+    uint8_t d = duty[_volume_level < 5 ? _volume_level : 4];
+    if (d < 128) analogWrite(PIN_BUZZER, d);
 }
+
+void genericBuzzer::play(const char* melody) {
+    if (isPlaying()) rtttl::stop();
+    if (_is_quiet) return;
+    rtttl::begin(PIN_BUZZER, melody);
+}
+
+void genericBuzzer::playForced(const char* melody) {
+    if (isPlaying()) rtttl::stop();
+    rtttl::begin(PIN_BUZZER, melody);
+}
+
+bool genericBuzzer::isPlaying() { return rtttl::isPlaying(); }
+
+void genericBuzzer::stop() { rtttl::stop(); }
 
 void genericBuzzer::loop() {
     if (!rtttl::done()) {
@@ -60,27 +230,11 @@ void genericBuzzer::loop() {
     }
 }
 
-void genericBuzzer::startup() {
-    play(startup_song);
+void genericBuzzer::setVolume(uint8_t level) {
+    _volume_level = level < 5 ? level : 4;
+    if (isPlaying()) applyVolume();
 }
 
-void genericBuzzer::shutdown() {
-    play(shutdown_song);
-}
+#endif  // NRF52_PLATFORM
 
-void genericBuzzer::quiet(bool buzzer_state) {
-    _is_quiet = buzzer_state;
-#ifdef PIN_BUZZER_EN
-    if (_is_quiet) {
-      digitalWrite(PIN_BUZZER_EN, LOW);
-    } else {
-      digitalWrite(PIN_BUZZER_EN, HIGH);
-    }
-#endif
-}
-
-bool genericBuzzer::isQuiet() {
-    return _is_quiet;
-}
-
-#endif  // ifdef PIN_BUZZER
+#endif  // PIN_BUZZER
