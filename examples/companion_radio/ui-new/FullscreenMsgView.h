@@ -81,7 +81,7 @@ struct FullscreenMsgView {
       display.setCursor(display.width() - 6, 56);
       display.print(">");
     }
-    return 300;
+    return 2000;
   }
 
   Result handleInput(char c) {
