@@ -48,8 +48,10 @@ struct FullscreenMsgView {
     display.drawTextEllipsized(2, 1, display.width() - 4, sender);
     display.setColor(DisplayDriver::LIGHT);
 
+    char trans_text[512];
+    display.translateUTF8ToBlocks(trans_text, text, sizeof(trans_text));
     char lines[12][FS_CHARS + 1];
-    int lcount = wrapLines(text, lines, 12);
+    int lcount = wrapLines(trans_text, lines, 12);
     int max_scroll = lcount > FS_VISIBLE ? lcount - FS_VISIBLE : 0;
     if (scroll > max_scroll) scroll = max_scroll;
 
