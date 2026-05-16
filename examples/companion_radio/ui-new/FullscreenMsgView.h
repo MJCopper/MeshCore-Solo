@@ -4,7 +4,7 @@
 #include <Arduino.h>
 
 static const int FS_CHARS   = 21;
-static const int FS_LINE_H  = 9;
+static const int FS_LINE_H  = 8;
 static const int FS_START_Y = 12;
 static const int FS_VISIBLE = (64 - FS_START_Y) / FS_LINE_H;
 
