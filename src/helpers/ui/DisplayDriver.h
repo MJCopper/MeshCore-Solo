@@ -85,6 +85,11 @@ public:
       case 0x021B: return 't'; case 0x021A: return 'T';  // ț Ț
       // Croatian
       case 0x0111: return 'd'; case 0x0110: return 'D';  // đ Đ
+      // Icelandic
+      case 0x00F0: return 'd'; case 0x00D0: return 'D';  // ð Ð (eth)
+      case 0x00FE: return 't'; case 0x00DE: return 'T';  // þ Þ (thorn)
+      // Romanian cedilla variants (legacy encoding)
+      case 0x0163: return 't'; case 0x0162: return 'T';  // ţ Ţ
       // Turkish
       case 0x011F: return 'g'; case 0x011E: return 'G';  // ğ Ğ
       case 0x015F: return 's'; case 0x015E: return 'S';  // ş Ş
