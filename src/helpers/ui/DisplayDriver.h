@@ -54,6 +54,19 @@ public:
       case 0x015B: return 's'; case 0x015A: return 'S';  // ś Ś
       case 0x017A: return 'z'; case 0x0179: return 'Z';  // ź Ź
       case 0x017C: return 'z'; case 0x017B: return 'Z';  // ż Ż
+      // Czech/Slovak
+      case 0x010D: return 'c'; case 0x010C: return 'C';  // č Č
+      case 0x0161: return 's'; case 0x0160: return 'S';  // š Š
+      case 0x017E: return 'z'; case 0x017D: return 'Z';  // ž Ž
+      case 0x0159: return 'r'; case 0x0158: return 'R';  // ř Ř
+      case 0x011B: return 'e'; case 0x011A: return 'E';  // ě Ě
+      case 0x016F: return 'u'; case 0x016E: return 'U';  // ů Ů
+      case 0x010F: return 'd'; case 0x010E: return 'D';  // ď Ď
+      case 0x0165: return 't'; case 0x0164: return 'T';  // ť Ť
+      case 0x0148: return 'n'; case 0x0147: return 'N';  // ň Ň
+      case 0x013E: return 'l'; case 0x013D: return 'L';  // ľ Ľ
+      case 0x013A: return 'l'; case 0x0139: return 'L';  // ĺ Ĺ
+      case 0x0155: return 'r'; case 0x0154: return 'R';  // ŕ Ŕ
       // German
       case 0x00E4: return 'a'; case 0x00C4: return 'A';  // ä Ä
       case 0x00F6: return 'o'; case 0x00D6: return 'O';  // ö Ö
