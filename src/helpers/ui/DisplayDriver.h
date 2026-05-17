@@ -72,6 +72,36 @@ public:
       case 0x00F6: return 'o'; case 0x00D6: return 'O';  // ö Ö
       case 0x00FC: return 'u'; case 0x00DC: return 'U';  // ü Ü
       case 0x00DF: return 's';                            // ß
+      // Scandinavian
+      case 0x00E5: return 'a'; case 0x00C5: return 'A';  // å Å
+      case 0x00F8: return 'o'; case 0x00D8: return 'O';  // ø Ø
+      case 0x00E6: return 'a'; case 0x00C6: return 'A';  // æ Æ
+      // Hungarian
+      case 0x0151: return 'o'; case 0x0150: return 'O';  // ő Ő
+      case 0x0171: return 'u'; case 0x0170: return 'U';  // ű Ű
+      // Romanian
+      case 0x0103: return 'a'; case 0x0102: return 'A';  // ă Ă
+      case 0x0219: return 's'; case 0x0218: return 'S';  // ș Ș
+      case 0x021B: return 't'; case 0x021A: return 'T';  // ț Ț
+      // Croatian
+      case 0x0111: return 'd'; case 0x0110: return 'D';  // đ Đ
+      // Turkish
+      case 0x011F: return 'g'; case 0x011E: return 'G';  // ğ Ğ
+      case 0x015F: return 's'; case 0x015E: return 'S';  // ş Ş
+      case 0x0131: return 'i';                            // ı
+      // Baltic (Lithuanian/Latvian)
+      case 0x0101: return 'a'; case 0x0100: return 'A';  // ā Ā
+      case 0x0113: return 'e'; case 0x0112: return 'E';  // ē Ē
+      case 0x012B: return 'i'; case 0x012A: return 'I';  // ī Ī
+      case 0x016B: return 'u'; case 0x016A: return 'U';  // ū Ū
+      case 0x0123: return 'g'; case 0x0122: return 'G';  // ģ Ģ
+      case 0x0137: return 'k'; case 0x0136: return 'K';  // ķ Ķ
+      case 0x013C: return 'l'; case 0x013B: return 'L';  // ļ Ļ
+      case 0x0146: return 'n'; case 0x0145: return 'N';  // ņ Ņ
+      case 0x0157: return 'r'; case 0x0156: return 'R';  // ŗ Ŗ
+      case 0x0173: return 'u'; case 0x0172: return 'U';  // ų Ų
+      case 0x0117: return 'e'; case 0x0116: return 'E';  // ė Ė
+      case 0x012F: return 'i'; case 0x012E: return 'I';  // į Į
       // French/Spanish/Portuguese common accents
       case 0x00E0: case 0x00E1: case 0x00E2: case 0x00E3: return 'a';
       case 0x00C0: case 0x00C1: case 0x00C2: case 0x00C3: return 'A';
