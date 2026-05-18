@@ -14,7 +14,7 @@ struct FullscreenMsgView {
 
   FullscreenMsgView() : scroll(0), active(false) {}
 
-  enum Result { NONE, PREV, NEXT, CLOSE };
+  enum Result { NONE, PREV, NEXT, CLOSE, REPLY };
 
   void begin() { scroll = 0; active = true; }
 
@@ -109,10 +109,11 @@ struct FullscreenMsgView {
   }
 
   Result handleInput(char c) {
-    if (c == KEY_UP)     { if (scroll > 0) scroll--; return NONE; }
-    if (c == KEY_DOWN)   { scroll++; return NONE; }
-    if (c == KEY_LEFT)   return NEXT;
-    if (c == KEY_RIGHT)  return PREV;
+    if (c == KEY_UP)          { if (scroll > 0) scroll--; return NONE; }
+    if (c == KEY_DOWN)        { scroll++; return NONE; }
+    if (c == KEY_LEFT)        return NEXT;
+    if (c == KEY_RIGHT)       return PREV;
+    if (c == KEY_CONTEXT_MENU) return REPLY;
     if (c == KEY_ENTER || c == KEY_CANCEL) return CLOSE;
     return NONE;
   }
