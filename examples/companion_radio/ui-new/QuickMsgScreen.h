@@ -46,7 +46,7 @@ class QuickMsgScreen : public UIScreen {
   bool      _ctx_dirty;
   char      _ctx_notif_item[22];
   char      _ctx_melody_item[20];
-  char      _reply_prefix[36];   // "@nick " built when reply is triggered
+  char      _reply_prefix[36];   // "@[nick] " built when reply is triggered
   bool      _reply_mode;         // true while composing a reply (prefix is prepended)
 
   struct ChHistEntry { uint8_t ch_idx; char text[140]; };
@@ -96,7 +96,8 @@ class QuickMsgScreen : public UIScreen {
     int slen = (int)(sep - text);
     if (slen == 2 && strncmp(text, "Me", 2) == 0) return false;
     if (slen > 32) slen = 32;
-    snprintf(_reply_prefix, sizeof(_reply_prefix), "@%.*s ", slen, text);
+    if (slen > 31) slen = 31;
+    snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.*s] ", slen, text);
     return true;
   }
 
@@ -780,7 +781,13 @@ public:
     } else { // MSG_PICK
       char title[24];
       if (_reply_mode) {
-        snprintf(title, sizeof(title), "RE:%.20s", _reply_prefix + 1); // skip '@'
+        int rlen = (int)strlen(_reply_prefix) - 4; // exclude "@[" and "] "
+        if (rlen < 0) rlen = 0;
+        if (rlen > 20) rlen = 20;
+        char nick_raw[32], nick_trans[32];
+        snprintf(nick_raw, sizeof(nick_raw), "%.*s", rlen, _reply_prefix + 2);
+        display.translateUTF8ToBlocks(nick_trans, nick_raw, sizeof(nick_trans));
+        snprintf(title, sizeof(title), "RE:%s", nick_trans);
       } else if (_sending_to_channel) {
         ChannelDetails ch;
         the_mesh.getChannel(_sel_channel_idx, ch);
@@ -988,7 +995,7 @@ public:
         } else if (res == FullscreenMsgView::REPLY) {
           int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
           if (ring_pos >= 0 && !_dm_hist[ring_pos].outgoing) {
-            snprintf(_reply_prefix, sizeof(_reply_prefix), "@%.32s ", _sel_contact.name);
+            snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _sel_contact.name);
             _ctx_menu.begin("Options", 1);
             _ctx_menu.addItem("Reply");
           }
@@ -1036,7 +1043,7 @@ public:
       if (c == KEY_CONTEXT_MENU && _dm_hist_sel >= 0) {
         int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
         if (ring_pos >= 0 && !_dm_hist[ring_pos].outgoing) {
-          snprintf(_reply_prefix, sizeof(_reply_prefix), "@%.32s ", _sel_contact.name);
+          snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _sel_contact.name);
           _ctx_menu.begin("Options", 1);
           _ctx_menu.addItem("Reply");
         }

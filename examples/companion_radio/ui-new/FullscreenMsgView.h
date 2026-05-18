@@ -3,7 +3,7 @@
 #include <helpers/ui/DisplayDriver.h>
 #include <Arduino.h>
 
-static const int FS_CHARS   = 21;
+static const int FS_CHARS   = 20;
 static const int FS_LINE_H  = 8;
 static const int FS_START_Y = 12;
 static const int FS_VISIBLE = (64 - FS_START_Y) / FS_LINE_H;
@@ -46,14 +46,14 @@ struct FullscreenMsgView {
     // detect @recipient at start of message
     char to_nick[32] = "";
     const char* body = text;
-    if (text[0] == '@') {
-      const char* sp = strchr(text, ' ');
-      if (sp && sp[1]) {
-        int len = (int)(sp - text) - 1;
+    if (text[0] == '@' && text[1] == '[') {
+      const char* close = strchr(text + 2, ']');
+      if (close && close[1] == ' ' && close[2]) {
+        int len = (int)(close - text) - 2;
         if (len >= (int)sizeof(to_nick)) len = sizeof(to_nick) - 1;
-        memcpy(to_nick, text + 1, len);
+        memcpy(to_nick, text + 2, len);
         to_nick[len] = '\0';
-        body = sp + 1;
+        body = close + 2;
       }
     }
 
@@ -66,8 +66,9 @@ struct FullscreenMsgView {
     display.setColor(DisplayDriver::DARK);
     display.drawTextEllipsized(2, 1, display.width() - 4, sender);
     if (to_nick[0]) {
-      char to_label[36];
-      snprintf(to_label, sizeof(to_label), "To: %s", to_nick);
+      char trans_nick[32], to_label[36];
+      display.translateUTF8ToBlocks(trans_nick, to_nick, sizeof(trans_nick));
+      snprintf(to_label, sizeof(to_label), "To: %s", trans_nick);
       display.drawTextEllipsized(2, 11, display.width() - 4, to_label);
     }
     display.setColor(DisplayDriver::LIGHT);
