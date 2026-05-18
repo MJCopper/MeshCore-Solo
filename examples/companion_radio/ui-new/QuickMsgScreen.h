@@ -593,9 +593,11 @@ public:
           const DmHistEntry& e = _dm_hist[ring_pos];
           const char* sender = e.outgoing ? "Me" : filtered_name;
           int dm_count = dmHistCountForContact(_sel_contact.id.pub_key);
-          return _dm_fs.render(display, sender, e.text,
-                               _dm_hist_sel < dm_count - 1,
-                               _dm_hist_sel > 0);
+          int ret = _dm_fs.render(display, sender, e.text,
+                                  _dm_hist_sel < dm_count - 1,
+                                  _dm_hist_sel > 0);
+          if (_ctx_menu.active) _ctx_menu.render(display);
+          return ret;
         }
         return 500;
       }
@@ -662,6 +664,7 @@ public:
       display.setCursor(cbx + 2, cby);
       display.print(ctxt);
       display.setColor(DisplayDriver::LIGHT);
+      if (_ctx_menu.active) _ctx_menu.render(display);
       return dm_count > 0 ? 500 : 2000;
 
     } else if (_phase == CHANNEL_HIST) {
@@ -680,9 +683,11 @@ public:
             strncpy(fsender, "?", sizeof(fsender));
             strncpy(fmsg, ftext, sizeof(fmsg) - 1); fmsg[sizeof(fmsg)-1] = '\0';
           }
-          return _fs.render(display, fsender, fmsg,
-                            _hist_sel < fs_hist_count - 1,
-                            _hist_sel > 0);
+          int ret = _fs.render(display, fsender, fmsg,
+                               _hist_sel < fs_hist_count - 1,
+                               _hist_sel > 0);
+          if (_ctx_menu.active) _ctx_menu.render(display);
+          return ret;
         }
         return 2000;
       }
@@ -767,6 +772,7 @@ public:
       display.setCursor(cbx + 1, cby);
       display.print(ctxt);
       display.setColor(DisplayDriver::LIGHT);
+      if (_ctx_menu.active) _ctx_menu.render(display);
 
     } else if (_phase == KEYBOARD) {
       return _kb.render(display);
