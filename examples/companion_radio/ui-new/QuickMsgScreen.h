@@ -88,14 +88,13 @@ class QuickMsgScreen : public UIScreen {
                 &sensors, batt);
   }
 
-  // Build "@nick " prefix from a channel message text ("nick: body") into _reply_prefix.
+  // Build "@[nick] " prefix from a channel message text ("nick: body") into _reply_prefix.
   // Returns false if sender is "Me" (own message — no reply prefix needed).
   bool buildChannelReplyPrefix(const char* text) {
     const char* sep = strstr(text, ": ");
     if (!sep) return false;
     int slen = (int)(sep - text);
     if (slen == 2 && strncmp(text, "Me", 2) == 0) return false;
-    if (slen > 32) slen = 32;
     if (slen > 31) slen = 31;
     snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.*s] ", slen, text);
     return true;
