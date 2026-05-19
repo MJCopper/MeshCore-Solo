@@ -39,7 +39,7 @@ jobs:
       - name: Clone Repo (font-experiments branch)
         uses: actions/checkout@v4
         with:
-          ref: font-experiments
+          ref: font-lemon
 
       - name: Setup Build Environment
         uses: ./.github/actions/setup-build-environment
