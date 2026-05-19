@@ -90,6 +90,18 @@ Automatically replies to incoming messages that contain a configured trigger wor
 
 ---
 
+## Lemon Font Build
+
+An alternative firmware build is available on the `font-lemon` branch. It replaces the default 5×7 Adafruit font with the [Lemon bitmap font](https://github.com/cmvnd/fonts), which offers:
+
+- **Native Unicode rendering** — Latin Extended, Greek, and Cyrillic characters (U+0020–U+04FF) are displayed directly without transliteration, covering Polish, Czech, Slovak, German, French, Scandinavian, Hungarian, Romanian, Croatian, Turkish, Baltic, Russian, and Greek scripts.
+- **Pixel-accurate word wrap** — text wraps based on actual glyph widths rather than a fixed character count.
+- **Slightly taller glyphs** — the font uses a 10 px line height compared to 8 px for the default font.
+
+Prebuilt `.uf2` files for the Lemon font variant are included in each release alongside the standard builds and are identified by `lemon-font` in the filename.
+
+---
+
 Feel free to explore, share feedback and feature requests!
 
 ## Development
