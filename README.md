@@ -16,14 +16,14 @@ Each message in the history list shows the sender name and a compact age indicat
 ╔══════════════════════════════╗
 ║          #general            ║
 ╠══════════════════════════════╣
-║▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓║  ← selected
-║ Alice                   3m  ║
-║ Hey, let's meet tomorrow    ║
-║┌───────────────────────────┐║
-║│▓▓▓▓▓▓▓▓▓ Bob      1h ▓▓▓▓│║
-║│ Sure, what time works?    │║
-║└───────────────────────────┘║
-║[+ send]                     ║
+║▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ║  ← selected
+║ Alice                   3m   ║
+║ Hey, let's meet tomorrow     ║
+║┌───────────────────────────┐ ║
+║│▓▓▓▓▓▓▓▓▓ Bob      1h ▓▓▓▓ │ ║
+║│ Sure, what time works?    │ ║
+║└───────────────────────────┘ ║
+║[+ send]                      ║
 ╚══════════════════════════════╝
 ```
 
@@ -31,8 +31,8 @@ Press Enter on a message to open it in fullscreen. Navigate between messages wit
 
 ```
 ╔══════════════════════════════╗
-║▓▓ Alice ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓║  ← sender
-║▓▓ To: Bob ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓║  ← recipient
+║▓▓ Alice ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ║  ← sender
+║▓▓ To: Bob ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ║  ← recipient
 ╠══════════════════════════════╣
 ║ Hey Bob, let's meet up       ║
 ║ tomorrow at 6pm downtown.    ║
@@ -107,7 +107,7 @@ Browse nodes that have recently advertised on the mesh. Filter by category (Favo
 
 ```
 ╔══════════════════════════════╗
-║▓▓▓▓▓ WioTracker-Alice ▓▓▓▓▓▓║  ← node name
+║▓▓▓▓▓ WioTracker-Alice ▓▓▓▓▓▓ ║  ← node name
 ╠══════════════════════════════╣
 ║ Lat: 50.06190                ║
 ║ Lon: 19.94090                ║
