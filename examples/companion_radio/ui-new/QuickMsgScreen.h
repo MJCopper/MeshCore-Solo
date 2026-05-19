@@ -49,12 +49,12 @@ class QuickMsgScreen : public UIScreen {
   char      _reply_prefix[36];   // "@[nick] " built when reply is triggered
   bool      _reply_mode;         // true while composing a reply (prefix is prepended)
 
-  struct ChHistEntry { uint8_t ch_idx; char text[140]; };
+  struct ChHistEntry { uint8_t ch_idx; char text[140]; uint32_t timestamp; };
   ChHistEntry _hist[CH_HIST_MAX];
   int _hist_head, _hist_count;
 
   // DM_HIST
-  struct DmHistEntry { uint8_t prefix[4]; uint8_t outgoing; char text[80]; };
+  struct DmHistEntry { uint8_t prefix[4]; uint8_t outgoing; char text[80]; uint32_t timestamp; };
   static const int DM_HIST_MAX = 64;
   DmHistEntry _dm_hist[DM_HIST_MAX];
   int _dm_hist_head, _dm_hist_count;
@@ -131,6 +131,16 @@ class QuickMsgScreen : public UIScreen {
     }
   }
 
+  static void fmtMsgAge(char* buf, int n, uint32_t timestamp) {
+    uint32_t now = rtc_clock.getCurrentTime();
+    if (timestamp == 0 || now < timestamp) { buf[0] = '\0'; return; }
+    uint32_t age = now - timestamp;
+    if      (age < 60)    snprintf(buf, n, "%us", age);
+    else if (age < 3600)  snprintf(buf, n, "%um", age / 60);
+    else if (age < 86400) snprintf(buf, n, "%uh", age / 3600);
+    else                  snprintf(buf, n, ">1d");
+  }
+
   // count history entries for a specific channel
   int histCountForChannel(int ch_idx) const {
     int n = 0;
@@ -164,6 +174,7 @@ class QuickMsgScreen : public UIScreen {
     }
     memcpy(_dm_hist[pos].prefix, pub_key, 4);
     _dm_hist[pos].outgoing = outgoing ? 1 : 0;
+    _dm_hist[pos].timestamp = rtc_clock.getCurrentTime();
     strncpy(_dm_hist[pos].text, text, sizeof(DmHistEntry::text) - 1);
     _dm_hist[pos].text[sizeof(DmHistEntry::text) - 1] = '\0';
   }
@@ -397,6 +408,7 @@ public:
       _hist_head = (_hist_head + 1) % CH_HIST_MAX;
     }
     _hist[pos].ch_idx = ch_idx;
+    _hist[pos].timestamp = rtc_clock.getCurrentTime();
     strncpy(_hist[pos].text, text, sizeof(_hist[pos].text) - 1);
     _hist[pos].text[sizeof(_hist[pos].text) - 1] = '\0';
 
@@ -621,18 +633,23 @@ public:
         const DmHistEntry& e = _dm_hist[ring_pos];
         const char* sender = e.outgoing ? "Me" : filtered_name;
 
+        char age[6]; fmtMsgAge(age, sizeof(age), e.timestamp);
+        int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
+
         if (sel) {
           display.setColor(DisplayDriver::LIGHT);
           display.fillRect(0, y, display.width(), HIST_BOX_H);
           display.setColor(DisplayDriver::DARK);
-          display.drawTextEllipsized(3, y + 1, display.width() - 6, sender);
+          display.drawTextEllipsized(3, y + 1, display.width() - 6 - age_w, sender);
+          if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
           display.drawTextEllipsized(3, y + 10, display.width() - 6, e.text);
         } else {
           display.setColor(DisplayDriver::LIGHT);
           display.drawRect(0, y, display.width(), HIST_BOX_H);
           display.fillRect(1, y + 1, display.width() - 2, 8);
           display.setColor(DisplayDriver::DARK);
-          display.drawTextEllipsized(3, y + 1, display.width() - 6, sender);
+          display.drawTextEllipsized(3, y + 1, display.width() - 6 - age_w, sender);
+          if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
           display.setColor(DisplayDriver::LIGHT);
           display.drawTextEllipsized(3, y + 10, display.width() - 6, e.text);
         }
@@ -723,18 +740,23 @@ public:
           msg_part[sizeof(msg_part) - 1] = '\0';
         }
 
+        char age[6]; fmtMsgAge(age, sizeof(age), _hist[ring_pos].timestamp);
+        int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
+
         if (sel) {
           display.setColor(DisplayDriver::LIGHT);
           display.fillRect(0, y, display.width(), HIST_BOX_H);
           display.setColor(DisplayDriver::DARK);
-          display.drawTextEllipsized(3, y + 1, display.width() - 6, sender);
+          display.drawTextEllipsized(3, y + 1, display.width() - 6 - age_w, sender);
+          if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
           display.drawTextEllipsized(3, y + 10, display.width() - 6, msg_part);
         } else {
           display.setColor(DisplayDriver::LIGHT);
           display.drawRect(0, y, display.width(), HIST_BOX_H);
           display.fillRect(1, y + 1, display.width() - 2, 8);
           display.setColor(DisplayDriver::DARK);
-          display.drawTextEllipsized(3, y + 1, display.width() - 6, sender);
+          display.drawTextEllipsized(3, y + 1, display.width() - 6 - age_w, sender);
+          if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
           display.setColor(DisplayDriver::LIGHT);
           display.drawTextEllipsized(3, y + 10, display.width() - 6, msg_part);
         }
