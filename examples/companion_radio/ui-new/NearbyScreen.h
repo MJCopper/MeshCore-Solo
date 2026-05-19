@@ -228,12 +228,12 @@ public:
         display.setCursor(2, 38); display.print("Az: unknown");
       }
 
-      snprintf(buf, sizeof(buf), "Type:%s", typeName(e.type));
+      snprintf(buf, sizeof(buf), "Type: %s", typeName(e.type));
       display.setCursor(2, 47); display.print(buf);
 
       char age[16];
       fmtAge(age, sizeof(age), e.lastmod);
-      snprintf(buf, sizeof(buf), "Seen:%s", age);
+      snprintf(buf, sizeof(buf), "Seen: %s", age);
       display.setCursor(2, 56); display.print(buf);
 
       return 2000;
