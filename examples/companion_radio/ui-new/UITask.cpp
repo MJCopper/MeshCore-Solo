@@ -1561,6 +1561,7 @@ void UITask::applyBrightness() {
 void UITask::applyFont() {
   if (_display != NULL && _node_prefs != NULL) {
     _display->setLemonFont(_node_prefs->use_lemon_font != 0);
+    _next_refresh = 0;
   }
 }
 
