@@ -22,8 +22,9 @@ class NearbyScreen : public UIScreen {
     int32_t  lat_e6, lon_e6;
     float    dist_km;
     uint8_t  type;
-    int      contact_idx;
-    uint32_t lastmod;   // our RTC timestamp of last received packet
+    int      contact_idx;      // -1 for discovered-but-unknown nodes
+    uint32_t lastmod;
+    bool     is_discovered;    // true = found via CTL_TYPE_NODE_DISCOVER_RESP, not in contacts[]
   };
 
   static const int MAX_NEARBY = 32;
@@ -101,7 +102,7 @@ class NearbyScreen : public UIScreen {
   }
 
   void startScan() {
-    the_mesh.advert();
+    the_mesh.sendNodeDiscoverReq();
     _scanning = true;
     _scan_started_ms = millis();
   }
@@ -139,6 +140,26 @@ class NearbyScreen : public UIScreen {
       e.type        = ci.type;
       e.contact_idx = i;
       e.lastmod     = ci.lastmod;
+      e.is_discovered = false;
+    }
+
+    // add nodes discovered via CTL_TYPE_NODE_DISCOVER_RESP that are not in contacts[]
+    if (_filter != 0) {  // Fav filter never shows anonymous discovered nodes
+      DiscoveredEntry disc[DISCOVERED_NODES_MAX];
+      int disc_count = the_mesh.getDiscoveredNodes(disc, DISCOVERED_NODES_MAX);
+      for (int i = 0; i < disc_count && _count < MAX_NEARBY; i++) {
+        if (_filter >= 2 && disc[i].type != FILTER_TYPES[_filter]) continue;
+        Entry& e = _entries[_count++];
+        strncpy(e.name, typeName(disc[i].type), sizeof(e.name) - 1);
+        e.name[sizeof(e.name) - 1] = '\0';
+        e.lat_e6  = 0;
+        e.lon_e6  = 0;
+        e.dist_km = -1.0f;
+        e.type    = disc[i].type;
+        e.contact_idx   = -1;
+        e.lastmod       = disc[i].timestamp;
+        e.is_discovered = true;
+      }
     }
 
     // sort by distance ascending; nodes without GPS (-1) go to the end
@@ -242,7 +263,7 @@ public:
     // ── list view ────────────────────────────────────────────────────────────
     display.setColor(DisplayDriver::LIGHT);
     if (_scanning) {
-      display.drawTextCentered(display.width() / 2, 0, "ADVERTISING...");
+      display.drawTextCentered(display.width() / 2, 0, "DISCOVERING...");
     } else {
       char title[22];
       snprintf(title, sizeof(title), "NEARBY[%s]", FILTER_LABELS[_filter]);
@@ -252,7 +273,7 @@ public:
 
     if (_count == 0) {
       display.drawTextCentered(display.width() / 2, 28, _scanning ? "Waiting..." : "No contacts found");
-      display.drawTextCentered(display.width() / 2, 40, "[M]=Advert");
+      display.drawTextCentered(display.width() / 2, 40, "[M]=Discover");
     } else {
       for (int i = 0; i < VISIBLE && (_scroll + i) < _count; i++) {
         int idx = _scroll + i;
@@ -323,7 +344,7 @@ public:
     if (c == KEY_CANCEL) { _task->gotoToolsScreen(); return true; }
     if (c == KEY_CONTEXT_MENU) {
       _ctx_menu.begin("Options", 2);
-      _ctx_menu.addItem("Send my advert");
+      _ctx_menu.addItem("Discover nearby");
       _ctx_menu.addItem("Back");
       return true;
     }

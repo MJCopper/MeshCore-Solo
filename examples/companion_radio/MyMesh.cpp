@@ -764,7 +764,58 @@ bool MyMesh::onContactPathRecv(ContactInfo& contact, uint8_t* in_path, uint8_t i
   return BaseChatMesh::onContactPathRecv(contact, in_path, in_path_len, out_path, out_path_len, extra_type, extra, extra_len);
 }
 
+#define CTL_TYPE_NODE_DISCOVER_REQ  0x80
+#define CTL_TYPE_NODE_DISCOVER_RESP 0x90
+
+void MyMesh::sendNodeDiscoverReq() {
+  uint8_t data[10];
+  data[0] = CTL_TYPE_NODE_DISCOVER_REQ;
+  data[1] = (1 << ADV_TYPE_REPEATER) | (1 << ADV_TYPE_SENSOR) | (1 << ADV_TYPE_ROOM);
+  getRNG()->random(&data[2], 4);
+  memcpy(&_pending_node_discover_tag, &data[2], 4);
+  _pending_node_discover_until = futureMillis(8000);
+  _discovered_count = 0;
+  uint32_t since = 0;
+  memcpy(&data[6], &since, 4);
+  auto pkt = createControlData(data, sizeof(data));
+  if (pkt) sendZeroHop(pkt);
+}
+
+int MyMesh::getDiscoveredNodes(DiscoveredEntry dest[], int max_count) {
+  int n = min(_discovered_count, max_count);
+  memcpy(dest, _discovered, n * sizeof(DiscoveredEntry));
+  return n;
+}
+
 void MyMesh::onControlDataRecv(mesh::Packet *packet) {
+  // handle node discovery responses when in standalone UI mode (no companion app connected)
+  if (!_serial->isBLEConnected() &&
+      (packet->payload[0] & 0xF0) == CTL_TYPE_NODE_DISCOVER_RESP &&
+      packet->payload_len >= 6 + PUB_KEY_SIZE &&
+      _pending_node_discover_tag != 0 &&
+      !millisHasNowPassed(_pending_node_discover_until)) {
+    uint32_t tag;
+    memcpy(&tag, &packet->payload[2], 4);
+    if (tag == _pending_node_discover_tag) {
+      uint8_t node_type = packet->payload[0] & 0x0F;
+      const uint8_t* pub_key = &packet->payload[6];
+      // check if already in contacts — update lastmod so it shows as fresh
+      ContactInfo* known = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
+      if (known) {
+        known->lastmod = getRTCClock()->getCurrentTime();
+      }
+      // if unknown, add to temporary discovered list
+      if (!known && _discovered_count < DISCOVERED_NODES_MAX) {
+        DiscoveredEntry& e = _discovered[_discovered_count++];
+        memcpy(e.pub_key_prefix, pub_key, 4);
+        e.type = node_type;
+        e.timestamp = getRTCClock()->getCurrentTime();
+      }
+      if (_ui) _ui->notify(UIEventType::newContactMessage);
+    }
+    return;
+  }
+
   if (packet->payload_len + 4 > sizeof(out_frame)) {
     MESH_DEBUG_PRINTLN("onControlDataRecv(), payload_len too long: %d", packet->payload_len);
     return;
@@ -862,6 +913,9 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   dirty_contacts_expiry = 0;
   memset(advert_paths, 0, sizeof(advert_paths));
   memset(send_scope.key, 0, sizeof(send_scope.key));
+  _discovered_count = 0;
+  _pending_node_discover_tag = 0;
+  _pending_node_discover_until = 0;
 
   // defaults
   memset(&_prefs, 0, sizeof(_prefs));
