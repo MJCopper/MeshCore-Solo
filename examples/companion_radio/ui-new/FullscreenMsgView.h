@@ -4,7 +4,6 @@
 #include <Arduino.h>
 
 static const int FS_CHARS_MAX = 80;  // max bytes per wrapped line
-static const int FS_START_Y   = 12;
 
 struct FullscreenMsgView {
   int  scroll;
