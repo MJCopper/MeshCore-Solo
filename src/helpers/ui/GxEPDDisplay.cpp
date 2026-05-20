@@ -150,6 +150,12 @@ uint16_t GxEPDDisplay::getTextWidth(const char* str) {
   return w;
 }
 
+void GxEPDDisplay::setDisplayRotation(uint8_t rot) {
+  display.setRotation(rot & 3);
+  setDimensions(display.width(), display.height());
+  last_display_crc_value = -1;  // force redraw on next endFrame
+}
+
 void GxEPDDisplay::endFrame() {
   uint32_t crc = display_crc.finalize();
   if (crc != last_display_crc_value) {

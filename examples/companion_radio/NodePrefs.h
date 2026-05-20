@@ -78,5 +78,6 @@ struct NodePrefs {  // persisted to file
   struct DmMelodyEntry { uint8_t prefix[4]; uint8_t slot; }; // slot: 0=global,1=melody1,2=melody2
   static const int DM_MELODY_TABLE_MAX = 16;
   DmMelodyEntry dm_melody[DM_MELODY_TABLE_MAX];
-  uint8_t  use_lemon_font;  // 0=default Adafruit font, 1=Lemon font (Unicode, pixel-accurate wrap)
+  uint8_t  use_lemon_font;      // 0=default Adafruit font, 1=Lemon font (Unicode, pixel-accurate wrap)
+  uint8_t  display_rotation;    // 0-3; only used on e-ink displays
 };

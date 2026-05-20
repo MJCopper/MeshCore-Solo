@@ -84,5 +84,6 @@ public:
   void drawRect(int x, int y, int w, int h) override;
   void drawXbm(int x, int y, const uint8_t* bits, int w, int h) override;
   uint16_t getTextWidth(const char* str) override;
+  void setDisplayRotation(uint8_t rot) override;
   void endFrame() override;
 };

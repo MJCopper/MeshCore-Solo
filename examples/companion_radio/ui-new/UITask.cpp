@@ -817,6 +817,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 
   applyBrightness();
   applyFont();
+  applyRotation();
 }
 
 void UITask::gotoSettingsScreen() {
@@ -1561,6 +1562,13 @@ void UITask::applyBrightness() {
 void UITask::applyFont() {
   if (_display != NULL && _node_prefs != NULL) {
     _display->setLemonFont(_node_prefs->use_lemon_font != 0);
+    _next_refresh = 0;
+  }
+}
+
+void UITask::applyRotation() {
+  if (_display != NULL && _node_prefs != NULL) {
+    _display->setDisplayRotation(_node_prefs->display_rotation);
     _next_refresh = 0;
   }
 }

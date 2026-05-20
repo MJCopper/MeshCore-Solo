@@ -15,6 +15,9 @@ class SettingsScreen : public UIScreen {
     CLOCK_SECONDS,
     CLOCK_FORMAT,
     FONT,
+#if defined(EINK_DISPLAY_MODEL)
+    ROTATION,
+#endif
     // Sound section
     SECTION_SOUND,
     BUZZER,
@@ -321,6 +324,14 @@ class SettingsScreen : public UIScreen {
       display.print("Font");
       display.setCursor(VAL_X, y);
       display.print((p && p->use_lemon_font) ? "Lemon" : "Default");
+#if defined(EINK_DISPLAY_MODEL)
+    } else if (item == ROTATION) {
+      display.print("Rotation");
+      display.setCursor(VAL_X, y);
+      { static const char* ROT_LABELS[] = { "0deg", "90deg", "180deg", "270deg" };
+        uint8_t r = p ? (p->display_rotation & 3) : 0;
+        display.print(ROT_LABELS[r]); }
+#endif
     } else if (item == DM_FILTER) {
       display.print("DM");
       display.setCursor(VAL_X, y);
@@ -517,6 +528,14 @@ public:
       _dirty = true;
       return true;
     }
+#if defined(EINK_DISPLAY_MODEL)
+    if (_selected == ROTATION && p && (left || right || enter)) {
+      p->display_rotation = (p->display_rotation + (left ? 3 : 1)) & 3;
+      _task->applyRotation();
+      _dirty = true;
+      return true;
+    }
+#endif
     if (_selected == DM_FILTER && p && (left || right || enter)) {
       p->dm_show_all = p->dm_show_all ? 0 : 1;
       _dirty = true;
