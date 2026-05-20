@@ -2216,7 +2216,7 @@ void MyMesh::loop() {
   }
 
 #ifdef DISPLAY_CLASS
-  if (_ui) _ui->setHasConnection(_serial->isConnected());
+  if (_ui) _ui->setHasConnection(_serial->isBLEConnected());
 #endif
 }
 

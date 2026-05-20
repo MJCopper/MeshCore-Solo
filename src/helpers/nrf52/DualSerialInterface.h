@@ -22,8 +22,10 @@ public:
   void disable() override { _ble.disable(); _usb.disable(); }
   bool isEnabled() const override { return _ble.isEnabled() || _usb.isEnabled(); }
 
-  // Reports BLE connection state (used for UI indicator and buzzer Auto mode)
-  bool isConnected() const override { return _ble.isConnected(); }
+  // Always true — USB is always available as fallback, so the mesh can send.
+  bool isConnected() const override { return true; }
+  // True only when a BLE companion app is paired and connected.
+  bool isBLEConnected() const override { return _ble.isConnected(); }
 
   bool isWriteBusy() const override {
     return _ble.isConnected() ? _ble.isWriteBusy() : _usb.isWriteBusy();
