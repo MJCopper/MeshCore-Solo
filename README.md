@@ -66,6 +66,7 @@ All settings are saved to flash and restored on next boot.
   - Auto-off timeout
   - Battery display mode (icon, %, V)
   - Clock seconds (show/hide — hiding reduces display refresh from 1 s to 60 s)
+  - Font — **Default** (5×7 Adafruit, ASCII + transliteration) or **Lemon** (native Unicode, available in the `font-switcher` build only)
 - **Sound**
   - Buzzer: On / Off / **Auto** — Auto mode silences the device while connected via Bluetooth, and re-enables sound when the connection drops
   - Volume (1–5; preview tone plays on each change)
@@ -146,15 +147,17 @@ Automatically replies to incoming messages that contain a configured trigger wor
 
 ---
 
-## Lemon Font Build
+## Font Switcher Build
 
-An alternative firmware build is available on the `font-lemon` branch. It replaces the default 5×7 Adafruit font with the [Lemon bitmap font](https://github.com/cmvnd/fonts), which offers:
+An alternative firmware build is available (`font-switcher` in the filename). It includes both the default 5×7 Adafruit font and the [Lemon bitmap font](https://github.com/cmvnd/fonts), switchable at runtime in **Settings → Display → Font** without reflashing. The selected font is saved to flash and takes effect immediately.
+
+The Lemon font offers:
 
 - **Native Unicode rendering** — Latin Extended, Greek, and Cyrillic characters (U+0020–U+04FF) are displayed directly without transliteration, covering Polish, Czech, Slovak, German, French, Scandinavian, Hungarian, Romanian, Croatian, Turkish, Baltic, Russian, and Greek scripts.
 - **Pixel-accurate word wrap** — text wraps based on actual glyph widths rather than a fixed character count.
 - **Slightly taller glyphs** — the font uses a 10 px line height compared to 8 px for the default font.
 
-Prebuilt `.uf2` files for the Lemon font variant are included in each release alongside the standard builds and are identified by `lemon-font` in the filename.
+Prebuilt `.uf2` files for the font-switcher variant are included in each release alongside the standard builds and are identified by `font-switcher` in the filename.
 
 ---
 
