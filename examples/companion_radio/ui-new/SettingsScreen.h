@@ -14,6 +14,7 @@ class SettingsScreen : public UIScreen {
     BATT_DISPLAY,
     CLOCK_SECONDS,
     CLOCK_FORMAT,
+    FONT,
     // Sound section
     SECTION_SOUND,
     BUZZER,
@@ -316,6 +317,10 @@ class SettingsScreen : public UIScreen {
       display.print("Format");
       display.setCursor(VAL_X, y);
       display.print((p && p->clock_12h) ? "12h" : "24h");
+    } else if (item == FONT) {
+      display.print("Font");
+      display.setCursor(VAL_X, y);
+      display.print((p && p->use_lemon_font) ? "Lemon" : "Default");
     } else if (item == DM_FILTER) {
       display.print("DM");
       display.setCursor(VAL_X, y);
@@ -503,6 +508,12 @@ public:
     }
     if (_selected == CLOCK_FORMAT && p && (left || right || enter)) {
       p->clock_12h ^= 1;
+      _dirty = true;
+      return true;
+    }
+    if (_selected == FONT && p && (left || right || enter)) {
+      p->use_lemon_font ^= 1;
+      _task->applyFont();
       _dirty = true;
       return true;
     }

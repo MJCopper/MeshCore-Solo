@@ -21,11 +21,17 @@ class SH1106Display : public DisplayDriver
   uint8_t _color;
   uint8_t _contrast;
   uint8_t _precharge;
+  bool _use_lemon;
 
   bool i2c_probe(TwoWire &wire, uint8_t addr);
+  static uint32_t decodeUtf8(const uint8_t*& p);
+  int16_t drawLemonChar(int16_t x, int16_t y, uint32_t cp);
+  uint8_t lemonXAdvance(uint32_t cp);
 
 public:
-  SH1106Display() : DisplayDriver(128, 64), display(128, 64, &Wire, PIN_OLED_RESET) { _isOn = false; _contrast = 255; _precharge = 0x1F; }
+  SH1106Display() : DisplayDriver(128, 64), display(128, 64, &Wire, PIN_OLED_RESET) {
+    _isOn = false; _contrast = 255; _precharge = 0x1F; _use_lemon = false;
+  }
   bool begin();
 
   bool isOn() override { return _isOn; }
@@ -41,6 +47,10 @@ public:
   void drawRect(int x, int y, int w, int h) override;
   void drawXbm(int x, int y, const uint8_t *bits, int w, int h) override;
   uint16_t getTextWidth(const char *str) override;
+  int getCharWidth() const override { return _use_lemon ? 5 : 6; }
+  int getLineHeight() const override { return _use_lemon ? 9 : 8; }
+  void setLemonFont(bool enabled) override { _use_lemon = enabled; }
+  void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) override;
   void setBrightness(uint8_t level) override;
   void endFrame() override;
 };

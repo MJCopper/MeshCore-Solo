@@ -27,6 +27,9 @@ public:
   virtual void drawRect(int x, int y, int w, int h) = 0;
   virtual void drawXbm(int x, int y, const uint8_t* bits, int w, int h) = 0;
   virtual uint16_t getTextWidth(const char* str) = 0;
+  virtual int getCharWidth() const { return 6; }   // typical character advance width (px)
+  virtual int getLineHeight() const { return 8; }  // pixel rows per text line
+  virtual void setLemonFont(bool) { }              // no-op; overridden by displays that support Lemon
   virtual void drawTextCentered(int mid_x, int y, const char* str) {   // helper method (override to optimise)
     int w = getTextWidth(str);
     setCursor(mid_x - w/2, y);
@@ -180,6 +183,10 @@ public:
     int str_len = strlen(temp_str);
     
     while (str_len > 0 && getTextWidth(temp_str) > max_width - ellipsis_width) {
+      temp_str[--str_len] = 0;
+    }
+    // Strip orphaned UTF-8 leading byte left by byte-at-a-time trimming above.
+    while (str_len > 0 && ((uint8_t)temp_str[str_len - 1] & 0xC0) == 0xC0) {
       temp_str[--str_len] = 0;
     }
     strcat(temp_str, ellipsis);

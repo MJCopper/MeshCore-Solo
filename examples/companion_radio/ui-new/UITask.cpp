@@ -816,6 +816,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   setCurrScreen(splash);
 
   applyBrightness();
+  applyFont();
 }
 
 void UITask::gotoSettingsScreen() {
@@ -1554,6 +1555,12 @@ void UITask::applyGPSInterval() {
 void UITask::applyBrightness() {
   if (_display != NULL && _node_prefs != NULL) {
     _display->setBrightness(_node_prefs->display_brightness);
+  }
+}
+
+void UITask::applyFont() {
+  if (_display != NULL && _node_prefs != NULL) {
+    _display->setLemonFont(_node_prefs->use_lemon_font != 0);
   }
 }
 

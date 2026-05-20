@@ -3,10 +3,8 @@
 #include <helpers/ui/DisplayDriver.h>
 #include <Arduino.h>
 
-static const int FS_CHARS   = 20;
-static const int FS_LINE_H  = 8;
-static const int FS_START_Y = 12;
-static const int FS_VISIBLE = (64 - FS_START_Y) / FS_LINE_H;
+static const int FS_CHARS_MAX = 80;  // max bytes per wrapped line
+static const int FS_START_Y   = 12;
 
 struct FullscreenMsgView {
   int  scroll;
@@ -18,23 +16,49 @@ struct FullscreenMsgView {
 
   void begin() { scroll = 0; active = true; }
 
-  static int wrapLines(const char* text, char out[][FS_CHARS + 1], int max_lines) {
+  // Pixel-accurate word-wrap: breaks at last space that fits within max_px,
+  // hard-breaks long words. Works for both fixed- and variable-width fonts.
+  static int wrapLines(DisplayDriver& display, const char* text, int max_px,
+                       char out[][FS_CHARS_MAX], int max_lines) {
     int count = 0;
-    const char* p = text;
-    while (*p && count < max_lines) {
-      int len = strlen(p);
-      if (len <= FS_CHARS) {
-        strncpy(out[count++], p, FS_CHARS);
-        out[count - 1][len] = '\0';
-        break;
+    const char* seg = text;
+    while (*seg && count < max_lines) {
+      const char* p       = seg;
+      const char* last_sp = nullptr;
+      const char* last_fit = seg;
+
+      while (*p && (p - seg) < FS_CHARS_MAX - 1) {
+        uint8_t b0 = (uint8_t)*p;
+        int cb = (b0 < 0x80) ? 1 : (b0 < 0xE0) ? 2 : (b0 < 0xF0) ? 3 : 4;
+        if ((p - seg) + cb >= FS_CHARS_MAX) break;
+
+        char buf[FS_CHARS_MAX];
+        int n = (int)(p - seg) + cb;
+        memcpy(buf, seg, n); buf[n] = '\0';
+        if (display.getTextWidth(buf) > max_px && p > seg) break;
+
+        if (*p == ' ') last_sp = p;
+        p       += cb;
+        last_fit = p;
       }
-      int brk = FS_CHARS;
-      for (int i = FS_CHARS - 1; i > 0; i--) {
-        if (p[i] == ' ') { brk = i; break; }
+
+      const char* end;
+      const char* next_seg;
+      if (!*p) {
+        end = p; next_seg = p;
+      } else if (last_sp && last_sp > seg) {
+        end = last_sp; next_seg = last_sp + 1;
+      } else {
+        end = last_fit; next_seg = last_fit;
       }
-      strncpy(out[count], p, brk);
-      out[count++][brk] = '\0';
-      p += brk + (p[brk] == ' ' ? 1 : 0);
+
+      int len = (int)(end - seg);
+      if (len <= 0) { seg = *seg ? seg + 1 : seg; continue; }
+      if (len > FS_CHARS_MAX - 1) len = FS_CHARS_MAX - 1;
+      memcpy(out[count], seg, len);
+      out[count][len] = '\0';
+      count++;
+      seg = next_seg;
     }
     return count;
   }
@@ -42,6 +66,8 @@ struct FullscreenMsgView {
   int render(DisplayDriver& display, const char* sender, const char* text,
              bool has_prev, bool has_next) {
     display.setTextSize(1);
+    const int lineH  = display.getLineHeight();
+    const int max_px = display.width() - 6;
 
     // detect @recipient at start of message
     char to_nick[32] = "";
@@ -59,7 +85,7 @@ struct FullscreenMsgView {
 
     const int header_h = to_nick[0] ? 20 : 10;
     const int startY   = header_h + 2;
-    const int visible  = (display.height() - startY - FS_LINE_H) / FS_LINE_H;
+    const int visible  = (display.height() - startY - lineH) / lineH;
 
     display.setColor(DisplayDriver::LIGHT);
     display.fillRect(0, 0, display.width(), header_h);
@@ -75,35 +101,36 @@ struct FullscreenMsgView {
 
     char trans_text[512];
     display.translateUTF8ToBlocks(trans_text, body, sizeof(trans_text));
-    char lines[12][FS_CHARS + 1];
-    int lcount = wrapLines(trans_text, lines, 12);
+    char lines[12][FS_CHARS_MAX];
+    int lcount = wrapLines(display, trans_text, max_px, lines, 12);
     int max_scroll = lcount > visible ? lcount - visible : 0;
     if (scroll > max_scroll) scroll = max_scroll;
 
     for (int i = 0; i < visible && (scroll + i) < lcount; i++) {
-      display.setCursor(0, startY + i * FS_LINE_H);
+      display.setCursor(0, startY + i * lineH);
       display.print(lines[scroll + i]);
     }
     if (scroll > 0) {
       display.setColor(DisplayDriver::DARK);
-      display.fillRect(display.width() - 6, startY, 6, FS_LINE_H);
+      display.fillRect(display.width() - 6, startY, 6, lineH);
       display.setColor(DisplayDriver::LIGHT);
       display.setCursor(display.width() - 6, startY);
       display.print("^");
     }
     if (scroll < max_scroll) {
       display.setColor(DisplayDriver::DARK);
-      display.fillRect(display.width() - 6, startY + (visible - 1) * FS_LINE_H, 6, FS_LINE_H);
+      display.fillRect(display.width() - 6, startY + (visible - 1) * lineH, 6, lineH);
       display.setColor(DisplayDriver::LIGHT);
-      display.setCursor(display.width() - 6, startY + (visible - 1) * FS_LINE_H);
+      display.setCursor(display.width() - 6, startY + (visible - 1) * lineH);
       display.print("v");
     }
+    const int nav_y = display.height() - lineH;
     if (has_next) {
-      display.setCursor(0, 56);
+      display.setCursor(0, nav_y);
       display.print("<");
     }
     if (has_prev) {
-      display.setCursor(display.width() - 6, 56);
+      display.setCursor(display.width() - 6, nav_y);
       display.print(">");
     }
     return 2000;
