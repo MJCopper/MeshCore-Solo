@@ -71,7 +71,10 @@ static uint32_t _atoi(const char* sp) {
     ArduinoSerialInterface serial_interface;
   #endif
 #elif defined(NRF52_PLATFORM)
-  #ifdef BLE_PIN_CODE
+  #ifdef DUAL_SERIAL
+    #include <helpers/nrf52/DualSerialInterface.h>
+    DualSerialInterface serial_interface;
+  #elif defined(BLE_PIN_CODE)
     #include <helpers/nrf52/SerialBLEInterface.h>
     SerialBLEInterface serial_interface;
   #else
@@ -150,7 +153,9 @@ void setup() {
     #endif
   );
 
-#ifdef BLE_PIN_CODE
+#ifdef DUAL_SERIAL
+  serial_interface.begin(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin(), Serial);
+#elif defined(BLE_PIN_CODE)
   serial_interface.begin(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
 #else
   serial_interface.begin(Serial);

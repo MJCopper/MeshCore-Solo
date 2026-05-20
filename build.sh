@@ -233,6 +233,7 @@ build_companion_firmwares() {
 build_wio_tracker_l1_firmwares() {
   build_firmware "WioTrackerL1_companion_radio_usb_settings"
   build_firmware "WioTrackerL1_companion_radio_ble_settings"
+  build_firmware "WioTrackerL1_companion_radio_dual_settings"
 }
 
 build_room_server_firmwares() {
