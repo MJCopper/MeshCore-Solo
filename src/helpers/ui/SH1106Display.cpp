@@ -43,11 +43,13 @@ void SH1106Display::startFrame(Color bkg)
   _color = SH110X_WHITE;
   display.setTextColor(_color);
   display.setTextSize(1);
+  _text_sz = 1;
   display.cp437(true); // Use full 256 char 'Code Page 437' font
 }
 
 void SH1106Display::setTextSize(int sz)
 {
+  _text_sz = sz;
   display.setTextSize(sz);
 }
 
@@ -88,6 +90,7 @@ uint32_t SH1106Display::decodeUtf8(const uint8_t*& p) {
 }
 
 int16_t SH1106Display::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
+  int sz = _text_sz;
   for (uint8_t i = 0; i < lemonIconCount; i++) {
     if (pgm_read_dword(&lemonIconCPs[i]) == cp) {
       const GFXglyph* g = &lemonIconGlyphs[i];
@@ -99,16 +102,19 @@ int16_t SH1106Display::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
       for (uint8_t row = 0; row < h; row++)
         for (uint8_t col = 0; col < w; col++) {
           if (!bit) { bits = pgm_read_byte(&lemonIconBitmaps[bo++]); bit = 0x80; }
-          if (bits & bit) display.drawPixel(x + xo + col, y + 6 + yo + row, _color);
+          if (bits & bit) {
+            if (sz == 1) display.drawPixel(x + xo + col, y + 6 + yo + row, _color);
+            else display.fillRect(x + xo*sz + col*sz, y + 6*sz + yo*sz + row*sz, sz, sz, _color);
+          }
           bit >>= 1;
         }
-      return x + xa;
+      return x + xa * sz;
     }
   }
 
   if (cp < Lemon.first || cp > Lemon.last) {
-    if (cp >= 0x20) display.fillRect(x + 1, y - 1, 4, 6, _color);
-    return x + 6;
+    if (cp >= 0x20) display.fillRect(x + sz, y - sz, 4*sz, 6*sz, _color);
+    return x + 6 * sz;
   }
   const GFXglyph* g = &lemonGlyphs[cp - Lemon.first];
   uint8_t w = pgm_read_byte(&g->width), h = pgm_read_byte(&g->height);
@@ -119,15 +125,20 @@ int16_t SH1106Display::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
   for (uint8_t row = 0; row < h; row++)
     for (uint8_t col = 0; col < w; col++) {
       if (!bit) { bits = pgm_read_byte(&lemonBitmaps[bo++]); bit = 0x80; }
-      if (bits & bit) display.drawPixel(x + xo + col, y + 6 + yo + row, _color);
+      if (bits & bit) {
+        if (sz == 1) display.drawPixel(x + xo + col, y + 6 + yo + row, _color);
+        else display.fillRect(x + xo*sz + col*sz, y + 6*sz + yo*sz + row*sz, sz, sz, _color);
+      }
       bit >>= 1;
     }
-  return x + xa;
+  return x + xa * sz;
 }
 
 uint8_t SH1106Display::lemonXAdvance(uint32_t cp) {
-  if (cp < Lemon.first || cp > Lemon.last) return 6;
-  return pgm_read_byte(&lemonGlyphs[cp - Lemon.first].xAdvance);
+  uint8_t xa;
+  if (cp < Lemon.first || cp > Lemon.last) xa = 6;
+  else xa = pgm_read_byte(&lemonGlyphs[cp - Lemon.first].xAdvance);
+  return xa * _text_sz;
 }
 
 void SH1106Display::translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) {
