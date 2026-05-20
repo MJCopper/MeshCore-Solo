@@ -86,7 +86,9 @@ bool genericBuzzer::_parseNext(const char*& p, uint8_t def_dur, uint8_t def_oct,
 }
 
 uint8_t genericBuzzer::_dutyPct() const {
-    static const uint8_t PCT[5] = { 2, 8, 20, 35, 50 };
+    // Inverted polarity (0x8000 bit): duty_HIGH = 100% - PCT.
+    // Values chosen for ~6-8 dB perceptual steps: -24/-16/-9/-3/0 dB.
+    static const uint8_t PCT[5] = { 2, 5, 12, 25, 50 };
     return PCT[_volume_level < 5 ? _volume_level : 4];
 }
 
@@ -96,6 +98,7 @@ void genericBuzzer::_nrfStartPwm(uint16_t freq) {
     uint32_t nrf_pin = g_ADigitalPinMap[PIN_BUZZER];
     uint16_t top = 125000 / freq;
     uint16_t cmp = (uint16_t)(((uint32_t)top * _dutyPct()) / 100);
+    if (cmp == 0) cmp = 1;  // inverted polarity: cmp=0 → 100% HIGH → no AC → silence
 
     // Write duty BEFORE SEQSTART so DMA reads our value on the very first period
     _duty_buf = 0x8000U | cmp;
@@ -168,6 +171,7 @@ void genericBuzzer::applyVolume() {
     if (!_pwm_on) return;
     uint16_t top = (uint16_t)NRF_PWM2->COUNTERTOP;
     uint16_t cmp = (uint16_t)(((uint32_t)top * _dutyPct()) / 100);
+    if (cmp == 0) cmp = 1;
     _duty_buf = 0x8000U | cmp;  // DMA picks this up within one period (< 2.3 ms at A4)
 }
 

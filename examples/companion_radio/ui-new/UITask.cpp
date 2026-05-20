@@ -1560,7 +1560,7 @@ void UITask::setBuzzerVolumeLevel(uint8_t level) {
   if (level > 4) level = 4;
   _node_prefs->buzzer_volume = level;
   buzzer.setVolume(level);
-  if (level > 0) buzzer.playForced("Vol:d=16,o=5,b=120:c");
+  if (level > 0) buzzer.playForced("Vol:d=16,o=6,b=120:c");
   _next_refresh = 0;
 #endif
 }
