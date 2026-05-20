@@ -32,31 +32,31 @@ jobs:
           name: wio-tracker-l1-firmwares
           path: out
 
-  build-lemon-font:
+  build-font-switcher:
     runs-on: ubuntu-latest
     steps:
 
-      - name: Clone Repo (font-experiments branch)
+      - name: Clone Repo (font-switcher branch)
         uses: actions/checkout@v4
         with:
-          ref: font-lemon
+          ref: font-switcher
 
       - name: Setup Build Environment
         uses: ./.github/actions/setup-build-environment
 
-      - name: Build Lemon Font Firmwares
+      - name: Build Font Switcher Firmwares
         env:
-          FIRMWARE_VERSION: ${{ env.GIT_TAG_VERSION }}-lemon-font
+          FIRMWARE_VERSION: ${{ env.GIT_TAG_VERSION }}-font-switcher
         run: /usr/bin/env bash build.sh build-wio-tracker-l1-firmwares
 
       - name: Upload Workflow Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wio-tracker-l1-lemon-font-firmwares
+          name: wio-tracker-l1-font-switcher-firmwares
           path: out
 
   release:
-    needs: [build-standard, build-lemon-font]
+    needs: [build-standard, build-font-switcher]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -70,10 +70,10 @@ jobs:
           name: wio-tracker-l1-firmwares
           path: out
 
-      - name: Download Lemon Font Firmwares
+      - name: Download Font Switcher Firmwares
         uses: actions/download-artifact@v4
         with:
-          name: wio-tracker-l1-lemon-font-firmwares
+          name: wio-tracker-l1-font-switcher-firmwares
           path: out
 
       - name: Create Release
