@@ -18,6 +18,9 @@ on:
       - 'platformio.ini'
       - '.github/workflows/pr-build-check.yml'
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
