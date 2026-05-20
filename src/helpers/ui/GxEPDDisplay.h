@@ -16,37 +16,62 @@
 
 #include "DisplayDriver.h"
 
-class GxEPDDisplay : public DisplayDriver {
+#ifndef DISPLAY_ROTATION
+  #define DISPLAY_ROTATION 0
+#endif
 
+// Panel native dimensions before rotation. Derived from the model class when
+// EINK_DISPLAY_MODEL is set; override with EINK_PANEL_W/H for other panels.
+#if defined(EINK_DISPLAY_MODEL)
+  #ifndef EINK_PANEL_W
+    #define EINK_PANEL_W EINK_DISPLAY_MODEL::WIDTH
+  #endif
+  #ifndef EINK_PANEL_H
+    #define EINK_PANEL_H EINK_DISPLAY_MODEL::HEIGHT
+  #endif
+#else
+  #ifndef EINK_PANEL_W
+    #define EINK_PANEL_W 200
+    #define EINK_PANEL_H 200
+  #endif
+#endif
+
+// Odd rotations (1, 3) swap width and height.
+#define EINK_DISP_W ((DISPLAY_ROTATION & 1) ? EINK_PANEL_H : EINK_PANEL_W)
+#define EINK_DISP_H ((DISPLAY_ROTATION & 1) ? EINK_PANEL_W : EINK_PANEL_H)
+
+class GxEPDDisplay : public DisplayDriver {
 #if defined(EINK_DISPLAY_MODEL)
   GxEPD2_BW<EINK_DISPLAY_MODEL, EINK_DISPLAY_MODEL::HEIGHT> display;
-  const float scale_x  = EINK_SCALE_X; 
-  const float scale_y  = EINK_SCALE_Y;
-  const float offset_x = EINK_X_OFFSET;
-  const float offset_y = EINK_Y_OFFSET;
 #else
   GxEPD2_BW<GxEPD2_150_BN, 200> display;
-  const float scale_x  = 1.5625f;
-  const float scale_y  = 1.5625f;
-  const float offset_x = 0;
-  const float offset_y = 10;
 #endif
   bool _init = false;
   bool _isOn = false;
   uint16_t _curr_color;
   CRC32 display_crc;
   int last_display_crc_value = 0;
+  int _text_sz = 1;
 
 public:
 #if defined(EINK_DISPLAY_MODEL)
-  GxEPDDisplay() : DisplayDriver(128, 128), display(EINK_DISPLAY_MODEL(PIN_DISPLAY_CS, PIN_DISPLAY_DC, PIN_DISPLAY_RST, PIN_DISPLAY_BUSY)) {}
+  GxEPDDisplay() : DisplayDriver(EINK_DISP_W, EINK_DISP_H),
+    display(EINK_DISPLAY_MODEL(PIN_DISPLAY_CS, PIN_DISPLAY_DC, PIN_DISPLAY_RST, PIN_DISPLAY_BUSY)) {}
 #else
-  GxEPDDisplay() : DisplayDriver(128, 128), display(GxEPD2_150_BN(DISP_CS, DISP_DC, DISP_RST, DISP_BUSY)) {}
+  GxEPDDisplay() : DisplayDriver(EINK_DISP_W, EINK_DISP_H),
+    display(GxEPD2_150_BN(DISP_CS, DISP_DC, DISP_RST, DISP_BUSY)) {}
 #endif
+
+  // Line height and approx. char width for each font size:
+  //   1 = FreeSans9pt      (lineH=16, charW≈9)
+  //   2 = FreeSansBold12pt (lineH=20, charW≈12)
+  //   3 = FreeSans18pt     (lineH=28, charW≈17)
+  int getCharWidth()  const override { return _text_sz == 3 ? 17 : _text_sz == 2 ? 12 : 9; }
+  int getLineHeight() const override { return _text_sz == 3 ? 28 : _text_sz == 2 ? 20 : 16; }
 
   bool begin();
 
-  bool isOn() override {return _isOn;};
+  bool isOn() override { return _isOn; }
   void turnOn() override;
   void turnOff() override;
   void clear() override;
