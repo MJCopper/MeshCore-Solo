@@ -200,7 +200,7 @@ class NearbyScreen : public UIScreen {
 
         display.setColor(DisplayDriver::LIGHT);
 
-        // name: known contact → actual name; unknown → "[Type]"
+        // left: contact name if known, otherwise "[Type]"
         char label[32];
         if (r.name[0]) {
           strncpy(label, r.name, sizeof(label) - 1);
@@ -212,9 +212,14 @@ class NearbyScreen : public UIScreen {
         display.translateUTF8ToBlocks(filtered, label, sizeof(filtered));
         display.drawTextEllipsized(2, y, DIST_COL - 4, filtered);
 
-        // right column: type label, dimmed for known / bright for new
+        // right: short type name; prefix '*' for nodes not in contacts
+        const char* st = (r.type == ADV_TYPE_REPEATER) ? "Rpt" :
+                         (r.type == ADV_TYPE_SENSOR)   ? "Snsr" :
+                         (r.type == ADV_TYPE_ROOM)     ? "Room" : "?";
+        char rtype[8];
+        snprintf(rtype, sizeof(rtype), r.is_known ? "%s" : "*%s", st);
         display.setCursor(DIST_COL, y);
-        display.print(r.is_known ? "known" : "NEW");
+        display.print(rtype);
       }
 
       display.setColor(DisplayDriver::LIGHT);

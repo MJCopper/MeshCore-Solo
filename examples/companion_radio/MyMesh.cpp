@@ -788,9 +788,9 @@ int MyMesh::getDiscoverResults(DiscoverResult dest[], int max_count) {
 }
 
 void MyMesh::onControlDataRecv(mesh::Packet *packet) {
-  // handle node discovery responses when in standalone UI mode (no companion app connected)
-  if (!_serial->isBLEConnected() &&
-      (packet->payload[0] & 0xF0) == CTL_TYPE_NODE_DISCOVER_RESP &&
+  // If we have an active standalone discover, check if this is a matching response.
+  // Tag matching provides isolation — no isBLEConnected check needed.
+  if ((packet->payload[0] & 0xF0) == CTL_TYPE_NODE_DISCOVER_RESP &&
       packet->payload_len >= 6 + PUB_KEY_SIZE &&
       _pending_node_discover_tag != 0 &&
       !millisHasNowPassed(_pending_node_discover_until)) {
@@ -817,8 +817,8 @@ void MyMesh::onControlDataRecv(mesh::Packet *packet) {
         r.timestamp = getRTCClock()->getCurrentTime();
       }
       if (_ui) _ui->notify(UIEventType::newContactMessage);
+      return;  // our discover — don't forward to BLE app
     }
-    return;
   }
 
   if (packet->payload_len + 4 > sizeof(out_frame)) {
