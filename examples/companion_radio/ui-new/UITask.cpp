@@ -389,10 +389,16 @@ public:
         display.setColor(DisplayDriver::LIGHT);
         display.setTextSize(2);
         bool show_sec = !_node_prefs || !_node_prefs->clock_hide_seconds;
-        if (show_sec)
-          sprintf(buf, "%02d:%02d:%02d", ti->tm_hour, ti->tm_min, ti->tm_sec);
-        else
-          sprintf(buf, "%02d:%02d", ti->tm_hour, ti->tm_min);
+        bool h12 = _node_prefs && _node_prefs->clock_12h;
+        if (h12) {
+          int h = ti->tm_hour % 12; if (h == 0) h = 12;
+          const char* ap = ti->tm_hour < 12 ? "AM" : "PM";
+          if (show_sec) sprintf(buf, "%d:%02d:%02d%s", h, ti->tm_min, ti->tm_sec, ap);
+          else          sprintf(buf, "%d:%02d %s", h, ti->tm_min, ap);
+        } else {
+          if (show_sec) sprintf(buf, "%02d:%02d:%02d", ti->tm_hour, ti->tm_min, ti->tm_sec);
+          else          sprintf(buf, "%02d:%02d", ti->tm_hour, ti->tm_min);
+        }
         display.drawTextCentered(display.width() / 2, 0, buf);
 
         display.setTextSize(1);
@@ -1334,7 +1340,12 @@ void UITask::loop() {
         struct tm* ti = gmtime(&t);
         char buf[12];
         _display->setTextSize(2);
-        sprintf(buf, "%02d:%02d", ti->tm_hour, ti->tm_min);
+        if (_node_prefs && _node_prefs->clock_12h) {
+          int h = ti->tm_hour % 12; if (h == 0) h = 12;
+          sprintf(buf, "%d:%02d %s", h, ti->tm_min, ti->tm_hour < 12 ? "AM" : "PM");
+        } else {
+          sprintf(buf, "%02d:%02d", ti->tm_hour, ti->tm_min);
+        }
         _display->drawTextCentered(_display->width() / 2, 8, buf);
         _display->setTextSize(1);
         static const char* wd[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};

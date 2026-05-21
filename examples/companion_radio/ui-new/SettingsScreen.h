@@ -13,6 +13,7 @@ class SettingsScreen : public UIScreen {
     AUTO_LOCK,
     BATT_DISPLAY,
     CLOCK_SECONDS,
+    CLOCK_FORMAT,
     // Sound section
     SECTION_SOUND,
     BUZZER,
@@ -311,6 +312,10 @@ class SettingsScreen : public UIScreen {
       display.print("Seconds");
       display.setCursor(VAL_X, y);
       display.print((p && p->clock_hide_seconds) ? "OFF" : "ON");
+    } else if (item == CLOCK_FORMAT) {
+      display.print("Format");
+      display.setCursor(VAL_X, y);
+      display.print((p && p->clock_12h) ? "12h" : "24h");
     } else if (item == DM_FILTER) {
       display.print("DM");
       display.setCursor(VAL_X, y);
@@ -493,6 +498,11 @@ public:
     }
     if (_selected == CLOCK_SECONDS && p && (left || right || enter)) {
       p->clock_hide_seconds ^= 1;
+      _dirty = true;
+      return true;
+    }
+    if (_selected == CLOCK_FORMAT && p && (left || right || enter)) {
+      p->clock_12h ^= 1;
       _dirty = true;
       return true;
     }
