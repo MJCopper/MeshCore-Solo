@@ -1,5 +1,6 @@
 #pragma once
 #include <math.h>
+#include <base64.hpp>
 
 #ifndef M_PI
   #define M_PI 3.14159265358979323846
@@ -198,9 +199,13 @@ class NearbyScreen : public UIScreen {
       display.setColor(DisplayDriver::LIGHT);
       display.fillRect(0, 10, display.width(), 1);
 
+      // public key as base64, truncated with ... by drawTextEllipsized
+      uint8_t b64[48];
+      encode_base64(r.pub_key, PUB_KEY_SIZE, b64);
+      b64[44] = '\0';
+      display.drawTextEllipsized(2, 12, display.width() - 4, (const char*)b64);
+
       char buf[32];
-      snprintf(buf, sizeof(buf), "Type: %s", fullType);
-      display.setCursor(2, 12); display.print(buf);
 
       snprintf(buf, sizeof(buf), "RSSI: %d dBm", (int)r.rssi);
       display.setCursor(2, 21); display.print(buf);

@@ -817,6 +817,7 @@ void MyMesh::onControlDataRecv(mesh::Packet *packet) {
         r.rssi = (int8_t)_radio->getLastRSSI();
         r.snr_x4 = (int8_t)(_radio->getLastSNR() * 4);
         r.remote_snr_x4 = (int8_t)packet->payload[1];
+        memcpy(r.pub_key, pub_key, PUB_KEY_SIZE);
         r.timestamp = getRTCClock()->getCurrentTime();
       }
       if (_ui) _ui->notify(UIEventType::newContactMessage);
