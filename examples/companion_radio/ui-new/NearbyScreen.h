@@ -212,12 +212,15 @@ class NearbyScreen : public UIScreen {
         display.translateUTF8ToBlocks(filtered, label, sizeof(filtered));
         display.drawTextEllipsized(2, y, DIST_COL - 4, filtered);
 
-        // right: short type name; prefix '*' for nodes not in contacts
+        // right: type+RSSI for known ("Rpt-87"), just RSSI with '*' for new ("*-87")
         const char* st = (r.type == ADV_TYPE_REPEATER) ? "Rpt" :
                          (r.type == ADV_TYPE_SENSOR)   ? "Snsr" :
                          (r.type == ADV_TYPE_ROOM)     ? "Room" : "?";
-        char rtype[8];
-        snprintf(rtype, sizeof(rtype), r.is_known ? "%s" : "*%s", st);
+        char rtype[12];
+        if (r.is_known)
+          snprintf(rtype, sizeof(rtype), "%s%d", st, (int)r.rssi);
+        else
+          snprintf(rtype, sizeof(rtype), "*%d", (int)r.rssi);
         display.setCursor(DIST_COL, y);
         display.print(rtype);
       }

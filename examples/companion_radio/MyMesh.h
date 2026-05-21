@@ -89,6 +89,7 @@ struct DiscoverResult {
   char    name[32];   // contact name if known, "" if unknown (use type label)
   uint8_t type;       // ADV_TYPE_REPEATER / ADV_TYPE_SENSOR / ADV_TYPE_ROOM
   bool    is_known;   // true = in contacts[], false = new unknown node
+  int8_t  rssi;       // RSSI of the response as received by us (dBm)
   uint32_t timestamp;
 };
 
