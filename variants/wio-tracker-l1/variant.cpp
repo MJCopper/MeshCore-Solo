@@ -78,5 +78,4 @@ void initVariant() {
     // set buzzer pin as output and set it low
     pinMode(12, OUTPUT);
     digitalWrite(12, LOW);
-    pinMode(12, OUTPUT);
 }

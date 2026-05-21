@@ -32,14 +32,14 @@ public:
   // Always true — USB is always available as fallback, so the mesh can send.
   bool isConnected() const override { return true; }
   // True only when a BLE companion app is paired and connected.
-  bool isBLEConnected() const override { return _ble.isConnected(); }
+  bool isBLEConnected() const override { return _ble_enabled && _ble.isConnected(); }
 
   bool isWriteBusy() const override {
-    return _ble.isConnected() ? _ble.isWriteBusy() : _usb.isWriteBusy();
+    return (_ble_enabled && _ble.isConnected()) ? _ble.isWriteBusy() : _usb.isWriteBusy();
   }
 
   size_t writeFrame(const uint8_t src[], size_t len) override {
-    return _ble.isConnected() ? _ble.writeFrame(src, len) : _usb.writeFrame(src, len);
+    return (_ble_enabled && _ble.isConnected()) ? _ble.writeFrame(src, len) : _usb.writeFrame(src, len);
   }
 
   size_t checkRecvFrame(uint8_t dest[]) override {

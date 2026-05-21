@@ -54,6 +54,11 @@ class NearbyScreen : public UIScreen {
   int            _dsel;
   bool           _ddetail;
 
+  static const int D_BOX_H   = 19;
+  static const int D_ITEM_H  = 21;
+  static const int D_VISIBLE = 2;
+  static const int D_START_Y = 11;
+
   // ── helpers ──────────────────────────────────────────────────────────────────
   static void pubKeyToBase64(const uint8_t* key, char* out, int out_len) {
     static const char T[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -188,11 +193,6 @@ class NearbyScreen : public UIScreen {
   }
 
   int renderDiscover(DisplayDriver& display) {
-    static const int D_BOX_H   = 19;
-    static const int D_ITEM_H  = 21;
-    static const int D_VISIBLE = 2;
-    static const int D_START_Y = 11;
-
     if (_ddetail) {
       // ── full-screen detail for selected node ──────────────────────────────
       const DiscoverResult& r = _dresults[_dsel];
@@ -257,6 +257,9 @@ class NearbyScreen : public UIScreen {
         _discovering ? "Waiting for replies..." : "No nodes found");
     } else {
       if (_dsel >= _dresult_count) _dsel = _dresult_count - 1;
+      if (_dscroll > _dresult_count - D_VISIBLE)
+        _dscroll = _dresult_count > D_VISIBLE ? _dresult_count - D_VISIBLE : 0;
+      if (_dscroll < 0) _dscroll = 0;
       for (int i = 0; i < D_VISIBLE && (_dscroll + i) < _dresult_count; i++) {
         int idx = _dscroll + i;
         bool sel = (idx == _dsel);
@@ -312,7 +315,11 @@ class NearbyScreen : public UIScreen {
 
   bool handleInputDiscover(char c) {
     if (_ddetail) {
-      if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) { _ddetail = false; return true; }
+      if (c == KEY_CANCEL) { _ddetail = false; return true; }
+      if (c == KEY_CONTEXT_MENU || c == KEY_ENTER) {
+        enterDiscoverMode();  // re-scan; clears _ddetail
+        return true;
+      }
       return true;
     }
     if (c == KEY_CANCEL) {
@@ -335,7 +342,7 @@ class NearbyScreen : public UIScreen {
     }
     if (c == KEY_DOWN && _dsel < _dresult_count - 1) {
       _dsel++;
-      if (_dsel >= _dscroll + 2) _dscroll = _dsel - 1;
+      if (_dsel >= _dscroll + D_VISIBLE) _dscroll = _dsel - D_VISIBLE + 1;
       return true;
     }
     return true;
@@ -343,8 +350,11 @@ class NearbyScreen : public UIScreen {
 
 public:
   NearbyScreen(UITask* task)
-    : _task(task), _filter(0), _discover_mode(false), _discovering(false),
-      _ddetail(false), _dsel(0) {}
+    : _task(task), _count(0), _sel(0), _scroll(0), _detail(false),
+      _own_lat(0), _own_lon(0), _own_gps(false), _filter(0),
+      _detail_refresh_ms(0),
+      _discover_mode(false), _discovering(false), _discover_started_ms(0),
+      _dresult_count(0), _dscroll(0), _dsel(0), _ddetail(false) {}
 
   void enter() {
     _sel = _scroll = 0;
