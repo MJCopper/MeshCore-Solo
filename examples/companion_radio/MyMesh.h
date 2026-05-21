@@ -85,10 +85,11 @@ struct AdvertPath {
   uint8_t path[MAX_PATH_SIZE];
 };
 
-struct DiscoveredEntry {
-  uint8_t pub_key_prefix[4];
+struct DiscoverResult {
+  char    name[32];   // contact name if known, "" if unknown (use type label)
   uint8_t type;       // ADV_TYPE_REPEATER / ADV_TYPE_SENSOR / ADV_TYPE_ROOM
-  uint32_t timestamp; // RTC timestamp of discovery
+  bool    is_known;   // true = in contacts[], false = new unknown node
+  uint32_t timestamp;
 };
 
 #define EXPECTED_ACK_TABLE_SIZE 8
@@ -111,7 +112,7 @@ public:
   void enterCLIRescue();
 
   int  getRecentlyHeard(AdvertPath dest[], int max_num);
-  int  getDiscoveredNodes(DiscoveredEntry dest[], int max_count);
+  int  getDiscoverResults(DiscoverResult dest[], int max_count);
 
 protected:
   float getAirtimeBudgetFactor() const override;
@@ -272,9 +273,9 @@ private:
   #define ADVERT_PATH_TABLE_SIZE   16
   AdvertPath advert_paths[ADVERT_PATH_TABLE_SIZE]; // circular table
 
-  #define DISCOVERED_NODES_MAX 8
-  DiscoveredEntry _discovered[DISCOVERED_NODES_MAX];
-  int             _discovered_count;
+  #define DISCOVER_RESULTS_MAX 16
+  DiscoverResult  _discover_results[DISCOVER_RESULTS_MAX];
+  int             _discover_count;
   uint32_t        _pending_node_discover_tag;
   unsigned long   _pending_node_discover_until;
 };

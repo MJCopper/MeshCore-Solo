@@ -17,14 +17,14 @@ class NearbyScreen : public UIScreen {
   static const char*    FILTER_LABELS[FILTER_COUNT];
   static const uint8_t  FILTER_TYPES[FILTER_COUNT];
 
+  // ── nearby list state ────────────────────────────────────────────────────────
   struct Entry {
     char     name[32];
     int32_t  lat_e6, lon_e6;
     float    dist_km;
     uint8_t  type;
-    int      contact_idx;      // -1 for discovered-but-unknown nodes
+    int      contact_idx;
     uint32_t lastmod;
-    bool     is_discovered;    // true = found via CTL_TYPE_NODE_DISCOVER_RESP, not in contacts[]
   };
 
   static const int MAX_NEARBY = 32;
@@ -37,18 +37,22 @@ class NearbyScreen : public UIScreen {
   bool    _own_gps;
   uint8_t _filter;
 
-  // scan state
-  bool          _scanning;
-  unsigned long _scan_started_ms;
-  static const unsigned long SCAN_DURATION_MS = 4000UL;
-
-  // detail view periodic refresh
   unsigned long _detail_refresh_ms;
   static const unsigned long DETAIL_REFRESH_MS = 10000UL;
 
-  // context menu (list view)
   PopupMenu _ctx_menu;
 
+  // ── discover sub-screen state ────────────────────────────────────────────────
+  bool          _discover_mode;
+  bool          _discovering;
+  unsigned long _discover_started_ms;
+  static const unsigned long DISCOVER_DURATION_MS = 8000UL;
+
+  DiscoverResult _dresults[DISCOVER_RESULTS_MAX];
+  int            _dresult_count;
+  int            _dscroll;
+
+  // ── helpers ──────────────────────────────────────────────────────────────────
   static float haversineKm(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2) {
     static const float DEG2RAD = (float)M_PI / 180.0f;
     float la1 = lat1 * (1e-6f * DEG2RAD);
@@ -101,12 +105,6 @@ class NearbyScreen : public UIScreen {
     }
   }
 
-  void startScan() {
-    the_mesh.sendNodeDiscoverReq();
-    _scanning = true;
-    _scan_started_ms = millis();
-  }
-
   void refresh() {
     _count = 0;
     _own_gps = false;
@@ -125,8 +123,8 @@ class NearbyScreen : public UIScreen {
     for (int i = 0; i < nc && _count < MAX_NEARBY; i++) {
       ContactInfo ci;
       if (!the_mesh.getContactByIdx(i, ci)) continue;
-      if (_filter == 0 && !(ci.flags & 1)) continue;           // Fav: only starred
-      if (_filter >= 2 && ci.type != FILTER_TYPES[_filter]) continue; // type filter
+      if (_filter == 0 && !(ci.flags & 1)) continue;
+      if (_filter >= 2 && ci.type != FILTER_TYPES[_filter]) continue;
 
       Entry& e = _entries[_count++];
       strncpy(e.name, ci.name, sizeof(e.name) - 1);
@@ -140,29 +138,9 @@ class NearbyScreen : public UIScreen {
       e.type        = ci.type;
       e.contact_idx = i;
       e.lastmod     = ci.lastmod;
-      e.is_discovered = false;
     }
 
-    // add nodes discovered via CTL_TYPE_NODE_DISCOVER_RESP that are not in contacts[]
-    if (_filter != 0) {  // Fav filter never shows anonymous discovered nodes
-      DiscoveredEntry disc[DISCOVERED_NODES_MAX];
-      int disc_count = the_mesh.getDiscoveredNodes(disc, DISCOVERED_NODES_MAX);
-      for (int i = 0; i < disc_count && _count < MAX_NEARBY; i++) {
-        if (_filter >= 2 && disc[i].type != FILTER_TYPES[_filter]) continue;
-        Entry& e = _entries[_count++];
-        strncpy(e.name, typeName(disc[i].type), sizeof(e.name) - 1);
-        e.name[sizeof(e.name) - 1] = '\0';
-        e.lat_e6  = 0;
-        e.lon_e6  = 0;
-        e.dist_km = -1.0f;
-        e.type    = disc[i].type;
-        e.contact_idx   = -1;
-        e.lastmod       = disc[i].timestamp;
-        e.is_discovered = true;
-      }
-    }
-
-    // sort by distance ascending; nodes without GPS (-1) go to the end
+    // sort by distance ascending; nodes without GPS go to the end
     for (int i = 0; i < _count - 1; i++) {
       int best = i;
       for (int j = i + 1; j < _count; j++) {
@@ -180,15 +158,100 @@ class NearbyScreen : public UIScreen {
     }
   }
 
+  // ── discover sub-screen ──────────────────────────────────────────────────────
+  void enterDiscoverMode() {
+    _discover_mode = true;
+    _discovering   = true;
+    _discover_started_ms = millis();
+    _dresult_count = 0;
+    _dscroll = 0;
+    the_mesh.sendNodeDiscoverReq();
+  }
+
+  int renderDiscover(DisplayDriver& display) {
+    // poll: fetch latest results
+    _dresult_count = the_mesh.getDiscoverResults(_dresults, DISCOVER_RESULTS_MAX);
+
+    if (_discovering && millis() - _discover_started_ms >= DISCOVER_DURATION_MS) {
+      _discovering = false;
+    }
+
+    display.setColor(DisplayDriver::LIGHT);
+    char title[28];
+    if (_discovering) {
+      snprintf(title, sizeof(title), "SCANNING... (%d)", _dresult_count);
+    } else {
+      if (_dresult_count == 0)
+        snprintf(title, sizeof(title), "DISCOVER: none");
+      else
+        snprintf(title, sizeof(title), "DISCOVER (%d found)", _dresult_count);
+    }
+    display.drawTextCentered(display.width() / 2, 0, title);
+    display.fillRect(0, 10, display.width(), 1);
+
+    if (_dresult_count == 0) {
+      display.drawTextCentered(display.width() / 2, 32,
+        _discovering ? "Waiting for replies..." : "No nodes found");
+    } else {
+      for (int i = 0; i < VISIBLE && (_dscroll + i) < _dresult_count; i++) {
+        int idx = _dscroll + i;
+        const DiscoverResult& r = _dresults[idx];
+        int y = START_Y + i * ITEM_H;
+
+        display.setColor(DisplayDriver::LIGHT);
+
+        // name: known contact → actual name; unknown → "[Type]"
+        char label[32];
+        if (r.name[0]) {
+          strncpy(label, r.name, sizeof(label) - 1);
+          label[sizeof(label) - 1] = '\0';
+        } else {
+          snprintf(label, sizeof(label), "[%s]", typeName(r.type));
+        }
+        char filtered[32];
+        display.translateUTF8ToBlocks(filtered, label, sizeof(filtered));
+        display.drawTextEllipsized(2, y, DIST_COL - 4, filtered);
+
+        // right column: type label, dimmed for known / bright for new
+        display.setCursor(DIST_COL, y);
+        display.print(r.is_known ? "known" : "NEW");
+      }
+
+      display.setColor(DisplayDriver::LIGHT);
+      if (_dscroll > 0)
+        { display.setCursor(display.width() - 6, START_Y); display.print("^"); }
+      if (_dscroll + VISIBLE < _dresult_count)
+        { display.setCursor(display.width() - 6, START_Y + (VISIBLE - 1) * ITEM_H); display.print("v"); }
+    }
+
+    return _discovering ? 200 : 2000;
+  }
+
+  bool handleInputDiscover(char c) {
+    if (c == KEY_CANCEL) {
+      _discover_mode = false;
+      refresh();  // refresh nearby list to pick up any lastmod updates
+      return true;
+    }
+    if (c == KEY_CONTEXT_MENU || c == KEY_ENTER) {
+      // re-scan
+      enterDiscoverMode();
+      return true;
+    }
+    if (c == KEY_UP && _dscroll > 0) { _dscroll--; return true; }
+    if (c == KEY_DOWN && _dscroll + VISIBLE < _dresult_count) { _dscroll++; return true; }
+    return true;
+  }
+
 public:
   NearbyScreen(UITask* task)
-    : _task(task), _filter(0), _scanning(false) {}
+    : _task(task), _filter(0), _discover_mode(false), _discovering(false) {}
 
   void enter() {
     _sel = _scroll = 0;
     _detail = false;
     _filter = 0;
-    _scanning = false;
+    _discover_mode = false;
     _ctx_menu.active = false;
     refresh();
   }
@@ -196,11 +259,8 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
 
-    // poll scan timer — only refresh list when not in detail view
-    if (_scanning && !_detail && millis() - _scan_started_ms >= SCAN_DURATION_MS) {
-      _scanning = false;
-      refresh();
-    }
+    // ── discover sub-screen ──────────────────────────────────────────────────
+    if (_discover_mode) return renderDiscover(display);
 
     // periodic refresh in detail view — preserve selected contact by idx
     if (_detail && millis() - _detail_refresh_ms >= DETAIL_REFRESH_MS) {
@@ -212,7 +272,7 @@ public:
           if (_entries[i].contact_idx == saved_contact_idx) { _sel = i; found = true; break; }
         }
       }
-      if (!found) _detail = false;  // contact left the filtered list — return to list view
+      if (!found) _detail = false;
       _detail_refresh_ms = millis();
     }
 
@@ -228,7 +288,6 @@ public:
       display.drawTextEllipsized(2, 1, display.width() - 4, filtered);
       display.setColor(DisplayDriver::LIGHT);
 
-      // 6 rows in 54px (y=10..63): spacing 9px, start at y=11
       char buf[32];
       snprintf(buf, sizeof(buf), "Lat: %.5f", e.lat_e6 / 1e6);
       display.setCursor(2, 11); display.print(buf);
@@ -262,17 +321,13 @@ public:
 
     // ── list view ────────────────────────────────────────────────────────────
     display.setColor(DisplayDriver::LIGHT);
-    if (_scanning) {
-      display.drawTextCentered(display.width() / 2, 0, "DISCOVERING...");
-    } else {
-      char title[22];
-      snprintf(title, sizeof(title), "NEARBY[%s]", FILTER_LABELS[_filter]);
-      display.drawTextCentered(display.width() / 2, 0, title);
-    }
+    char title[22];
+    snprintf(title, sizeof(title), "NEARBY[%s]", FILTER_LABELS[_filter]);
+    display.drawTextCentered(display.width() / 2, 0, title);
     display.fillRect(0, 10, display.width(), 1);
 
     if (_count == 0) {
-      display.drawTextCentered(display.width() / 2, 28, _scanning ? "Waiting..." : "No contacts found");
+      display.drawTextCentered(display.width() / 2, 28, "No contacts found");
       display.drawTextCentered(display.width() / 2, 40, "[M]=Discover");
     } else {
       for (int i = 0; i < VISIBLE && (_scroll + i) < _count; i++) {
@@ -308,39 +363,37 @@ public:
         { display.setCursor(display.width() - 6, START_Y + (VISIBLE - 1) * ITEM_H); display.print("v"); }
     }
 
-    // context menu overlay — drawn on top regardless of list state
     if (_ctx_menu.active) {
       _ctx_menu.render(display);
       return 50;
     }
 
-    return _scanning ? 100 : (_count == 0 ? 3000 : 2000);
+    return _count == 0 ? 3000 : 2000;
   }
 
   bool handleInput(char c) override {
-    // ── detail view input ────────────────────────────────────────────────────
+    // ── discover sub-screen ──────────────────────────────────────────────────
+    if (_discover_mode) return handleInputDiscover(c);
+
+    // ── detail view ─────────────────────────────────────────────────────────
     if (_detail) {
-      if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
-        _detail = false;
-        return true;
-      }
+      if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) { _detail = false; return true; }
       return true;
     }
 
-    // ── list view — context menu ─────────────────────────────────────────────
+    // ── context menu ─────────────────────────────────────────────────────────
     if (_ctx_menu.active) {
       auto res = _ctx_menu.handleInput(c);
       if (res == PopupMenu::SELECTED) {
-        if (_ctx_menu.selectedIndex() == 0) {
-          startScan();
-        } else {
+        if (_ctx_menu.selectedIndex() == 0)
+          enterDiscoverMode();
+        else
           _task->gotoToolsScreen();
-        }
       }
       return true;
     }
 
-    // ── list view — normal input ─────────────────────────────────────────────
+    // ── list view ────────────────────────────────────────────────────────────
     if (c == KEY_CANCEL) { _task->gotoToolsScreen(); return true; }
     if (c == KEY_CONTEXT_MENU) {
       _ctx_menu.begin("Options", 2);

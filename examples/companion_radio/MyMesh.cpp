@@ -774,16 +774,16 @@ void MyMesh::sendNodeDiscoverReq() {
   getRNG()->random(&data[2], 4);
   memcpy(&_pending_node_discover_tag, &data[2], 4);
   _pending_node_discover_until = futureMillis(8000);
-  _discovered_count = 0;
+  _discover_count = 0;
   uint32_t since = 0;
   memcpy(&data[6], &since, 4);
   auto pkt = createControlData(data, sizeof(data));
   if (pkt) sendZeroHop(pkt);
 }
 
-int MyMesh::getDiscoveredNodes(DiscoveredEntry dest[], int max_count) {
-  int n = min(_discovered_count, max_count);
-  memcpy(dest, _discovered, n * sizeof(DiscoveredEntry));
+int MyMesh::getDiscoverResults(DiscoverResult dest[], int max_count) {
+  int n = min(_discover_count, max_count);
+  memcpy(dest, _discover_results, n * sizeof(DiscoverResult));
   return n;
 }
 
@@ -799,17 +799,22 @@ void MyMesh::onControlDataRecv(mesh::Packet *packet) {
     if (tag == _pending_node_discover_tag) {
       uint8_t node_type = packet->payload[0] & 0x0F;
       const uint8_t* pub_key = &packet->payload[6];
-      // check if already in contacts — update lastmod so it shows as fresh
       ContactInfo* known = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
       if (known) {
         known->lastmod = getRTCClock()->getCurrentTime();
       }
-      // if unknown, add to temporary discovered list
-      if (!known && _discovered_count < DISCOVERED_NODES_MAX) {
-        DiscoveredEntry& e = _discovered[_discovered_count++];
-        memcpy(e.pub_key_prefix, pub_key, 4);
-        e.type = node_type;
-        e.timestamp = getRTCClock()->getCurrentTime();
+      if (_discover_count < DISCOVER_RESULTS_MAX) {
+        DiscoverResult& r = _discover_results[_discover_count++];
+        if (known) {
+          strncpy(r.name, known->name, sizeof(r.name) - 1);
+          r.name[sizeof(r.name) - 1] = '\0';
+          r.is_known = true;
+        } else {
+          r.name[0] = '\0';
+          r.is_known = false;
+        }
+        r.type = node_type;
+        r.timestamp = getRTCClock()->getCurrentTime();
       }
       if (_ui) _ui->notify(UIEventType::newContactMessage);
     }
@@ -913,7 +918,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   dirty_contacts_expiry = 0;
   memset(advert_paths, 0, sizeof(advert_paths));
   memset(send_scope.key, 0, sizeof(send_scope.key));
-  _discovered_count = 0;
+  _discover_count = 0;
   _pending_node_discover_tag = 0;
   _pending_node_discover_until = 0;
 
