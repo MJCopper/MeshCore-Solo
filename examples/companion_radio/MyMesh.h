@@ -90,6 +90,8 @@ struct DiscoverResult {
   uint8_t type;       // ADV_TYPE_REPEATER / ADV_TYPE_SENSOR / ADV_TYPE_ROOM
   bool    is_known;   // true = in contacts[], false = new unknown node
   int8_t  rssi;       // RSSI of the response as received by us (dBm)
+  int8_t  snr_x4;     // SNR of the response as received by us (dB × 4)
+  int8_t  remote_snr_x4; // SNR at which responder heard our request (dB × 4)
   uint32_t timestamp;
 };
 

@@ -169,23 +169,24 @@ class NearbyScreen : public UIScreen {
   }
 
   int renderDiscover(DisplayDriver& display) {
-    // poll: fetch latest results
+    static const int D_BOX_H   = 19;
+    static const int D_ITEM_H  = 21;   // box + 2px gap
+    static const int D_VISIBLE = 2;
+    static const int D_START_Y = 11;
+
     _dresult_count = the_mesh.getDiscoverResults(_dresults, DISCOVER_RESULTS_MAX);
 
-    if (_discovering && millis() - _discover_started_ms >= DISCOVER_DURATION_MS) {
+    if (_discovering && millis() - _discover_started_ms >= DISCOVER_DURATION_MS)
       _discovering = false;
-    }
 
     display.setColor(DisplayDriver::LIGHT);
     char title[28];
-    if (_discovering) {
+    if (_discovering)
       snprintf(title, sizeof(title), "SCANNING... (%d)", _dresult_count);
-    } else {
-      if (_dresult_count == 0)
-        snprintf(title, sizeof(title), "DISCOVER: none");
-      else
-        snprintf(title, sizeof(title), "DISCOVER (%d found)", _dresult_count);
-    }
+    else if (_dresult_count == 0)
+      snprintf(title, sizeof(title), "DISCOVER: none");
+    else
+      snprintf(title, sizeof(title), "DISCOVER (%d found)", _dresult_count);
     display.drawTextCentered(display.width() / 2, 0, title);
     display.fillRect(0, 10, display.width(), 1);
 
@@ -193,43 +194,50 @@ class NearbyScreen : public UIScreen {
       display.drawTextCentered(display.width() / 2, 32,
         _discovering ? "Waiting for replies..." : "No nodes found");
     } else {
-      for (int i = 0; i < VISIBLE && (_dscroll + i) < _dresult_count; i++) {
+      for (int i = 0; i < D_VISIBLE && (_dscroll + i) < _dresult_count; i++) {
         int idx = _dscroll + i;
         const DiscoverResult& r = _dresults[idx];
-        int y = START_Y + i * ITEM_H;
+        int y = D_START_Y + i * D_ITEM_H;
 
+        const char* typeStr = (r.type == ADV_TYPE_REPEATER) ? "Repeater" :
+                              (r.type == ADV_TYPE_SENSOR)   ? "Sensor"   :
+                              (r.type == ADV_TYPE_ROOM)     ? "Room"     : "Node";
+
+        // header line: inverted background
         display.setColor(DisplayDriver::LIGHT);
+        display.drawRect(0, y, display.width(), D_BOX_H);
+        display.fillRect(1, y + 1, display.width() - 2, 8);
+        display.setColor(DisplayDriver::DARK);
 
-        // left: contact name if known, otherwise "[Type]"
+        // header: name (or [Type]) left, type label right
         char label[32];
         if (r.name[0]) {
           strncpy(label, r.name, sizeof(label) - 1);
           label[sizeof(label) - 1] = '\0';
         } else {
-          snprintf(label, sizeof(label), "[%s]", typeName(r.type));
+          snprintf(label, sizeof(label), "[%s]", typeStr);
         }
         char filtered[32];
         display.translateUTF8ToBlocks(filtered, label, sizeof(filtered));
-        display.drawTextEllipsized(2, y, DIST_COL - 4, filtered);
+        int tw = display.getTextWidth(typeStr);
+        display.drawTextEllipsized(3, y + 1, display.width() - 6 - tw, filtered);
+        display.setCursor(display.width() - 3 - tw, y + 1);
+        display.print(typeStr);
 
-        // right: type+RSSI for known ("Rpt-87"), just RSSI with '*' for new ("*-87")
-        const char* st = (r.type == ADV_TYPE_REPEATER) ? "Rpt" :
-                         (r.type == ADV_TYPE_SENSOR)   ? "Snsr" :
-                         (r.type == ADV_TYPE_ROOM)     ? "Room" : "?";
-        char rtype[12];
-        if (r.is_known)
-          snprintf(rtype, sizeof(rtype), "%s%d", st, (int)r.rssi);
-        else
-          snprintf(rtype, sizeof(rtype), "*%d", (int)r.rssi);
-        display.setCursor(DIST_COL, y);
-        display.print(rtype);
+        // body line: RSSI / SNR / remote SNR
+        display.setColor(DisplayDriver::LIGHT);
+        char sig[32];
+        int snr    = r.snr_x4 / 4;
+        int rsnr   = r.remote_snr_x4 / 4;
+        snprintf(sig, sizeof(sig), "RSSI:%d SNR:%d Rem:%d", (int)r.rssi, snr, rsnr);
+        display.drawTextEllipsized(3, y + 10, display.width() - 6, sig);
       }
 
       display.setColor(DisplayDriver::LIGHT);
       if (_dscroll > 0)
-        { display.setCursor(display.width() - 6, START_Y); display.print("^"); }
-      if (_dscroll + VISIBLE < _dresult_count)
-        { display.setCursor(display.width() - 6, START_Y + (VISIBLE - 1) * ITEM_H); display.print("v"); }
+        { display.setCursor(display.width() - 6, D_START_Y + 1); display.print("^"); }
+      if (_dscroll + D_VISIBLE < _dresult_count)
+        { display.setCursor(display.width() - 6, D_START_Y + D_VISIBLE * D_ITEM_H - 10); display.print("v"); }
     }
 
     return _discovering ? 200 : 2000;
@@ -247,7 +255,7 @@ class NearbyScreen : public UIScreen {
       return true;
     }
     if (c == KEY_UP && _dscroll > 0) { _dscroll--; return true; }
-    if (c == KEY_DOWN && _dscroll + VISIBLE < _dresult_count) { _dscroll++; return true; }
+    if (c == KEY_DOWN && _dscroll + 2 < _dresult_count) { _dscroll++; return true; }
     return true;
   }
 
