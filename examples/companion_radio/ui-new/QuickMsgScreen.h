@@ -88,6 +88,15 @@ class QuickMsgScreen : public UIScreen {
                 &sensors, batt);
   }
 
+  // Strip "@[nick] " reply prefix from a message body for compact list display.
+  static const char* skipReplyPrefix(const char* text) {
+    if (text[0] == '@' && text[1] == '[') {
+      const char* close = strchr(text + 2, ']');
+      if (close && close[1] == ' ' && close[2]) return close + 2;
+    }
+    return text;
+  }
+
   // Build "@[nick] " prefix from a channel message text ("nick: body") into _reply_prefix.
   // Returns false if sender is "Me" (own message — no reply prefix needed).
   bool buildChannelReplyPrefix(const char* text) {
@@ -642,7 +651,7 @@ public:
           display.setColor(DisplayDriver::DARK);
           display.drawTextEllipsized(3, y + 1, display.width() - 6 - age_w, sender);
           if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
-          display.drawTextEllipsized(3, y + 10, display.width() - 6, e.text);
+          display.drawTextEllipsized(3, y + 10, display.width() - 6, skipReplyPrefix(e.text));
         } else {
           display.setColor(DisplayDriver::LIGHT);
           display.drawRect(0, y, display.width(), HIST_BOX_H);
@@ -651,7 +660,7 @@ public:
           display.drawTextEllipsized(3, y + 1, display.width() - 6 - age_w, sender);
           if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
           display.setColor(DisplayDriver::LIGHT);
-          display.drawTextEllipsized(3, y + 10, display.width() - 6, e.text);
+          display.drawTextEllipsized(3, y + 10, display.width() - 6, skipReplyPrefix(e.text));
         }
       }
 
@@ -749,7 +758,7 @@ public:
           display.setColor(DisplayDriver::DARK);
           display.drawTextEllipsized(3, y + 1, display.width() - 6 - age_w, sender);
           if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
-          display.drawTextEllipsized(3, y + 10, display.width() - 6, msg_part);
+          display.drawTextEllipsized(3, y + 10, display.width() - 6, skipReplyPrefix(msg_part));
         } else {
           display.setColor(DisplayDriver::LIGHT);
           display.drawRect(0, y, display.width(), HIST_BOX_H);
@@ -758,7 +767,7 @@ public:
           display.drawTextEllipsized(3, y + 1, display.width() - 6 - age_w, sender);
           if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
           display.setColor(DisplayDriver::LIGHT);
-          display.drawTextEllipsized(3, y + 10, display.width() - 6, msg_part);
+          display.drawTextEllipsized(3, y + 10, display.width() - 6, skipReplyPrefix(msg_part));
         }
       }
 
