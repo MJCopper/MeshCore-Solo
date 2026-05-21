@@ -328,7 +328,7 @@ public:
 
     if (_count == 0) {
       display.drawTextCentered(display.width() / 2, 28, "No contacts found");
-      display.drawTextCentered(display.width() / 2, 40, "[M]=Discover");
+      display.drawTextCentered(display.width() / 2, 40, "[Enter]=Discover");
     } else {
       for (int i = 0; i < VISIBLE && (_scroll + i) < _count; i++) {
         int idx = _scroll + i;
@@ -411,6 +411,7 @@ public:
       if (_sel >= _scroll + VISIBLE) _scroll = _sel - VISIBLE + 1;
       return true;
     }
+    if (c == KEY_ENTER && _count == 0) { enterDiscoverMode(); return true; }
     if (c == KEY_ENTER && _count > 0) {
       _detail = true;
       _detail_refresh_ms = millis();
