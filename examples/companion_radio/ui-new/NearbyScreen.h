@@ -51,6 +51,8 @@ class NearbyScreen : public UIScreen {
   DiscoverResult _dresults[DISCOVER_RESULTS_MAX];
   int            _dresult_count;
   int            _dscroll;
+  int            _dsel;
+  bool           _ddetail;
 
   // ── helpers ──────────────────────────────────────────────────────────────────
   static float haversineKm(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2) {
@@ -162,18 +164,60 @@ class NearbyScreen : public UIScreen {
   void enterDiscoverMode() {
     _discover_mode = true;
     _discovering   = true;
+    _ddetail       = false;
     _discover_started_ms = millis();
     _dresult_count = 0;
     _dscroll = 0;
+    _dsel    = 0;
     the_mesh.sendNodeDiscoverReq();
   }
 
   int renderDiscover(DisplayDriver& display) {
     static const int D_BOX_H   = 19;
-    static const int D_ITEM_H  = 21;   // box + 2px gap
+    static const int D_ITEM_H  = 21;
     static const int D_VISIBLE = 2;
     static const int D_START_Y = 11;
 
+    if (_ddetail) {
+      // ── full-screen detail for selected node ──────────────────────────────
+      const DiscoverResult& r = _dresults[_dsel];
+      const char* fullType = (r.type == ADV_TYPE_REPEATER) ? "Repeater" :
+                             (r.type == ADV_TYPE_SENSOR)   ? "Sensor"   :
+                             (r.type == ADV_TYPE_ROOM)     ? "Room"     : "Node";
+
+      // title bar: node name inverted
+      char label[32];
+      if (r.name[0]) { strncpy(label, r.name, 31); label[31] = '\0'; }
+      else           { snprintf(label, sizeof(label), "[%s]", fullType); }
+      char filtered[32];
+      display.translateUTF8ToBlocks(filtered, label, sizeof(filtered));
+      display.setColor(DisplayDriver::LIGHT);
+      display.fillRect(0, 0, display.width(), 10);
+      display.setColor(DisplayDriver::DARK);
+      display.drawTextEllipsized(2, 1, display.width() - 4, filtered);
+      display.setColor(DisplayDriver::LIGHT);
+      display.fillRect(0, 10, display.width(), 1);
+
+      char buf[32];
+      snprintf(buf, sizeof(buf), "Type: %s", fullType);
+      display.setCursor(2, 12); display.print(buf);
+
+      snprintf(buf, sizeof(buf), "RSSI: %d dBm", (int)r.rssi);
+      display.setCursor(2, 21); display.print(buf);
+
+      snprintf(buf, sizeof(buf), "SNR:  %d dB", (int)(r.snr_x4 / 4));
+      display.setCursor(2, 30); display.print(buf);
+
+      snprintf(buf, sizeof(buf), "Rem:  %d dB", (int)(r.remote_snr_x4 / 4));
+      display.setCursor(2, 39); display.print(buf);
+
+      display.setCursor(2, 48);
+      display.print(r.is_known ? "Status: known" : "Status: new");
+
+      return 5000;
+    }
+
+    // ── list view ─────────────────────────────────────────────────────────────
     _dresult_count = the_mesh.getDiscoverResults(_dresults, DISCOVER_RESULTS_MAX);
 
     if (_discovering && millis() - _discover_started_ms >= DISCOVER_DURATION_MS)
@@ -194,28 +238,35 @@ class NearbyScreen : public UIScreen {
       display.drawTextCentered(display.width() / 2, 32,
         _discovering ? "Waiting for replies..." : "No nodes found");
     } else {
+      if (_dsel >= _dresult_count) _dsel = _dresult_count - 1;
       for (int i = 0; i < D_VISIBLE && (_dscroll + i) < _dresult_count; i++) {
         int idx = _dscroll + i;
+        bool sel = (idx == _dsel);
         const DiscoverResult& r = _dresults[idx];
         int y = D_START_Y + i * D_ITEM_H;
 
-        const char* typeStr = (r.type == ADV_TYPE_REPEATER) ? "Repeater" :
-                              (r.type == ADV_TYPE_SENSOR)   ? "Sensor"   :
-                              (r.type == ADV_TYPE_ROOM)     ? "Room"     : "Node";
+        const char* typeStr = (r.type == ADV_TYPE_REPEATER) ? "Rpt"  :
+                              (r.type == ADV_TYPE_SENSOR)   ? "Snsr" :
+                              (r.type == ADV_TYPE_ROOM)     ? "Room" : "?";
 
-        // header line: inverted background
         display.setColor(DisplayDriver::LIGHT);
-        display.drawRect(0, y, display.width(), D_BOX_H);
-        display.fillRect(1, y + 1, display.width() - 2, 8);
-        display.setColor(DisplayDriver::DARK);
-
-        // header: name (or [Type]) left, type label right
-        char label[32];
-        if (r.name[0]) {
-          strncpy(label, r.name, sizeof(label) - 1);
-          label[sizeof(label) - 1] = '\0';
+        if (sel) {
+          display.fillRect(0, y, display.width(), D_BOX_H);  // fully inverted when selected
+          display.setColor(DisplayDriver::DARK);
         } else {
-          snprintf(label, sizeof(label), "[%s]", typeStr);
+          display.drawRect(0, y, display.width(), D_BOX_H);
+          display.fillRect(1, y + 1, display.width() - 2, 8);
+          display.setColor(DisplayDriver::DARK);
+        }
+
+        // header: name left, type right
+        char label[32];
+        if (r.name[0]) { strncpy(label, r.name, 31); label[31] = '\0'; }
+        else {
+          const char* ft = (r.type == ADV_TYPE_REPEATER) ? "Repeater" :
+                           (r.type == ADV_TYPE_SENSOR)   ? "Sensor"   :
+                           (r.type == ADV_TYPE_ROOM)     ? "Room"     : "Node";
+          snprintf(label, sizeof(label), "[%s]", ft);
         }
         char filtered[32];
         display.translateUTF8ToBlocks(filtered, label, sizeof(filtered));
@@ -224,12 +275,10 @@ class NearbyScreen : public UIScreen {
         display.setCursor(display.width() - 3 - tw, y + 1);
         display.print(typeStr);
 
-        // body line: RSSI / SNR / remote SNR
-        display.setColor(DisplayDriver::LIGHT);
-        char sig[32];
-        int snr    = r.snr_x4 / 4;
-        int rsnr   = r.remote_snr_x4 / 4;
-        snprintf(sig, sizeof(sig), "RSSI:%d SNR:%d Rem:%d", (int)r.rssi, snr, rsnr);
+        // body: RSSI + SNR
+        display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
+        char sig[24];
+        snprintf(sig, sizeof(sig), "RSSI:%d SNR:%d", (int)r.rssi, (int)(r.snr_x4 / 4));
         display.drawTextEllipsized(3, y + 10, display.width() - 6, sig);
       }
 
@@ -244,30 +293,48 @@ class NearbyScreen : public UIScreen {
   }
 
   bool handleInputDiscover(char c) {
+    if (_ddetail) {
+      if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) { _ddetail = false; return true; }
+      return true;
+    }
     if (c == KEY_CANCEL) {
       _discover_mode = false;
-      refresh();  // refresh nearby list to pick up any lastmod updates
+      refresh();
       return true;
     }
-    if (c == KEY_CONTEXT_MENU || c == KEY_ENTER) {
-      // re-scan
-      enterDiscoverMode();
+    if (c == KEY_ENTER && _dresult_count > 0) {
+      _ddetail = true;
       return true;
     }
-    if (c == KEY_UP && _dscroll > 0) { _dscroll--; return true; }
-    if (c == KEY_DOWN && _dscroll + 2 < _dresult_count) { _dscroll++; return true; }
+    if (c == KEY_CONTEXT_MENU) {
+      enterDiscoverMode();  // re-scan
+      return true;
+    }
+    if (c == KEY_UP && _dsel > 0) {
+      _dsel--;
+      if (_dsel < _dscroll) _dscroll = _dsel;
+      return true;
+    }
+    if (c == KEY_DOWN && _dsel < _dresult_count - 1) {
+      _dsel++;
+      if (_dsel >= _dscroll + 2) _dscroll = _dsel - 1;
+      return true;
+    }
     return true;
   }
 
 public:
   NearbyScreen(UITask* task)
-    : _task(task), _filter(0), _discover_mode(false), _discovering(false) {}
+    : _task(task), _filter(0), _discover_mode(false), _discovering(false),
+      _ddetail(false), _dsel(0) {}
 
   void enter() {
     _sel = _scroll = 0;
     _detail = false;
     _filter = 0;
     _discover_mode = false;
+    _ddetail = false;
+    _dsel    = 0;
     _ctx_menu.active = false;
     refresh();
   }
