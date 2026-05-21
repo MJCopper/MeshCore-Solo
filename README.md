@@ -121,6 +121,39 @@ Browse nodes that have recently advertised on the mesh. Filter by category (Favo
 
 Use **Send my advert** (hold Enter → context menu) to broadcast your position and prompt nearby nodes to respond with theirs.
 
+#### Active Discovery
+
+Press **Enter** from the Nearby screen to send a live `NODE_DISCOVER_REQ` ping. All reachable repeaters, sensors and room servers within zero-hop range respond immediately with their name, type and signal data. Results appear as 2-line boxed cards with RSSI, SNR and the remote SNR (signal quality at the responder's end).
+
+```
+╔═══════════════════════════════╗
+║▓▓▓▓▓▓▓ DISCOVER (2 found) ▓▓  ║
+╠═══════════════════════════════╣
+║▓▓▓▓▓▓▓▓▓▓▓▓▓ Rptr-A   Rpt ▓▓▓▓║  ← selected
+║▓▓▓▓▓▓▓▓ RSSI:-79 SNR:9 ▓▓▓▓▓▓▓║
+║┌────────────────────────────┐ ║
+║│▓▓▓▓▓▓▓▓▓▓▓▓ Sensor-B  Snsr │ ║
+║│ RSSI:-94 SNR:3             │ ║
+║└────────────────────────────┘ ║
+╚═══════════════════════════════╝
+```
+
+Navigate with **UP/DOWN**. Press **Enter** on a node to open a full-screen detail view showing the public key, RSSI, SNR, remote SNR and whether the node is already in your contacts.
+
+```
+╔══════════════════════════════╗
+║▓▓▓▓▓▓▓▓▓▓▓▓▓ Rptr-A ▓▓▓▓▓▓▓  ║
+╠══════════════════════════════╣
+║ Key: ABCdef12XYZ...          ║
+║ RSSI: -79 dBm                ║
+║ SNR:   9 dB                  ║
+║ Rem:   6 dB                  ║
+║ Status: known                ║
+╚══════════════════════════════╝
+```
+
+Hold **Enter** from the discovery list to rescan. Press **Cancel** or **Back** to return.
+
 ### Tools Screen
 
 #### Auto-Advert
