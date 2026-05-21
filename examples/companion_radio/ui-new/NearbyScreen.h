@@ -1,6 +1,5 @@
 #pragma once
 #include <math.h>
-#include <base64.hpp>
 
 #ifndef M_PI
   #define M_PI 3.14159265358979323846
@@ -56,6 +55,21 @@ class NearbyScreen : public UIScreen {
   bool           _ddetail;
 
   // ── helpers ──────────────────────────────────────────────────────────────────
+  static void pubKeyToBase64(const uint8_t* key, char* out, int out_len) {
+    static const char T[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    int j = 0;
+    for (int i = 0; i < PUB_KEY_SIZE && j + 5 < out_len; i += 3) {
+      uint32_t b = ((uint32_t)key[i] << 16)
+                 | (i+1 < PUB_KEY_SIZE ? (uint32_t)key[i+1] << 8 : 0)
+                 | (i+2 < PUB_KEY_SIZE ? (uint32_t)key[i+2]      : 0);
+      out[j++] = T[(b >> 18) & 63];
+      out[j++] = T[(b >> 12) & 63];
+      if (i+1 < PUB_KEY_SIZE) out[j++] = T[(b >> 6) & 63];
+      if (i+2 < PUB_KEY_SIZE) out[j++] = T[b & 63];
+    }
+    out[j] = '\0';
+  }
+
   static float haversineKm(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2) {
     static const float DEG2RAD = (float)M_PI / 180.0f;
     float la1 = lat1 * (1e-6f * DEG2RAD);
@@ -200,10 +214,9 @@ class NearbyScreen : public UIScreen {
       display.fillRect(0, 10, display.width(), 1);
 
       // public key as base64, truncated with ... by drawTextEllipsized
-      uint8_t b64[48];
-      encode_base64(r.pub_key, PUB_KEY_SIZE, b64);
-      b64[44] = '\0';
-      display.drawTextEllipsized(2, 12, display.width() - 4, (const char*)b64);
+      char b64[48];
+      pubKeyToBase64(r.pub_key, b64, sizeof(b64));
+      display.drawTextEllipsized(2, 12, display.width() - 4, b64);
 
       char buf[32];
 
