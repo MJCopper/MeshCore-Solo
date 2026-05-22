@@ -14,7 +14,7 @@ env:
 
 jobs:
 
-  build-standard:
+  build:
     runs-on: ubuntu-latest
     steps:
 
@@ -35,31 +35,8 @@ jobs:
           name: wio-tracker-l1-firmwares
           path: out
 
-  build-font-switcher:
-    runs-on: ubuntu-latest
-    steps:
-
-      - name: Clone Repo (font-switcher branch)
-        uses: actions/checkout@v4
-        with:
-          ref: font-switcher
-
-      - name: Setup Build Environment
-        uses: ./.github/actions/setup-build-environment
-
-      - name: Build Font Switcher Firmwares
-        env:
-          FIRMWARE_VERSION: ${{ env.GIT_TAG_VERSION }}-font-switcher
-        run: /usr/bin/env bash build.sh build-wio-tracker-l1-firmwares
-
-      - name: Upload Workflow Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: wio-tracker-l1-font-switcher-firmwares
-          path: out
-
   release:
-    needs: [build-standard, build-font-switcher]
+    needs: [build]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -67,16 +44,10 @@ jobs:
       - name: Extract Version from Git Tag
         run: echo "GIT_TAG_VERSION=v${GITHUB_REF_NAME#*-v}" >> $GITHUB_ENV
 
-      - name: Download Standard Firmwares
+      - name: Download Firmwares
         uses: actions/download-artifact@v4
         with:
           name: wio-tracker-l1-firmwares
-          path: out
-
-      - name: Download Font Switcher Firmwares
-        uses: actions/download-artifact@v4
-        with:
-          name: wio-tracker-l1-font-switcher-firmwares
           path: out
 
       - name: Create Release
