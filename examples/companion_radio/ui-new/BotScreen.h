@@ -8,9 +8,6 @@ class BotScreen : public UIScreen {
 
   // Items: 0=Enable(DM), 1=Channel, 2=Trigger, 3=Reply DM, 4=Reply Ch
   static const int ITEM_COUNT = 5;
-  static const int ITEM_H     = 11;
-  static const int START_Y    = 12;
-  static const int VAL_X      = 70;
 
   int  _sel;
   bool _dirty;
@@ -58,20 +55,24 @@ public:
       return _kb.render(display);
     }
 
+    int item_h  = display.lineStep();
+    int start_y = display.listStart();
+    int val_x   = display.valCol();
+
     display.drawTextCentered(display.width() / 2, 0, "AUTO-REPLY BOT");
-    display.fillRect(0, 10, display.width(), 1);
+    display.fillRect(0, display.headerH() - 1, display.width(), 1);
 
     static const char* labels[] = { "Enable", "Channel", "Trigger", "Reply DM", "Reply Ch" };
     for (int i = 0; i < ITEM_COUNT; i++) {
-      int y = START_Y + i * ITEM_H;
+      int y = start_y + i * item_h;
       bool sel = (i == _sel);
       if (sel) {
-        display.fillRect(0, y - 1, display.width(), ITEM_H);
+        display.fillRect(0, y - 1, display.width(), item_h);
         display.setColor(DisplayDriver::DARK);
       }
       display.setCursor(2, y);
       display.print(labels[i]);
-      display.setCursor(VAL_X, y);
+      display.setCursor(val_x, y);
 
       if (i == 0) {
         display.print(_prefs->bot_enabled ? "ON" : "OFF");
@@ -81,19 +82,19 @@ public:
         } else {
           ChannelDetails ch;
           if (the_mesh.getChannel(_prefs->bot_channel_idx, ch) && ch.name[0])
-            display.drawTextEllipsized(VAL_X, y, display.width() - VAL_X - 1, ch.name);
+            display.drawTextEllipsized(val_x, y, display.width() - val_x - 1, ch.name);
           else
             display.print("?");
         }
       } else if (i == 2) {
         const char* tr = _prefs->bot_trigger;
-        display.drawTextEllipsized(VAL_X, y, display.width() - VAL_X - 1, tr[0] ? tr : "(none)");
+        display.drawTextEllipsized(val_x, y, display.width() - val_x - 1, tr[0] ? tr : "(none)");
       } else if (i == 3) {
         const char* rp = _prefs->bot_reply_dm;
-        display.drawTextEllipsized(VAL_X, y, display.width() - VAL_X - 1, rp[0] ? rp : "(none)");
+        display.drawTextEllipsized(val_x, y, display.width() - val_x - 1, rp[0] ? rp : "(none)");
       } else {
         const char* rp = _prefs->bot_reply_ch;
-        display.drawTextEllipsized(VAL_X, y, display.width() - VAL_X - 1, rp[0] ? rp : "(none)");
+        display.drawTextEllipsized(val_x, y, display.width() - val_x - 1, rp[0] ? rp : "(none)");
       }
       display.setColor(DisplayDriver::LIGHT);
     }

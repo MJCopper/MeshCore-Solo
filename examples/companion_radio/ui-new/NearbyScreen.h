@@ -8,10 +8,7 @@
 class NearbyScreen : public UIScreen {
   UITask* _task;
 
-  static const int VISIBLE   = 4;
-  static const int ITEM_H    = 12;
-  static const int START_Y   = 12;
-  static const int DIST_COL  = 86;
+  int _visible   = 4;   // updated each render; used by handleInput for scroll clamping
 
   static const int FILTER_COUNT = 6;
   static const char*    FILTER_LABELS[FILTER_COUNT];
@@ -54,10 +51,7 @@ class NearbyScreen : public UIScreen {
   int            _dsel;
   bool           _ddetail;
 
-  static const int D_BOX_H   = 19;
-  static const int D_ITEM_H  = 21;
-  static const int D_VISIBLE = 2;
-  static const int D_START_Y = 11;
+  int _d_visible = 2;  // updated each render; used by handleInputDiscover
 
   // ── helpers ──────────────────────────────────────────────────────────────────
   static void pubKeyToBase64(const uint8_t* key, char* out, int out_len) {
@@ -193,6 +187,14 @@ class NearbyScreen : public UIScreen {
   }
 
   int renderDiscover(DisplayDriver& display) {
+    int lh      = display.getLineHeight();
+    int hdr     = display.headerH();
+    int d_box_h = 2 * lh + 3;   // two text rows + padding
+    int d_item_h = d_box_h + 2;
+    int d_start_y = hdr;
+    _d_visible  = display.listVisible(d_item_h);
+    if (_d_visible < 1) _d_visible = 1;
+
     if (_ddetail) {
       // ── full-screen detail for selected node ──────────────────────────────
       const DiscoverResult& r = _dresults[_dsel];
@@ -207,29 +209,29 @@ class NearbyScreen : public UIScreen {
       char filtered[32];
       display.translateUTF8ToBlocks(filtered, label, sizeof(filtered));
       display.setColor(DisplayDriver::LIGHT);
-      display.fillRect(0, 0, display.width(), 10);
+      display.fillRect(0, 0, display.width(), hdr - 1);
       display.setColor(DisplayDriver::DARK);
       display.drawTextEllipsized(2, 1, display.width() - 4, filtered);
       display.setColor(DisplayDriver::LIGHT);
-      display.fillRect(0, 10, display.width(), 1);
+      display.fillRect(0, hdr - 1, display.width(), 1);
 
-      // public key as base64, truncated with ... by drawTextEllipsized
+      // public key as base64
       char b64[48];
       pubKeyToBase64(r.pub_key, b64, sizeof(b64));
-      display.drawTextEllipsized(2, 12, display.width() - 4, b64);
+      display.drawTextEllipsized(2, hdr, display.width() - 4, b64);
 
+      int step = lh + 1;
       char buf[32];
-
       snprintf(buf, sizeof(buf), "RSSI: %d dBm", (int)r.rssi);
-      display.setCursor(2, 21); display.print(buf);
+      display.setCursor(2, hdr + step);     display.print(buf);
 
       snprintf(buf, sizeof(buf), "SNR:  %d dB", (int)(r.snr_x4 / 4));
-      display.setCursor(2, 30); display.print(buf);
+      display.setCursor(2, hdr + step * 2); display.print(buf);
 
       snprintf(buf, sizeof(buf), "Rem:  %d dB", (int)(r.remote_snr_x4 / 4));
-      display.setCursor(2, 39); display.print(buf);
+      display.setCursor(2, hdr + step * 3); display.print(buf);
 
-      display.setCursor(2, 48);
+      display.setCursor(2, hdr + step * 4);
       display.print(r.is_known ? "Status: known" : "Status: new");
 
       return 5000;
@@ -250,21 +252,22 @@ class NearbyScreen : public UIScreen {
     else
       snprintf(title, sizeof(title), "DISCOVER (%d found)", _dresult_count);
     display.drawTextCentered(display.width() / 2, 0, title);
-    display.fillRect(0, 10, display.width(), 1);
+    display.fillRect(0, hdr - 1, display.width(), 1);
 
     if (_dresult_count == 0) {
-      display.drawTextCentered(display.width() / 2, 32,
+      display.drawTextCentered(display.width() / 2, display.height() / 2,
         _discovering ? "Waiting for replies..." : "No nodes found");
     } else {
       if (_dsel >= _dresult_count) _dsel = _dresult_count - 1;
-      if (_dscroll > _dresult_count - D_VISIBLE)
-        _dscroll = _dresult_count > D_VISIBLE ? _dresult_count - D_VISIBLE : 0;
+      if (_dscroll > _dresult_count - _d_visible)
+        _dscroll = _dresult_count > _d_visible ? _dresult_count - _d_visible : 0;
       if (_dscroll < 0) _dscroll = 0;
-      for (int i = 0; i < D_VISIBLE && (_dscroll + i) < _dresult_count; i++) {
+
+      for (int i = 0; i < _d_visible && (_dscroll + i) < _dresult_count; i++) {
         int idx = _dscroll + i;
         bool sel = (idx == _dsel);
         const DiscoverResult& r = _dresults[idx];
-        int y = D_START_Y + i * D_ITEM_H;
+        int y = d_start_y + i * d_item_h;
 
         const char* typeStr = (r.type == ADV_TYPE_REPEATER) ? "Rpt"  :
                               (r.type == ADV_TYPE_SENSOR)   ? "Snsr" :
@@ -272,11 +275,11 @@ class NearbyScreen : public UIScreen {
 
         display.setColor(DisplayDriver::LIGHT);
         if (sel) {
-          display.fillRect(0, y, display.width(), D_BOX_H);  // fully inverted when selected
+          display.fillRect(0, y, display.width(), d_box_h);
           display.setColor(DisplayDriver::DARK);
         } else {
-          display.drawRect(0, y, display.width(), D_BOX_H);
-          display.fillRect(1, y + 1, display.width() - 2, 8);
+          display.drawRect(0, y, display.width(), d_box_h);
+          display.fillRect(1, y + 1, display.width() - 2, lh);
           display.setColor(DisplayDriver::DARK);
         }
 
@@ -300,14 +303,15 @@ class NearbyScreen : public UIScreen {
         display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
         char sig[24];
         snprintf(sig, sizeof(sig), "RSSI:%d SNR:%d", (int)r.rssi, (int)(r.snr_x4 / 4));
-        display.drawTextEllipsized(3, y + 10, display.width() - 6, sig);
+        display.drawTextEllipsized(3, y + lh + 2, display.width() - 6, sig);
       }
 
       display.setColor(DisplayDriver::LIGHT);
+      int cw = display.getCharWidth();
       if (_dscroll > 0)
-        { display.setCursor(display.width() - 6, D_START_Y + 1); display.print("^"); }
-      if (_dscroll + D_VISIBLE < _dresult_count)
-        { display.setCursor(display.width() - 6, D_START_Y + D_VISIBLE * D_ITEM_H - 10); display.print("v"); }
+        { display.setCursor(display.width() - cw, d_start_y); display.print("^"); }
+      if (_dscroll + _d_visible < _dresult_count)
+        { display.setCursor(display.width() - cw, d_start_y + (_d_visible - 1) * d_item_h); display.print("v"); }
     }
 
     return _discovering ? 200 : 2000;
@@ -342,7 +346,7 @@ class NearbyScreen : public UIScreen {
     }
     if (c == KEY_DOWN && _dsel < _dresult_count - 1) {
       _dsel++;
-      if (_dsel >= _dscroll + D_VISIBLE) _dscroll = _dsel - D_VISIBLE + 1;
+      if (_dsel >= _dscroll + _d_visible) _dscroll = _dsel - _d_visible + 1;
       return true;
     }
     return true;
@@ -390,9 +394,12 @@ public:
     // ── detail view ──────────────────────────────────────────────────────────
     if (_detail && _sel < _count) {
       const Entry& e = _entries[_sel];
+      int lh   = display.getLineHeight();
+      int hdr  = display.headerH();
+      int step = lh + 1;
 
       display.setColor(DisplayDriver::LIGHT);
-      display.fillRect(0, 0, display.width(), 10);
+      display.fillRect(0, 0, display.width(), hdr - 1);
       display.setColor(DisplayDriver::DARK);
       char filtered[32];
       display.translateUTF8ToBlocks(filtered, e.name, sizeof(filtered));
@@ -401,55 +408,60 @@ public:
 
       char buf[32];
       snprintf(buf, sizeof(buf), "Lat: %.5f", e.lat_e6 / 1e6);
-      display.setCursor(2, 11); display.print(buf);
+      display.setCursor(2, hdr); display.print(buf);
 
       snprintf(buf, sizeof(buf), "Lon: %.5f", e.lon_e6 / 1e6);
-      display.setCursor(2, 20); display.print(buf);
+      display.setCursor(2, hdr + step); display.print(buf);
 
       if (e.dist_km >= 0.0f) {
         char dist[12];
         fmtDist(dist, sizeof(dist), e.dist_km);
         int az = bearingDeg(_own_lat, _own_lon, e.lat_e6, e.lon_e6);
         snprintf(buf, sizeof(buf), "Dist: %s", dist);
-        display.setCursor(2, 29); display.print(buf);
+        display.setCursor(2, hdr + step * 2); display.print(buf);
         snprintf(buf, sizeof(buf), "Az: %dd (%s)", az, bearingCardinal(az));
-        display.setCursor(2, 38); display.print(buf);
+        display.setCursor(2, hdr + step * 3); display.print(buf);
       } else {
-        display.setCursor(2, 29); display.print("Dist: no own GPS");
-        display.setCursor(2, 38); display.print("Az: unknown");
+        display.setCursor(2, hdr + step * 2); display.print("Dist: no own GPS");
+        display.setCursor(2, hdr + step * 3); display.print("Az: unknown");
       }
 
       snprintf(buf, sizeof(buf), "Type: %s", typeName(e.type));
-      display.setCursor(2, 47); display.print(buf);
+      display.setCursor(2, hdr + step * 4); display.print(buf);
 
       char age[16];
       fmtAge(age, sizeof(age), e.lastmod);
       snprintf(buf, sizeof(buf), "Seen: %s", age);
-      display.setCursor(2, 56); display.print(buf);
+      display.setCursor(2, hdr + step * 5); display.print(buf);
 
       return 2000;
     }
 
     // ── list view ────────────────────────────────────────────────────────────
+    int item_h   = display.lineStep();
+    int start_y  = display.listStart();
+    int dist_col = display.width() - display.getCharWidth() * 7;
+    _visible     = display.listVisible(item_h);
+
     display.setColor(DisplayDriver::LIGHT);
     char title[22];
     snprintf(title, sizeof(title), "NEARBY[%s]", FILTER_LABELS[_filter]);
     display.drawTextCentered(display.width() / 2, 0, title);
-    display.fillRect(0, 10, display.width(), 1);
+    display.fillRect(0, display.headerH() - 1, display.width(), 1);
 
     if (_count == 0) {
-      display.drawTextCentered(display.width() / 2, 28, "No contacts found");
-      display.drawTextCentered(display.width() / 2, 40, "[Enter]=Discover");
+      display.drawTextCentered(display.width() / 2, display.height() / 2 - display.lineStep() / 2, "No contacts found");
+      display.drawTextCentered(display.width() / 2, display.height() / 2 + display.lineStep() / 2, "[Enter]=Discover");
     } else {
-      for (int i = 0; i < VISIBLE && (_scroll + i) < _count; i++) {
+      for (int i = 0; i < _visible && (_scroll + i) < _count; i++) {
         int idx = _scroll + i;
         bool sel = (idx == _sel);
-        int y = START_Y + i * ITEM_H;
+        int y = start_y + i * item_h;
         const Entry& e = _entries[idx];
 
         if (sel) {
           display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y - 1, display.width(), ITEM_H - 1);
+          display.fillRect(0, y - 1, display.width(), item_h - 1);
           display.setColor(DisplayDriver::DARK);
         } else {
           display.setColor(DisplayDriver::LIGHT);
@@ -457,21 +469,22 @@ public:
 
         char filt[32];
         display.translateUTF8ToBlocks(filt, e.name, sizeof(filt));
-        display.drawTextEllipsized(2, y, DIST_COL - 4, filt);
+        display.drawTextEllipsized(2, y, dist_col - 4, filt);
 
         display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
         char dist[10];
         if (e.dist_km >= 0.0f) fmtDist(dist, sizeof(dist), e.dist_km);
         else                   strncpy(dist, "?GPS", sizeof(dist));
-        display.setCursor(DIST_COL, y);
+        display.setCursor(dist_col, y);
         display.print(dist);
       }
 
       display.setColor(DisplayDriver::LIGHT);
+      int cw = display.getCharWidth();
       if (_scroll > 0)
-        { display.setCursor(display.width() - 6, START_Y); display.print("^"); }
-      if (_scroll + VISIBLE < _count)
-        { display.setCursor(display.width() - 6, START_Y + (VISIBLE - 1) * ITEM_H); display.print("v"); }
+        { display.setCursor(display.width() - cw, start_y); display.print("^"); }
+      if (_scroll + _visible < _count)
+        { display.setCursor(display.width() - cw, start_y + (_visible - 1) * item_h); display.print("v"); }
     }
 
     if (_ctx_menu.active) {
@@ -519,7 +532,7 @@ public:
     }
     if (c == KEY_DOWN && _sel < _count - 1) {
       _sel++;
-      if (_sel >= _scroll + VISIBLE) _scroll = _sel - VISIBLE + 1;
+      if (_sel >= _scroll + _visible) _scroll = _sel - _visible + 1;
       return true;
     }
     if (c == KEY_ENTER && _count == 0) { enterDiscoverMode(); return true; }

@@ -21,9 +21,6 @@ class DashboardConfigScreen : public UIScreen {
   NodePrefs* _prefs;
 
   static const int FIELD_SLOTS = 3;
-  static const int ITEM_H      = 13;
-  static const int START_Y     = 13;
-  static const int VAL_X       = 62;
 
   static const char* OPTION_NAMES[DASH_COUNT];
 
@@ -44,23 +41,27 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
+    int item_h  = display.lineStep();
+    int start_y = display.listStart();
+    int val_x   = display.valCol();
+
     display.drawTextCentered(display.width() / 2, 0, "CLOCK FIELDS");
-    display.fillRect(0, 10, display.width(), 1);
+    display.fillRect(0, display.headerH() - 1, display.width(), 1);
 
     static const char* labels[] = { "Field 1", "Field 2", "Field 3" };
     for (int i = 0; i < FIELD_SLOTS; i++) {
-      int y = START_Y + i * ITEM_H;
+      int y = start_y + i * item_h;
       bool sel = (i == _sel);
       if (sel) {
         display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(0, y - 1, display.width(), ITEM_H);
+        display.fillRect(0, y - 1, display.width(), item_h);
         display.setColor(DisplayDriver::DARK);
       } else {
         display.setColor(DisplayDriver::LIGHT);
       }
       display.setCursor(2, y);
       display.print(labels[i]);
-      display.setCursor(VAL_X, y);
+      display.setCursor(val_x, y);
       uint8_t f = _prefs->dashboard_fields[i];
       display.print(OPTION_NAMES[f < DASH_COUNT ? f : DASH_NONE]);
       display.setColor(DisplayDriver::LIGHT);

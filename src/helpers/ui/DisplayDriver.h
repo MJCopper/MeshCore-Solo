@@ -31,6 +31,16 @@ public:
   virtual int getCharWidth() const { return 6; }   // typical character advance width (px)
   virtual int getLineHeight() const { return 8; }  // pixel rows per text line
   virtual void setLemonFont(bool) { }              // no-op; overridden by displays that support Lemon
+
+  // Layout helpers — derived from font metrics and screen size.
+  // Use these instead of hardcoded pixel values so layouts adapt to any display.
+  int lineStep()             const { return getLineHeight() + 2; }         // row pitch: text + gap
+  int headerH()              const { return getLineHeight() + 3; }         // title bar height
+  int listStart()            const { return headerH(); }                   // y where list items begin
+  int listVisible(int itemH) const { return (height() - listStart()) / itemH; }
+  int listVisible()          const { return listVisible(lineStep()); }
+  // x where a right-side value column starts (leaves ~8 chars for the value)
+  int valCol()               const { return width() - getCharWidth() * 8; }
   virtual void drawTextCentered(int mid_x, int y, const char* str) {   // helper method (override to optimise)
     int w = getTextWidth(str);
     setCursor(mid_x - w/2, y);

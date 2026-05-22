@@ -25,22 +25,27 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
-    display.drawTextCentered(display.width() / 2, 0, "AUTO-ADVERT");
-    display.fillRect(0, 10, display.width(), 1);
+    int label_y = display.listStart();
+    int bar_y   = label_y + display.lineStep();
+    int bar_h   = display.lineStep();
+    int tip_y   = bar_y + bar_h + display.lineStep();
 
-    display.setCursor(2, 14);
+    display.drawTextCentered(display.width() / 2, 0, "AUTO-ADVERT");
+    display.fillRect(0, display.headerH() - 1, display.width(), 1);
+
+    display.setCursor(2, label_y);
     display.print("Interval:");
 
     int idx = currentIdx();
     display.setColor(DisplayDriver::LIGHT);
-    display.fillRect(0, 24, display.width(), 12);
+    display.fillRect(0, bar_y, display.width(), bar_h);
     display.setColor(DisplayDriver::DARK);
-    display.drawTextCentered(display.width() / 2, 25, OPT_LABELS[idx]);
+    display.drawTextCentered(display.width() / 2, bar_y + 1, OPT_LABELS[idx]);
     display.setColor(DisplayDriver::LIGHT);
 
-    display.setCursor(2, 40);
+    display.setCursor(2, tip_y);
     display.print("<  > to change");
-    display.setCursor(2, 51);
+    display.setCursor(2, tip_y + display.lineStep());
     display.print("[Esc] to save");
     return 500;
   }

@@ -6,12 +6,11 @@ class RingtoneEditorScreen : public UIScreen {
   UITask*    _task;
   NodePrefs* _prefs;
 
-  static const int MAX_NOTES     = 32;
-  static const int VISIBLE_NOTES = 7;
-  static const int CELL_W        = 18;
-  static const int NOTES_Y       = 12;
-  static const int CELL_H        = 14;
-  static const int MENU_VISIBLE  = 5;
+  static const int MAX_NOTES    = 32;
+  static const int CELL_W       = 18;
+  static const int MENU_VISIBLE = 5;
+
+  int _visible_notes = 7;  // updated in render(); used by clampScroll()
 
   static const uint16_t BPM_OPTS[5];
   static const uint8_t  DUR_VALS[4];
@@ -43,8 +42,8 @@ class RingtoneEditorScreen : public UIScreen {
   }
 
   void clampScroll() {
-    if (_cursor < _scroll)                  _scroll = _cursor;
-    if (_cursor >= _scroll + VISIBLE_NOTES) _scroll = _cursor - VISIBLE_NOTES + 1;
+    if (_cursor < _scroll)                      _scroll = _cursor;
+    if (_cursor >= _scroll + _visible_notes) _scroll = _cursor - _visible_notes + 1;
     if (_scroll < 0) _scroll = 0;
   }
 
@@ -93,13 +92,18 @@ public:
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
 
+    const int lh            = display.getLineHeight();
+    const int notes_y       = display.listStart();
+    const int cell_h        = lh + 6;
+    _visible_notes          = display.width() / CELL_W;
+
     char hdr[32];
     snprintf(hdr, sizeof(hdr), "M%d BPM:%u %d/%d", _slot + 1, BPM_OPTS[_bpm_idx], _len, MAX_NOTES);
     display.setCursor(0, 0);
     display.print(hdr);
-    display.fillRect(0, 10, display.width(), 1);
+    display.fillRect(0, display.headerH() - 1, display.width(), 1);
 
-    for (int i = 0; i < VISIBLE_NOTES; i++) {
+    for (int i = 0; i < _visible_notes; i++) {
       int ni = _scroll + i;
       int cx = i * CELL_W;
       bool sel = (ni == _cursor);
@@ -116,50 +120,52 @@ public:
         }
         if (sel) {
           display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(cx, NOTES_Y, CELL_W - 1, CELL_H);
+          display.fillRect(cx, notes_y, CELL_W - 1, cell_h);
           display.setColor(DisplayDriver::DARK);
         } else {
           display.setColor(DisplayDriver::LIGHT);
-          display.drawRect(cx, NOTES_Y, CELL_W - 1, CELL_H);
+          display.drawRect(cx, notes_y, CELL_W - 1, cell_h);
         }
-        display.setCursor(cx + 3, NOTES_Y + 3);
+        display.setCursor(cx + 3, notes_y + 3);
         display.print(label);
         display.setColor(DisplayDriver::LIGHT);
       } else if (ni == _len && _len < MAX_NOTES) {
         if (sel) {
           display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(cx, NOTES_Y, CELL_W - 1, CELL_H);
+          display.fillRect(cx, notes_y, CELL_W - 1, cell_h);
           display.setColor(DisplayDriver::DARK);
         } else {
           display.setColor(DisplayDriver::LIGHT);
         }
-        display.setCursor(cx + 6, NOTES_Y + 3);
+        display.setCursor(cx + 6, notes_y + 3);
         display.print("+");
         display.setColor(DisplayDriver::LIGHT);
       }
     }
 
-    int info_y = NOTES_Y + CELL_H + 2;
+    const int info_y   = notes_y + cell_h + 2;
+    const int bottom_y = display.height() - display.lineStep();
     if (_scroll > 0) { display.setCursor(0, info_y); display.print("<"); }
-    if (_scroll + VISIBLE_NOTES <= _len) { display.setCursor(display.width() - 6, info_y); display.print(">"); }
+    if (_scroll + _visible_notes <= _len) { display.setCursor(display.width() - display.getCharWidth(), info_y); display.print(">"); }
     if (_cursor < _len) {
       char info[24];
       snprintf(info, sizeof(info), "oct:%d dur:%s",
                noteOctave(_notes[_cursor]), DUR_LABELS[noteDurIdx(_notes[_cursor])]);
-      display.setCursor(10, info_y);
+      display.setCursor(display.getCharWidth() + 2, info_y);
       display.print(info);
     } else if (_cursor == _len) {
-      display.setCursor(10, info_y);
+      display.setCursor(display.getCharWidth() + 2, info_y);
       display.print("U/D to add note");
     }
 
-    display.setCursor(0, 54);
+    display.setCursor(0, bottom_y);
     display.print("ENT:oct MENU:opts");
 
     if (_menu_open) {
-      static const int mw = 100, mh = MENU_VISIBLE * 10 + 4;
-      int mx = (128 - mw) / 2;
-      int my = (64  - mh) / 2;
+      const int menu_ih = display.lineStep();
+      const int mw = 100, mh = MENU_VISIBLE * menu_ih + 4;
+      int mx = (display.width()  - mw) / 2;
+      int my = (display.height() - mh) / 2;
       display.setColor(DisplayDriver::DARK);
       display.fillRect(mx, my, mw, mh);
       display.setColor(DisplayDriver::LIGHT);
@@ -167,10 +173,10 @@ public:
       for (int i = 0; i < MENU_VISIBLE; i++) {
         int item = _menu_scroll + i;
         if (item >= M_COUNT) break;
-        int iy = my + 2 + i * 10;
+        int iy = my + 2 + i * menu_ih;
         bool sel = (item == _menu_sel);
         if (sel) {
-          display.fillRect(mx + 1, iy - 1, mw - 2, 10);
+          display.fillRect(mx + 1, iy - 1, mw - 2, menu_ih);
           display.setColor(DisplayDriver::DARK);
         }
         display.setCursor(mx + 4, iy);
@@ -182,8 +188,9 @@ public:
           display.print(MENU_LABELS[item]);
         display.setColor(DisplayDriver::LIGHT);
       }
-      if (_menu_scroll > 0) { display.setCursor(mx + mw - 7, my + 2); display.print("^"); }
-      if (_menu_scroll + MENU_VISIBLE < M_COUNT) { display.setCursor(mx + mw - 7, my + mh - 10); display.print("v"); }
+      int cw = display.getCharWidth();
+      if (_menu_scroll > 0) { display.setCursor(mx + mw - cw - 1, my + 2); display.print("^"); }
+      if (_menu_scroll + MENU_VISIBLE < M_COUNT) { display.setCursor(mx + mw - cw - 1, my + mh - menu_ih); display.print("v"); }
     }
 
     return 200;

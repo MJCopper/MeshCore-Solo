@@ -57,13 +57,9 @@ class SettingsScreen : public UIScreen {
     Count
   };
 
-  static const int VISIBLE_ITEMS = 4;
-  static const int ITEM_H = 11;
-  static const int START_Y = 12;
-  static const int VAL_X = 80;
-
   int _selected;
   int _scroll;
+  int _visible;   // items fitting on screen; updated each render, used by handleInput
   bool _dirty;
 
   static const uint16_t AUTO_OFF_OPTS[5];
@@ -230,7 +226,7 @@ class SettingsScreen : public UIScreen {
 
     if (sel) {
       display.setColor(DisplayDriver::LIGHT);
-      display.fillRect(0, y - 1, display.width(), ITEM_H);
+      display.fillRect(0, y - 1, display.width(), display.lineStep());
       display.setColor(DisplayDriver::DARK);
     } else {
       display.setColor(DisplayDriver::LIGHT);
@@ -242,10 +238,10 @@ class SettingsScreen : public UIScreen {
 
     if (item == BRIGHTNESS) {
       display.print("Bright");
-      renderBar(display, VAL_X, y, (p ? p->display_brightness : 2) + 1, 5);
+      renderBar(display, display.valCol(), y, (p ? p->display_brightness : 2) + 1, 5);
     } else if (item == BUZZER) {
       display.print("Buzzer");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
 #ifdef PIN_BUZZER
       { static const char* labels[] = { "ON", "OFF", "Auto" };
         int m = _task->getBuzzerMode();
@@ -256,45 +252,45 @@ class SettingsScreen : public UIScreen {
     } else if (item == BUZZER_VOLUME) {
       display.print("BzrVol");
 #ifdef PIN_BUZZER
-      renderBar(display, VAL_X, y, _task->getBuzzerVolume() + 1, 5);
+      renderBar(display, display.valCol(), y, _task->getBuzzerVolume() + 1, 5);
 #else
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       display.print("N/A");
 #endif
     } else if (item == DM_MELODY) {
       display.print("DM sound");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       { static const char* L[] = { "built-in", "M1", "M2" };
         uint8_t v = p ? p->notif_melody_dm : 0;
         display.print(L[v < 3 ? v : 0]); }
     } else if (item == CH_MELODY) {
       display.print("Ch sound");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       { static const char* L[] = { "built-in", "M1", "M2" };
         uint8_t v = p ? p->notif_melody_ch : 0;
         display.print(L[v < 3 ? v : 0]); }
     } else if (isHomePage(item)) {
       display.print(homePageLabel(item));
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       display.print(homePageVisible(item, p) ? "ON" : "OFF");
     } else if (item == TX_POWER) {
       display.print("TX Pwr");
       char buf[8];
       sprintf(buf, "%ddBm", p ? p->tx_power_dbm : 0);
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       display.print(buf);
     } else if (item == AUTO_OFF) {
       display.print("AutoOff");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       display.print(AUTO_OFF_LABELS[autoOffIndex()]);
     } else if (item == AUTO_LOCK) {
       display.print("AutoLock");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       display.print((p && p->auto_lock) ? "ON" : "OFF");
 #if ENV_INCLUDE_GPS == 1
     } else if (item == GPS_INTERVAL) {
       display.print("GPS upd");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       display.print(GPS_INTERVAL_LABELS[gpsIntervalIndex()]);
 #endif
     } else if (item == TIMEZONE) {
@@ -303,46 +299,46 @@ class SettingsScreen : public UIScreen {
       int8_t tz = p ? p->tz_offset_hours : 0;
       if (tz >= 0) sprintf(buf, "UTC+%d", (int)tz);
       else         sprintf(buf, "UTC%d",  (int)tz);
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       display.print(buf);
     } else if (item == LOW_BAT) {
       display.print("LowBat");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       display.print(LOW_BAT_LABELS[lowBatIndex()]);
     } else if (item == BATT_DISPLAY) {
       display.print("BattDisp");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       uint8_t mode = p ? p->batt_display_mode : 0;
       display.print(BATT_DISPLAY_LABELS[mode < BATT_DISPLAY_COUNT ? mode : 0]);
 #if !defined(EINK_DISPLAY_MODEL)
     } else if (item == CLOCK_SECONDS) {
       display.print("Seconds");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       display.print((p && p->clock_hide_seconds) ? "OFF" : "ON");
 #endif
     } else if (item == CLOCK_FORMAT) {
       display.print("Format");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       display.print((p && p->clock_12h) ? "12h" : "24h");
     } else if (item == FONT) {
       display.print("Font");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       display.print((p && p->use_lemon_font) ? "Lemon" : "Default");
 #if defined(EINK_DISPLAY_MODEL)
     } else if (item == ROTATION) {
       display.print("Rotation");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       { static const char* ROT_LABELS[] = { "0deg", "90deg", "180deg", "270deg" };
         uint8_t r = p ? (p->display_rotation & 3) : 0;
         display.print(ROT_LABELS[r]); }
 #endif
     } else if (item == DM_FILTER) {
       display.print("DM");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       display.print((p && p->dm_show_all) ? "all" : "fav");
     } else if (item == ROOM_FILTER) {
       display.print("Rooms");
-      display.setCursor(VAL_X, y);
+      display.setCursor(display.valCol(), y);
       display.print((p && p->room_fav_only) ? "fav" : "all");
     } else if (isMsgSlot(item)) {
       int slot = msgSlotIndex(item);
@@ -350,7 +346,8 @@ class SettingsScreen : public UIScreen {
       snprintf(label, sizeof(label), "Q%d:", slot + 1);
       display.print(label);
       const char* tmpl = (p && p->custom_msgs[slot][0]) ? p->custom_msgs[slot] : "(empty)";
-      display.drawTextEllipsized(VAL_X - 20, y, display.width() - VAL_X + 18, tmpl);
+      int xm = 8 + display.getCharWidth() * 4;
+      display.drawTextEllipsized(xm, y, display.width() - xm, tmpl);
     }
   }
 
@@ -360,7 +357,7 @@ class SettingsScreen : public UIScreen {
 
 public:
   SettingsScreen(UITask* task)
-    : _task(task), _selected(BRIGHTNESS), _scroll(0), _dirty(false), _edit_slot(-1) {}
+    : _task(task), _selected(BRIGHTNESS), _scroll(0), _visible(4), _dirty(false), _edit_slot(-1) {}
 
 
   void markClean() { _dirty = false; }
@@ -372,23 +369,27 @@ public:
       return _kb.render(display);
     }
 
+    int item_h  = display.lineStep();
+    int start_y = display.listStart();
+    _visible    = display.listVisible(item_h);
+
     display.setColor(DisplayDriver::LIGHT);
     display.drawTextCentered(display.width() / 2, 0, "SETTINGS");
-    display.fillRect(0, 10, display.width(), 1);
+    display.fillRect(0, display.headerH() - 2, display.width(), 1);
 
-    for (int i = 0; i < VISIBLE_ITEMS && (_scroll + i) < SettingItem::Count; i++) {
-      renderItem(display, _scroll + i, START_Y + i * ITEM_H);
+    for (int i = 0; i < _visible && (_scroll + i) < SettingItem::Count; i++) {
+      renderItem(display, _scroll + i, start_y + i * item_h);
     }
 
     // scroll indicators
     if (_scroll > 0) {
       display.setColor(DisplayDriver::LIGHT);
-      display.setCursor(display.width() - 6, START_Y);
+      display.setCursor(display.width() - display.getCharWidth(), start_y);
       display.print("^");
     }
-    if (_scroll + VISIBLE_ITEMS < SettingItem::Count) {
+    if (_scroll + _visible < SettingItem::Count) {
       display.setColor(DisplayDriver::LIGHT);
-      display.setCursor(display.width() - 6, START_Y + (VISIBLE_ITEMS - 1) * ITEM_H);
+      display.setCursor(display.width() - display.getCharWidth(), start_y + (_visible - 1) * item_h);
       display.print("v");
     }
 
@@ -426,7 +427,7 @@ public:
       int next = nextSelectable(_selected);
       if (next != _selected) {
         _selected = next;
-        if (_selected >= _scroll + VISIBLE_ITEMS) _scroll = _selected - VISIBLE_ITEMS + 1;
+        if (_selected >= _scroll + _visible) _scroll = _selected - _visible + 1;
       }
       return true;
     }

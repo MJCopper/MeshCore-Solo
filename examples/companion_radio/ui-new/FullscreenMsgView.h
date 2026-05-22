@@ -82,7 +82,8 @@ struct FullscreenMsgView {
       }
     }
 
-    const int header_h = to_nick[0] ? 20 : 10;
+    const int cw       = display.getCharWidth();
+    const int header_h = to_nick[0] ? (lineH * 2 + 4) : (lineH + 2);
     const int startY   = header_h + 2;
     const int visible  = (display.height() - startY - lineH) / lineH;
 
@@ -94,7 +95,7 @@ struct FullscreenMsgView {
       char trans_nick[32], to_label[36];
       display.translateUTF8ToBlocks(trans_nick, to_nick, sizeof(trans_nick));
       snprintf(to_label, sizeof(to_label), "To: %s", trans_nick);
-      display.drawTextEllipsized(2, 11, display.width() - 4, to_label);
+      display.drawTextEllipsized(2, lineH + 3, display.width() - 4, to_label);
     }
     display.setColor(DisplayDriver::LIGHT);
 
@@ -111,16 +112,16 @@ struct FullscreenMsgView {
     }
     if (scroll > 0) {
       display.setColor(DisplayDriver::DARK);
-      display.fillRect(display.width() - 6, startY, 6, lineH);
+      display.fillRect(display.width() - cw, startY, cw, lineH);
       display.setColor(DisplayDriver::LIGHT);
-      display.setCursor(display.width() - 6, startY);
+      display.setCursor(display.width() - cw, startY);
       display.print("^");
     }
     if (scroll < max_scroll) {
       display.setColor(DisplayDriver::DARK);
-      display.fillRect(display.width() - 6, startY + (visible - 1) * lineH, 6, lineH);
+      display.fillRect(display.width() - cw, startY + (visible - 1) * lineH, cw, lineH);
       display.setColor(DisplayDriver::LIGHT);
-      display.setCursor(display.width() - 6, startY + (visible - 1) * lineH);
+      display.setCursor(display.width() - cw, startY + (visible - 1) * lineH);
       display.print("v");
     }
     const int nav_y = display.height() - lineH;
@@ -129,7 +130,7 @@ struct FullscreenMsgView {
       display.print("<");
     }
     if (has_prev) {
-      display.setCursor(display.width() - 6, nav_y);
+      display.setCursor(display.width() - cw, nav_y);
       display.print(">");
     }
     return 2000;
