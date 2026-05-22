@@ -15,12 +15,6 @@ static const int KB_ROWS_CHAR  = 4;
 static const int KB_COLS_CHAR  = 10;
 static const int KB_SPECIAL    = 5;   // [^] [Sp] [De] [{}] [OK]
 static const int KB_MAX_LEN    = 139;
-static const int KB_CELL_W     = 12;  // 10 cols × 12px = 120px of 128px display
-static const int KB_CELL_H     = 9;
-static const int KB_TEXT_Y     = 0;
-static const int KB_SEP_Y      = 9;
-static const int KB_CHARS_Y    = 11;
-static const int KB_SPECIAL_Y  = 48;
 
 static const int KB_PH_MAX     = 12;  // max placeholders in list
 static const int KB_PH_LEN     = 9;   // max placeholder string length incl. null
@@ -64,33 +58,44 @@ struct KeyboardWidget {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
 
-    // text preview: last 20 chars + cursor
+    const int lh      = display.getLineHeight();
+    const int cw      = display.getCharWidth();
+    const int cell_w  = display.width() / KB_COLS_CHAR;
+    const int cell_h  = lh + 1;
+    const int sep_y   = lh + 1;
+    const int chars_y = sep_y + 2;
+    const int spec_y  = chars_y + KB_ROWS_CHAR * cell_h;
+    const int spec_w  = display.width() / KB_SPECIAL;
+
+    // text preview: last N chars + cursor (fit within screen width)
+    int max_preview = display.width() / cw - 1;
+    if (max_preview > 30) max_preview = 30;
     const char* disp_start = buf;
     int disp_len = len;
-    if (disp_len > 20) { disp_start = buf + (disp_len - 20); disp_len = 20; }
-    char preview[24];
+    if (disp_len > max_preview) { disp_start = buf + (disp_len - max_preview); disp_len = max_preview; }
+    char preview[32];
     snprintf(preview, sizeof(preview), "%.*s_", disp_len, disp_start);
-    display.setCursor(0, KB_TEXT_Y);
+    display.setCursor(0, 0);
     display.print(preview);
-    display.fillRect(0, KB_SEP_Y, display.width(), 1);
+    display.fillRect(0, sep_y, display.width(), 1);
 
     // character grid
     for (int r = 0; r < KB_ROWS_CHAR; r++) {
-      int y = KB_CHARS_Y + r * KB_CELL_H;
+      int y = chars_y + r * cell_h;
       for (int c = 0; c < KB_COLS_CHAR; c++) {
         bool sel = (row == r && col == c);
         char ch = KB_CHARS[r][c];
         if (caps && ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
         char ch_buf[2] = { ch == ' ' ? '_' : ch, '\0' };
-        int cx = c * KB_CELL_W;
+        int cx = c * cell_w;
         if (sel) {
           display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(cx, y - 1, KB_CELL_W - 1, KB_CELL_H);
+          display.fillRect(cx, y - 1, cell_w - 1, cell_h);
           display.setColor(DisplayDriver::DARK);
         } else {
           display.setColor(DisplayDriver::LIGHT);
         }
-        display.setCursor(cx + 3, y);
+        display.setCursor(cx + (cell_w - cw) / 2, y);
         display.print(ch_buf);
       }
     }
@@ -100,15 +105,16 @@ struct KeyboardWidget {
     for (int i = 0; i < KB_SPECIAL; i++) {
       bool sel    = (row == KB_ROWS_CHAR && col == i);
       bool active = (i == 0 && caps);
-      int sx = i * 25;
+      int sx = i * spec_w;
       if (sel || active) {
         display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(sx, KB_SPECIAL_Y - 1, 24, KB_CELL_H);
+        display.fillRect(sx, spec_y - 1, spec_w - 1, cell_h);
         display.setColor(DisplayDriver::DARK);
       } else {
         display.setColor(DisplayDriver::LIGHT);
       }
-      display.setCursor(sx + 1, KB_SPECIAL_Y);
+      int tw = display.getTextWidth(spec[i]);
+      display.setCursor(sx + (spec_w - tw) / 2, spec_y);
       display.print(spec[i]);
       display.setColor(DisplayDriver::LIGHT);
     }

@@ -8,7 +8,9 @@ class SettingsScreen : public UIScreen {
   enum SettingItem {
     // Display section
     SECTION_DISPLAY,
+#if !defined(EINK_DISPLAY_MODEL)
     BRIGHTNESS,
+#endif
     AUTO_OFF,
     AUTO_LOCK,
     BATT_DISPLAY,
@@ -85,7 +87,9 @@ class SettingsScreen : public UIScreen {
   }
 
   void renderBar(DisplayDriver& display, int x, int y, int value, int max_val) {
-    const int box_w = 7, box_h = 7, gap = 2;
+    const int box_h = display.getLineHeight() - 2;
+    const int box_w = box_h;
+    const int gap   = 2;
     for (int i = 0; i < max_val; i++) {
       int bx = x + i * (box_w + gap);
       display.drawRect(bx, y, box_w, box_h);
@@ -236,10 +240,13 @@ class SettingsScreen : public UIScreen {
     display.print(sel ? ">" : " ");
     display.setCursor(display.getCharWidth() + 2, y);
 
+#if !defined(EINK_DISPLAY_MODEL)
     if (item == BRIGHTNESS) {
       display.print("Bright");
       renderBar(display, display.valCol(), y, (p ? p->display_brightness : 2) + 1, 5);
-    } else if (item == BUZZER) {
+    } else
+#endif
+    if (item == BUZZER) {
       display.print("Buzzer");
       display.setCursor(display.valCol(), y);
 #ifdef PIN_BUZZER
@@ -357,7 +364,7 @@ class SettingsScreen : public UIScreen {
 
 public:
   SettingsScreen(UITask* task)
-    : _task(task), _selected(BRIGHTNESS), _scroll(0), _visible(4), _dirty(false), _edit_slot(-1) {}
+    : _task(task), _selected(AUTO_OFF), _scroll(0), _visible(4), _dirty(false), _edit_slot(-1) {}
 
 
   void markClean() { _dirty = false; }
@@ -441,12 +448,14 @@ public:
     bool left  = (c == KEY_LEFT  || c == KEY_PREV);
     bool enter = (c == KEY_ENTER);
 
+#if !defined(EINK_DISPLAY_MODEL)
     if (_selected == BRIGHTNESS) {
       uint8_t lvl = _task->getBrightnessLevel();
       if (right && lvl < 4) { _task->setBrightnessLevel(lvl + 1); _dirty = true; return true; }
       if (left  && lvl > 0) { _task->setBrightnessLevel(lvl - 1); _dirty = true; return true; }
       return right || left;
     }
+#endif
     if (_selected == BUZZER && (left || right || enter)) {
       _task->cycleBuzzerMode();
       _dirty = true;

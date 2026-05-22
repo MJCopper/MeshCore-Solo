@@ -73,13 +73,13 @@ public:
   int getCharWidth() const override {
     int sc = (width() >= height()) ? 2 : 1;
     if (_text_sz == 3) return 17;
-    if (_text_sz == 2) return 12;
+    if (_text_sz == 2) return 12 * sc;
     return (_use_lemon ? 5 : 6) * sc;
   }
   int getLineHeight() const override {
     int sc = (width() >= height()) ? 2 : 1;
     if (_text_sz == 3) return 28;
-    if (_text_sz == 2) return 16;
+    if (_text_sz == 2) return 16 * sc;
     return (_use_lemon ? 10 : 8) * sc;
   }
   void setLemonFont(bool enabled) override { _use_lemon = enabled; }

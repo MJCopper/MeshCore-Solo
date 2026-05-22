@@ -92,7 +92,7 @@ void GxEPDDisplay::setTextSize(int sz) {
       break;
     case 2:
       display.setFont(NULL);
-      display.setTextSize(2);
+      display.setTextSize((width() >= height()) ? 4 : 2);
       break;
     default:
       display.setFont(_use_lemon ? &Lemon : NULL);

@@ -7,7 +7,6 @@ class RingtoneEditorScreen : public UIScreen {
   NodePrefs* _prefs;
 
   static const int MAX_NOTES    = 32;
-  static const int CELL_W       = 18;
   static const int MENU_VISIBLE = 5;
 
   int _visible_notes = 7;  // updated in render(); used by clampScroll()
@@ -93,9 +92,11 @@ public:
     display.setColor(DisplayDriver::LIGHT);
 
     const int lh            = display.getLineHeight();
+    const int cw            = display.getCharWidth();
+    const int cell_w        = cw * 2 + 6;  // fits 2-char label with margin
     const int notes_y       = display.listStart();
     const int cell_h        = lh + 6;
-    _visible_notes          = display.width() / CELL_W;
+    _visible_notes          = display.width() / cell_w;
 
     char hdr[32];
     snprintf(hdr, sizeof(hdr), "M%d BPM:%u %d/%d", _slot + 1, BPM_OPTS[_bpm_idx], _len, MAX_NOTES);
@@ -105,7 +106,7 @@ public:
 
     for (int i = 0; i < _visible_notes; i++) {
       int ni = _scroll + i;
-      int cx = i * CELL_W;
+      int cx = i * cell_w;
       bool sel = (ni == _cursor);
       if (ni < _len) {
         uint8_t pitch  = notePitch(_notes[ni]);
@@ -120,24 +121,24 @@ public:
         }
         if (sel) {
           display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(cx, notes_y, CELL_W - 1, cell_h);
+          display.fillRect(cx, notes_y, cell_w - 1, cell_h);
           display.setColor(DisplayDriver::DARK);
         } else {
           display.setColor(DisplayDriver::LIGHT);
-          display.drawRect(cx, notes_y, CELL_W - 1, cell_h);
+          display.drawRect(cx, notes_y, cell_w - 1, cell_h);
         }
-        display.setCursor(cx + 3, notes_y + 3);
+        display.setCursor(cx + (cell_w - cw * 2) / 2, notes_y + 3);
         display.print(label);
         display.setColor(DisplayDriver::LIGHT);
       } else if (ni == _len && _len < MAX_NOTES) {
         if (sel) {
           display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(cx, notes_y, CELL_W - 1, cell_h);
+          display.fillRect(cx, notes_y, cell_w - 1, cell_h);
           display.setColor(DisplayDriver::DARK);
         } else {
           display.setColor(DisplayDriver::LIGHT);
         }
-        display.setCursor(cx + 6, notes_y + 3);
+        display.setCursor(cx + (cell_w - cw) / 2, notes_y + 3);
         display.print("+");
         display.setColor(DisplayDriver::LIGHT);
       }

@@ -78,10 +78,11 @@ public:
     // version info at sz2
     int ver_y = logo_y + 13 + 2;
     display.setTextSize(2);
+    int lh2 = display.getLineHeight();
     display.drawTextCentered(display.width()/2, ver_y, _version_info);
 
-    // build date at sz1 — sz2 lh is always 16
-    int date_y = ver_y + 16 + 2;
+    // build date at sz1, below sz2 version
+    int date_y = ver_y + lh2 + 2;
     display.setTextSize(1);
     display.drawTextCentered(display.width()/2, date_y, FIRMWARE_BUILD_DATE);
 
@@ -239,6 +240,10 @@ class HomeScreen : public UIScreen {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
 
+    const int lh  = display.getLineHeight();
+    const int cw  = display.getCharWidth();
+    const int ind = cw + 2;  // single-char indicator width
+
     int battLeftX;
     if (mode == 1) {  // percent
       char buf[6];
@@ -252,52 +257,54 @@ class HomeScreen : public UIScreen {
       battLeftX = display.width() - display.getTextWidth(buf) - 1;
       display.setCursor(battLeftX, 0);
       display.print(buf);
-    } else {  // icon
-      const int iconWidth = 24, iconHeight = 8;
-      battLeftX = display.width() - iconWidth - 5;
-      display.drawRect(battLeftX, 0, iconWidth, iconHeight);
-      display.fillRect(battLeftX + iconWidth, iconHeight / 4, 3, iconHeight / 2);
-      int fillWidth = (pct * (iconWidth - 4)) / 100;
-      display.fillRect(battLeftX + 2, 2, fillWidth, iconHeight - 4);
+    } else {  // icon — scales with lh
+      const int iconH = lh;
+      const int iconW = iconH * 3;
+      battLeftX = display.width() - iconW - 3;
+      display.drawRect(battLeftX, 0, iconW, iconH);
+      display.fillRect(battLeftX + iconW, iconH / 4, 2, iconH / 2);
+      int fillW = (pct * (iconW - 4)) / 100;
+      display.fillRect(battLeftX + 2, 2, fillW, iconH - 4);
     }
 
 #ifdef PIN_BUZZER
     if (_task->isBuzzerQuiet()) {
       display.setColor(DisplayDriver::LIGHT);
-      display.drawXbm(battLeftX - 9, 0, muted_icon, 8, 8);
+      int mx = battLeftX - ind - 1;
+      display.fillRect(mx, 0, ind, lh);
+      display.setColor(DisplayDriver::DARK);
+      display.setCursor(mx + 1, 0);
+      display.print("M");
+      display.setColor(DisplayDriver::LIGHT);
+      battLeftX = mx;
     }
 #endif
 
     // BT connection indicator (left of muted/battery icons)
     int leftmostX = battLeftX;
     if (_task->isSerialEnabled()) {
-#ifdef PIN_BUZZER
-      int btX = battLeftX - 18;
-#else
-      int btX = battLeftX - 9;
-#endif
+      int btX = battLeftX - ind - 1;
       if (_task->hasConnection()) {
         display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(btX - 1, 0, 7, 7);
+        display.fillRect(btX, 0, ind, lh);
         display.setColor(DisplayDriver::DARK);
-        display.setCursor(btX, 0);
+        display.setCursor(btX + 1, 0);
         display.print("B");
         display.setColor(DisplayDriver::LIGHT);
       } else {
-        display.setColor(DisplayDriver::LIGHT);
-        display.setCursor(btX, 0);
+        display.setCursor(btX + 1, 0);
         display.print("b");
       }
       leftmostX = btX - 1;
 
-      // "A" indicator — left of BT, blinks 50% duty at 1s period
+      // "A" indicator — left of BT, blinks 50% duty at 4s period
       if (_node_prefs && _node_prefs->advert_auto_interval_sec > 0) {
-        int aX = leftmostX - 8;
+        int aX = leftmostX - ind;
         if ((millis() % 4000) < 2000) {
           display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(aX - 1, 0, 7, 7);
+          display.fillRect(aX, 0, ind, lh);
           display.setColor(DisplayDriver::DARK);
-          display.setCursor(aX, 0);
+          display.setCursor(aX + 1, 0);
           display.print("A");
           display.setColor(DisplayDriver::LIGHT);
         }
@@ -413,15 +420,17 @@ public:
           if (show_sec) sprintf(buf, "%02d:%02d:%02d", ti->tm_hour, ti->tm_min, ti->tm_sec);
           else          sprintf(buf, "%02d:%02d", ti->tm_hour, ti->tm_min);
         }
+        int lh2 = display.getLineHeight();  // sz2 height: 16 (OLED) or 32 (landscape)
         display.drawTextCentered(display.width() / 2, 0, buf);
 
         display.setTextSize(1);
         static const char* wd[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
         static const char* mo[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
         sprintf(buf, "%s %d %s %d", wd[ti->tm_wday], ti->tm_mday, mo[ti->tm_mon], 1900 + ti->tm_year);
-        display.drawTextCentered(display.width() / 2, 19, buf);
+        int date_y = lh2 + 2;
+        display.drawTextCentered(display.width() / 2, date_y, buf);
 
-        int sep_y  = 19 + lh + 1;
+        int sep_y  = date_y + lh + 1;
         int dash0  = sep_y + 3;
         display.fillRect(0, sep_y, display.width(), 1);
 
@@ -706,7 +715,9 @@ public:
         display.drawTextCentered(display.width() / 2, content_y + step, "hibernating...");
       } else {
         display.drawXbm((display.width() - 32) / 2, content_y, power_icon, 32, 32);
-        display.drawTextCentered(display.width() / 2, content_y + 32 + 3, "hibernate:" PRESS_LABEL);
+        int hint_base = content_y + 32 + 3;
+        display.drawTextCentered(display.width() / 2, hint_base, "hibernate:");
+        display.drawTextCentered(display.width() / 2, hint_base + step, PRESS_LABEL);
       }
     }
     bool auto_adv = _node_prefs && _node_prefs->advert_auto_interval_sec > 0;

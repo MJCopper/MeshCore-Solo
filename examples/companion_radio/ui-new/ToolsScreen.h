@@ -16,21 +16,25 @@ public:
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
     display.drawTextCentered(display.width() / 2, 0, "TOOLS");
-    display.fillRect(0, 10, display.width(), 1);
+    display.fillRect(0, display.headerH() - 1, display.width(), 1);
+
+    int item_h  = display.lineStep();
+    int start_y = display.listStart();
+    int cw      = display.getCharWidth();
 
     for (int i = 0; i < ITEM_COUNT; i++) {
-      int y = 12 + i * 12;
+      int y   = start_y + i * item_h;
       bool sel = (i == _sel);
       if (sel) {
         display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(0, y - 1, display.width(), 11);
+        display.fillRect(0, y - 1, display.width(), item_h);
         display.setColor(DisplayDriver::DARK);
       } else {
         display.setColor(DisplayDriver::LIGHT);
       }
       display.setCursor(0, y);
       display.print(sel ? ">" : " ");
-      display.setCursor(8, y);
+      display.setCursor(cw + 2, y);
       display.print(ITEMS[i]);
     }
     display.setColor(DisplayDriver::LIGHT);
