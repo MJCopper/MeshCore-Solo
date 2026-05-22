@@ -692,11 +692,16 @@ public:
       }
     }
     bool auto_adv = _node_prefs && _node_prefs->advert_auto_interval_sec > 0;
+#ifdef EINK_DISPLAY_MODEL
+    if (_page == HomePage::CLOCK) return 60000;  // no seconds on e-ink; content changes at most every minute
+    return 30000;  // e-ink: limit base polling; new messages still force immediate refresh via notify()
+#else
     if (_page == HomePage::CLOCK) {
       bool show_sec = !_node_prefs || !_node_prefs->clock_hide_seconds;
       return auto_adv ? 1000 : (show_sec ? 1000 : 60000);
     }
     return auto_adv ? 1000 : 5000;
+#endif
   }
 
   bool handleInput(char c) override {
@@ -1399,7 +1404,11 @@ void UITask::loop() {
       _display->setCursor(hx, hy);
       _display->print(hint);
       _display->endFrame();
+#ifdef EINK_DISPLAY_MODEL
+      _next_refresh = millis() + 60000;
+#else
       _next_refresh = millis() + 1000;
+#endif
     } else if (!_locked && millis() >= _next_refresh && curr) {
       _display->startFrame();
       int delay_millis = curr->render(*_display);

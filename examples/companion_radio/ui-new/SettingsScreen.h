@@ -12,7 +12,9 @@ class SettingsScreen : public UIScreen {
     AUTO_OFF,
     AUTO_LOCK,
     BATT_DISPLAY,
+#if !defined(EINK_DISPLAY_MODEL)
     CLOCK_SECONDS,
+#endif
     CLOCK_FORMAT,
     FONT,
 #if defined(EINK_DISPLAY_MODEL)
@@ -312,10 +314,12 @@ class SettingsScreen : public UIScreen {
       display.setCursor(VAL_X, y);
       uint8_t mode = p ? p->batt_display_mode : 0;
       display.print(BATT_DISPLAY_LABELS[mode < BATT_DISPLAY_COUNT ? mode : 0]);
+#if !defined(EINK_DISPLAY_MODEL)
     } else if (item == CLOCK_SECONDS) {
       display.print("Seconds");
       display.setCursor(VAL_X, y);
       display.print((p && p->clock_hide_seconds) ? "OFF" : "ON");
+#endif
     } else if (item == CLOCK_FORMAT) {
       display.print("Format");
       display.setCursor(VAL_X, y);
@@ -512,11 +516,13 @@ public:
       if (left)  idx = (idx + BATT_DISPLAY_COUNT - 1) % BATT_DISPLAY_COUNT;
       if (left || right) { p->batt_display_mode = idx; _dirty = true; return true; }
     }
+#if !defined(EINK_DISPLAY_MODEL)
     if (_selected == CLOCK_SECONDS && p && (left || right || enter)) {
       p->clock_hide_seconds ^= 1;
       _dirty = true;
       return true;
     }
+#endif
     if (_selected == CLOCK_FORMAT && p && (left || right || enter)) {
       p->clock_12h ^= 1;
       _dirty = true;
