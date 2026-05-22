@@ -215,12 +215,27 @@ class NearbyScreen : public UIScreen {
       display.setColor(DisplayDriver::LIGHT);
       display.fillRect(0, hdr - 1, display.width(), 1);
 
-      // public key as base64
+      // public key as base64 — truncate to one line via charWidth
       char b64[48];
       pubKeyToBase64(r.pub_key, b64, sizeof(b64));
-      display.drawTextEllipsized(2, hdr, display.width() - 4, b64);
+      {
+        int max_chars = (display.width() - 4) / display.getCharWidth();
+        int b64_len   = strlen(b64);
+        char b64_line[48];
+        if (b64_len > max_chars) {
+          strncpy(b64_line, b64, max_chars - 3);
+          b64_line[max_chars - 3] = '\0';
+          strcat(b64_line, "...");
+        } else {
+          strncpy(b64_line, b64, sizeof(b64_line) - 1);
+          b64_line[sizeof(b64_line) - 1] = '\0';
+        }
+        display.setCursor(2, hdr);
+        display.print(b64_line);
+      }
 
-      int step = lh + 1;
+      // distribute 4 remaining lines across available height below b64
+      int step = (display.height() - hdr) / 5;
       char buf[32];
       snprintf(buf, sizeof(buf), "RSSI: %d dBm", (int)r.rssi);
       display.setCursor(2, hdr + step);     display.print(buf);
@@ -394,9 +409,7 @@ public:
     // ── detail view ──────────────────────────────────────────────────────────
     if (_detail && _sel < _count) {
       const Entry& e = _entries[_sel];
-      int lh   = display.getLineHeight();
       int hdr  = display.headerH();
-      int step = lh + 1;
 
       display.setColor(DisplayDriver::LIGHT);
       display.fillRect(0, 0, display.width(), hdr - 1);
@@ -406,6 +419,8 @@ public:
       display.drawTextEllipsized(2, 1, display.width() - 4, filtered);
       display.setColor(DisplayDriver::LIGHT);
 
+      // 5 lines: lat, lon, dist+bearing, type, seen — distributed across available height
+      int step = (display.height() - hdr) / 5;
       char buf[32];
       snprintf(buf, sizeof(buf), "Lat: %.5f", e.lat_e6 / 1e6);
       display.setCursor(2, hdr); display.print(buf);
@@ -417,22 +432,19 @@ public:
         char dist[12];
         fmtDist(dist, sizeof(dist), e.dist_km);
         int az = bearingDeg(_own_lat, _own_lon, e.lat_e6, e.lon_e6);
-        snprintf(buf, sizeof(buf), "Dist: %s", dist);
-        display.setCursor(2, hdr + step * 2); display.print(buf);
-        snprintf(buf, sizeof(buf), "Az: %dd (%s)", az, bearingCardinal(az));
-        display.setCursor(2, hdr + step * 3); display.print(buf);
+        snprintf(buf, sizeof(buf), "Dist: %s %s", dist, bearingCardinal(az));
       } else {
-        display.setCursor(2, hdr + step * 2); display.print("Dist: no own GPS");
-        display.setCursor(2, hdr + step * 3); display.print("Az: unknown");
+        snprintf(buf, sizeof(buf), "Dist: no GPS");
       }
+      display.setCursor(2, hdr + step * 2); display.print(buf);
 
       snprintf(buf, sizeof(buf), "Type: %s", typeName(e.type));
-      display.setCursor(2, hdr + step * 4); display.print(buf);
+      display.setCursor(2, hdr + step * 3); display.print(buf);
 
       char age[16];
       fmtAge(age, sizeof(age), e.lastmod);
       snprintf(buf, sizeof(buf), "Seen: %s", age);
-      display.setCursor(2, hdr + step * 5); display.print(buf);
+      display.setCursor(2, hdr + step * 4); display.print(buf);
 
       return 2000;
     }

@@ -61,9 +61,9 @@ struct KeyboardWidget {
     const int lh      = display.getLineHeight();
     const int cw      = display.getCharWidth();
     const int cell_w  = display.width() / KB_COLS_CHAR;
-    const int cell_h  = lh + 1;
-    const int sep_y   = lh + 1;
-    const int chars_y = sep_y + 2;
+    const int sep_y   = lh;           // tight separator: preview row height only
+    const int chars_y = sep_y + 1;
+    const int cell_h  = (display.height() - chars_y) / (KB_ROWS_CHAR + 1);
     const int spec_y  = chars_y + KB_ROWS_CHAR * cell_h;
     const int spec_w  = display.width() / KB_SPECIAL;
 

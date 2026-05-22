@@ -17,9 +17,9 @@
 // coordinates (same convention as the OLED driver). Add the font ascender so
 // the two conventions match.
 static int fontAscender(int sz, bool use_lemon, int scale) {
-  if (sz == 3) return 26;              // FreeSans18pt7b: proportional, baseline origin
-  if (use_lemon) return 8 * scale;    // Lemon GFX font: baseline origin, ascender 8px×scale
-  return 0;                           // GFX built-in font: cursor is top-left of cell
+  if (sz == 3) return 26;                       // FreeSans18pt7b: proportional, baseline origin
+  if (sz == 1 && use_lemon) return 8 * scale;   // Lemon GFX font: baseline origin, ascender 8px×scale
+  return 0;                                     // GFX built-in font: cursor is top-left of cell
 }
 
 bool GxEPDDisplay::begin() {

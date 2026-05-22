@@ -87,9 +87,12 @@ class SettingsScreen : public UIScreen {
   }
 
   void renderBar(DisplayDriver& display, int x, int y, int value, int max_val) {
-    const int box_h = display.getLineHeight() - 2;
-    const int box_w = box_h;
-    const int gap   = 2;
+    const int gap     = 2;
+    const int avail   = display.width() - x;
+    const int raw     = (avail - (max_val - 1) * gap) / max_val;
+    const int cap     = display.getLineHeight() - 2;
+    const int box_h   = raw < cap ? (raw < 2 ? 2 : raw) : cap;
+    const int box_w   = box_h;
     for (int i = 0; i < max_val; i++) {
       int bx = x + i * (box_w + gap);
       display.drawRect(bx, y, box_w, box_h);
