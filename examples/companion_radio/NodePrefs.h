@@ -79,4 +79,7 @@ struct NodePrefs {  // persisted to file
   static const int DM_MELODY_TABLE_MAX = 16;
   DmMelodyEntry dm_melody[DM_MELODY_TABLE_MAX];
   uint8_t  use_lemon_font;  // 0=default Adafruit font, 1=Lemon font (Unicode, pixel-accurate wrap)
+  // Home screen page order: each byte = bit-index+1 (see HP_* bit positions + 9=Settings, 10=Messages).
+  // 0 = end of list (also uninitialized legacy). hasCustomOrder iff page_order[0] in 1..11.
+  uint8_t  page_order[11];
 };

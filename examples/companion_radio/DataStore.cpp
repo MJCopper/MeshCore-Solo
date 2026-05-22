@@ -289,6 +289,9 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
                                     file.read((uint8_t *)&_prefs.clock_12h, sizeof(_prefs.clock_12h));
                                     if (file.available()) {
                                       file.read((uint8_t *)&_prefs.use_lemon_font, sizeof(_prefs.use_lemon_font));
+                                      if (file.available()) {
+                                        file.read((uint8_t *)_prefs.page_order, sizeof(_prefs.page_order));
+                                      }
                                     }
                                   }
                                 }
@@ -383,6 +386,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.auto_lock, sizeof(_prefs.auto_lock));
     file.write((uint8_t *)&_prefs.clock_12h, sizeof(_prefs.clock_12h));
     file.write((uint8_t *)&_prefs.use_lemon_font, sizeof(_prefs.use_lemon_font));
+    file.write((uint8_t *)_prefs.page_order, sizeof(_prefs.page_order));
 
     file.close();
   }
