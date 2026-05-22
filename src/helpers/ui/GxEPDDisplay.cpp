@@ -16,10 +16,10 @@
 // GFX fonts use the baseline as the cursor origin. UI code assumes top-of-cell
 // coordinates (same convention as the OLED driver). Add the font ascender so
 // the two conventions match.
-static int fontAscender(int sz) {
-  if (sz == 3) return 26;  // FreeSans18pt7b
-  if (sz == 2) return 17;  // FreeSansBold12pt7b
-  return 13;               // FreeSans9pt7b (sz == 1)
+static int fontAscender(int sz, bool use_lemon) {
+  if (sz == 3) return 26;    // FreeSans18pt7b: proportional font, baseline origin
+  if (use_lemon) return 8;   // Lemon GFX font: baseline origin, typical ascender 8px
+  return 0;                  // GFX built-in font: cursor is top-left of cell
 }
 
 bool GxEPDDisplay::begin() {
@@ -72,7 +72,8 @@ void GxEPDDisplay::startFrame(Color bkg) {
   display.fillScreen(GxEPD_WHITE);
   display.setTextColor(_curr_color = GxEPD_BLACK);
   _text_sz = 1;
-  display.setFont(&FreeSans9pt7b);
+  display.setFont(_use_lemon ? &Lemon : NULL);
+  display.setTextSize(1);
   display_crc.reset();
 }
 
@@ -80,9 +81,18 @@ void GxEPDDisplay::setTextSize(int sz) {
   _text_sz = sz;
   display_crc.update<int>(sz);
   switch (sz) {
-    case 2:  display.setFont(&FreeSansBold12pt7b); break;
-    case 3:  display.setFont(&FreeSans18pt7b);     break;
-    default: display.setFont(&FreeSans9pt7b);      break;
+    case 3:
+      display.setFont(&FreeSans18pt7b);
+      display.setTextSize(1);
+      break;
+    case 2:
+      display.setFont(NULL);
+      display.setTextSize(2);
+      break;
+    default:
+      display.setFont(_use_lemon ? &Lemon : NULL);
+      display.setTextSize(1);
+      break;
   }
 }
 
@@ -101,7 +111,7 @@ void GxEPDDisplay::setCursor(int x, int y) {
   display_crc.update<int>(y);
   // Offset y by the font ascender: callers pass top-of-cell y, GFX fonts
   // expect baseline y. Without this, text would be clipped at the top.
-  display.setCursor(x, y + fontAscender(_text_sz));
+  display.setCursor(x, y + fontAscender(_text_sz, _use_lemon));
 }
 
 void GxEPDDisplay::print(const char* str) {

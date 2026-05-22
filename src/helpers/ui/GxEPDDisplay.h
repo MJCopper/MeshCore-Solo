@@ -15,6 +15,7 @@
 #include <CRC32.h>
 
 #include "DisplayDriver.h"
+#include "LemonFont.h"
 
 #ifndef DISPLAY_ROTATION
   #define DISPLAY_ROTATION 0
@@ -48,6 +49,7 @@ class GxEPDDisplay : public DisplayDriver {
 #endif
   bool _init = false;
   bool _isOn = false;
+  bool _use_lemon = false;
   uint16_t _curr_color;
   CRC32 display_crc;
   int last_display_crc_value = 0;
@@ -66,8 +68,12 @@ public:
   //   1 = FreeSans9pt      (lineH=16, charW≈9)
   //   2 = FreeSansBold12pt (lineH=20, charW≈12)
   //   3 = FreeSans18pt     (lineH=28, charW≈17)
-  int getCharWidth()  const override { return _text_sz == 3 ? 17 : _text_sz == 2 ? 12 : 9; }
-  int getLineHeight() const override { return _text_sz == 3 ? 28 : _text_sz == 2 ? 20 : 16; }
+  // Size 1: GFX built-in 6×8 (default) or Lemon 5×10 bitmap font — matches OLED metrics.
+  // Size 2: GFX built-in scaled 12×16 bitmap font.
+  // Size 3: FreeSans18pt proportional font for large headings.
+  int getCharWidth()  const override { return _text_sz == 3 ? 17 : _text_sz == 2 ? 12 : (_use_lemon ? 5 : 6); }
+  int getLineHeight() const override { return _text_sz == 3 ? 28 : _text_sz == 2 ? 16 : (_use_lemon ? 10 : 8); }
+  void setLemonFont(bool enabled) override { _use_lemon = enabled; }
 
   bool begin();
 
