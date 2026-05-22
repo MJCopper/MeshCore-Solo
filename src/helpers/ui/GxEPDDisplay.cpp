@@ -16,10 +16,10 @@
 // GFX fonts use the baseline as the cursor origin. UI code assumes top-of-cell
 // coordinates (same convention as the OLED driver). Add the font ascender so
 // the two conventions match.
-static int fontAscender(int sz, bool use_lemon) {
-  if (sz == 3) return 26;    // FreeSans18pt7b: proportional font, baseline origin
-  if (use_lemon) return 8;   // Lemon GFX font: baseline origin, typical ascender 8px
-  return 0;                  // GFX built-in font: cursor is top-left of cell
+static int fontAscender(int sz, bool use_lemon, int scale) {
+  if (sz == 3) return 26;              // FreeSans18pt7b: proportional, baseline origin
+  if (use_lemon) return 8 * scale;    // Lemon GFX font: baseline origin, ascender 8px×scale
+  return 0;                           // GFX built-in font: cursor is top-left of cell
 }
 
 bool GxEPDDisplay::begin() {
@@ -72,14 +72,19 @@ void GxEPDDisplay::startFrame(Color bkg) {
   display.fillScreen(GxEPD_WHITE);
   display.setTextColor(_curr_color = GxEPD_BLACK);
   _text_sz = 1;
+  int sc = (width() >= height()) ? 2 : 1;
   display.setFont(_use_lemon ? &Lemon : NULL);
-  display.setTextSize(1);
+  display.setTextSize(sc);
   display_crc.reset();
 }
 
 void GxEPDDisplay::setTextSize(int sz) {
   _text_sz = sz;
   display_crc.update<int>(sz);
+  // Size 1 scales with orientation: 1× in portrait (≈OLED width), 2× in landscape.
+  // Size 2 always uses 2× built-in (12×16) — fixed because layout Y-positions are hardcoded.
+  // Size 3 always uses FreeSans18pt for large headings.
+  int sc = (width() >= height()) ? 2 : 1;
   switch (sz) {
     case 3:
       display.setFont(&FreeSans18pt7b);
@@ -91,7 +96,7 @@ void GxEPDDisplay::setTextSize(int sz) {
       break;
     default:
       display.setFont(_use_lemon ? &Lemon : NULL);
-      display.setTextSize(1);
+      display.setTextSize(sc);
       break;
   }
 }
@@ -111,7 +116,8 @@ void GxEPDDisplay::setCursor(int x, int y) {
   display_crc.update<int>(y);
   // Offset y by the font ascender: callers pass top-of-cell y, GFX fonts
   // expect baseline y. Without this, text would be clipped at the top.
-  display.setCursor(x, y + fontAscender(_text_sz, _use_lemon));
+  int sc = (width() >= height()) ? 2 : 1;
+  display.setCursor(x, y + fontAscender(_text_sz, _use_lemon, sc));
 }
 
 void GxEPDDisplay::print(const char* str) {

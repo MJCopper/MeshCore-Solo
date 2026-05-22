@@ -68,11 +68,20 @@ public:
   //   1 = FreeSans9pt      (lineH=16, charW≈9)
   //   2 = FreeSansBold12pt (lineH=20, charW≈12)
   //   3 = FreeSans18pt     (lineH=28, charW≈17)
-  // Size 1: GFX built-in 6×8 (default) or Lemon 5×10 bitmap font — matches OLED metrics.
-  // Size 2: GFX built-in scaled 12×16 bitmap font.
-  // Size 3: FreeSans18pt proportional font for large headings.
-  int getCharWidth()  const override { return _text_sz == 3 ? 17 : _text_sz == 2 ? 12 : (_use_lemon ? 5 : 6); }
-  int getLineHeight() const override { return _text_sz == 3 ? 28 : _text_sz == 2 ? 16 : (_use_lemon ? 10 : 8); }
+  // Size 1 scales with orientation (portrait 1×, landscape 2×); size 2 is always 12×16;
+  // size 3 is FreeSans18pt (~17×28). Landscape = width >= height.
+  int getCharWidth() const override {
+    int sc = (width() >= height()) ? 2 : 1;
+    if (_text_sz == 3) return 17;
+    if (_text_sz == 2) return 12;
+    return (_use_lemon ? 5 : 6) * sc;
+  }
+  int getLineHeight() const override {
+    int sc = (width() >= height()) ? 2 : 1;
+    if (_text_sz == 3) return 28;
+    if (_text_sz == 2) return 16;
+    return (_use_lemon ? 10 : 8) * sc;
+  }
   void setLemonFont(bool enabled) override { _use_lemon = enabled; }
 
   bool begin();
