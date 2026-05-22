@@ -4,6 +4,28 @@ This branch extends the official MeshCore companion radio firmware for the **See
 
 Join the discussion on offical MeshCore discord: https://discord.gg/sdhYArU2jr
 
+## Firmware Variants
+
+Two firmware builds are published with each release:
+
+| Variant | Display | File |
+|---------|---------|------|
+| **OLED** | SSD1306 / SH1106 128 × 64 | `WioTrackerL1_companion_radio_dual_*.uf2` |
+| **E-ink** | GxEPD2 250 × 122 | `WioTrackerL1Eink_companion_radio_dual_*.uf2` |
+
+Both variants are built from a single codebase and share the same feature set. The `dual` in the filename means a single binary supports both BLE and USB serial — there are no separate BLE/USB builds.
+
+### E-ink Display
+
+The e-ink variant targets the Wio Tracker L1 fitted with a 2.13″ GxEPD2 panel (250 × 122 px). All screens have been adapted for the e-ink panel:
+
+- **Adaptive layout** — every screen reflows correctly in both landscape (250 × 122) and portrait (122 × 250) orientations
+- **Display rotation** — configurable in Settings › Display; applied immediately and persisted across reboots
+- **Scaled navigation dots** — dot indicators on the home screen scale with line height so they remain visible at all orientations
+- **Clock seconds suppressed by default** — seconds are hidden to reduce per-second panel refreshes and extend display lifetime; re-enable in Settings › Display
+
+---
+
 ## New Features
 
 ### Messages Screen
@@ -66,13 +88,14 @@ All settings are saved to flash and restored on next boot.
   - Auto-off timeout
   - Battery display mode (icon, %, V)
   - Clock seconds (show/hide — hiding reduces display refresh from 1 s to 60 s)
-  - Font — **Default** (5×7 Adafruit, ASCII + transliteration) or **Lemon** (native Unicode, available in the `font-switcher` build only)
+  - Font — **Default** (5×7 Adafruit, ASCII + transliteration) or **Lemon** (native Unicode, pixel-accurate wrap)
+  - Display rotation *(e-ink only)* — 0 ° / 90 ° / 180 ° / 270 °; applied immediately
 - **Sound**
   - Buzzer: On / Off / **Auto** — Auto mode silences the device while connected via Bluetooth, and re-enables sound when the connection drops
   - Volume (1–5; preview tone plays on each change)
   - DM Melody — notification sound for incoming private messages: built-in, Melody 1, or Melody 2
   - Channel Melody — notification sound for incoming channel messages: built-in, Melody 1, or Melody 2
-- **Home Pages** — toggle visibility of individual home screen pages
+- **Home Pages** — toggle visibility and reorder individual home screen pages; press LEFT / RIGHT on any entry to move it earlier or later in the navigation sequence; press ENTER to toggle ON / OFF (Settings and Messages are always visible and cannot be disabled)
 - **Radio**
   - TX power
 - **System**
@@ -180,17 +203,15 @@ Automatically replies to incoming messages that contain a configured trigger wor
 
 ---
 
-## Font Switcher Build
+## Font Switcher
 
-An alternative firmware build is available (`font-switcher` in the filename). It includes both the default 5×7 Adafruit font and the [Lemon bitmap font](https://github.com/cmvnd/fonts), switchable at runtime in **Settings → Display → Font** without reflashing. The selected font is saved to flash and takes effect immediately.
+Both the default font and the [Lemon bitmap font](https://github.com/cmvnd/fonts) are built into every firmware variant. Switch between them at runtime in **Settings → Display → Font** — no reflashing required. The selected font is saved to flash and takes effect immediately.
 
 The Lemon font offers:
 
 - **Native Unicode rendering** — Latin Extended, Greek, and Cyrillic characters (U+0020–U+04FF) are displayed directly without transliteration, covering Polish, Czech, Slovak, German, French, Scandinavian, Hungarian, Romanian, Croatian, Turkish, Baltic, Russian, and Greek scripts.
 - **Pixel-accurate word wrap** — text wraps based on actual glyph widths rather than a fixed character count.
 - **Slightly taller glyphs** — the font uses a 10 px line height compared to 8 px for the default font.
-
-Prebuilt `.uf2` files for the font-switcher variant are included in each release alongside the standard builds and are identified by `font-switcher` in the filename.
 
 ---
 
