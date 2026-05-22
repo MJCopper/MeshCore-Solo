@@ -80,4 +80,7 @@ struct NodePrefs {  // persisted to file
   DmMelodyEntry dm_melody[DM_MELODY_TABLE_MAX];
   uint8_t  use_lemon_font;      // 0=default Adafruit font, 1=Lemon font (Unicode, pixel-accurate wrap)
   uint8_t  display_rotation;    // 0-3; only used on e-ink displays
+  // Home screen page order: each byte = bit-index+1 (see HP_* bit positions + 9=Settings, 10=Messages).
+  // 0 = end of list (also uninitialized legacy). hasCustomOrder iff page_order[0] in 1..11.
+  uint8_t  page_order[11];
 };

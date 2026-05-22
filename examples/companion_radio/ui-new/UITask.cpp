@@ -184,6 +184,35 @@ class HomeScreen : public UIScreen {
     return -1;  // SETTINGS, QUICK_MSG always visible
   }
 
+  // Maps page_order bit-index (0-10) back to the HomePage enum value for this build.
+  // Returns -1 if the page is not compiled in.
+  int bitToPage(int bit) const {
+    switch (bit) {
+      case 0: return CLOCK;
+      case 1: return RECENT;
+      case 2: return RADIO;
+      case 3: return BLUETOOTH;
+      case 4: return ADVERT;
+      case 5:
+#if ENV_INCLUDE_GPS == 1
+        return GPS;
+#else
+        return -1;
+#endif
+      case 6:
+#if UI_SENSORS_PAGE == 1
+        return SENSORS;
+#else
+        return -1;
+#endif
+      case 7: return TOOLS;
+      case 8: return SHUTDOWN;
+      case 9: return SETTINGS;
+      case 10: return QUICK_MSG;
+      default: return -1;
+    }
+  }
+
   bool isPageVisible(int page) const {
     int bit = pageBit(page);
     if (bit < 0) return true;
@@ -191,12 +220,31 @@ class HomeScreen : public UIScreen {
     return (mask >> bit) & 1;
   }
 
-  int navPage(int from, int dir) const {
-    for (int i = 1; i < (int)Count; i++) {
-      int next = ((from + dir * i) % (int)Count + (int)Count) % (int)Count;
-      if (isPageVisible(next)) return next;
+  // Build ordered list of all visible pages, respecting page_order when set.
+  // Returns count; out[] receives HomePage enum values.
+  int buildVisibleOrder(int* out) const {
+    int n = 0;
+    bool custom = _node_prefs && _node_prefs->page_order[0] >= 1 && _node_prefs->page_order[0] <= 11;
+    if (custom) {
+      for (int i = 0; i < 11; i++) {
+        uint8_t v = _node_prefs->page_order[i];
+        if (v < 1 || v > 11) break;
+        int pg = bitToPage(v - 1);
+        if (pg >= 0 && pg < (int)Count && isPageVisible(pg)) out[n++] = pg;
+      }
+    } else {
+      for (int pg = 0; pg < (int)Count; pg++)
+        if (isPageVisible(pg)) out[n++] = pg;
     }
-    return from;
+    return n;
+  }
+
+  int navPage(int from, int dir) const {
+    int order[11]; int n = buildVisibleOrder(order);
+    if (n == 0) return from;
+    int cur = 0;
+    for (int i = 0; i < n; i++) if (order[i] == from) { cur = i; break; }
+    return order[((cur + dir) % n + n) % n];
   }
 
   int renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts) {
@@ -377,20 +425,15 @@ public:
 
     // curr page indicator — hidden on CLOCK page (full screen used for dashboard)
     if (_page != CLOCK) {
-      int vis_count = 0, curr_vis = 0;
-      for (int i = 0; i < (int)Count; i++) {
-        if (!isPageVisible(i)) continue;
-        if (i == _page) curr_vis = vis_count;
-        vis_count++;
-      }
-      int x = display.width() / 2 - 5 * (vis_count - 1);
-      int vi = 0;
-      for (int i = 0; i < (int)Count; i++) {
-        if (!isPageVisible(i)) continue;
+      int order[11]; int n = buildVisibleOrder(order);
+      int curr_vis = 0;
+      for (int i = 0; i < n; i++) if (order[i] == _page) { curr_vis = i; break; }
+      int x = display.width() / 2 - 5 * (n - 1);
+      for (int i = 0; i < n; i++) {
         int ds = (lh >= 16) ? 2 : 1;
-        if (vi == curr_vis) display.fillRect(x-ds, dots_y-ds, 2*ds+1, 2*ds+1);
-        else                 display.fillRect(x-ds+1, dots_y-ds+1, 2*ds-1, 2*ds-1);
-        x += 10; vi++;
+        if (i == curr_vis) display.fillRect(x-ds, dots_y-ds, 2*ds+1, 2*ds+1);
+        else               display.fillRect(x-ds+1, dots_y-ds+1, 2*ds-1, 2*ds-1);
+        x += 10;
       }
     }
 

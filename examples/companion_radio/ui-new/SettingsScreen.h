@@ -39,6 +39,7 @@ class SettingsScreen : public UIScreen {
 #if UI_SENSORS_PAGE == 1
     HOME_SENSORS,
 #endif
+    HOME_SETTINGS, HOME_QUICK_MSG,
     HOME_TOOLS, HOME_SHUTDOWN,
     // Radio section
     SECTION_RADIO,
@@ -151,9 +152,9 @@ class SettingsScreen : public UIScreen {
   }
 
   bool isHomePage(int item) const {
-    return item == HOME_CLOCK || item == HOME_RECENT || item == HOME_RADIO ||
-           item == HOME_BT    || item == HOME_ADVERT || item == HOME_TOOLS ||
-           item == HOME_SHUTDOWN
+    return item == HOME_CLOCK    || item == HOME_RECENT   || item == HOME_RADIO   ||
+           item == HOME_BT       || item == HOME_ADVERT   || item == HOME_TOOLS   ||
+           item == HOME_SHUTDOWN || item == HOME_SETTINGS || item == HOME_QUICK_MSG
 #if ENV_INCLUDE_GPS == 1
            || item == HOME_GPS
 #endif
@@ -169,39 +170,124 @@ class SettingsScreen : public UIScreen {
     if (item == HOME_RADIO)    return HP_RADIO;
     if (item == HOME_BT)       return HP_BLUETOOTH;
     if (item == HOME_ADVERT)   return HP_ADVERT;
-    if (item == HOME_TOOLS)    return HP_TOOLS;
-    if (item == HOME_SHUTDOWN) return HP_SHUTDOWN;
+    if (item == HOME_TOOLS)     return HP_TOOLS;
+    if (item == HOME_SHUTDOWN)  return HP_SHUTDOWN;
+    // HOME_SETTINGS and HOME_QUICK_MSG have no mask bit — always visible
 #if ENV_INCLUDE_GPS == 1
-    if (item == HOME_GPS)      return HP_GPS;
+    if (item == HOME_GPS)       return HP_GPS;
 #endif
 #if UI_SENSORS_PAGE == 1
-    if (item == HOME_SENSORS)  return HP_SENSORS;
+    if (item == HOME_SENSORS)   return HP_SENSORS;
 #endif
     return 0;
   }
 
   const char* homePageLabel(int item) const {
-    if (item == HOME_CLOCK)    return "Clock";
-    if (item == HOME_RECENT)   return "Recent";
-    if (item == HOME_RADIO)    return "Radio";
-    if (item == HOME_BT)       return "Bluetooth";
-    if (item == HOME_ADVERT)   return "Advert";
-    if (item == HOME_TOOLS)    return "Tools";
-    if (item == HOME_SHUTDOWN) return "Shutdown";
+    if (item == HOME_CLOCK)     return "Clock";
+    if (item == HOME_RECENT)    return "Recent";
+    if (item == HOME_RADIO)     return "Radio";
+    if (item == HOME_BT)        return "Bluetooth";
+    if (item == HOME_ADVERT)    return "Advert";
+    if (item == HOME_TOOLS)     return "Tools";
+    if (item == HOME_SHUTDOWN)  return "Shutdown";
+    if (item == HOME_SETTINGS)  return "Settings";
+    if (item == HOME_QUICK_MSG) return "Messages";
 #if ENV_INCLUDE_GPS == 1
-    if (item == HOME_GPS)      return "GPS";
+    if (item == HOME_GPS)       return "GPS";
 #endif
 #if UI_SENSORS_PAGE == 1
-    if (item == HOME_SENSORS)  return "Sensors";
+    if (item == HOME_SENSORS)   return "Sensors";
 #endif
     return "";
   }
 
   bool homePageVisible(int item, const NodePrefs* p) const {
+    if (item == HOME_SETTINGS || item == HOME_QUICK_MSG) return true;
     uint16_t bit = homePageBit(item);
     if (!bit) return false;
     uint16_t mask = (p && p->home_pages_mask) ? p->home_pages_mask : HP_ALL;
     return (mask & bit) != 0;
+  }
+
+  bool homePageToggleable(int item) const {
+    return item != HOME_SETTINGS && item != HOME_QUICK_MSG;
+  }
+
+  // Returns the bit-index (0-10) used in page_order for this SettingItem, or -1.
+  int homePageBitIndex(int item) const {
+    if (item == HOME_CLOCK)     return 0;
+    if (item == HOME_RECENT)    return 1;
+    if (item == HOME_RADIO)     return 2;
+    if (item == HOME_BT)        return 3;
+    if (item == HOME_ADVERT)    return 4;
+#if ENV_INCLUDE_GPS == 1
+    if (item == HOME_GPS)       return 5;
+#endif
+#if UI_SENSORS_PAGE == 1
+    if (item == HOME_SENSORS)   return 6;
+#endif
+    if (item == HOME_TOOLS)     return 7;
+    if (item == HOME_SHUTDOWN)  return 8;
+    if (item == HOME_SETTINGS)  return 9;
+    if (item == HOME_QUICK_MSG) return 10;
+    return -1;
+  }
+
+  // Returns 1-based position of item in page_order, or 0 if no custom order / not found.
+  int homePagePosition(int item, const NodePrefs* p) const {
+    if (!p || p->page_order[0] < 1 || p->page_order[0] > 11) return 0;
+    int bit = homePageBitIndex(item);
+    if (bit < 0) return 0;
+    for (int i = 0; i < 11; i++) {
+      uint8_t v = p->page_order[i];
+      if (v < 1 || v > 11) break;
+      if ((int)(v - 1) == bit) return i + 1;
+    }
+    return 0;
+  }
+
+  // Initialises page_order to the default display sequence if not already set.
+  void ensurePageOrderInit(NodePrefs* p) const {
+    if (!p) return;
+    if (p->page_order[0] >= 1 && p->page_order[0] <= 11) return;
+    // Default: CLOCK RECENT RADIO BT ADVERT [GPS] [SENSORS] SETTINGS TOOLS MESSAGES SHUTDOWN
+    int j = 0;
+    p->page_order[j++] = 0 + 1;  // CLOCK
+    p->page_order[j++] = 1 + 1;  // RECENT
+    p->page_order[j++] = 2 + 1;  // RADIO
+    p->page_order[j++] = 3 + 1;  // BLUETOOTH
+    p->page_order[j++] = 4 + 1;  // ADVERT
+#if ENV_INCLUDE_GPS == 1
+    p->page_order[j++] = 5 + 1;  // GPS
+#endif
+#if UI_SENSORS_PAGE == 1
+    p->page_order[j++] = 6 + 1;  // SENSORS
+#endif
+    p->page_order[j++] = 9 + 1;  // SETTINGS
+    p->page_order[j++] = 7 + 1;  // TOOLS
+    p->page_order[j++] = 10 + 1; // MESSAGES (QUICK_MSG)
+    p->page_order[j++] = 8 + 1;  // SHUTDOWN
+    while (j < 11) p->page_order[j++] = 0;
+  }
+
+  // Swaps item's page_order slot with its neighbour in the given direction (-1=earlier, +1=later).
+  void movePageInOrder(int item, int delta, NodePrefs* p) {
+    ensurePageOrderInit(p);
+    int bit = homePageBitIndex(item);
+    if (bit < 0) return;
+    int cur = -1, total = 0;
+    for (int i = 0; i < 11; i++) {
+      uint8_t v = p->page_order[i];
+      if (v < 1 || v > 11) break;
+      if ((int)(v - 1) == bit) cur = i;
+      total++;
+    }
+    if (cur < 0) return;
+    int next = cur + delta;
+    if (next < 0 || next >= total) return;
+    uint8_t tmp = p->page_order[cur];
+    p->page_order[cur] = p->page_order[next];
+    p->page_order[next] = tmp;
   }
 
   bool isMsgSlot(int item) const {
@@ -286,9 +372,17 @@ class SettingsScreen : public UIScreen {
         uint8_t v = p ? p->notif_melody_ch : 0;
         display.print(L[v < 3 ? v : 0]); }
     } else if (isHomePage(item)) {
+      int pos = homePagePosition(item, p);
+      if (pos > 0) {
+        char pb[4]; snprintf(pb, sizeof(pb), "%d ", pos);
+        display.print(pb);
+      }
       display.print(homePageLabel(item));
       display.setCursor(display.valCol(), y);
-      display.print(homePageVisible(item, p) ? "ON" : "OFF");
+      if (!homePageToggleable(item))
+        display.print("always");
+      else
+        display.print(homePageVisible(item, p) ? "ON" : "OFF");
     } else if (item == TX_POWER) {
       display.print("TX Pwr");
       char buf[8];
@@ -488,10 +582,18 @@ public:
       p->notif_melody_ch = (p->notif_melody_ch + (left ? 2 : 1)) % 3;
       _dirty = true; return true;
     }
-    if (isHomePage(_selected) && p && (left || right || enter)) {
-      p->home_pages_mask ^= homePageBit(_selected);
-      _dirty = true;
-      return true;
+    if (isHomePage(_selected) && p) {
+      if (left || right) {
+        movePageInOrder(_selected, left ? -1 : 1, p);
+        _dirty = true;
+        return true;
+      }
+      if (enter && homePageToggleable(_selected)) {
+        p->home_pages_mask ^= homePageBit(_selected);
+        _dirty = true;
+        return true;
+      }
+      return enter;
     }
     if (_selected == TX_POWER && p) {
       if (right && p->tx_power_dbm < 22) { p->tx_power_dbm++; _task->applyTxPower(); _dirty = true; return true; }
