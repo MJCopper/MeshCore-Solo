@@ -71,7 +71,7 @@ public:
 
     // meshcore logo
     display.setColor(DisplayDriver::LIGHT);
-    int logoWidth = 128;
+    int logoWidth = min(128, display.width());
     int logo_y = 3;
     display.drawXbm((display.width() - logoWidth) / 2, logo_y, meshcore_logo, logoWidth, 13);
 
@@ -893,11 +893,10 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   nearby_screen = new NearbyScreen(this);
   dashboard_config = new DashboardConfigScreen(this, node_prefs);
   auto_advert_screen = new AutoAdvertScreen(this, node_prefs);
-  setCurrScreen(splash);
-
   applyBrightness();
   applyFont();
   applyRotation();
+  setCurrScreen(splash);
 }
 
 void UITask::gotoSettingsScreen() {
