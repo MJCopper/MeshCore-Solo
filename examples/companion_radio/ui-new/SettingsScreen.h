@@ -234,7 +234,7 @@ class SettingsScreen : public UIScreen {
 
     display.setCursor(0, y);
     display.print(sel ? ">" : " ");
-    display.setCursor(8, y);
+    display.setCursor(display.getCharWidth() + 2, y);
 
     if (item == BRIGHTNESS) {
       display.print("Bright");
@@ -328,7 +328,7 @@ class SettingsScreen : public UIScreen {
     } else if (item == ROTATION) {
       display.print("Rotation");
       display.setCursor(display.valCol(), y);
-      { static const char* ROT_LABELS[] = { "0deg", "90deg", "180deg", "270deg" };
+      { static const char* ROT_LABELS[] = { "0 deg", "90 deg", "180 deg", "270 deg" };
         uint8_t r = p ? (p->display_rotation & 3) : 0;
         display.print(ROT_LABELS[r]); }
 #endif
