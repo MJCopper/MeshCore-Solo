@@ -16,7 +16,7 @@ public:
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
     display.drawTextCentered(display.width() / 2, 0, "TOOLS");
-    display.fillRect(0, display.headerH() - 1, display.width(), 1);
+    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
     int item_h  = display.lineStep();
     int start_y = display.listStart();

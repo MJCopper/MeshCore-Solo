@@ -61,22 +61,39 @@ struct KeyboardWidget {
     const int lh      = display.getLineHeight();
     const int cw      = display.getCharWidth();
     const int cell_w  = display.width() / KB_COLS_CHAR;
-    const int sep_y   = lh;           // tight separator: preview row height only
+    // compact: don't stretch cells beyond lh; freed vertical space goes to preview lines
+    const int kb_h      = (KB_ROWS_CHAR + 1) * lh;
+    const int preview_h = display.height() - kb_h - 1;
+    const int prev_lines = (preview_h / lh) > 1 ? (preview_h / lh) : 1;
+    const int sep_y   = prev_lines * lh;
     const int chars_y = sep_y + 1;
     const int cell_h  = (display.height() - chars_y) / (KB_ROWS_CHAR + 1);
     const int spec_y  = chars_y + KB_ROWS_CHAR * cell_h;
     const int spec_w  = display.width() / KB_SPECIAL;
 
-    // text preview: last N chars + cursor (fit within screen width)
-    int max_preview = display.width() / cw - 1;
-    if (max_preview > 30) max_preview = 30;
-    const char* disp_start = buf;
-    int disp_len = len;
-    if (disp_len > max_preview) { disp_start = buf + (disp_len - max_preview); disp_len = max_preview; }
-    char preview[32];
-    snprintf(preview, sizeof(preview), "%.*s_", disp_len, disp_start);
-    display.setCursor(0, 0);
-    display.print(preview);
+    // multi-line text preview: cursor always on last preview line
+    int cpl = display.width() / cw;  // chars per preview line
+    if (cpl < 1) cpl = 1;
+    int cursor_line = len / cpl;
+    int first_line  = (cursor_line >= prev_lines) ? (cursor_line - prev_lines + 1) : 0;
+    int start = first_line * cpl;
+    for (int pl = 0; pl < prev_lines; pl++) {
+      int ps = start + pl * cpl;
+      int pe = ps + cpl;
+      bool cursor_here = (ps <= len && (len < pe || pl == prev_lines - 1));
+      char linebuf[32];
+      if (cursor_here) {
+        int nc = len - ps; if (nc < 0) nc = 0; if (nc > cpl - 1) nc = cpl - 1;
+        snprintf(linebuf, sizeof(linebuf), "%.*s_", nc, buf + ps);
+      } else if (len > ps) {
+        int nc = (len < pe) ? (len - ps) : cpl;
+        snprintf(linebuf, sizeof(linebuf), "%.*s", nc, buf + ps);
+      } else {
+        linebuf[0] = '\0';
+      }
+      display.setCursor(0, pl * lh);
+      display.print(linebuf);
+    }
     display.fillRect(0, sep_y, display.width(), 1);
 
     // character grid

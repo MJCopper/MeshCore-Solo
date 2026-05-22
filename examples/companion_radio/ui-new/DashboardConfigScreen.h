@@ -46,7 +46,7 @@ public:
     int val_x   = display.valCol();
 
     display.drawTextCentered(display.width() / 2, 0, "CLOCK FIELDS");
-    display.fillRect(0, display.headerH() - 1, display.width(), 1);
+    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
     static const char* labels[] = { "Field 1", "Field 2", "Field 3" };
     for (int i = 0; i < FIELD_SLOTS; i++) {

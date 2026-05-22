@@ -31,7 +31,7 @@ public:
     int tip_y   = bar_y + bar_h + 4;
 
     display.drawTextCentered(display.width() / 2, 0, "AUTO-ADVERT");
-    display.fillRect(0, display.headerH() - 1, display.width(), 1);
+    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
     display.setCursor(2, label_y);
     display.print("Interval:");

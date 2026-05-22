@@ -468,7 +468,7 @@ public:
 
     if (_phase == MODE_SELECT) {
       display.drawTextCentered(display.width()/2, 0, "MESSAGE");
-      display.fillRect(0, display.headerH() - 1, display.width(), 1);
+      display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
       const char* opts[] = { "Direct message", "Channels", "Room Servers" };
       int badges[3] = {
         getDMUnreadTotal(),
@@ -501,7 +501,7 @@ public:
 
     } else if (_phase == CONTACT_PICK) {
       display.drawTextCentered(display.width()/2, 0, _room_mode ? "SELECT ROOM" : "SELECT CONTACT");
-      display.fillRect(0, display.headerH() - 1, display.width(), 1);
+      display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
       if (_num_contacts == 0) {
         display.drawTextCentered(display.width()/2, display.height()/2, _room_mode ? "No room servers" : "No favourites");
@@ -551,7 +551,7 @@ public:
 
     } else if (_phase == CHANNEL_PICK) {
       display.drawTextCentered(display.width()/2, 0, "SELECT CHANNEL");
-      display.fillRect(0, display.headerH() - 1, display.width(), 1);
+      display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
       if (_num_channels == 0) {
         display.drawTextCentered(display.width()/2, display.height()/2, "No channels");
@@ -618,15 +618,16 @@ public:
       int hist_box_h  = 2 * lh + 3;
       int hist_item_h = hist_box_h + 2;
       int hist_start_y = display.headerH();
-      _hist_visible   = (display.height() - hist_start_y) / hist_item_h;
+      int btn_h = lh + 4;
+      _hist_visible   = (display.height() - hist_start_y - btn_h) / hist_item_h;
       if (_hist_visible < 1) _hist_visible = 1;
-      int cby = hist_start_y + _hist_visible * hist_item_h + 2;
+      int cby = display.height() - lh - 2;
 
       char title[24];
       display.setColor(DisplayDriver::LIGHT);
       snprintf(title, sizeof(title), "%.23s", filtered_name);
       display.drawTextCentered(display.width()/2, 0, title);
-      display.fillRect(0, lh + 1, display.width(), 1);
+      display.fillRect(0, lh + 1, display.width(), display.sepH());
 
       int dm_count = dmHistCountForContact(_sel_contact.id.pub_key);
 
@@ -720,16 +721,17 @@ public:
       int hist_box_h  = 2 * lh + 3;
       int hist_item_h = hist_box_h + 2;
       int hist_start_y = display.headerH();
-      _hist_visible   = (display.height() - hist_start_y) / hist_item_h;
+      int btn_h = lh + 4;
+      _hist_visible   = (display.height() - hist_start_y - btn_h) / hist_item_h;
       if (_hist_visible < 1) _hist_visible = 1;
-      int cby = hist_start_y + _hist_visible * hist_item_h + 2;
+      int cby = display.height() - lh - 2;
 
       ChannelDetails ch;
       the_mesh.getChannel(_sel_channel_idx, ch);
       char title[24];
       snprintf(title, sizeof(title), "%.23s", ch.name);
       display.drawTextCentered(display.width()/2, 0, title);
-      display.fillRect(0, lh + 1, display.width(), 1);
+      display.fillRect(0, lh + 1, display.width(), display.sepH());
 
       int ch_hist_count = histCountForChannel(_sel_channel_idx);
 
@@ -832,7 +834,7 @@ public:
         snprintf(title, sizeof(title), "TO:%.14s", _sel_contact.name);
       }
       display.drawTextCentered(display.width()/2, 0, title);
-      display.fillRect(0, display.headerH() - 1, display.width(), 1);
+      display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
       int total_msg_items = 1 + _active_msg_count;
       for (int i = 0; i < _visible && (_msg_scroll+i) < total_msg_items; i++) {

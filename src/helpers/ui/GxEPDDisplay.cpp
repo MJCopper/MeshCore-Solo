@@ -139,6 +139,8 @@ void GxEPDDisplay::drawRect(int x, int y, int w, int h) {
   display_crc.update<int>(w);
   display_crc.update<int>(h);
   display.drawRect(x, y, w, h, _curr_color);
+  if (width() >= height() && w > 2 && h > 2)
+    display.drawRect(x + 1, y + 1, w - 2, h - 2, _curr_color);
 }
 
 void GxEPDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {

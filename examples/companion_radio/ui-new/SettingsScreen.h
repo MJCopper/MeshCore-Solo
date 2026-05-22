@@ -11,7 +11,9 @@ class SettingsScreen : public UIScreen {
 #if !defined(EINK_DISPLAY_MODEL)
     BRIGHTNESS,
 #endif
+#if AUTO_OFF_MILLIS > 0
     AUTO_OFF,
+#endif
     AUTO_LOCK,
     BATT_DISPLAY,
 #if !defined(EINK_DISPLAY_MODEL)
@@ -64,9 +66,11 @@ class SettingsScreen : public UIScreen {
   int _visible;   // items fitting on screen; updated each render, used by handleInput
   bool _dirty;
 
+#if AUTO_OFF_MILLIS > 0
   static const uint16_t AUTO_OFF_OPTS[5];
   static const char* AUTO_OFF_LABELS[5];
   static const int AUTO_OFF_COUNT = 5;
+#endif
 #if ENV_INCLUDE_GPS == 1
   static const uint32_t GPS_INTERVAL_OPTS[6];
   static const char* GPS_INTERVAL_LABELS[6];
@@ -101,6 +105,7 @@ class SettingsScreen : public UIScreen {
     }
   }
 
+#if AUTO_OFF_MILLIS > 0
   int autoOffIndex() {
     NodePrefs* p = _task->getNodePrefs();
     if (!p) return 1;
@@ -108,6 +113,7 @@ class SettingsScreen : public UIScreen {
       if (AUTO_OFF_OPTS[i] == p->auto_off_secs) return i;
     return 1;
   }
+#endif
 
 #if ENV_INCLUDE_GPS == 1
   int gpsIntervalIndex() {
@@ -289,10 +295,12 @@ class SettingsScreen : public UIScreen {
       sprintf(buf, "%ddBm", p ? p->tx_power_dbm : 0);
       display.setCursor(display.valCol(), y);
       display.print(buf);
+#if AUTO_OFF_MILLIS > 0
     } else if (item == AUTO_OFF) {
       display.print("AutoOff");
       display.setCursor(display.valCol(), y);
       display.print(AUTO_OFF_LABELS[autoOffIndex()]);
+#endif
     } else if (item == AUTO_LOCK) {
       display.print("AutoLock");
       display.setCursor(display.valCol(), y);
@@ -367,7 +375,7 @@ class SettingsScreen : public UIScreen {
 
 public:
   SettingsScreen(UITask* task)
-    : _task(task), _selected(AUTO_OFF), _scroll(0), _visible(4), _dirty(false), _edit_slot(-1) {}
+    : _task(task), _selected(AUTO_LOCK), _scroll(0), _visible(4), _dirty(false), _edit_slot(-1) {}
 
 
   void markClean() { _dirty = false; }
@@ -385,7 +393,7 @@ public:
 
     display.setColor(DisplayDriver::LIGHT);
     display.drawTextCentered(display.width() / 2, 0, "SETTINGS");
-    display.fillRect(0, display.headerH() - 2, display.width(), 1);
+    display.fillRect(0, display.headerH() - display.sepH(), display.width(), display.sepH());
 
     for (int i = 0; i < _visible && (_scroll + i) < SettingItem::Count; i++) {
       renderItem(display, _scroll + i, start_y + i * item_h);
@@ -489,12 +497,14 @@ public:
       if (right && p->tx_power_dbm < 22) { p->tx_power_dbm++; _task->applyTxPower(); _dirty = true; return true; }
       if (left  && p->tx_power_dbm > 2)  { p->tx_power_dbm--; _task->applyTxPower(); _dirty = true; return true; }
     }
+#if AUTO_OFF_MILLIS > 0
     if (_selected == AUTO_OFF && p) {
       int idx = autoOffIndex();
       if (right) idx = (idx + 1) % AUTO_OFF_COUNT;
       if (left)  idx = (idx + AUTO_OFF_COUNT - 1) % AUTO_OFF_COUNT;
       if (left || right) { p->auto_off_secs = AUTO_OFF_OPTS[idx]; _dirty = true; return true; }
     }
+#endif
     if (_selected == AUTO_LOCK && p && (left || right || enter)) {
       p->auto_lock ^= 1;
       _dirty = true;
@@ -576,8 +586,10 @@ public:
   }
 };
 
+#if AUTO_OFF_MILLIS > 0
 const uint16_t SettingsScreen::AUTO_OFF_OPTS[5]   = { 5, 15, 30, 60, 0 };
 const char*    SettingsScreen::AUTO_OFF_LABELS[5]  = { "5s", "15s", "30s", "60s", "never" };
+#endif
 #if ENV_INCLUDE_GPS == 1
 const uint32_t SettingsScreen::GPS_INTERVAL_OPTS[6]  = { 0, 30, 60, 300, 900, 1800 };
 const char*    SettingsScreen::GPS_INTERVAL_LABELS[6] = { "off", "30s", "1min", "5min", "15min", "30min" };

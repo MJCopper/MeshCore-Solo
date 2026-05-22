@@ -102,7 +102,7 @@ public:
     snprintf(hdr, sizeof(hdr), "M%d BPM:%u %d/%d", _slot + 1, BPM_OPTS[_bpm_idx], _len, MAX_NOTES);
     display.setCursor(0, 0);
     display.print(hdr);
-    display.fillRect(0, display.headerH() - 1, display.width(), 1);
+    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
     for (int i = 0; i < _visible_notes; i++) {
       int ni = _scroll + i;

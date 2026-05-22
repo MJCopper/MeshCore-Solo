@@ -55,12 +55,14 @@ public:
       return _kb.render(display);
     }
 
+    int avail_h = display.height() - display.listStart();
     int item_h  = display.lineStep();
+    if (item_h * ITEM_COUNT > avail_h) item_h = avail_h / ITEM_COUNT;
     int start_y = display.listStart();
     int val_x   = display.valCol();
 
     display.drawTextCentered(display.width() / 2, 0, "AUTO-REPLY BOT");
-    display.fillRect(0, display.headerH() - 1, display.width(), 1);
+    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
     static const char* labels[] = { "Enable", "Channel", "Trigger", "Reply DM", "Reply Ch" };
     for (int i = 0; i < ITEM_COUNT; i++) {

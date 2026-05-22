@@ -240,9 +240,10 @@ class HomeScreen : public UIScreen {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
 
-    const int lh  = display.getLineHeight();
-    const int cw  = display.getCharWidth();
-    const int ind = cw + 2;  // single-char indicator width
+    const int lh      = display.getLineHeight();
+    const int cw      = display.getCharWidth();
+    const int ind     = cw + 2;    // single-char indicator width
+    const int ind_gap = (lh >= 16) ? 3 : 1;  // gap between indicator boxes
 
     int battLeftX;
     if (mode == 1) {  // percent
@@ -259,18 +260,19 @@ class HomeScreen : public UIScreen {
       display.print(buf);
     } else {  // icon — scales with lh
       const int iconH = lh;
-      const int iconW = iconH * 3;
+      const int iconW = lh * 2;
+      const int bm = (lh >= 16) ? 3 : 2;  // inner margin: 3px on landscape (2px border), 2px on OLED
       battLeftX = display.width() - iconW - 3;
       display.drawRect(battLeftX, 0, iconW, iconH);
       display.fillRect(battLeftX + iconW, iconH / 4, 2, iconH / 2);
-      int fillW = (pct * (iconW - 4)) / 100;
-      display.fillRect(battLeftX + 2, 2, fillW, iconH - 4);
+      int fillW = (pct * (iconW - 2 * bm)) / 100;
+      display.fillRect(battLeftX + bm, bm, fillW, iconH - 2 * bm);
     }
 
 #ifdef PIN_BUZZER
     if (_task->isBuzzerQuiet()) {
       display.setColor(DisplayDriver::LIGHT);
-      int mx = battLeftX - ind - 1;
+      int mx = battLeftX - ind - ind_gap;
       display.fillRect(mx, 0, ind, lh);
       display.setColor(DisplayDriver::DARK);
       display.setCursor(mx + 1, 0);
@@ -283,7 +285,7 @@ class HomeScreen : public UIScreen {
     // BT connection indicator (left of muted/battery icons)
     int leftmostX = battLeftX;
     if (_task->isSerialEnabled()) {
-      int btX = battLeftX - ind - 1;
+      int btX = battLeftX - ind - ind_gap;
       if (_task->hasConnection()) {
         display.setColor(DisplayDriver::LIGHT);
         display.fillRect(btX, 0, ind, lh);
@@ -295,7 +297,7 @@ class HomeScreen : public UIScreen {
         display.setCursor(btX + 1, 0);
         display.print("b");
       }
-      leftmostX = btX - 1;
+      leftmostX = btX - ind_gap;
 
       // "A" indicator — left of BT, blinks 50% duty at 4s period
       if (_node_prefs && _node_prefs->advert_auto_interval_sec > 0) {
@@ -358,7 +360,7 @@ public:
     const int lh      = display.getLineHeight();  // line height at sz1
     const int step    = display.lineStep();        // lh + 2
     const int dots_y  = lh + 4;                   // page-dot row: just below header
-    const int content_y = dots_y + step;           // first content row
+    const int content_y = dots_y + 6;             // first content row (6px gap keeps dots visible)
 
     // node name + battery — hidden on CLOCK page (full screen used for dashboard)
     if (_page != CLOCK) {
@@ -385,8 +387,9 @@ public:
       int vi = 0;
       for (int i = 0; i < (int)Count; i++) {
         if (!isPageVisible(i)) continue;
-        if (vi == curr_vis) display.fillRect(x-1, dots_y-1, 3, 3);
-        else                 display.fillRect(x, dots_y, 1, 1);
+        int ds = (lh >= 16) ? 2 : 1;
+        if (vi == curr_vis) display.fillRect(x-ds, dots_y-ds, 2*ds+1, 2*ds+1);
+        else                 display.fillRect(x-ds+1, dots_y-ds+1, 2*ds-1, 2*ds-1);
         x += 10; vi++;
       }
     }
@@ -431,8 +434,8 @@ public:
         display.drawTextCentered(display.width() / 2, date_y, buf);
 
         int sep_y  = date_y + lh + 1;
-        int dash0  = sep_y + 3;
-        display.fillRect(0, sep_y, display.width(), 1);
+        int dash0  = sep_y + display.sepH() + 2;
+        display.fillRect(0, sep_y, display.width(), display.sepH());
 
         // dashboard data fields
         if (_node_prefs) {
@@ -1448,13 +1451,17 @@ void UITask::loop() {
       int delay_millis = curr->render(*_display);
       if (millis() < _alert_expiry && curr == home) {  // render alert only on home screen
         _display->setTextSize(1);
-        int y = _display->height() / 3;
-        int p = _display->height() / 32;
+        int lh    = _display->getLineHeight();
+        int pad   = 3;
+        int box_h = lh + pad * 2;
+        int box_w = _display->width() - 8;
+        int box_x = 4;
+        int box_y = (_display->height() - box_h) / 2;
         _display->setColor(DisplayDriver::DARK);
-        _display->fillRect(p, y, _display->width() - p*2, y);
-        _display->setColor(DisplayDriver::LIGHT);  // draw box border
-        _display->drawRect(p, y, _display->width() - p*2, y);
-        _display->drawTextCentered(_display->width() / 2, y + p*3, _alert);
+        _display->fillRect(box_x, box_y, box_w, box_h);
+        _display->setColor(DisplayDriver::LIGHT);
+        _display->drawRect(box_x, box_y, box_w, box_h);
+        _display->drawTextCentered(_display->width() / 2, box_y + pad, _alert);
         _next_refresh = _alert_expiry;   // will need refresh when alert is dismissed
       } else {
         _next_refresh = millis() + delay_millis;

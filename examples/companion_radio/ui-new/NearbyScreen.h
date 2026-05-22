@@ -234,8 +234,9 @@ class NearbyScreen : public UIScreen {
         display.print(b64_line);
       }
 
-      // distribute 4 remaining lines across available height below b64
-      int step = (display.height() - hdr) / 5;
+      // distribute 4 remaining lines below b64 — compact step, shrink only if needed
+      int step = display.lineStep();
+      if (step * 5 > display.height() - hdr) step = (display.height() - hdr) / 5;
       char buf[32];
       snprintf(buf, sizeof(buf), "RSSI: %d dBm", (int)r.rssi);
       display.setCursor(2, hdr + step);     display.print(buf);
@@ -419,8 +420,9 @@ public:
       display.drawTextEllipsized(2, 1, display.width() - 4, filtered);
       display.setColor(DisplayDriver::LIGHT);
 
-      // 5 lines: lat, lon, dist+bearing, type, seen — distributed across available height
-      int step = (display.height() - hdr) / 5;
+      // 5 lines: lat, lon, dist+bearing, type, seen — compact step, shrink only if needed
+      int step = display.lineStep();
+      if (step * 5 > display.height() - hdr) step = (display.height() - hdr) / 5;
       char buf[32];
       snprintf(buf, sizeof(buf), "Lat: %.5f", e.lat_e6 / 1e6);
       display.setCursor(2, hdr); display.print(buf);
@@ -459,7 +461,7 @@ public:
     char title[22];
     snprintf(title, sizeof(title), "NEARBY[%s]", FILTER_LABELS[_filter]);
     display.drawTextCentered(display.width() / 2, 0, title);
-    display.fillRect(0, display.headerH() - 1, display.width(), 1);
+    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
     if (_count == 0) {
       display.drawTextCentered(display.width() / 2, display.height() / 2 - display.lineStep() / 2, "No contacts found");

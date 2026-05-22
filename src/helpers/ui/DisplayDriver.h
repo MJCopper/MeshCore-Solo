@@ -41,6 +41,8 @@ public:
   int listVisible()          const { return listVisible(lineStep()); }
   // x where a right-side value column starts (leaves ~8 chars for the value)
   int valCol()               const { return width() - getCharWidth() * 8; }
+  // separator line thickness: 2px on landscape e-ink, 1px on OLED
+  int sepH()                 const { return (width() >= height()) ? 2 : 1; }
   virtual void drawTextCentered(int mid_x, int y, const char* str) {   // helper method (override to optimise)
     int w = getTextWidth(str);
     setCursor(mid_x - w/2, y);
@@ -135,7 +137,7 @@ public:
       case 0x00E7: return 'c'; case 0x00C7: return 'C';  // ç Ç
       case 0x00F1: return 'n'; case 0x00D1: return 'N';  // ñ Ñ
       case 0x00FD: return 'y'; case 0x00DD: return 'Y';  // ý Ý
-      default: return '\xDB';  // CP437 full block █
+      default: return '?';
     }
   }
 
