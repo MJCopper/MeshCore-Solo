@@ -71,7 +71,7 @@ public:
 
     // meshcore logo
     display.setColor(DisplayDriver::LIGHT);
-    int logoWidth = min(128, display.width());
+    int logoWidth = 128;
     int logo_y = 3;
     display.drawXbm((display.width() - logoWidth) / 2, logo_y, meshcore_logo, logoWidth, 13);
 
