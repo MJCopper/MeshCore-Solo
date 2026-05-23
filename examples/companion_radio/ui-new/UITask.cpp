@@ -762,7 +762,7 @@ public:
         const int lh1 = display.getLineHeight();
         if (text_y + lh1 <= display.height()) {
           char hib_hint[32];
-          snprintf(hib_hint, sizeof(hib_hint), "hibernate: %s", PRESS_LABEL);
+          snprintf(hib_hint, sizeof(hib_hint), "hibernate:%s", PRESS_LABEL);
           if (display.getTextWidth(hib_hint) < display.width()) {
             display.drawTextCentered(display.width() / 2, text_y, hib_hint);
           } else {
