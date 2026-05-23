@@ -24,7 +24,7 @@ class SettingsScreen : public UIScreen {
 #if defined(EINK_DISPLAY_MODEL)
     ROTATION,
 #endif
-#if defined(UI_HAS_JOYSTICK)
+#if defined(EINK_DISPLAY_MODEL)
     JOY_ROTATION,
 #endif
     // Sound section
@@ -447,7 +447,7 @@ class SettingsScreen : public UIScreen {
         uint8_t r = p ? (p->display_rotation & 3) : 0;
         display.print(ROT_LABELS[r]); }
 #endif
-#if defined(UI_HAS_JOYSTICK)
+#if defined(EINK_DISPLAY_MODEL)
     } else if (item == JOY_ROTATION) {
       display.print("Joystick");
       display.setCursor(display.valCol(), y);
@@ -678,7 +678,7 @@ public:
       return true;
     }
 #endif
-#if defined(UI_HAS_JOYSTICK)
+#if defined(EINK_DISPLAY_MODEL)
     if (_selected == JOY_ROTATION && p && (left || right || enter)) {
       p->joystick_rotation = (p->joystick_rotation + (left ? 3 : 1)) & 3;
       _dirty = true;
