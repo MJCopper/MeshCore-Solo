@@ -21,9 +21,6 @@ jobs:
       - name: Clone Repo
         uses: actions/checkout@v4
 
-      - name: Extract Version from Git Tag
-        run: echo "GIT_TAG_VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
-
       - name: Setup Build Environment
         uses: ./.github/actions/setup-build-environment
 
@@ -44,9 +41,6 @@ jobs:
 
       - name: Clone Repo
         uses: actions/checkout@v4
-
-      - name: Extract Version from Git Tag
-        run: echo "GIT_TAG_VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
 
       - name: Setup Build Environment
         uses: ./.github/actions/setup-build-environment
