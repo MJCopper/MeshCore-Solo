@@ -291,7 +291,8 @@ class HomeScreen : public UIScreen {
     const int lh      = display.getLineHeight();
     const int cw      = display.getCharWidth();
     const int ind     = cw + 2;    // single-char indicator width
-    const int ind_gap = (lh >= 16) ? 3 : 1;  // gap between indicator boxes
+    const int ind_h   = display.isLemonFont() ? lh - 2 : lh;
+    const int ind_gap = display.isLandscape() ? 3 : 1;  // gap between indicator boxes
 
     int battLeftX;
     if (mode == 1) {  // percent
@@ -309,7 +310,7 @@ class HomeScreen : public UIScreen {
     } else {  // icon — scales with lh
       const int iconH = lh;
       const int iconW = lh * 2;
-      const int bm = (lh >= 16) ? 3 : 2;  // inner margin: 3px on landscape (2px border), 2px on OLED
+      const int bm = display.isLandscape() ? 3 : 2;  // inner margin: 3px on landscape e-ink, 2px on OLED/portrait
       battLeftX = display.width() - iconW - 3;
       display.drawRect(battLeftX, 0, iconW, iconH);
       display.fillRect(battLeftX + iconW, iconH / 4, 2, iconH / 2);
@@ -321,7 +322,7 @@ class HomeScreen : public UIScreen {
     if (_task->isBuzzerQuiet()) {
       display.setColor(DisplayDriver::LIGHT);
       int mx = battLeftX - ind - ind_gap;
-      display.fillRect(mx, 0, ind, lh);
+      display.fillRect(mx, 0, ind, ind_h);
       display.setColor(DisplayDriver::DARK);
       display.setCursor(mx + 1, 0);
       display.print("M");
@@ -336,7 +337,7 @@ class HomeScreen : public UIScreen {
       int btX = battLeftX - ind - ind_gap;
       if (_task->hasConnection()) {
         display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(btX, 0, ind, lh);
+        display.fillRect(btX, 0, ind, ind_h);
         display.setColor(DisplayDriver::DARK);
         display.setCursor(btX + 1, 0);
         display.print("B");
@@ -357,7 +358,7 @@ class HomeScreen : public UIScreen {
 #endif
         if (show_a) {
           display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(aX, 0, ind, lh);
+          display.fillRect(aX, 0, ind, ind_h);
           display.setColor(DisplayDriver::DARK);
           display.setCursor(aX + 1, 0);
           display.print("A");
@@ -435,7 +436,7 @@ public:
       for (int i = 0; i < n; i++) if (order[i] == _page) { curr_vis = i; break; }
       int x = display.width() / 2 - 5 * (n - 1);
       for (int i = 0; i < n; i++) {
-        int ds = (lh >= 16) ? 2 : 1;
+        int ds = display.isLandscape() ? 2 : 1;
         if (i == curr_vis) display.fillRect(x-ds, dots_y-ds, 2*ds+1, 2*ds+1);
         else               display.fillRect(x-ds+1, dots_y-ds+1, 2*ds-1, 2*ds-1);
         x += 10;
@@ -460,7 +461,11 @@ public:
         char buf[24];
         display.setColor(DisplayDriver::LIGHT);
         display.setTextSize(2);
+#ifdef EINK_DISPLAY_MODEL
+        bool show_sec = false;
+#else
         bool show_sec = !_node_prefs || !_node_prefs->clock_hide_seconds;
+#endif
         bool h12 = _node_prefs && _node_prefs->clock_12h;
         if (h12) {
           int h = ti->tm_hour % 12; if (h == 0) h = 12;
@@ -609,19 +614,23 @@ public:
       display.print(tmp);
     } else if (_page == HomePage::BLUETOOTH) {
       display.setColor(DisplayDriver::LIGHT);
-      int icon_y = content_y;
-      display.drawXbm((display.width() - 32) / 2, icon_y,
-          _task->isSerialEnabled() ? bluetooth_on : bluetooth_off,
-          32, 32);
       display.setTextSize(1);
-      int pin_y  = icon_y + 32 + 3;
-      int hint_y = pin_y + step;
-      if (_task->isSerialEnabled() && !_task->hasConnection() && the_mesh.getBLEPin() != 0) {
+      display.drawXbm((display.width() - 32) / 2, content_y,
+          _task->isSerialEnabled() ? bluetooth_on : bluetooth_off, 32, 32);
+      const int text_y = content_y + 32 + 3;
+      const bool waiting_for_pair = _task->isSerialEnabled() && !_task->hasConnection() && the_mesh.getBLEPin() != 0;
+      if (waiting_for_pair && !display.isLandscape()) {
         char pin_buf[16];
         snprintf(pin_buf, sizeof(pin_buf), "PIN: %d", the_mesh.getBLEPin());
-        display.drawTextCentered(display.width() / 2, pin_y, pin_buf);
+        display.drawTextCentered(display.width() / 2, text_y, pin_buf);
+      } else if (waiting_for_pair) {
+        char pin_buf[16];
+        snprintf(pin_buf, sizeof(pin_buf), "PIN: %d", the_mesh.getBLEPin());
+        display.drawTextCentered(display.width() / 2, text_y, pin_buf);
+        display.drawTextCentered(display.width() / 2, text_y + step, "toggle: " PRESS_LABEL);
+      } else {
+        display.drawTextCentered(display.width() / 2, text_y, "toggle: " PRESS_LABEL);
       }
-      display.drawTextCentered(display.width() / 2, hint_y, "toggle: " PRESS_LABEL);
     } else if (_page == HomePage::ADVERT) {
       display.setColor(DisplayDriver::LIGHT);
       display.drawXbm((display.width() - 32) / 2, content_y, advert_icon, 32, 32);
@@ -766,9 +775,19 @@ public:
         display.drawTextCentered(display.width() / 2, content_y + step, "hibernating...");
       } else {
         display.drawXbm((display.width() - 32) / 2, content_y, power_icon, 32, 32);
-        int hint_base = content_y + 32 + 3;
-        display.drawTextCentered(display.width() / 2, hint_base, "hibernate:");
-        display.drawTextCentered(display.width() / 2, hint_base + step, PRESS_LABEL);
+        const int text_y = content_y + 32 + 3;
+        const int lh1 = display.getLineHeight();
+        if (text_y + lh1 <= display.height()) {
+          char hib_hint[32];
+          snprintf(hib_hint, sizeof(hib_hint), "hibernate: %s", PRESS_LABEL);
+          if (display.getTextWidth(hib_hint) < display.width()) {
+            display.drawTextCentered(display.width() / 2, text_y, hib_hint);
+          } else {
+            display.drawTextCentered(display.width() / 2, text_y, "hibernate:");
+            if (text_y + step + lh1 <= display.height())
+              display.drawTextCentered(display.width() / 2, text_y + step, PRESS_LABEL);
+          }
+        }
       }
     }
     bool auto_adv = _node_prefs && _node_prefs->advert_auto_interval_sec > 0;

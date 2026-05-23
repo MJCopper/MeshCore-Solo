@@ -83,7 +83,7 @@ public:
     return (_use_lemon ? 10 : 8) * sc;
   }
   void setLemonFont(bool enabled) override { _use_lemon = enabled; }
-
+  bool isLemonFont() const override { return _use_lemon; }
   bool begin();
 
   bool isOn() override { return _isOn; }

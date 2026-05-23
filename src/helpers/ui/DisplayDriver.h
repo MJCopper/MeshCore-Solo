@@ -31,6 +31,7 @@ public:
   virtual int getCharWidth() const { return 6; }   // typical character advance width (px)
   virtual int getLineHeight() const { return 8; }  // pixel rows per text line
   virtual void setLemonFont(bool) { }              // no-op; overridden by displays that support Lemon
+  virtual bool isLemonFont() const { return false; }
 
   // Layout helpers — derived from font metrics and screen size.
   // Use these instead of hardcoded pixel values so layouts adapt to any display.
@@ -41,21 +42,30 @@ public:
   int listVisible()          const { return listVisible(lineStep()); }
   // x where a right-side value column starts (leaves ~8 chars for the value)
   int valCol()               const { return width() - getCharWidth() * 8; }
-  // separator line thickness: 2px on landscape e-ink, 1px on OLED
-  int sepH()                 const { return (width() >= height()) ? 2 : 1; }
-  virtual void drawTextCentered(int mid_x, int y, const char* str) {   // helper method (override to optimise)
-    int w = getTextWidth(str);
+  // true only on landscape e-ink; use instead of comparing pixel counts or getLineHeight()
+#ifdef EINK_DISPLAY_MODEL
+  bool isLandscape()         const { return width() >= height(); }
+#else
+  bool isLandscape()         const { return false; }
+#endif
+  // separator line thickness: 2px on landscape e-ink, 1px everywhere else
+  int sepH()                 const { return isLandscape() ? 2 : 1; }
+  virtual void drawTextCentered(int mid_x, int y, const char* str) {
+    char tmp[256]; translateUTF8ToBlocks(tmp, str, sizeof(tmp));
+    int w = getTextWidth(tmp);
     setCursor(mid_x - w/2, y);
-    print(str);
+    print(tmp);
   }
   virtual void drawTextRightAlign(int x_anch, int y, const char* str) {
-    int w = getTextWidth(str);
+    char tmp[256]; translateUTF8ToBlocks(tmp, str, sizeof(tmp));
+    int w = getTextWidth(tmp);
     setCursor(x_anch - w, y);
-    print(str);
+    print(tmp);
   }
   virtual void drawTextLeftAlign(int x_anch, int y, const char* str) {
+    char tmp[256]; translateUTF8ToBlocks(tmp, str, sizeof(tmp));
     setCursor(x_anch, y);
-    print(str);
+    print(tmp);
   }
   
   static char transliterateCodepoint(uint32_t cp) {
@@ -137,7 +147,7 @@ public:
       case 0x00E7: return 'c'; case 0x00C7: return 'C';  // ç Ç
       case 0x00F1: return 'n'; case 0x00D1: return 'N';  // ñ Ñ
       case 0x00FD: return 'y'; case 0x00DD: return 'Y';  // ý Ý
-      default: return '?';
+      default: return '\xDB';
     }
   }
 

@@ -87,8 +87,9 @@ class QuickMsgScreen : public UIScreen {
   static const char* skipReplyPrefix(const char* text) {
     if (text[0] == '@' && text[1] == '[') {
       const char* close = strchr(text + 2, ']');
-      if (close && close[1] == ' ' && close[2]) return close + 2;
+      if (close && close[1] == ' ' && close[2]) text = close + 2;
     }
+    while (*text == '\n' || *text == '\r' || *text == ' ') text++;
     return text;
   }
 
@@ -630,13 +631,12 @@ public:
         return 500;
       }
 
-      int hist_box_h  = 2 * lh + 3;
-      int hist_item_h = hist_box_h + 2;
+      int hist_box_h  = 2 * lh + 1;
+      int hist_item_h = hist_box_h + 1;
       int hist_start_y = display.headerH();
-      int btn_h = lh + 4;
-      _hist_visible   = (display.height() - hist_start_y - btn_h) / hist_item_h;
-      if (_hist_visible < 1) _hist_visible = 1;
       int cby = display.height() - lh - 2;
+      _hist_visible   = (cby - 1 - hist_start_y) / hist_item_h;
+      if (_hist_visible < 1) _hist_visible = 1;
 
       char title[24];
       display.setColor(DisplayDriver::LIGHT);
@@ -666,7 +666,7 @@ public:
           display.setColor(DisplayDriver::DARK);
           display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
           if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
-          display.drawTextEllipsized(3, y + lh + 2, display.width() - cw - 2, skipReplyPrefix(e.text));
+          display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(e.text));
         } else {
           display.setColor(DisplayDriver::LIGHT);
           display.drawRect(0, y, display.width(), hist_box_h);
@@ -675,7 +675,7 @@ public:
           display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
           if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
           display.setColor(DisplayDriver::LIGHT);
-          display.drawTextEllipsized(3, y + lh + 2, display.width() - cw - 2, skipReplyPrefix(e.text));
+          display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(e.text));
         }
       }
 
@@ -733,13 +733,12 @@ public:
         return 2000;
       }
 
-      int hist_box_h  = 2 * lh + 3;
-      int hist_item_h = hist_box_h + 2;
+      int hist_box_h  = 2 * lh + 1;
+      int hist_item_h = hist_box_h + 1;
       int hist_start_y = display.headerH();
-      int btn_h = lh + 4;
-      _hist_visible   = (display.height() - hist_start_y - btn_h) / hist_item_h;
-      if (_hist_visible < 1) _hist_visible = 1;
       int cby = display.height() - lh - 2;
+      _hist_visible   = (cby - 1 - hist_start_y) / hist_item_h;
+      if (_hist_visible < 1) _hist_visible = 1;
 
       ChannelDetails ch;
       the_mesh.getChannel(_sel_channel_idx, ch);
@@ -781,7 +780,7 @@ public:
           display.setColor(DisplayDriver::DARK);
           display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
           if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
-          display.drawTextEllipsized(3, y + lh + 2, display.width() - cw - 2, skipReplyPrefix(msg_part));
+          display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(msg_part));
         } else {
           display.setColor(DisplayDriver::LIGHT);
           display.drawRect(0, y, display.width(), hist_box_h);
@@ -790,7 +789,7 @@ public:
           display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
           if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
           display.setColor(DisplayDriver::LIGHT);
-          display.drawTextEllipsized(3, y + lh + 2, display.width() - cw - 2, skipReplyPrefix(msg_part));
+          display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(msg_part));
         }
       }
 

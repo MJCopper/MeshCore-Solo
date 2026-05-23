@@ -122,7 +122,22 @@ void GxEPDDisplay::setCursor(int x, int y) {
 
 void GxEPDDisplay::print(const char* str) {
   display_crc.update<char>(str, strlen(str));
-  display.print(str);
+  if (!_use_lemon) {
+    display.print(str);
+    return;
+  }
+  int sc = (width() >= height()) ? 2 : 1;
+  for (const char* p = str; *p; p++) {
+    if ((uint8_t)*p == 0xDB) {
+      int cx = display.getCursorX();
+      int cy = display.getCursorY();
+      display.fillRect(cx, cy - 8 * sc, 5 * sc, 8 * sc, _curr_color);
+      display.setCursor(cx + 6 * sc, cy);
+    } else {
+      char tmp[2] = {*p, 0};
+      display.print(tmp);
+    }
+  }
 }
 
 void GxEPDDisplay::fillRect(int x, int y, int w, int h) {
@@ -162,9 +177,11 @@ void GxEPDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
 }
 
 uint16_t GxEPDDisplay::getTextWidth(const char* str) {
+  display.setTextWrap(false);
   int16_t x1, y1;
   uint16_t w, h;
   display.getTextBounds(str, 0, 0, &x1, &y1, &w, &h);
+  display.setTextWrap(true);
   return w;
 }
 
