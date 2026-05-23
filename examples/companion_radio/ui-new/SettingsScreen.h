@@ -374,7 +374,7 @@ class SettingsScreen : public UIScreen {
     } else if (isHomePage(item)) {
       int pos = homePagePosition(item, p);
       if (pos > 0) {
-        char pb[4]; snprintf(pb, sizeof(pb), "%d ", pos);
+        char pb[5]; snprintf(pb, sizeof(pb), "%2d ", pos);
         display.print(pb);
       }
       display.print(homePageLabel(item));
