@@ -24,6 +24,9 @@ class SettingsScreen : public UIScreen {
 #if defined(EINK_DISPLAY_MODEL)
     ROTATION,
 #endif
+#if defined(UI_HAS_JOYSTICK)
+    JOY_ROTATION,
+#endif
     // Sound section
     SECTION_SOUND,
     BUZZER,
@@ -444,6 +447,14 @@ class SettingsScreen : public UIScreen {
         uint8_t r = p ? (p->display_rotation & 3) : 0;
         display.print(ROT_LABELS[r]); }
 #endif
+#if defined(UI_HAS_JOYSTICK)
+    } else if (item == JOY_ROTATION) {
+      display.print("Joystick");
+      display.setCursor(display.valCol(), y);
+      { static const char* ROT_LABELS[] = { "0 deg", "90 deg", "180 deg", "270 deg" };
+        uint8_t r = p ? (p->joystick_rotation & 3) : 0;
+        display.print(ROT_LABELS[r]); }
+#endif
     } else if (item == DM_FILTER) {
       display.print("DM");
       display.setCursor(display.valCol(), y);
@@ -663,6 +674,13 @@ public:
     if (_selected == ROTATION && p && (left || right || enter)) {
       p->display_rotation = (p->display_rotation + (left ? 3 : 1)) & 3;
       _task->applyRotation();
+      _dirty = true;
+      return true;
+    }
+#endif
+#if defined(UI_HAS_JOYSTICK)
+    if (_selected == JOY_ROTATION && p && (left || right || enter)) {
+      p->joystick_rotation = (p->joystick_rotation + (left ? 3 : 1)) & 3;
       _dirty = true;
       return true;
     }

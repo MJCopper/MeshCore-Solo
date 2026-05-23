@@ -83,4 +83,5 @@ struct NodePrefs {  // persisted to file
   // Home screen page order: each byte = bit-index+1 (see HP_* bit positions + 9=Settings, 10=Messages).
   // 0 = end of list (also uninitialized legacy). hasCustomOrder iff page_order[0] in 1..11.
   uint8_t  page_order[11];
+  uint8_t  joystick_rotation;   // 0-3 steps CW; independent of display_rotation
 };

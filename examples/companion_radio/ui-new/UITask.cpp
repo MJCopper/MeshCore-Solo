@@ -1294,6 +1294,7 @@ static void formatDashVal(uint8_t field, char* val, int val_len, uint16_t batt_m
 void UITask::loop() {
   char c = 0;
 #if UI_HAS_JOYSTICK
+  uint8_t joy_rot = _node_prefs ? _node_prefs->joystick_rotation : JOYSTICK_ROTATION;
   int ev = user_btn.check();
   if (ev == BUTTON_EVENT_CLICK) {
     if (back_btn.isPressed()) {
@@ -1328,24 +1329,24 @@ void UITask::loop() {
 #if UI_HAS_JOYSTICK_UPDOWN
   ev = joystick_up.check();
   if (ev == BUTTON_EVENT_CLICK) {
-    c = checkDisplayOn(KEY_UP);
+    c = checkDisplayOn(rotateJoystickKey(KEY_UP, joy_rot));
   }
   ev = joystick_down.check();
   if (ev == BUTTON_EVENT_CLICK) {
-    c = checkDisplayOn(KEY_DOWN);
+    c = checkDisplayOn(rotateJoystickKey(KEY_DOWN, joy_rot));
   }
 #endif
   ev = joystick_left.check();
   if (ev == BUTTON_EVENT_CLICK) {
-    c = checkDisplayOn(KEY_LEFT);
+    c = checkDisplayOn(rotateJoystickKey(KEY_LEFT, joy_rot));
   } else if (ev == BUTTON_EVENT_LONG_PRESS) {
-    c = handleLongPress(KEY_LEFT);
+    c = handleLongPress(rotateJoystickKey(KEY_LEFT, joy_rot));
   }
   ev = joystick_right.check();
   if (ev == BUTTON_EVENT_CLICK) {
-    c = checkDisplayOn(KEY_RIGHT);
+    c = checkDisplayOn(rotateJoystickKey(KEY_RIGHT, joy_rot));
   } else if (ev == BUTTON_EVENT_LONG_PRESS) {
-    c = handleLongPress(KEY_RIGHT);
+    c = handleLongPress(rotateJoystickKey(KEY_RIGHT, joy_rot));
   }
   if (_lock_seq_used && millis() - _lock_seq_ms > 5000) {
     _lock_seq_used = false;  // safety reset if Back release event was missed
