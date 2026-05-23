@@ -40,26 +40,17 @@ class SplashScreen : public UIScreen {
 
 public:
   SplashScreen(UITask* task) : _task(task) {
-    // strip off dash and commit hash: v1.2.3-abcdef -> v1.2.3
+    // MeshCore upstream version shown large (e.g. "1.15")
+    strncpy(_version_info, MESHCORE_VERSION, sizeof(_version_info) - 1);
+    _version_info[sizeof(_version_info) - 1] = '\0';
+
+    // Plus firmware version: strip commit hash suffix (v1.11-abcdef -> v1.11)
     const char *ver = FIRMWARE_VERSION;
     const char *dash = strchr(ver, '-');
-
-    int len = dash ? dash - ver : strlen(ver);
-    if (len >= sizeof(_version_info)) len = sizeof(_version_info) - 1;
-    memcpy(_version_info, ver, len);
-    _version_info[len] = 0;
-
-    // extract plus version: v1.15-plus.1.4-SHA -> "1.4"
-    _plus_ver[0] = '\0';
-    const char *plus = strstr(ver, "plus.");
-    if (plus) {
-      plus += 5;  // skip "plus."
-      const char *end = strchr(plus, '-');
-      int plen = end ? end - plus : strlen(plus);
-      if (plen >= (int)sizeof(_plus_ver)) plen = sizeof(_plus_ver) - 1;
-      memcpy(_plus_ver, plus, plen);
-      _plus_ver[plen] = '\0';
-    }
+    int plen = dash ? (int)(dash - ver) : (int)strlen(ver);
+    if (plen >= (int)sizeof(_plus_ver)) plen = sizeof(_plus_ver) - 1;
+    memcpy(_plus_ver, ver, plen);
+    _plus_ver[plen] = '\0';
 
     dismiss_after = millis() + BOOT_SCREEN_MILLIS;
   }
