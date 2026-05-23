@@ -600,6 +600,7 @@ public:
         return true;
       }
       if (enter && homePageToggleable(_selected)) {
+        if (!p->home_pages_mask) p->home_pages_mask = HP_ALL;
         p->home_pages_mask ^= homePageBit(_selected);
         _dirty = true;
         return true;

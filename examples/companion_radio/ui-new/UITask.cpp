@@ -232,6 +232,13 @@ class HomeScreen : public UIScreen {
         int pg = bitToPage(v - 1);
         if (pg >= 0 && pg < (int)Count && isPageVisible(pg)) out[n++] = pg;
       }
+      // Append any visible page missing from page_order (handles corrupted/migrated prefs)
+      for (int pg = 0; pg < (int)Count; pg++) {
+        if (!isPageVisible(pg)) continue;
+        bool found = false;
+        for (int i = 0; i < n; i++) if (out[i] == pg) { found = true; break; }
+        if (!found) out[n++] = pg;
+      }
     } else {
       for (int pg = 0; pg < (int)Count; pg++)
         if (isPageVisible(pg)) out[n++] = pg;
