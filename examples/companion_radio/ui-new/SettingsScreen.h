@@ -223,9 +223,19 @@ class SettingsScreen : public UIScreen {
   }
 
   // Initialises page_order to the default display sequence if not already set.
+  // Also repairs a partially-initialised order where CLOCK (bit 0, stored as 1) is absent.
   void ensurePageOrderInit(NodePrefs* p) const {
     if (!p) return;
-    if (p->page_order[0] >= 1 && p->page_order[0] <= 11) return;
+    if (p->page_order[0] >= 1 && p->page_order[0] <= 11) {
+      // Order was previously set — verify CLOCK is present to guard against partial/corrupted data.
+      for (int i = 0; i < 11; i++) {
+        uint8_t v = p->page_order[i];
+        if (v < 1 || v > 11) break;
+        if (v == 0 + 1) return;  // CLOCK found, order is intact
+      }
+      // CLOCK missing — reset and fall through to full re-init.
+      memset(p->page_order, 0, sizeof(p->page_order));
+    }
     // Default: CLOCK RECENT RADIO BT ADVERT [GPS] [SENSORS] SETTINGS TOOLS MESSAGES SHUTDOWN
     int j = 0;
     p->page_order[j++] = 0 + 1;  // CLOCK
@@ -348,6 +358,7 @@ class SettingsScreen : public UIScreen {
         uint8_t v = p ? p->notif_melody_ch : 0;
         display.print(L[v < 3 ? v : 0]); }
     } else if (isHomePage(item)) {
+      if (p) ensurePageOrderInit(p);
       int pos = homePagePosition(item, p);
       if (pos > 0) {
         char pb[5]; snprintf(pb, sizeof(pb), "%2d ", pos);
