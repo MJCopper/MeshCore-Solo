@@ -204,35 +204,122 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   if (file) {
     uint8_t pad[8];
 
-    file.read((uint8_t *)&_prefs.airtime_factor, sizeof(float));                           // 0
-    file.read((uint8_t *)_prefs.node_name, sizeof(_prefs.node_name));                      // 4
-    file.read(pad, 4);                                                                     // 36
-    file.read((uint8_t *)&node_lat, sizeof(node_lat));                                     // 40
-    file.read((uint8_t *)&node_lon, sizeof(node_lon));                                     // 48
-    file.read((uint8_t *)&_prefs.freq, sizeof(_prefs.freq));                               // 56
-    file.read((uint8_t *)&_prefs.sf, sizeof(_prefs.sf));                                   // 60
-    file.read((uint8_t *)&_prefs.cr, sizeof(_prefs.cr));                                   // 61
-    file.read((uint8_t *)&_prefs.client_repeat, sizeof(_prefs.client_repeat));             // 62
-    file.read((uint8_t *)&_prefs.manual_add_contacts, sizeof(_prefs.manual_add_contacts)); // 63
-    file.read((uint8_t *)&_prefs.bw, sizeof(_prefs.bw));                                   // 64
-    file.read((uint8_t *)&_prefs.tx_power_dbm, sizeof(_prefs.tx_power_dbm));               // 68
-    file.read((uint8_t *)&_prefs.telemetry_mode_base, sizeof(_prefs.telemetry_mode_base)); // 69
-    file.read((uint8_t *)&_prefs.telemetry_mode_loc, sizeof(_prefs.telemetry_mode_loc));   // 70
-    file.read((uint8_t *)&_prefs.telemetry_mode_env, sizeof(_prefs.telemetry_mode_env));   // 71
-    file.read((uint8_t *)&_prefs.rx_delay_base, sizeof(_prefs.rx_delay_base));             // 72
-    file.read((uint8_t *)&_prefs.advert_loc_policy, sizeof(_prefs.advert_loc_policy));     // 76
-    file.read((uint8_t *)&_prefs.multi_acks, sizeof(_prefs.multi_acks));                   // 77
-    file.read((uint8_t *)&_prefs.path_hash_mode, sizeof(_prefs.path_hash_mode));           // 78
-    file.read(pad, 1);                                                                     // 79
-    file.read((uint8_t *)&_prefs.ble_pin, sizeof(_prefs.ble_pin));                         // 80
-    file.read((uint8_t *)&_prefs.buzzer_quiet, sizeof(_prefs.buzzer_quiet));               // 84
-    file.read((uint8_t *)&_prefs.gps_enabled, sizeof(_prefs.gps_enabled));                 // 85
-    file.read((uint8_t *)&_prefs.gps_interval, sizeof(_prefs.gps_interval));               // 86
-    file.read((uint8_t *)&_prefs.autoadd_config, sizeof(_prefs.autoadd_config));           // 87
-    file.read((uint8_t *)&_prefs.autoadd_max_hops, sizeof(_prefs.autoadd_max_hops));       // 88
-    file.read((uint8_t *)&_prefs.rx_boosted_gain, sizeof(_prefs.rx_boosted_gain));         // 89
-    file.read((uint8_t *)_prefs.default_scope_name, sizeof(_prefs.default_scope_name));    // 90
-    file.read((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));     // 121
+    file.read((uint8_t *)&_prefs.airtime_factor, sizeof(float));
+    file.read((uint8_t *)_prefs.node_name, sizeof(_prefs.node_name));
+    file.read(pad, 4);
+    file.read((uint8_t *)&node_lat, sizeof(node_lat));
+    file.read((uint8_t *)&node_lon, sizeof(node_lon));
+    file.read((uint8_t *)&_prefs.freq, sizeof(_prefs.freq));
+    file.read((uint8_t *)&_prefs.sf, sizeof(_prefs.sf));
+    file.read((uint8_t *)&_prefs.cr, sizeof(_prefs.cr));
+    file.read((uint8_t *)&_prefs.client_repeat, sizeof(_prefs.client_repeat));
+    file.read((uint8_t *)&_prefs.manual_add_contacts, sizeof(_prefs.manual_add_contacts));
+    file.read((uint8_t *)&_prefs.bw, sizeof(_prefs.bw));
+    file.read((uint8_t *)&_prefs.tx_power_dbm, sizeof(_prefs.tx_power_dbm));
+    file.read((uint8_t *)&_prefs.telemetry_mode_base, sizeof(_prefs.telemetry_mode_base));
+    file.read((uint8_t *)&_prefs.telemetry_mode_loc, sizeof(_prefs.telemetry_mode_loc));
+    file.read((uint8_t *)&_prefs.telemetry_mode_env, sizeof(_prefs.telemetry_mode_env));
+    file.read((uint8_t *)&_prefs.rx_delay_base, sizeof(_prefs.rx_delay_base));
+    file.read((uint8_t *)&_prefs.advert_loc_policy, sizeof(_prefs.advert_loc_policy));
+    file.read((uint8_t *)&_prefs.multi_acks, sizeof(_prefs.multi_acks));
+    file.read((uint8_t *)&_prefs.path_hash_mode, sizeof(_prefs.path_hash_mode));
+    file.read(pad, 1);
+    file.read((uint8_t *)&_prefs.ble_pin, sizeof(_prefs.ble_pin));
+    file.read((uint8_t *)&_prefs.buzzer_quiet, sizeof(_prefs.buzzer_quiet));
+    file.read((uint8_t *)&_prefs.gps_enabled, sizeof(_prefs.gps_enabled));
+    file.read((uint8_t *)&_prefs.gps_interval, sizeof(_prefs.gps_interval));
+    file.read((uint8_t *)&_prefs.autoadd_config, sizeof(_prefs.autoadd_config));
+    file.read((uint8_t *)&_prefs.autoadd_max_hops, sizeof(_prefs.autoadd_max_hops));
+    file.read((uint8_t *)&_prefs.rx_boosted_gain, sizeof(_prefs.rx_boosted_gain));
+    file.read((uint8_t *)_prefs.default_scope_name, sizeof(_prefs.default_scope_name));
+    file.read((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));
+    file.read((uint8_t *)&_prefs.display_brightness, sizeof(_prefs.display_brightness));
+    file.read((uint8_t *)&_prefs.auto_off_secs, sizeof(_prefs.auto_off_secs));
+    file.read((uint8_t *)&_prefs.tz_offset_hours, sizeof(_prefs.tz_offset_hours));
+    file.read((uint8_t *)&_prefs.low_batt_mv, sizeof(_prefs.low_batt_mv));
+    file.read((uint8_t *)&_prefs.batt_display_mode, sizeof(_prefs.batt_display_mode));
+    if (file.available()) {
+      file.read((uint8_t *)_prefs.custom_msgs, sizeof(_prefs.custom_msgs));
+      file.read((uint8_t *)&_prefs.ch_notif_override, sizeof(_prefs.ch_notif_override));
+      file.read((uint8_t *)&_prefs.ch_notif_muted, sizeof(_prefs.ch_notif_muted));
+      file.read((uint8_t *)&_prefs.dm_show_all, sizeof(_prefs.dm_show_all));
+      file.read((uint8_t *)&_prefs.room_fav_only, sizeof(_prefs.room_fav_only));
+      if (file.available()) {
+        file.read((uint8_t *)&_prefs.buzzer_volume, sizeof(_prefs.buzzer_volume));
+        if (file.available()) {
+          file.read((uint8_t *)&_prefs.ringtone_bpm_idx, sizeof(_prefs.ringtone_bpm_idx));
+          file.read((uint8_t *)&_prefs.ringtone_len, sizeof(_prefs.ringtone_len));
+          if (_prefs.ringtone_len > 32) _prefs.ringtone_len = 0;
+          file.read((uint8_t *)_prefs.ringtone_notes, sizeof(_prefs.ringtone_notes));
+          if (file.available()) {
+            file.read((uint8_t *)&_prefs.home_pages_mask, sizeof(_prefs.home_pages_mask));
+            if (file.available()) {
+              file.read((uint8_t *)&_prefs.bot_enabled, sizeof(_prefs.bot_enabled));
+              file.read((uint8_t *)&_prefs.bot_channel_enabled, sizeof(_prefs.bot_channel_enabled));
+              file.read((uint8_t *)&_prefs.bot_channel_idx, sizeof(_prefs.bot_channel_idx));
+              file.read((uint8_t *)_prefs.bot_trigger, sizeof(_prefs.bot_trigger));
+              file.read((uint8_t *)_prefs.bot_reply_dm, sizeof(_prefs.bot_reply_dm));
+              file.read((uint8_t *)_prefs.bot_reply_ch, sizeof(_prefs.bot_reply_ch));
+              if (file.available()) {
+                file.read((uint8_t *)&_prefs.clock_hide_seconds, sizeof(_prefs.clock_hide_seconds));
+                if (file.available()) {
+                  file.read((uint8_t *)&_prefs.buzzer_auto, sizeof(_prefs.buzzer_auto));
+                  if (file.available()) {
+                    file.read((uint8_t *)_prefs.dm_notif, sizeof(_prefs.dm_notif));
+                    if (file.available()) {
+                      file.read((uint8_t *)_prefs.dashboard_fields, sizeof(_prefs.dashboard_fields));
+                      if (file.available()) {
+                        file.read((uint8_t *)&_prefs.advert_auto_interval_sec, sizeof(_prefs.advert_auto_interval_sec));
+                        if (file.available()) {
+                          file.read((uint8_t *)&_prefs.ringtone2_bpm_idx, sizeof(_prefs.ringtone2_bpm_idx));
+                          file.read((uint8_t *)&_prefs.ringtone2_len, sizeof(_prefs.ringtone2_len));
+                          if (_prefs.ringtone2_len > 32) _prefs.ringtone2_len = 0;
+                          file.read((uint8_t *)_prefs.ringtone2_notes, sizeof(_prefs.ringtone2_notes));
+                          if (file.available()) {
+                            file.read((uint8_t *)&_prefs.notif_melody_dm, sizeof(_prefs.notif_melody_dm));
+                            file.read((uint8_t *)&_prefs.notif_melody_ch, sizeof(_prefs.notif_melody_ch));
+                            if (file.available()) {
+                              file.read((uint8_t *)&_prefs.ch_notif_melody_set, sizeof(_prefs.ch_notif_melody_set));
+                              file.read((uint8_t *)&_prefs.ch_notif_melody_2, sizeof(_prefs.ch_notif_melody_2));
+                              if (file.available()) {
+                                file.read((uint8_t *)_prefs.dm_melody, sizeof(_prefs.dm_melody));
+                                if (file.available()) {
+                                  file.read((uint8_t *)&_prefs.auto_lock, sizeof(_prefs.auto_lock));
+                                  if (file.available()) {
+                                    file.read((uint8_t *)&_prefs.clock_12h, sizeof(_prefs.clock_12h));
+                                    if (file.available()) {
+                                      file.read((uint8_t *)&_prefs.use_lemon_font, sizeof(_prefs.use_lemon_font));
+                                      if (file.available()) {
+                                        file.read((uint8_t *)&_prefs.display_rotation, sizeof(_prefs.display_rotation));
+                                        if (file.available()) {
+                                          file.read((uint8_t *)_prefs.page_order, sizeof(_prefs.page_order));
+                                        }
+                                      } else {
+#ifdef DISPLAY_ROTATION
+                                        _prefs.display_rotation = DISPLAY_ROTATION;
+#endif
+                                      }
+                                    }
+                                  } else {
+#ifdef DISPLAY_ROTATION
+                                    _prefs.display_rotation = DISPLAY_ROTATION;
+#endif
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
 
     file.close();
   }
@@ -244,37 +331,96 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     uint8_t pad[8];
     memset(pad, 0, sizeof(pad));
 
-    file.write((uint8_t *)&_prefs.airtime_factor, sizeof(float));                           // 0
-    file.write((uint8_t *)_prefs.node_name, sizeof(_prefs.node_name));                      // 4
-    file.write(pad, 4);                                                                     // 36
-    file.write((uint8_t *)&node_lat, sizeof(node_lat));                                     // 40
-    file.write((uint8_t *)&node_lon, sizeof(node_lon));                                     // 48
-    file.write((uint8_t *)&_prefs.freq, sizeof(_prefs.freq));                               // 56
-    file.write((uint8_t *)&_prefs.sf, sizeof(_prefs.sf));                                   // 60
-    file.write((uint8_t *)&_prefs.cr, sizeof(_prefs.cr));                                   // 61
-    file.write((uint8_t *)&_prefs.client_repeat, sizeof(_prefs.client_repeat));             // 62
-    file.write((uint8_t *)&_prefs.manual_add_contacts, sizeof(_prefs.manual_add_contacts)); // 63
-    file.write((uint8_t *)&_prefs.bw, sizeof(_prefs.bw));                                   // 64
-    file.write((uint8_t *)&_prefs.tx_power_dbm, sizeof(_prefs.tx_power_dbm));               // 68
-    file.write((uint8_t *)&_prefs.telemetry_mode_base, sizeof(_prefs.telemetry_mode_base)); // 69
-    file.write((uint8_t *)&_prefs.telemetry_mode_loc, sizeof(_prefs.telemetry_mode_loc));   // 70
-    file.write((uint8_t *)&_prefs.telemetry_mode_env, sizeof(_prefs.telemetry_mode_env));   // 71
-    file.write((uint8_t *)&_prefs.rx_delay_base, sizeof(_prefs.rx_delay_base));             // 72
-    file.write((uint8_t *)&_prefs.advert_loc_policy, sizeof(_prefs.advert_loc_policy));     // 76
-    file.write((uint8_t *)&_prefs.multi_acks, sizeof(_prefs.multi_acks));                   // 77
-    file.write((uint8_t *)&_prefs.path_hash_mode, sizeof(_prefs.path_hash_mode));           // 78
-    file.write(pad, 1);                                                                     // 79
-    file.write((uint8_t *)&_prefs.ble_pin, sizeof(_prefs.ble_pin));                         // 80
-    file.write((uint8_t *)&_prefs.buzzer_quiet, sizeof(_prefs.buzzer_quiet));               // 84
-    file.write((uint8_t *)&_prefs.gps_enabled, sizeof(_prefs.gps_enabled));                 // 85
-    file.write((uint8_t *)&_prefs.gps_interval, sizeof(_prefs.gps_interval));               // 86
-    file.write((uint8_t *)&_prefs.autoadd_config, sizeof(_prefs.autoadd_config));           // 87
-    file.write((uint8_t *)&_prefs.autoadd_max_hops, sizeof(_prefs.autoadd_max_hops));       // 88
-    file.write((uint8_t *)&_prefs.rx_boosted_gain, sizeof(_prefs.rx_boosted_gain));         // 89
-    file.write((uint8_t *)_prefs.default_scope_name, sizeof(_prefs.default_scope_name));    // 90
-    file.write((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));     // 121
+    file.write((uint8_t *)&_prefs.airtime_factor, sizeof(float));
+    file.write((uint8_t *)_prefs.node_name, sizeof(_prefs.node_name));
+    file.write(pad, 4);
+    file.write((uint8_t *)&node_lat, sizeof(node_lat));
+    file.write((uint8_t *)&node_lon, sizeof(node_lon));
+    file.write((uint8_t *)&_prefs.freq, sizeof(_prefs.freq));
+    file.write((uint8_t *)&_prefs.sf, sizeof(_prefs.sf));
+    file.write((uint8_t *)&_prefs.cr, sizeof(_prefs.cr));
+    file.write((uint8_t *)&_prefs.client_repeat, sizeof(_prefs.client_repeat));
+    file.write((uint8_t *)&_prefs.manual_add_contacts, sizeof(_prefs.manual_add_contacts));
+    file.write((uint8_t *)&_prefs.bw, sizeof(_prefs.bw));
+    file.write((uint8_t *)&_prefs.tx_power_dbm, sizeof(_prefs.tx_power_dbm));
+    file.write((uint8_t *)&_prefs.telemetry_mode_base, sizeof(_prefs.telemetry_mode_base));
+    file.write((uint8_t *)&_prefs.telemetry_mode_loc, sizeof(_prefs.telemetry_mode_loc));
+    file.write((uint8_t *)&_prefs.telemetry_mode_env, sizeof(_prefs.telemetry_mode_env));
+    file.write((uint8_t *)&_prefs.rx_delay_base, sizeof(_prefs.rx_delay_base));
+    file.write((uint8_t *)&_prefs.advert_loc_policy, sizeof(_prefs.advert_loc_policy));
+    file.write((uint8_t *)&_prefs.multi_acks, sizeof(_prefs.multi_acks));
+    file.write((uint8_t *)&_prefs.path_hash_mode, sizeof(_prefs.path_hash_mode));
+    file.write(pad, 1);
+    file.write((uint8_t *)&_prefs.ble_pin, sizeof(_prefs.ble_pin));
+    file.write((uint8_t *)&_prefs.buzzer_quiet, sizeof(_prefs.buzzer_quiet));
+    file.write((uint8_t *)&_prefs.gps_enabled, sizeof(_prefs.gps_enabled));
+    file.write((uint8_t *)&_prefs.gps_interval, sizeof(_prefs.gps_interval));
+    file.write((uint8_t *)&_prefs.autoadd_config, sizeof(_prefs.autoadd_config));
+    file.write((uint8_t *)&_prefs.autoadd_max_hops, sizeof(_prefs.autoadd_max_hops));
+    file.write((uint8_t *)&_prefs.rx_boosted_gain, sizeof(_prefs.rx_boosted_gain));
+    file.write((uint8_t *)_prefs.default_scope_name, sizeof(_prefs.default_scope_name));
+    file.write((uint8_t *)_prefs.default_scope_key, sizeof(_prefs.default_scope_key));
+    file.write((uint8_t *)&_prefs.display_brightness, sizeof(_prefs.display_brightness));
+    file.write((uint8_t *)&_prefs.auto_off_secs, sizeof(_prefs.auto_off_secs));
+    file.write((uint8_t *)&_prefs.tz_offset_hours, sizeof(_prefs.tz_offset_hours));
+    file.write((uint8_t *)&_prefs.low_batt_mv, sizeof(_prefs.low_batt_mv));
+    file.write((uint8_t *)&_prefs.batt_display_mode, sizeof(_prefs.batt_display_mode));
+    file.write((uint8_t *)_prefs.custom_msgs, sizeof(_prefs.custom_msgs));
+    file.write((uint8_t *)&_prefs.ch_notif_override, sizeof(_prefs.ch_notif_override));
+    file.write((uint8_t *)&_prefs.ch_notif_muted, sizeof(_prefs.ch_notif_muted));
+    file.write((uint8_t *)&_prefs.dm_show_all, sizeof(_prefs.dm_show_all));
+    file.write((uint8_t *)&_prefs.room_fav_only, sizeof(_prefs.room_fav_only));
+    file.write((uint8_t *)&_prefs.buzzer_volume, sizeof(_prefs.buzzer_volume));
+    file.write((uint8_t *)&_prefs.ringtone_bpm_idx, sizeof(_prefs.ringtone_bpm_idx));
+    file.write((uint8_t *)&_prefs.ringtone_len, sizeof(_prefs.ringtone_len));
+    file.write((uint8_t *)_prefs.ringtone_notes, sizeof(_prefs.ringtone_notes));
+    file.write((uint8_t *)&_prefs.home_pages_mask, sizeof(_prefs.home_pages_mask));
+    file.write((uint8_t *)&_prefs.bot_enabled, sizeof(_prefs.bot_enabled));
+    file.write((uint8_t *)&_prefs.bot_channel_enabled, sizeof(_prefs.bot_channel_enabled));
+    file.write((uint8_t *)&_prefs.bot_channel_idx, sizeof(_prefs.bot_channel_idx));
+    file.write((uint8_t *)_prefs.bot_trigger, sizeof(_prefs.bot_trigger));
+    file.write((uint8_t *)_prefs.bot_reply_dm, sizeof(_prefs.bot_reply_dm));
+    file.write((uint8_t *)_prefs.bot_reply_ch, sizeof(_prefs.bot_reply_ch));
+    file.write((uint8_t *)&_prefs.clock_hide_seconds, sizeof(_prefs.clock_hide_seconds));
+    file.write((uint8_t *)&_prefs.buzzer_auto, sizeof(_prefs.buzzer_auto));
+    file.write((uint8_t *)_prefs.dm_notif, sizeof(_prefs.dm_notif));
+    file.write((uint8_t *)_prefs.dashboard_fields, sizeof(_prefs.dashboard_fields));
+    file.write((uint8_t *)&_prefs.advert_auto_interval_sec, sizeof(_prefs.advert_auto_interval_sec));
+    file.write((uint8_t *)&_prefs.ringtone2_bpm_idx, sizeof(_prefs.ringtone2_bpm_idx));
+    file.write((uint8_t *)&_prefs.ringtone2_len, sizeof(_prefs.ringtone2_len));
+    file.write((uint8_t *)_prefs.ringtone2_notes, sizeof(_prefs.ringtone2_notes));
+    file.write((uint8_t *)&_prefs.notif_melody_dm, sizeof(_prefs.notif_melody_dm));
+    file.write((uint8_t *)&_prefs.notif_melody_ch, sizeof(_prefs.notif_melody_ch));
+    file.write((uint8_t *)&_prefs.ch_notif_melody_set, sizeof(_prefs.ch_notif_melody_set));
+    file.write((uint8_t *)&_prefs.ch_notif_melody_2, sizeof(_prefs.ch_notif_melody_2));
+    file.write((uint8_t *)_prefs.dm_melody, sizeof(_prefs.dm_melody));
+    file.write((uint8_t *)&_prefs.auto_lock, sizeof(_prefs.auto_lock));
+    file.write((uint8_t *)&_prefs.clock_12h, sizeof(_prefs.clock_12h));
+    file.write((uint8_t *)&_prefs.use_lemon_font, sizeof(_prefs.use_lemon_font));
+    file.write((uint8_t *)&_prefs.display_rotation, sizeof(_prefs.display_rotation));
+    file.write((uint8_t *)_prefs.page_order, sizeof(_prefs.page_order));
 
     file.close();
+  }
+}
+
+void DataStore::saveRTCTime() {
+  uint32_t t = _clock->getCurrentTime();
+  if (t < 1000000000UL) return;  // don't save if time not yet synced
+  File file = openWrite(_fs, "/rtc_save");
+  if (file) {
+    file.write((uint8_t *)&t, sizeof(t));
+    file.close();
+  }
+}
+
+void DataStore::restoreRTCTime() {
+  File file = openRead(_fs, "/rtc_save");
+  if (file) {
+    uint32_t t = 0;
+    file.read((uint8_t *)&t, sizeof(t));
+    file.close();
+    if (t > 1000000000UL) _clock->setCurrentTime(t);
   }
 }
 

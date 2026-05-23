@@ -67,9 +67,9 @@ void initVariant() {
     pinMode(PIN_QSPI_CS, OUTPUT);
     digitalWrite(PIN_QSPI_CS, HIGH);
 
-    // VBAT_ENABLE
+    // VBAT_ENABLE: keep LOW by default, WioTrackerL1Board::getBattMilliVolts() toggles it
     pinMode(VBAT_ENABLE, OUTPUT);
-    digitalWrite(VBAT_ENABLE, HIGH);
+    digitalWrite(VBAT_ENABLE, LOW);
 
     // set LED pin as output and set it low
     pinMode(PIN_LED, OUTPUT);
@@ -78,5 +78,4 @@ void initVariant() {
     // set buzzer pin as output and set it low
     pinMode(12, OUTPUT);
     digitalWrite(12, LOW);
-    pinMode(12, OUTPUT);
 }

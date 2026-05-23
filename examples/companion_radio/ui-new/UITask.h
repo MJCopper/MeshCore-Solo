@@ -33,10 +33,24 @@ class UITask : public AbstractUITask {
 #endif
   unsigned long _next_refresh, _auto_off;
   NodePrefs* _node_prefs;
+  bool _locked;
+  unsigned long _lock_wake_until;  // when to blank screen again after locked wake (5s)
+  int  _lock_seq_count;            // Enter presses while Back held (lock/unlock sequence)
+  unsigned long _lock_seq_ms;      // millis() of last lock-sequence press (for timeout)
+  bool _lock_seq_used;             // true = suppress next back_btn CLICK (post-sequence release)
   char _alert[80];
+  char _notif_mel_buf[220];  // persistent RTTTL buffer for custom notification melodies
   unsigned long _alert_expiry;
   int _msgcount;
+  int _room_unread;
+  int _last_notif_ch_idx;
+  uint8_t _last_notif_dm_prefix[4];
+  bool _last_notif_dm_valid;
+  struct DMUnreadEntry { uint8_t prefix[4]; uint8_t count; };
+  static const int DM_UNREAD_TABLE_SIZE = 16;
+  DMUnreadEntry _dm_unread_table[DM_UNREAD_TABLE_SIZE];
   unsigned long ui_started_at, next_batt_chck;
+  uint16_t _batt_mv;  // EMA-filtered battery voltage
   int next_backlight_btn_check = 0;
 #ifdef PIN_STATUS_LED
   int led_state = 0;
@@ -50,7 +64,14 @@ class UITask : public AbstractUITask {
 
   UIScreen* splash;
   UIScreen* home;
-  UIScreen* msg_preview;
+  UIScreen* settings;
+  UIScreen* quick_msg;
+  UIScreen* tools_screen;
+  UIScreen* ringtone_edit;
+  UIScreen* bot_screen;
+  UIScreen* nearby_screen;
+  UIScreen* dashboard_config;
+  UIScreen* auto_advert_screen;
   UIScreen* curr;
 
   void userLedHandler();
@@ -65,16 +86,55 @@ class UITask : public AbstractUITask {
 
 public:
 
-  UITask(mesh::MainBoard* board, BaseSerialInterface* serial) : AbstractUITask(board, serial), _display(NULL), _sensors(NULL) {
+  UITask(mesh::MainBoard* board, BaseSerialInterface* serial) : AbstractUITask(board, serial), _display(NULL), _sensors(NULL), _node_prefs(NULL) {
     next_batt_chck = _next_refresh = 0;
     ui_started_at = 0;
+    _batt_mv = 0;
+    _msgcount = _room_unread = 0;
+    _locked = false;
+    _lock_wake_until = 0;
+    _lock_seq_count = 0; _lock_seq_ms = 0; _lock_seq_used = false;
+    _last_notif_ch_idx = -1;
+    _last_notif_dm_valid = false;
+    memset(_last_notif_dm_prefix, 0, sizeof(_last_notif_dm_prefix));
+    memset(_dm_unread_table, 0, sizeof(_dm_unread_table));
     curr = NULL;
   }
   void begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* node_prefs);
 
+  NodePrefs* getNodePrefs() const { return _node_prefs; }
+  uint16_t getBattMilliVolts() const { return _batt_mv > 0 ? _batt_mv : AbstractUITask::getBattMilliVolts(); }
   void gotoHomeScreen() { setCurrScreen(home); }
+  void gotoSettingsScreen();
+  void gotoQuickMsgScreen();
+  void gotoToolsScreen();
+  void gotoRingtoneEditor(int slot = 0);
+  void gotoBotScreen();
+  void gotoNearbyScreen();
+  void gotoDashboardConfig();
+  void gotoAutoAdvertScreen();
+  void playMelody(const char* melody);
+  void stopMelody();
+  bool isMelodyPlaying();
   void showAlert(const char* text, int duration_millis);
+  void addChannelMsg(uint8_t channel_idx, const char* text) override;
+  void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text) override;
+  int  getDMUnreadTotal() const;
   int  getMsgCount() const { return _msgcount; }
+  int  getChannelUnreadCount() const;
+  int  getRoomUnreadCount() const { return _room_unread; }
+  void clearRoomUnread() { _room_unread = 0; }
+  uint8_t getDMUnread(const uint8_t* pub_key) const {
+    for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++)
+      if (_dm_unread_table[i].count > 0 && memcmp(_dm_unread_table[i].prefix, pub_key, 4) == 0)
+        return _dm_unread_table[i].count;
+    return 0;
+  }
+  void clearDMUnread(const uint8_t* pub_key) {
+    for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++)
+      if (_dm_unread_table[i].count > 0 && memcmp(_dm_unread_table[i].prefix, pub_key, 4) == 0)
+        { _dm_unread_table[i].count = 0; return; }
+  }
   bool hasDisplay() const { return _display != NULL; }
   bool isButtonPressed() const;
 
@@ -87,13 +147,28 @@ public:
   }
 
   void toggleBuzzer();
+  void cycleBuzzerMode();   // ON → OFF → Auto → ON
+  int  getBuzzerMode(); // 0=ON, 1=OFF, 2=Auto
   bool getGPSState();
   void toggleGPS();
+  void applyBrightness();
+  void setBrightnessLevel(uint8_t level);
+  uint8_t getBrightnessLevel() const { return _node_prefs ? _node_prefs->display_brightness : 2; }
+  void setBuzzerVolumeLevel(uint8_t level);
+  uint8_t getBuzzerVolume() const { return _node_prefs ? _node_prefs->buzzer_volume : 4; }
+  void applyTxPower();
+  void applyGPSInterval();
+  void applyFont();
+  void applyRotation();
+  uint32_t autoOffMillis() const {
+    if (!_node_prefs || _node_prefs->auto_off_secs == 0) return 0;
+    return (uint32_t)_node_prefs->auto_off_secs * 1000UL;
+  }
 
 
   // from AbstractUITask
   void msgRead(int msgcount) override;
-  void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount) override;
+  void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount, uint8_t contact_type = 0, const uint8_t* pub_key = nullptr) override;
   void notify(UIEventType t = UIEventType::none) override;
   void loop() override;
 

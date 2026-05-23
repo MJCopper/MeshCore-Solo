@@ -25,6 +25,7 @@ struct NodePrefs {  // persisted to file
   uint32_t ble_pin;
   uint8_t  advert_loc_policy;
   uint8_t  buzzer_quiet;
+  uint8_t  buzzer_volume;   // 0=min..4=max, default 4
   uint8_t  gps_enabled;      // GPS enabled flag (0=disabled, 1=enabled)
   uint32_t gps_interval;     // GPS read interval in seconds
   uint8_t autoadd_config;    // bitmask for auto-add contacts config
@@ -34,4 +35,52 @@ struct NodePrefs {  // persisted to file
   uint8_t autoadd_max_hops;  // 0 = no limit, 1 = direct (0 hops), N = up to N-1 hops (max 64)
   char default_scope_name[31];
   uint8_t default_scope_key[16];
+  uint8_t display_brightness;   // 0=min..4=max, default 2 (medium)
+  uint16_t auto_off_secs;       // display auto-off: 0=never, else seconds (default 15)
+  uint8_t  auto_lock;           // 0=disabled, 1=lock screen when display turns off
+  int8_t tz_offset_hours;       // timezone offset from UTC, -12..+14 (default 0)
+  uint16_t low_batt_mv;         // auto-shutdown threshold: 0=disabled, 3000-3500 mV
+  uint8_t batt_display_mode;   // 0=icon, 1=percent, 2=voltage
+  char custom_msgs[10][140];   // user-defined quick messages (supports {loc}, {time})
+  uint64_t ch_notif_override;  // bitmask: bit i = channel i has explicit notification setting
+  uint64_t ch_notif_muted;     // bitmask: bit i = channel i muted (only if override bit set)
+  uint8_t  dm_show_all;        // 0=favourites only (default), 1=all chat contacts
+  uint8_t  room_fav_only;      // 0=all room servers (default), 1=favourites only
+  uint8_t  ringtone_bpm_idx;   // index into {60,90,120,150,180}
+  uint8_t  ringtone_len;        // number of notes in custom ringtone (0 = use default)
+  uint8_t  ringtone_notes[32]; // packed: bits0-2=pitch, bits3-4=octave-4, bits5-6=dur_idx
+  uint16_t home_pages_mask;    // bitmask of visible home pages (bit0=Clock..bit8=Shutdown); 0=all visible
+  uint8_t  bot_enabled;         // 0=disabled, 1=DM bot active (responds to all DMs)
+  uint8_t  bot_channel_enabled; // 0=disabled, 1=channel bot active for bot_channel_idx
+  uint8_t  bot_channel_idx;     // channel index for channel bot
+  char     bot_trigger[64];     // trigger phrase (case-insensitive contains match)
+  char     bot_reply_dm[140];   // auto-reply text for DM
+  char     bot_reply_ch[140];   // auto-reply text for channel
+  uint8_t  clock_hide_seconds; // 0=show HH:MM:SS/refresh 1s (default), 1=hide/refresh 60s
+  uint8_t  clock_12h;          // 0=24h (default), 1=12h with AM/PM
+  uint8_t  buzzer_auto;        // 0=manual (default), 1=auto-mute when BT connected
+  struct DmNotifEntry { uint8_t prefix[4]; uint8_t state; }; // state: 0=default,1=muted,2=force-on
+  static const int DM_NOTIF_TABLE_MAX = 16;
+  DmNotifEntry dm_notif[DM_NOTIF_TABLE_MAX]; // 16*5 = 80 bytes
+  uint8_t  dashboard_fields[3]; // 0=None,1=Batt,2=Temp,3=Hum,4=Pres,5=GPS,6=Alt,7=Lux,8=CO2,9=Nodes
+  uint32_t advert_auto_interval_sec; // periodic 0-hop advert with GPS: 0=off, else seconds
+  // Second melody slot (same packing as ringtone_*)
+  uint8_t  ringtone2_bpm_idx;
+  uint8_t  ringtone2_len;
+  uint8_t  ringtone2_notes[32];
+  // Global melody for notifications: 0=built-in, 1=melody1, 2=melody2
+  uint8_t  notif_melody_dm;
+  uint8_t  notif_melody_ch;
+  // Per-channel melody override (2 bitmasks, 1 bit per channel)
+  uint64_t ch_notif_melody_set;  // bit i = channel i has explicit melody
+  uint64_t ch_notif_melody_2;    // bit i = use melody 2 (else melody 1, when set bit is set)
+  // Per-DM melody table
+  struct DmMelodyEntry { uint8_t prefix[4]; uint8_t slot; }; // slot: 0=global,1=melody1,2=melody2
+  static const int DM_MELODY_TABLE_MAX = 16;
+  DmMelodyEntry dm_melody[DM_MELODY_TABLE_MAX];
+  uint8_t  use_lemon_font;      // 0=default Adafruit font, 1=Lemon font (Unicode, pixel-accurate wrap)
+  uint8_t  display_rotation;    // 0-3; only used on e-ink displays
+  // Home screen page order: each byte = bit-index+1 (see HP_* bit positions + 9=Settings, 10=Messages).
+  // 0 = end of list (also uninitialized legacy). hasCustomOrder iff page_order[0] in 1..11.
+  uint8_t  page_order[11];
 };

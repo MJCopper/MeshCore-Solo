@@ -1,6 +1,8 @@
 #include "SH1106Display.h"
 #include <Adafruit_GrayOLED.h>
 #include "Adafruit_SH110X.h"
+#include "LemonFont.h"
+#include "LemonIcons.h"
 
 bool SH1106Display::i2c_probe(TwoWire &wire, uint8_t addr)
 {
@@ -17,6 +19,9 @@ bool SH1106Display::begin()
 void SH1106Display::turnOn()
 {
   display.oled_command(SH110X_DISPLAYON);
+  uint8_t pre[] = { 0xD9, _precharge };
+  display.oled_commandList(pre, 2);
+  display.setContrast(_contrast);
   _isOn = true;
 }
 
@@ -38,11 +43,13 @@ void SH1106Display::startFrame(Color bkg)
   _color = SH110X_WHITE;
   display.setTextColor(_color);
   display.setTextSize(1);
+  _text_sz = 1;
   display.cp437(true); // Use full 256 char 'Code Page 437' font
 }
 
 void SH1106Display::setTextSize(int sz)
 {
+  _text_sz = sz;
   display.setTextSize(sz);
 }
 
@@ -57,9 +64,107 @@ void SH1106Display::setCursor(int x, int y)
   display.setCursor(x, y);
 }
 
+uint32_t SH1106Display::decodeUtf8(const uint8_t*& p) {
+  uint8_t c = *p++;
+  if (c < 0x80) return c;
+  if ((c & 0xE0) == 0xC0) {
+    uint32_t cp = c & 0x1F;
+    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+    return cp;
+  }
+  if ((c & 0xF0) == 0xE0) {
+    uint32_t cp = c & 0x0F;
+    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+    return cp;
+  }
+  if ((c & 0xF8) == 0xF0) {
+    uint32_t cp = c & 0x07;
+    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+    return cp;
+  }
+  while (*p && (*p & 0xC0) == 0x80) p++;
+  return 0xFFFD;
+}
+
+int16_t SH1106Display::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
+  int sz = _text_sz;
+  for (uint8_t i = 0; i < lemonIconCount; i++) {
+    if (pgm_read_dword(&lemonIconCPs[i]) == cp) {
+      const GFXglyph* g = &lemonIconGlyphs[i];
+      uint8_t w = pgm_read_byte(&g->width), h = pgm_read_byte(&g->height);
+      int8_t  xo = (int8_t)pgm_read_byte(&g->xOffset), yo = (int8_t)pgm_read_byte(&g->yOffset);
+      uint8_t xa = pgm_read_byte(&g->xAdvance);
+      uint16_t bo = pgm_read_word(&g->bitmapOffset);
+      uint8_t bits = 0, bit = 0;
+      for (uint8_t row = 0; row < h; row++)
+        for (uint8_t col = 0; col < w; col++) {
+          if (!bit) { bits = pgm_read_byte(&lemonIconBitmaps[bo++]); bit = 0x80; }
+          if (bits & bit) {
+            if (sz == 1) display.drawPixel(x + xo + col, y + 6 + yo + row, _color);
+            else display.fillRect(x + xo*sz + col*sz, y + 6*sz + yo*sz + row*sz, sz, sz, _color);
+          }
+          bit >>= 1;
+        }
+      return x + xa * sz;
+    }
+  }
+
+  if (cp < Lemon.first || cp > Lemon.last) {
+    if (cp >= 0x20) display.fillRect(x + sz, y - sz, 4*sz, 6*sz, _color);
+    return x + 6 * sz;
+  }
+  const GFXglyph* g = &lemonGlyphs[cp - Lemon.first];
+  uint8_t w = pgm_read_byte(&g->width), h = pgm_read_byte(&g->height);
+  int8_t  xo = (int8_t)pgm_read_byte(&g->xOffset), yo = (int8_t)pgm_read_byte(&g->yOffset);
+  uint8_t xa = pgm_read_byte(&g->xAdvance);
+  uint16_t bo = pgm_read_word(&g->bitmapOffset);
+  uint8_t bits = 0, bit = 0;
+  for (uint8_t row = 0; row < h; row++)
+    for (uint8_t col = 0; col < w; col++) {
+      if (!bit) { bits = pgm_read_byte(&lemonBitmaps[bo++]); bit = 0x80; }
+      if (bits & bit) {
+        if (sz == 1) display.drawPixel(x + xo + col, y + 6 + yo + row, _color);
+        else display.fillRect(x + xo*sz + col*sz, y + 6*sz + yo*sz + row*sz, sz, sz, _color);
+      }
+      bit >>= 1;
+    }
+  return x + xa * sz;
+}
+
+uint8_t SH1106Display::lemonXAdvance(uint32_t cp) {
+  uint8_t xa;
+  if (cp < Lemon.first || cp > Lemon.last) xa = 6;
+  else xa = pgm_read_byte(&lemonGlyphs[cp - Lemon.first].xAdvance);
+  return xa * _text_sz;
+}
+
+void SH1106Display::translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) {
+  if (_use_lemon) {
+    size_t n = strlen(src);
+    if (n >= dest_size) n = dest_size - 1;
+    memcpy(dest, src, n);
+    dest[n] = '\0';
+  } else {
+    DisplayDriver::translateUTF8ToBlocks(dest, src, dest_size);
+  }
+}
+
 void SH1106Display::print(const char *str)
 {
-  display.print(str);
+  if (!_use_lemon) { display.print(str); return; }
+
+  int16_t cx = display.getCursorX();
+  int16_t cy = display.getCursorY();
+  const uint8_t* p = (const uint8_t*)str;
+  while (*p) {
+    uint32_t cp = decodeUtf8(p);
+    if (cp == '\n') { cy += Lemon.yAdvance; cx = 0; }
+    else            { cx = drawLemonChar(cx, cy, cp); }
+  }
+  display.setCursor(cx, cy);
 }
 
 void SH1106Display::fillRect(int x, int y, int w, int h)
@@ -79,10 +184,31 @@ void SH1106Display::drawXbm(int x, int y, const uint8_t *bits, int w, int h)
 
 uint16_t SH1106Display::getTextWidth(const char *str)
 {
+  if (_use_lemon) {
+    uint16_t width = 0;
+    const uint8_t* p = (const uint8_t*)str;
+    while (*p) width += lemonXAdvance(decodeUtf8(p));
+    return width;
+  }
   int16_t x1, y1;
   uint16_t w, h;
   display.getTextBounds(str, 0, 0, &x1, &y1, &w, &h);
   return w;
+}
+
+void SH1106Display::setBrightness(uint8_t level)
+{
+  // Contrast alone has limited effect on some OLED panels; combining with
+  // pre-charge period (0xD9) gives a wider perceptible dimming range.
+  // Pre-charge 0x11 = phase1=1,phase2=1 (minimum drive); 0x1F = default.
+  static const uint8_t contrast_values[]  = {   0,  25,  60, 150, 255 };
+  static const uint8_t precharge_values[] = { 0x11, 0x15, 0x1F, 0x1F, 0x1F };
+  uint8_t idx = level < 5 ? level : 4;
+  _contrast  = contrast_values[idx];
+  _precharge = precharge_values[idx];
+  uint8_t pre[] = { 0xD9, _precharge };
+  display.oled_commandList(pre, 2);
+  display.setContrast(_contrast);
 }
 
 void SH1106Display::endFrame()

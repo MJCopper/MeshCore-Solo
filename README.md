@@ -1,120 +1,205 @@
-## About MeshCore
+# Wio Tracker L1 — Extended Companion Radio Firmware
 
-MeshCore is a lightweight, portable C++ library that enables multi-hop packet routing for embedded projects using LoRa and other packet radios. It is designed for developers who want to create resilient, decentralized communication networks that work without the internet.
+This branch extends the official MeshCore companion radio firmware for the **Seeed Wio Tracker L1**.
 
-## 🔍 What is MeshCore?
+Join the discussion on offical MeshCore discord: https://discord.gg/sdhYArU2jr
 
-MeshCore now supports a range of LoRa devices, allowing for easy flashing without the need to compile firmware manually. Users can flash a pre-built binary using tools like Adafruit ESPTool and interact with the network through a serial console.
-MeshCore provides the ability to create wireless mesh networks, similar to Meshtastic and Reticulum but with a focus on lightweight multi-hop packet routing for embedded projects. Unlike Meshtastic, which is tailored for casual LoRa communication, or Reticulum, which offers advanced networking, MeshCore balances simplicity with scalability, making it ideal for custom embedded solutions., where devices (nodes) can communicate over long distances by relaying messages through intermediate nodes. This is especially useful in off-grid, emergency, or tactical situations where traditional communication infrastructure is unavailable.
+## New Features
 
-## ⚡ Key Features
+### Messages Screen
 
-* Multi-Hop Packet Routing
-  * Devices can forward messages across multiple nodes, extending range beyond a single radio's reach.
-  * Supports up to a configurable number of hops to balance network efficiency and prevent excessive traffic.
-  * Nodes use fixed roles where "Companion" nodes are not repeating messages at all to prevent adverse routing paths from being used.
-* Supports LoRa Radios – Works with Heltec, RAK Wireless, and other LoRa-based hardware.
-* Decentralized & Resilient – No central server or internet required; the network is self-healing.
-* Low Power Consumption – Ideal for battery-powered or solar-powered devices.
-* Simple to Deploy – Pre-built example applications make it easy to get started.
+View and send messages using the on-screen keyboard or predefined quick replies. The keyboard supports placeholders that insert live sensor data — `{time}` and `{loc}` are always available; additional placeholders (`{temp}`, `{hum}`, `{pres}`, `{batt}`, `{alt}`, `{lux}`, `{co2}`) appear automatically for sensors that are connected and returning data.
 
-## 🎯 What Can You Use MeshCore For?
+Each message in the history list shows the sender name and a compact age indicator (`3m`, `2h`, `>1d`) in the top-right corner of the entry.
 
-* Off-Grid Communication: Stay connected even in remote areas.
-* Emergency Response & Disaster Recovery: Set up instant networks where infrastructure is down.
-* Outdoor Activities: Hiking, camping, and adventure racing communication.
-* Tactical & Security Applications: Military, law enforcement, and private security use cases.
-* IoT & Sensor Networks: Collect data from remote sensors and relay it back to a central location.
+```
+╔══════════════════════════════╗
+║          #general            ║
+╠══════════════════════════════╣
+║▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ║  ← selected
+║ Alice                   3m   ║
+║ Hey, let's meet tomorrow     ║
+║┌───────────────────────────┐ ║
+║│▓▓▓▓▓▓▓▓▓ Bob      1h ▓▓▓▓ │ ║
+║│ Sure, what time works?    │ ║
+║└───────────────────────────┘ ║
+║[+ send]                      ║
+╚══════════════════════════════╝
+```
 
-## 🚀 How to Get Started
+Press Enter on a message to open it in fullscreen. Navigate between messages with left (newer) and right (older). If the message is a reply addressed to someone (`@[nick]`), a **To: nick** bar is shown below the sender name and the body is displayed without the address prefix.
 
-- Watch the [MeshCore Intro Video](https://www.youtube.com/watch?v=t1qne8uJBAc) by Andy Kirby.
-- Watch the [MeshCore Technical Presentation](https://www.youtube.com/watch?v=OwmkVkZQTf4) by Liam Cottle.
-- Read through our [Frequently Asked Questions](./docs/faq.md) and [Documentation](https://docs.meshcore.io).
-- Flash the MeshCore firmware on a supported device.
-- Connect with a supported client.
+```
+╔══════════════════════════════╗
+║▓▓ Alice ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ║  ← sender
+║▓▓ To: Bob ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ║  ← recipient
+╠══════════════════════════════╣
+║ Hey Bob, let's meet up       ║
+║ tomorrow at 6pm downtown.    ║
+║ Will you make it?            ║
+║                              ║
+║< newer                older >║
+╚══════════════════════════════╝
+```
 
-For developers;
+Hold Enter on a message to open a context menu. From the list or fullscreen view, select **Reply** to pre-fill the keyboard or a quick message with `@[nick]` so the recipient is clearly addressed. The reply picker title shows the recipient's name.
 
-- Install [PlatformIO](https://docs.platformio.org) in [Visual Studio Code](https://code.visualstudio.com).
-- Clone and open the MeshCore repository in Visual Studio Code.
-- See the example applications you can modify and run:
-  - [Companion Radio](./examples/companion_radio) - For use with an external chat app, over BLE, USB or WiFi.
-  - [KISS Modem](./examples/kiss_modem) - Serial KISS protocol bridge for host applications. ([protocol docs](./docs/kiss_modem_protocol.md))
-  - [Simple Repeater](./examples/simple_repeater) - Extends network coverage by relaying messages.
-  - [Simple Room Server](./examples/simple_room_server) - A simple BBS server for shared Posts.
-  - [Simple Secure Chat](./examples/simple_secure_chat) - Secure terminal based text communication between devices.
-  - [Simple Sensor](./examples/simple_sensor) - Remote sensor node with telemetry and alerting.
+```
+╔══════════════════════════════╗
+║           RE:Alice           ║
+╠══════════════════════════════╣
+║> Custom message...           ║
+║  OK, I understand            ║
+║  On my way                   ║
+║  Be right there              ║
+╚══════════════════════════════╝
+```
 
-The Simple Secure Chat example can be interacted with through the Serial Monitor in Visual Studio Code, or with a Serial USB Terminal on Android.
+On channel or contact list entries, the context menu also lets you change per-channel notification settings (mute, follow global, or force-on), per-channel melody override (follow global, Melody 1, or Melody 2), or mark messages as read.
 
-## ⚡️ MeshCore Flasher
+### Settings Screen
 
-We have prebuilt firmware ready to flash on supported devices.
+All settings are saved to flash and restored on next boot.
 
-- Launch https://meshcore.io/flasher
-- Select a supported device
-- Flash one of the firmware types:
-  - Companion, Repeater or Room Server
-- Once flashing is complete, you can connect with one of the MeshCore clients below.
+- **Display**
+  - Brightness
+  - Auto-off timeout
+  - Battery display mode (icon, %, V)
+  - Clock seconds (show/hide — hiding reduces display refresh from 1 s to 60 s)
+  - Font — **Default** (5×7 Adafruit, ASCII + transliteration) or **Lemon** (native Unicode, available in the `font-switcher` build only)
+- **Sound**
+  - Buzzer: On / Off / **Auto** — Auto mode silences the device while connected via Bluetooth, and re-enables sound when the connection drops
+  - Volume (1–5; preview tone plays on each change)
+  - DM Melody — notification sound for incoming private messages: built-in, Melody 1, or Melody 2
+  - Channel Melody — notification sound for incoming channel messages: built-in, Melody 1, or Melody 2
+- **Home Pages** — toggle visibility of individual home screen pages
+- **Radio**
+  - TX power
+- **System**
+  - Timezone (UTC offset in hours)
+  - Low battery shutdown threshold
+  - Auto-lock — automatically locks the device when the display turns off
+- **GPS**
+  - Position broadcast interval
+- **Contacts**
+  - Show all DMs or favourites only
+  - Show all room servers or favourites only
+- **Messages**
+  - Edit up to 10 quick reply templates (Q1–Q10)
 
-## 📱 MeshCore Clients
+### Clock Screen
 
-**Companion Firmware**
+A dedicated clock page on the home screen shows the current time and date, synchronized from GPS or via Bluetooth. Timezone offset is applied from Settings.
 
-The companion firmware can be connected to via BLE, USB or WiFi depending on the firmware type you flashed.
+Up to three configurable data fields are displayed below the clock. Available fields: battery voltage, temperature, humidity, pressure, GPS coordinates, altitude, luminosity, CO₂, contact count, and total unread message count.
 
-- Web: https://app.meshcore.nz
-- Android: https://play.google.com/store/apps/details?id=com.liamcottle.meshcore.android
-- iOS: https://apps.apple.com/us/app/meshcore/id6742354151?platform=iphone
-- NodeJS: https://github.com/liamcottle/meshcore.js
-- Python: https://github.com/fdlamotte/meshcore-cli
+### Screen Lock
 
-**Repeater and Room Server Firmware**
+Hold **Back** and press **Enter** three times to lock or unlock the device. While locked:
 
-The repeater and room server firmwares can be setup via USB in the web config tool.
+- The display turns off and ignores incoming keypresses
+- A brief button press shows the lock screen: current time, date, and up to two sensor values (reuses the Dashboard Config fields)
+- A hint popup guides through the unlock sequence
+- **Auto-lock** (configurable in Settings → System) locks automatically when the display turns off
 
-- https://config.meshcore.io
+### Nearby Nodes
 
-They can also be managed via LoRa in the mobile app by using the Remote Management feature.
+Browse nodes that have recently advertised on the mesh. Filter by category (Favourites, All, Companion, Repeater, Room, Sensor). Select a node to see its coordinates, distance, bearing with cardinal direction, type, and last-heard time.
 
-## 🛠 Hardware Compatibility
+```
+╔══════════════════════════════╗
+║▓▓▓▓▓ WioTracker-Alice ▓▓▓▓▓▓ ║  ← node name
+╠══════════════════════════════╣
+║ Lat: 50.06190                ║
+║ Lon: 19.94090                ║
+║ Dist: 2.3km                  ║
+║ Az: 145d (SE)                ║
+║ Type: Companion              ║
+║ Seen: 5m ago                 ║
+╚══════════════════════════════╝
+```
 
-MeshCore is designed for devices listed in the [MeshCore Flasher](https://meshcore.io/flasher)
+Use **Send my advert** (hold Enter → context menu) to broadcast your position and prompt nearby nodes to respond with theirs.
 
-## 📜 License
+#### Active Discovery
 
-MeshCore is open-source software released under the MIT License. You are free to use, modify, and distribute it for personal and commercial projects.
+Press **Enter** from the Nearby screen to send a live `NODE_DISCOVER_REQ` ping. All reachable repeaters, sensors and room servers within zero-hop range respond immediately with their name, type and signal data. Results appear as 2-line boxed cards with RSSI, SNR and the remote SNR (signal quality at the responder's end).
 
-## Contributing
+```
+╔═══════════════════════════════╗
+║▓▓▓▓▓▓▓ DISCOVER (2 found) ▓▓  ║
+╠═══════════════════════════════╣
+║▓▓▓▓▓▓▓▓▓▓▓▓▓ Rptr-A   Rpt ▓▓▓▓║  ← selected
+║▓▓▓▓▓▓▓▓ RSSI:-79 SNR:9 ▓▓▓▓▓▓▓║
+║┌────────────────────────────┐ ║
+║│▓▓▓▓▓▓▓▓▓▓▓▓ Sensor-B  Snsr │ ║
+║│ RSSI:-94 SNR:3             │ ║
+║└────────────────────────────┘ ║
+╚═══════════════════════════════╝
+```
 
-Please submit PR's using 'dev' as the base branch!
-For minor changes just submit your PR and we'll try to review it, but for anything more 'impactful' please open an Issue first and start a discussion. Is better to sound out what it is you want to achieve first, and try to come to a consensus on what the best approach is, especially when it impacts the structure or architecture of this codebase.
+Navigate with **UP/DOWN**. Press **Enter** on a node to open a full-screen detail view showing the public key, RSSI, SNR, remote SNR and whether the node is already in your contacts.
 
-Here are some general principals you should try to adhere to:
-* Keep it simple. Please, don't think like a high-level lang programmer. Think embedded, and keep code concise, without any unnecessary layers.
-* No dynamic memory allocation, except during setup/begin functions.
-* Use the same brace and indenting style that's in the core source modules. (A .clang-format is prob going to be added soon, but please do NOT retroactively re-format existing code. This just creates unnecessary diffs that make finding problems harder)
+```
+╔══════════════════════════════╗
+║▓▓▓▓▓▓▓▓▓▓▓▓▓ Rptr-A ▓▓▓▓▓▓▓  ║
+╠══════════════════════════════╣
+║ Key: ABCdef12XYZ...          ║
+║ RSSI: -79 dBm                ║
+║ SNR:   9 dB                  ║
+║ Rem:   6 dB                  ║
+║ Status: known                ║
+╚══════════════════════════════╝
+```
 
-Help us prioritize! Please react with thumbs-up to issues/PRs you care about most. We look at reaction counts when planning work.
+Hold **Enter** from the discovery list to rescan. Press **Cancel** or **Back** to return.
 
-## Road-Map / To-Do
+### Tools Screen
 
-There are a number of fairly major features in the pipeline, with no particular time-frames attached yet. In very rough chronological order:
-- [X] Companion radio: UI redesign
-- [X] Repeater + Room Server: add ACL's (like Sensor Node has)
-- [X] Standardise Bridge mode for repeaters
-- [ ] Repeater/Bridge: Standardise the Transport Codes for zoning/filtering
-- [X] Core + Repeater: enhanced zero-hop neighbour discovery
-- [ ] Core: round-trip manual path support
-- [ ] Companion + Apps: support for multiple sub-meshes (and 'off-grid' client repeat mode)
-- [ ] Core + Apps: support for LZW message compression
-- [ ] Core: dynamic CR (Coding Rate) for weak vs strong hops
-- [ ] Core: new framework for hosting multiple virtual nodes on one physical device
-- [ ] V2 protocol spec: discussion and consensus around V2 packet protocol, including path hashes, new encryption specs, etc
+#### Auto-Advert
 
-## 📞 Get Support
+Periodically broadcasts a 0-hop advert with your GPS position so nearby nodes can track your location automatically. Configurable interval: off / 1 min / 2 min / 5 min / 10 min / 30 min / 1 h.
 
-- Report bugs and request features on the [GitHub Issues](https://github.com/ripplebiz/MeshCore/issues) page.
-- Find additional guides and components on [my site](https://buymeacoffee.com/ripplebiz).
-- Join [MeshCore Discord](https://meshcore.gg) to chat with the developers and get help from the community.
+A blinking **A** indicator appears in the status bar while Auto-Advert is active.
+
+#### Ringtone Editor
+
+A step sequencer for composing custom notification melodies stored on the device. Two independent melody slots are available — **Melody 1** and **Melody 2** — switchable from within the editor. Each melody supports up to 32 notes with adjustable pitch (C–B + pause), octave (4–7), duration (whole / half / quarter / eighth), and BPM (60 / 90 / 120 / 150 / 180). Playback preview is available directly from the editor.
+
+Melodies can be assigned as notification sounds per message type (DM / channel) in Settings, and individually overridden per channel or per contact from the message screen context menu.
+
+#### Auto-Reply Bot
+
+Automatically replies to incoming messages that contain a configured trigger word (case-insensitive).
+
+- **DM mode** — when enabled, the bot listens to all incoming private messages and replies with the DM reply text.
+- **Channel mode** — optionally, select a channel for the bot to monitor. When a trigger is matched, it replies with a separate channel reply text.
+- Both modes can be active simultaneously and share the same trigger word but use independent reply texts.
+- Replies support placeholders (`{time}`, `{loc}`).
+- A 10-second cooldown prevents repeated replies in quick succession.
+
+---
+
+## Font Switcher Build
+
+An alternative firmware build is available (`font-switcher` in the filename). It includes both the default 5×7 Adafruit font and the [Lemon bitmap font](https://github.com/cmvnd/fonts), switchable at runtime in **Settings → Display → Font** without reflashing. The selected font is saved to flash and takes effect immediately.
+
+The Lemon font offers:
+
+- **Native Unicode rendering** — Latin Extended, Greek, and Cyrillic characters (U+0020–U+04FF) are displayed directly without transliteration, covering Polish, Czech, Slovak, German, French, Scandinavian, Hungarian, Romanian, Croatian, Turkish, Baltic, Russian, and Greek scripts.
+- **Pixel-accurate word wrap** — text wraps based on actual glyph widths rather than a fixed character count.
+- **Slightly taller glyphs** — the font uses a 10 px line height compared to 8 px for the default font.
+
+Prebuilt `.uf2` files for the font-switcher variant are included in each release alongside the standard builds and are identified by `font-switcher` in the filename.
+
+---
+
+Feel free to explore, share feedback and feature requests!
+
+## Development
+
+This fork tracks the upstream [MeshCore](https://github.com/ripplebiz/MeshCore) repository. To prevent upstream changes from overwriting this README during merges, `README.md` is protected via `.gitattributes`. After cloning, run once:
+
+```sh
+git config merge.ours.driver true
+```

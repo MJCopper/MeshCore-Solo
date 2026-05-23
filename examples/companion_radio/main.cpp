@@ -71,7 +71,10 @@ static uint32_t _atoi(const char* sp) {
     ArduinoSerialInterface serial_interface;
   #endif
 #elif defined(NRF52_PLATFORM)
-  #ifdef BLE_PIN_CODE
+  #ifdef DUAL_SERIAL
+    #include <helpers/nrf52/DualSerialInterface.h>
+    DualSerialInterface serial_interface;
+  #elif defined(BLE_PIN_CODE)
     #include <helpers/nrf52/SerialBLEInterface.h>
     SerialBLEInterface serial_interface;
   #else
@@ -150,7 +153,9 @@ void setup() {
     #endif
   );
 
-#ifdef BLE_PIN_CODE
+#ifdef DUAL_SERIAL
+  serial_interface.begin(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin(), Serial);
+#elif defined(BLE_PIN_CODE)
   serial_interface.begin(BLE_NAME_PREFIX, the_mesh.getNodePrefs()->node_name, the_mesh.getBLEPin());
 #else
   serial_interface.begin(Serial);
@@ -211,6 +216,7 @@ void setup() {
   #error "need to define filesystem"
 #endif
 
+  store.restoreRTCTime();
   sensors.begin();
 
 #if ENV_INCLUDE_GPS == 1
@@ -218,15 +224,30 @@ void setup() {
 #endif
 
 #ifdef DISPLAY_CLASS
+  // Apply saved brightness as soon as prefs are available so the tail of
+  // the loading screen is not stuck at full brightness.
+  if (disp && the_mesh.getNodePrefs())
+    disp->setBrightness(the_mesh.getNodePrefs()->display_brightness);
   ui_task.begin(disp, &sensors, the_mesh.getNodePrefs());  // still want to pass this in as dependency, as prefs might be moved
+#endif
+
+#ifdef NRF52_PLATFORM
+  NRF_WDT->CONFIG      = 0x01;        // run during sleep; pause during debug halt
+  NRF_WDT->CRV         = 32768*30-1;  // 30 second timeout
+  NRF_WDT->RREN        = 0x01;        // enable reload register 0
+  NRF_WDT->TASKS_START = 1;
 #endif
 }
 
 void loop() {
+#ifdef NRF52_PLATFORM
+  NRF_WDT->RR[0] = 0x6E524635UL;  // pet watchdog
+#endif
   the_mesh.loop();
   sensors.loop();
 #ifdef DISPLAY_CLASS
   ui_task.loop();
 #endif
   rtc_clock.tick();
+  board.sleep(0);  // CPU sleeps until next interrupt (radio, timer, BLE); nRF52 ignores the seconds param
 }

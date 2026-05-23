@@ -1,4 +1,5 @@
 #include "MyMesh.h"
+#include "MsgExpand.h"
 
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
@@ -464,10 +465,10 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
   // we only want to show text messages on display, not cli data
   bool should_display = txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN;
   if (should_display && _ui) {
-    _ui->newMsg(path_len, from.name, text, offline_queue_len);
-    if (!_serial->isConnected()) {
-      _ui->notify(UIEventType::contactMessage);
-    }
+    _ui->newMsg(path_len, from.name, text, offline_queue_len, from.type, from.id.pub_key);
+    _ui->notify(UIEventType::contactMessage);
+    if (from.type == ADV_TYPE_CHAT)
+      _ui->addDMMsg(from.id.pub_key, false, text);
   }
 #endif
 }
@@ -510,10 +511,13 @@ void MyMesh::sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pk
   sendFloodScoped(*scope, pkt, delay_millis);
 }
 
+
 void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
                            const char *text) {
   markConnectionActive(from); // in case this is from a server, and we have a connection
   queueMessage(from, TXT_TYPE_PLAIN, pkt, sender_timestamp, NULL, 0, text);
+
+  tryBotReplyDM(from, text);
 }
 
 void MyMesh::onCommandDataRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
@@ -561,20 +565,19 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
     uint8_t frame[1];
     frame[0] = PUSH_CODE_MSG_WAITING; // send push 'tickle'
     _serial->writeFrame(frame, 1);
-  } else {
-#ifdef DISPLAY_CLASS
-    if (_ui) _ui->notify(UIEventType::channelMessage);
-#endif
   }
 #ifdef DISPLAY_CLASS
-  // Get the channel name from the channel index
+  if (_ui) _ui->addChannelMsg(channel_idx, text);
+  if (_ui) _ui->notify(UIEventType::channelMessage);
   const char *channel_name = "Unknown";
   ChannelDetails channel_details;
   if (getChannel(channel_idx, channel_details)) {
     channel_name = channel_details.name;
   }
-  if (_ui) _ui->newMsg(path_len, channel_name, text, offline_queue_len);
+  if (_ui) _ui->newMsg(path_len, channel_name, text, offline_queue_len, 0);
 #endif
+
+  tryBotReplyChannel(channel_idx, text);
 }
 
 void MyMesh::onChannelDataRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint16_t data_type,
@@ -761,7 +764,67 @@ bool MyMesh::onContactPathRecv(ContactInfo& contact, uint8_t* in_path, uint8_t i
   return BaseChatMesh::onContactPathRecv(contact, in_path, in_path_len, out_path, out_path_len, extra_type, extra, extra_len);
 }
 
+#define CTL_TYPE_NODE_DISCOVER_REQ  0x80
+#define CTL_TYPE_NODE_DISCOVER_RESP 0x90
+
+void MyMesh::sendNodeDiscoverReq() {
+  uint8_t data[10];
+  data[0] = CTL_TYPE_NODE_DISCOVER_REQ;
+  data[1] = (1 << ADV_TYPE_REPEATER) | (1 << ADV_TYPE_SENSOR) | (1 << ADV_TYPE_ROOM);
+  getRNG()->random(&data[2], 4);
+  memcpy(&_pending_node_discover_tag, &data[2], 4);
+  _pending_node_discover_until = futureMillis(8000);
+  _discover_count = 0;
+  uint32_t since = 0;
+  memcpy(&data[6], &since, 4);
+  auto pkt = createControlData(data, sizeof(data));
+  if (pkt) sendZeroHop(pkt);
+}
+
+int MyMesh::getDiscoverResults(DiscoverResult dest[], int max_count) {
+  int n = min(_discover_count, max_count);
+  memcpy(dest, _discover_results, n * sizeof(DiscoverResult));
+  return n;
+}
+
 void MyMesh::onControlDataRecv(mesh::Packet *packet) {
+  // If we have an active standalone discover, check if this is a matching response.
+  // Tag matching provides isolation — no isBLEConnected check needed.
+  if ((packet->payload[0] & 0xF0) == CTL_TYPE_NODE_DISCOVER_RESP &&
+      packet->payload_len >= 6 + PUB_KEY_SIZE &&
+      _pending_node_discover_tag != 0 &&
+      !millisHasNowPassed(_pending_node_discover_until)) {
+    uint32_t tag;
+    memcpy(&tag, &packet->payload[2], 4);
+    if (tag == _pending_node_discover_tag) {
+      uint8_t node_type = packet->payload[0] & 0x0F;
+      const uint8_t* pub_key = &packet->payload[6];
+      ContactInfo* known = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
+      if (known) {
+        known->lastmod = getRTCClock()->getCurrentTime();
+      }
+      if (_discover_count < DISCOVER_RESULTS_MAX) {
+        DiscoverResult& r = _discover_results[_discover_count++];
+        if (known) {
+          strncpy(r.name, known->name, sizeof(r.name) - 1);
+          r.name[sizeof(r.name) - 1] = '\0';
+          r.is_known = true;
+        } else {
+          r.name[0] = '\0';
+          r.is_known = false;
+        }
+        r.type = node_type;
+        r.rssi = (int8_t)_radio->getLastRSSI();
+        r.snr_x4 = (int8_t)(_radio->getLastSNR() * 4);
+        r.remote_snr_x4 = (int8_t)packet->payload[1];
+        memcpy(r.pub_key, pub_key, PUB_KEY_SIZE);
+        r.timestamp = getRTCClock()->getCurrentTime();
+      }
+      if (_ui) _ui->notify(UIEventType::newContactMessage);
+      return;  // our discover — don't forward to BLE app
+    }
+  }
+
   if (packet->payload_len + 4 > sizeof(out_frame)) {
     MESH_DEBUG_PRINTLN("onControlDataRecv(), payload_len too long: %d", packet->payload_len);
     return;
@@ -850,12 +913,18 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _cli_rescue = false;
   offline_queue_len = 0;
   app_target_ver = 0;
+  _bot_last_dm_reply_ms = 0;
+  _bot_last_ch_reply_ms = 0;
+  _next_auto_advert_ms = 0;
   clearPendingReqs();
   next_ack_idx = 0;
   sign_data = NULL;
   dirty_contacts_expiry = 0;
   memset(advert_paths, 0, sizeof(advert_paths));
   memset(send_scope.key, 0, sizeof(send_scope.key));
+  _discover_count = 0;
+  _pending_node_discover_tag = 0;
+  _pending_node_discover_until = 0;
 
   // defaults
   memset(&_prefs, 0, sizeof(_prefs));
@@ -868,6 +937,27 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.tx_power_dbm = LORA_TX_POWER;
   _prefs.gps_enabled = 0;       // GPS disabled by default
   _prefs.gps_interval = 0;      // No automatic GPS updates by default
+  _prefs.display_brightness = 2; // medium brightness by default
+  _prefs.buzzer_volume = 4;      // max volume by default
+  _prefs.ringtone_bpm_idx = 2;   // 120 bpm default
+  _prefs.ringtone_len = 0;       // no custom ringtone by default
+  _prefs.ringtone2_bpm_idx = 2;  // 120 bpm default
+  _prefs.home_pages_mask = 0x01FF;  // all pages visible
+  _prefs.bot_enabled = 0;
+  _prefs.bot_channel_enabled = 0;
+  _prefs.bot_channel_idx = 0;
+  _prefs.bot_trigger[0] = '\0';
+  _prefs.bot_reply_dm[0] = '\0';
+  _prefs.bot_reply_ch[0] = '\0';
+  _prefs.dm_show_all = 1;        // show all contacts by default
+  memset(_prefs.dm_notif, 0, sizeof(_prefs.dm_notif));
+  _prefs.auto_off_secs = 15;    // 15 seconds auto-off by default
+#ifdef EINK_DISPLAY_MODEL
+  _prefs.clock_hide_seconds = 1;  // e-ink: seconds cause a panel refresh every second
+#endif
+  _prefs.tz_offset_hours = 0;  // UTC by default
+  _prefs.low_batt_mv = 3400;  // auto-shutdown at 3.4V by default
+  _prefs.batt_display_mode = 0; // icon by default
   //_prefs.rx_delay_base = 10.0f;  enable once new algo fixed
 #if defined(USE_SX1262) || defined(USE_SX1268)
 #ifdef SX126X_RX_BOOSTED_GAIN
@@ -1255,7 +1345,9 @@ void MyMesh::handleCmdFrame(size_t len) {
     ContactInfo *recipient = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
     uint32_t last_mod = getRTCClock()->getCurrentTime();  // fallback value if not present in cmd_frame
     if (recipient) {
+      uint8_t saved_type = recipient->type; // type is authoritative from advert, not app
       updateContactFromFrame(*recipient, last_mod, cmd_frame, len);
+      if (saved_type != ADV_TYPE_NONE) recipient->type = saved_type;
       recipient->lastmod = last_mod;
       dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
       writeOKFrame();
@@ -1673,13 +1765,22 @@ void MyMesh::handleCmdFrame(size_t len) {
       writeErrFrame(ERR_CODE_NOT_FOUND);
     }
   } else if (cmd_frame[0] == CMD_SET_CHANNEL && len >= 2 + 32 + 32) {
-    writeErrFrame(ERR_CODE_UNSUPPORTED_CMD); // not supported (yet)
+    uint8_t channel_idx = cmd_frame[1];
+    ChannelDetails channel;
+    StrHelper::strncpy(channel.name, (char *)&cmd_frame[2], 32);
+    memcpy(channel.channel.secret, &cmd_frame[2 + 32], 32); // 256-bit key
+    if (setChannel(channel_idx, channel)) {
+      saveChannels();
+      writeOKFrame();
+    } else {
+      writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx
+    }
   } else if (cmd_frame[0] == CMD_SET_CHANNEL && len >= 2 + 32 + 16) {
     uint8_t channel_idx = cmd_frame[1];
     ChannelDetails channel;
     StrHelper::strncpy(channel.name, (char *)&cmd_frame[2], 32);
     memset(channel.channel.secret, 0, sizeof(channel.channel.secret));
-    memcpy(channel.channel.secret, &cmd_frame[2 + 32], 16); // NOTE: only 128-bit supported
+    memcpy(channel.channel.secret, &cmd_frame[2 + 32], 16); // 128-bit key
     if (setChannel(channel_idx, channel)) {
       saveChannels();
       writeOKFrame();
@@ -2172,8 +2273,16 @@ void MyMesh::loop() {
     dirty_contacts_expiry = 0;
   }
 
+  if (_prefs.advert_auto_interval_sec > 0 && millisHasNowPassed(_next_auto_advert_ms)) {
+    mesh::Packet* pkt = (sensors.node_lat != 0 || sensors.node_lon != 0)
+      ? createSelfAdvert(_prefs.node_name, sensors.node_lat, sensors.node_lon)
+      : createSelfAdvert(_prefs.node_name);
+    if (pkt) sendZeroHop(pkt);
+    _next_auto_advert_ms = futureMillis(_prefs.advert_auto_interval_sec * 1000UL);
+  }
+
 #ifdef DISPLAY_CLASS
-  if (_ui) _ui->setHasConnection(_serial->isConnected());
+  if (_ui) _ui->setHasConnection(_serial->isBLEConnected());
 #endif
 }
 
@@ -2191,3 +2300,5 @@ bool MyMesh::advert() {
     return false;
   }
 }
+
+#include "MyMeshBot.h"

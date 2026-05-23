@@ -8,11 +8,12 @@
 #define FIRMWARE_VER_CODE 11
 
 #ifndef FIRMWARE_BUILD_DATE
-#define FIRMWARE_BUILD_DATE "19 Apr 2026"
+#define FIRMWARE_BUILD_DATE "12 May 2026"
 #endif
 
+// Versioning: vX.Y = upstream base, plus.N = fork revision
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.15.0"
+#define FIRMWARE_VERSION "v1.15-plus.1"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -84,6 +85,19 @@ struct AdvertPath {
   uint8_t path[MAX_PATH_SIZE];
 };
 
+struct DiscoverResult {
+  char    name[32];   // contact name if known, "" if unknown (use type label)
+  uint8_t type;       // ADV_TYPE_REPEATER / ADV_TYPE_SENSOR / ADV_TYPE_ROOM
+  bool    is_known;   // true = in contacts[], false = new unknown node
+  int8_t  rssi;       // RSSI of the response as received by us (dBm)
+  int8_t  snr_x4;     // SNR of the response as received by us (dB × 4)
+  int8_t  remote_snr_x4; // SNR at which responder heard our request (dB × 4)
+  uint8_t pub_key[PUB_KEY_SIZE];
+  uint32_t timestamp;
+};
+
+#define EXPECTED_ACK_TABLE_SIZE 8
+
 class MyMesh : public BaseChatMesh, public DataStoreHost {
 public:
   MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMeshTables &tables, DataStore& store, AbstractUITask* ui=NULL);
@@ -98,9 +112,11 @@ public:
   void loop();
   void handleCmdFrame(size_t len);
   bool advert();
+  void sendNodeDiscoverReq();
   void enterCLIRescue();
 
   int  getRecentlyHeard(AdvertPath dest[], int max_num);
+  int  getDiscoverResults(DiscoverResult dest[], int max_count);
 
 protected:
   float getAirtimeBudgetFactor() const override;
@@ -165,6 +181,14 @@ protected:
 
 public:
   void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
+  void saveRTCTime() { _store->saveRTCTime(); }
+
+  bool isAckPending(uint32_t expected_ack) const {
+    for (int i = 0; i < EXPECTED_ACK_TABLE_SIZE; i++)
+      if (expected_ack_table[i].ack == expected_ack) return true;
+    return false;
+  }
+
 
 #if ENV_INCLUDE_GPS == 1
   void applyGpsPrefs() {
@@ -178,6 +202,9 @@ public:
 #endif
 
 private:
+  void tryBotReplyDM(const ContactInfo& from, const char* text);
+  void tryBotReplyChannel(uint8_t channel_idx, const char* text);
+
   void writeOKFrame();
   void writeErrFrame(uint8_t err_code);
   void writeDisabledFrame();
@@ -220,6 +247,9 @@ private:
   uint8_t *sign_data;
   uint32_t sign_data_len;
   unsigned long dirty_contacts_expiry;
+  unsigned long _bot_last_dm_reply_ms;
+  unsigned long _bot_last_ch_reply_ms;
+  unsigned long _next_auto_advert_ms;
 
   TransportKey send_scope;
 
@@ -241,12 +271,17 @@ private:
     uint32_t ack;
     ContactInfo* contact;
   };
-  #define EXPECTED_ACK_TABLE_SIZE 8
   AckTableEntry expected_ack_table[EXPECTED_ACK_TABLE_SIZE]; // circular table
   int next_ack_idx;
 
   #define ADVERT_PATH_TABLE_SIZE   16
   AdvertPath advert_paths[ADVERT_PATH_TABLE_SIZE]; // circular table
+
+  #define DISCOVER_RESULTS_MAX 16
+  DiscoverResult  _discover_results[DISCOVER_RESULTS_MAX];
+  int             _discover_count;
+  uint32_t        _pending_node_discover_tag;
+  unsigned long   _pending_node_discover_until;
 };
 
 extern MyMesh the_mesh;
