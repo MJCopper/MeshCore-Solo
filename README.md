@@ -4,6 +4,8 @@ This branch extends the official MeshCore companion radio firmware for the **See
 
 Join the discussion on offical MeshCore discord: https://discord.gg/sdhYArU2jr
 
+<img src="./img/radios.jpeg">
+
 ## Firmware Variants
 
 Two firmware builds are published with each release:
