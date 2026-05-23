@@ -303,7 +303,11 @@ class HomeScreen : public UIScreen {
 #ifdef PIN_BUZZER
     if (_task->isBuzzerQuiet()) {
       display.setColor(DisplayDriver::LIGHT);
-      display.drawXbm(battLeftX - 9, 0, muted_icon, 8, 8);
+      display.fillRect(battLeftX - 9, 0, 7, 7);
+      display.setColor(DisplayDriver::DARK);
+      display.setCursor(battLeftX - 9, 0);
+      display.print("M");
+      display.setColor(DisplayDriver::LIGHT);
     }
 #endif
 
