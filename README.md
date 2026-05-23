@@ -12,8 +12,8 @@ Two firmware builds are published with each release:
 
 | Variant | Display | File |
 |---------|---------|------|
-| **OLED** | SSD1306 / SH1106 128 × 64 | `WioTrackerL1_companion_radio_dual_*.uf2` |
-| **E-ink** | GxEPD2 250 × 122 | `WioTrackerL1Eink_companion_radio_dual_*.uf2` |
+| **OLED** | SSD1306 / SH1106 128 × 64 | `WioTrackerL1_companion_dual_*.uf2` |
+| **E-ink** | GxEPD2 250 × 122 | `WioTrackerL1Eink_companion_dual_*.uf2` |
 
 Both variants are built from a single codebase and share the same feature set. The `dual` in the filename means a single binary supports both BLE and USB serial — there are no separate BLE/USB builds.
 
@@ -92,6 +92,7 @@ All settings are saved to flash and restored on next boot.
   - Clock seconds (show/hide — hiding reduces display refresh from 1 s to 60 s)
   - Font — **Default** (5×7 Adafruit, ASCII + transliteration) or **Lemon** (native Unicode, pixel-accurate wrap)
   - Display rotation *(e-ink only)* — 0 ° / 90 ° / 180 ° / 270 °; applied immediately
+  - Joystick rotation *(e-ink only)* — rotates the joystick input mapping independently of the display rotation; useful when mounting the device in a custom enclosure
 - **Sound**
   - Buzzer: On / Off / **Auto** — Auto mode silences the device while connected via Bluetooth, and re-enables sound when the connection drops
   - Volume (1–5; preview tone plays on each change)
