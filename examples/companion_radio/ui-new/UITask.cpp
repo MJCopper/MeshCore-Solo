@@ -347,10 +347,15 @@ class HomeScreen : public UIScreen {
       }
       leftmostX = btX - ind_gap;
 
-      // "A" indicator — left of BT, blinks 50% duty at 4s period
+      // "A" indicator — left of BT; blinks on OLED, always shown on e-ink
       if (_node_prefs && _node_prefs->advert_auto_interval_sec > 0) {
         int aX = leftmostX - ind;
-        if ((millis() % 4000) < 2000) {
+#ifdef EINK_DISPLAY_MODEL
+        bool show_a = true;
+#else
+        bool show_a = (millis() % 4000) < 2000;
+#endif
+        if (show_a) {
           display.setColor(DisplayDriver::LIGHT);
           display.fillRect(aX, 0, ind, lh);
           display.setColor(DisplayDriver::DARK);
@@ -768,7 +773,7 @@ public:
     }
     bool auto_adv = _node_prefs && _node_prefs->advert_auto_interval_sec > 0;
 #ifdef EINK_DISPLAY_MODEL
-    if (_page == HomePage::CLOCK) return 60000;  // no seconds on e-ink; content changes at most every minute
+    if (_page == HomePage::CLOCK) return 30000;  // no seconds on e-ink; refresh every 30s
     return 30000;  // e-ink: limit base polling; new messages still force immediate refresh via notify()
 #else
     if (_page == HomePage::CLOCK) {
@@ -1484,7 +1489,7 @@ void UITask::loop() {
       _display->print(hint);
       _display->endFrame();
 #ifdef EINK_DISPLAY_MODEL
-      _next_refresh = millis() + 60000;
+      _next_refresh = millis() + 30000;
 #else
       _next_refresh = millis() + 1000;
 #endif
