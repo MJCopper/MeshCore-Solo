@@ -266,6 +266,21 @@ class QuickMsgScreen : public UIScreen {
         if (!show_all && !(c.flags & 0x01)) continue;
         _sorted[_num_contacts++] = i;
       }
+      // Sort by message count descending; contacts with no messages keep original order.
+      int counts[MAX_CONTACTS];
+      for (int i = 0; i < _num_contacts; i++) {
+        the_mesh.getContactByIdx(_sorted[i], c);
+        counts[i] = dmHistCountForContact(c.id.pub_key);
+      }
+      for (int i = 1; i < _num_contacts; i++) {
+        if (counts[i] == 0) continue;
+        uint16_t key = _sorted[i]; int kc = counts[i];
+        int j = i;
+        while (j > 0 && counts[j-1] < kc) {
+          _sorted[j] = _sorted[j-1]; counts[j] = counts[j-1]; j--;
+        }
+        _sorted[j] = key; counts[j] = kc;
+      }
     }
   }
 
