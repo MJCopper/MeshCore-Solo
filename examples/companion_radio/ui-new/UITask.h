@@ -51,11 +51,11 @@ class UITask : public AbstractUITask {
   DMUnreadEntry _dm_unread_table[DM_UNREAD_TABLE_SIZE];
   unsigned long ui_started_at, next_batt_chck;
   uint16_t _batt_mv;  // EMA-filtered battery voltage
-  int next_backlight_btn_check = 0;
+  unsigned long next_backlight_btn_check = 0;
 #ifdef PIN_STATUS_LED
   int led_state = 0;
-  int next_led_change = 0;
-  int last_led_increment = 0;
+  unsigned long next_led_change = 0;
+  unsigned long last_led_increment = 0;
 #endif
 
 #ifdef PIN_USER_BTN_ANA
@@ -73,6 +73,7 @@ class UITask : public AbstractUITask {
   UIScreen* dashboard_config;
   UIScreen* auto_advert_screen;
   UIScreen* curr;
+  CayenneLPP _dash_lpp;
 
   void userLedHandler();
 
@@ -86,7 +87,7 @@ class UITask : public AbstractUITask {
 
 public:
 
-  UITask(mesh::MainBoard* board, BaseSerialInterface* serial) : AbstractUITask(board, serial), _display(NULL), _sensors(NULL), _node_prefs(NULL) {
+  UITask(mesh::MainBoard* board, BaseSerialInterface* serial) : AbstractUITask(board, serial), _display(NULL), _sensors(NULL), _node_prefs(NULL), _dash_lpp(200) {
     next_batt_chck = _next_refresh = 0;
     ui_started_at = 0;
     _batt_mv = 0;

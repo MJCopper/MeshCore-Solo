@@ -6,6 +6,8 @@
 class DisplayDriver {
   int _w, _h;
 protected:
+  bool _vw_dirty = true;
+  bool _vw_result = false;
   DisplayDriver(int w, int h) { _w = w; _h = h; }
   void setDimensions(int w, int h) { _w = w; _h = h; }
 public:
@@ -151,8 +153,8 @@ public:
     }
   }
 
-  // convert UTF-8 to ASCII, transliterating accented/diacritic characters
-  virtual void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) {
+  // convert UTF-8 to ASCII, transliterating accented/diacritic characters (callable without a display instance)
+  static void translateUTF8Static(char* dest, const char* src, size_t dest_size) {
     size_t j = 0;
     const uint8_t* p = (const uint8_t*)src;
     while (*p && j < dest_size - 1) {
@@ -178,6 +180,10 @@ public:
     }
     dest[j] = 0;
   }
+
+  virtual void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) {
+    translateUTF8Static(dest, src, dest_size);
+  }
   
   // draw text with ellipsis if it exceeds max_width
   virtual void drawTextEllipsized(int x, int y, int max_width, const char* str) {
@@ -194,9 +200,11 @@ public:
     // for fixed-width fonts (OLED), keep tight spacing to save precious characters
     const char* ellipsis;
     // use a simple heuristic: if 'i' and 'l' have different widths, it's variable-width
-    int i_width = getTextWidth("i");
-    int l_width = getTextWidth("l");
-    if (i_width != l_width) {
+    if (_vw_dirty) {
+      _vw_result = (getTextWidth("i") != getTextWidth("l"));
+      _vw_dirty = false;
+    }
+    if (_vw_result) {
       ellipsis = "... ";  // variable-width fonts: add space
     } else {
       ellipsis = "...";   // fixed-width fonts: no space

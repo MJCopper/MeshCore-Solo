@@ -1,5 +1,6 @@
 #pragma once
-#include <cstdint> // For uint8_t, uint32_t
+#include <cstdint>
+#include <stdio.h>
 
 #define TELEM_MODE_DENY            0
 #define TELEM_MODE_ALLOW_FLAGS     1     // use contact.flags
@@ -84,4 +85,44 @@ struct NodePrefs {  // persisted to file
   // 0 = end of list (also uninitialized legacy). hasCustomOrder iff page_order[0] in 1..11.
   uint8_t  page_order[11];
   uint8_t  joystick_rotation;   // 0-3 steps CW; independent of display_rotation
+
+  // Bitmasks for home_pages_mask (bit=1 → page visible; 0 field = all visible).
+  static const uint16_t HP_CLOCK     = 1 << 0;
+  static const uint16_t HP_RECENT    = 1 << 1;
+  static const uint16_t HP_RADIO     = 1 << 2;
+  static const uint16_t HP_BLUETOOTH = 1 << 3;
+  static const uint16_t HP_ADVERT    = 1 << 4;
+  static const uint16_t HP_GPS       = 1 << 5;
+  static const uint16_t HP_SENSORS   = 1 << 6;
+  static const uint16_t HP_TOOLS     = 1 << 7;
+  static const uint16_t HP_SHUTDOWN  = 1 << 8;
+  static const uint16_t HP_ALL       = 0x01FF;
+
+  // Label for home page by bit-index (0–10); returns "" for out-of-range.
+  static const char* homePageLabel(uint8_t bit) {
+    static const char* labels[] = {
+      "Clock", "Recent", "Radio", "Bluetooth", "Advert",
+      "GPS", "Sensors", "Tools", "Shutdown", "Settings", "Messages"
+    };
+    return (bit < 11) ? labels[bit] : "";
+  }
+
+  static void buildRTTTLString(const uint8_t* notes, uint8_t len, uint8_t bpm_idx,
+                                char* buf, int size) {
+    static const uint16_t BPM_OPTS[] = { 60, 90, 120, 150, 180 };
+    static const uint8_t  DUR_VALS[] = { 4, 8, 16, 32 };
+    static const char     PITCHES[]  = { 'p', 'c', 'd', 'e', 'f', 'g', 'a', 'b' };
+    if (len == 0) { buf[0] = '\0'; return; }
+    uint16_t bpm = BPM_OPTS[bpm_idx < 5 ? bpm_idx : 2];
+    int pos = snprintf(buf, size, "Ring:d=8,o=5,b=%u:", bpm);
+    for (int i = 0; i < len && pos < size - 8; i++) {
+      if (i > 0 && pos < size - 1) buf[pos++] = ',';
+      uint8_t pitch   = notes[i] & 0x07;
+      uint8_t octave  = ((notes[i] >> 3) & 0x03) + 4;
+      uint8_t dur_val = DUR_VALS[(notes[i] >> 5) & 0x03];
+      if (pitch == 0) pos += snprintf(buf + pos, size - pos, "%dp", dur_val);
+      else            pos += snprintf(buf + pos, size - pos, "%d%c%d", dur_val, PITCHES[pitch], octave);
+    }
+    if (pos < size) buf[pos] = '\0';
+  }
 };

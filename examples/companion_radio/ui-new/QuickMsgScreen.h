@@ -125,8 +125,7 @@ class QuickMsgScreen : public UIScreen {
   }
 
 
-  static void fmtMsgAge(char* buf, int n, uint32_t timestamp) {
-    uint32_t now = rtc_clock.getCurrentTime();
+  static void fmtMsgAge(char* buf, int n, uint32_t timestamp, uint32_t now) {
     if (timestamp == 0 || now < timestamp) { buf[0] = '\0'; return; }
     uint32_t age = now - timestamp;
     if      (age < 60)    snprintf(buf, n, "%us", age);
@@ -645,6 +644,7 @@ public:
       display.fillRect(0, lh + 1, display.width(), display.sepH());
 
       int dm_count = dmHistCountForContact(_sel_contact.id.pub_key);
+      uint32_t now_ts = rtc_clock.getCurrentTime();
 
       for (int i = 0; i < _hist_visible && (_dm_hist_scroll + i) < dm_count; i++) {
         int item = _dm_hist_scroll + i;
@@ -657,7 +657,7 @@ public:
         const DmHistEntry& e = _dm_hist[ring_pos];
         const char* sender = e.outgoing ? "Me" : filtered_name;
 
-        char age[6]; fmtMsgAge(age, sizeof(age), e.timestamp);
+        char age[6]; fmtMsgAge(age, sizeof(age), e.timestamp, now_ts);
         int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
 
         if (sel) {
@@ -748,6 +748,7 @@ public:
       display.fillRect(0, lh + 1, display.width(), display.sepH());
 
       int ch_hist_count = histCountForChannel(_sel_channel_idx);
+      uint32_t now_ts = rtc_clock.getCurrentTime();
 
       for (int i = 0; i < _hist_visible && (_hist_scroll + i) < ch_hist_count; i++) {
         int item = _hist_scroll + i;
@@ -771,7 +772,7 @@ public:
           msg_part[sizeof(msg_part) - 1] = '\0';
         }
 
-        char age[6]; fmtMsgAge(age, sizeof(age), _hist[ring_pos].timestamp);
+        char age[6]; fmtMsgAge(age, sizeof(age), _hist[ring_pos].timestamp, now_ts);
         int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
 
         if (sel) {
@@ -1048,7 +1049,8 @@ public:
         } else if (res == FullscreenMsgView::REPLY) {
           int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
           if (ring_pos >= 0 && !_dm_hist[ring_pos].outgoing) {
-            snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _sel_contact.name);
+            char _tname[32]; DisplayDriver::translateUTF8Static(_tname, _sel_contact.name, sizeof(_tname));
+            snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _tname);
             _ctx_menu.begin("Options", 1);
             _ctx_menu.addItem("Reply");
           }
@@ -1096,7 +1098,8 @@ public:
       if (c == KEY_CONTEXT_MENU && _dm_hist_sel >= 0) {
         int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
         if (ring_pos >= 0 && !_dm_hist[ring_pos].outgoing) {
-          snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _sel_contact.name);
+          char _tname[32]; DisplayDriver::translateUTF8Static(_tname, _sel_contact.name, sizeof(_tname));
+          snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _tname);
           _ctx_menu.begin("Options", 1);
           _ctx_menu.addItem("Reply");
         }

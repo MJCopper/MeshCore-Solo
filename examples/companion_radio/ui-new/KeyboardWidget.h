@@ -46,6 +46,8 @@ struct KeyboardWidget {
     addPlaceholder("{time}");
   }
 
+  void clearPlaceholders() { _ph_count = 0; }
+
   void addPlaceholder(const char* ph) {
     if (_ph_count < KB_PH_MAX) {
       strncpy(_ph_buf[_ph_count], ph, KB_PH_LEN - 1);

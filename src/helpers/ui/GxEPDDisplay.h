@@ -82,7 +82,7 @@ public:
     if (_text_sz == 2) return 16 * sc;
     return (_use_lemon ? 10 : 8) * sc;
   }
-  void setLemonFont(bool enabled) override { _use_lemon = enabled; }
+  void setLemonFont(bool enabled) override { _use_lemon = enabled; _vw_dirty = true; }
   bool isLemonFont() const override { return _use_lemon; }
   bool begin();
 

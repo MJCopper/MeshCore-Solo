@@ -168,47 +168,20 @@ class SettingsScreen : public UIScreen {
   }
 
   uint16_t homePageBit(int item) const {
-    if (item == HOME_CLOCK)    return HP_CLOCK;
-    if (item == HOME_RECENT)   return HP_RECENT;
-    if (item == HOME_RADIO)    return HP_RADIO;
-    if (item == HOME_BT)       return HP_BLUETOOTH;
-    if (item == HOME_ADVERT)   return HP_ADVERT;
-    if (item == HOME_TOOLS)     return HP_TOOLS;
-    if (item == HOME_SHUTDOWN)  return HP_SHUTDOWN;
-    // HOME_SETTINGS and HOME_QUICK_MSG have no mask bit — always visible
-#if ENV_INCLUDE_GPS == 1
-    if (item == HOME_GPS)       return HP_GPS;
-#endif
-#if UI_SENSORS_PAGE == 1
-    if (item == HOME_SENSORS)   return HP_SENSORS;
-#endif
-    return 0;
+    int bit = homePageBitIndex(item);
+    return (bit >= 0 && bit < 9) ? (uint16_t)(1 << bit) : 0;
   }
 
   const char* homePageLabel(int item) const {
-    if (item == HOME_CLOCK)     return "Clock";
-    if (item == HOME_RECENT)    return "Recent";
-    if (item == HOME_RADIO)     return "Radio";
-    if (item == HOME_BT)        return "Bluetooth";
-    if (item == HOME_ADVERT)    return "Advert";
-    if (item == HOME_TOOLS)     return "Tools";
-    if (item == HOME_SHUTDOWN)  return "Shutdown";
-    if (item == HOME_SETTINGS)  return "Settings";
-    if (item == HOME_QUICK_MSG) return "Messages";
-#if ENV_INCLUDE_GPS == 1
-    if (item == HOME_GPS)       return "GPS";
-#endif
-#if UI_SENSORS_PAGE == 1
-    if (item == HOME_SENSORS)   return "Sensors";
-#endif
-    return "";
+    int bit = homePageBitIndex(item);
+    return NodePrefs::homePageLabel((uint8_t)(bit >= 0 ? bit : 11));
   }
 
   bool homePageVisible(int item, const NodePrefs* p) const {
     if (item == HOME_SETTINGS || item == HOME_QUICK_MSG) return true;
     uint16_t bit = homePageBit(item);
     if (!bit) return false;
-    uint16_t mask = (p && p->home_pages_mask) ? p->home_pages_mask : HP_ALL;
+    uint16_t mask = (p && p->home_pages_mask) ? p->home_pages_mask : NodePrefs::HP_ALL;
     return (mask & bit) != 0;
   }
 
@@ -600,7 +573,7 @@ public:
         return true;
       }
       if (enter && homePageToggleable(_selected)) {
-        if (!p->home_pages_mask) p->home_pages_mask = HP_ALL;
+        if (!p->home_pages_mask) p->home_pages_mask = NodePrefs::HP_ALL;
         p->home_pages_mask ^= homePageBit(_selected);
         _dirty = true;
         return true;

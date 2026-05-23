@@ -8,12 +8,12 @@ void MyMesh::tryBotReplyDM(const ContactInfo& from, const char* text) {
         millis() - _bot_last_dm_reply_ms > 10000UL))
     return;
 
-  const char* tr = _prefs.bot_trigger;
+  const char* tr = _prefs.bot_trigger;  // already lowercase (normalised at save/load time)
   int tlen = strlen(tr);
   bool matched = false;
   for (const char* t = text; *t && !matched; t++) {
     int i = 0;
-    while (i < tlen && tolower((uint8_t)t[i]) == tolower((uint8_t)tr[i])) i++;
+    while (i < tlen && tolower((uint8_t)t[i]) == (uint8_t)tr[i]) i++;
     if (i == tlen) matched = true;
   }
   if (!matched) return;
@@ -45,12 +45,12 @@ void MyMesh::tryBotReplyChannel(uint8_t channel_idx, const char* text) {
   const char* sep = strstr(text, ": ");
   if (sep) msg = sep + 2;
 
-  const char* tr = _prefs.bot_trigger;
+  const char* tr = _prefs.bot_trigger;  // already lowercase (normalised at save/load time)
   int tlen = strlen(tr);
   bool matched = false;
   for (const char* t = msg; *t && !matched; t++) {
     int i = 0;
-    while (i < tlen && tolower((uint8_t)t[i]) == tolower((uint8_t)tr[i])) i++;
+    while (i < tlen && tolower((uint8_t)t[i]) == (uint8_t)tr[i]) i++;
     if (i == tlen) matched = true;
   }
   if (!matched) return;

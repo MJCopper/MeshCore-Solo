@@ -50,7 +50,7 @@ public:
   uint16_t getTextWidth(const char *str) override;
   int getCharWidth() const override { return (_use_lemon ? 5 : 6) * _text_sz; }
   int getLineHeight() const override { return (_use_lemon ? 9 : 8) * _text_sz; }
-  void setLemonFont(bool enabled) override { _use_lemon = enabled; }
+  void setLemonFont(bool enabled) override { _use_lemon = enabled; _vw_dirty = true; }
   bool isLemonFont() const override { return _use_lemon; }
   void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) override;
   void setBrightness(uint8_t level) override;

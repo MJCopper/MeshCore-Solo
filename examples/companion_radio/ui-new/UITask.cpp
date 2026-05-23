@@ -111,18 +111,6 @@ public:
 
 static const int QUICK_MSGS_MAX = 10;
 
-// Bit positions for NodePrefs::home_pages_mask.
-// Bit=1 means page is shown. 0 in the field means ALL visible (default/unset).
-static const uint16_t HP_CLOCK     = 1 << 0;
-static const uint16_t HP_RECENT    = 1 << 1;
-static const uint16_t HP_RADIO     = 1 << 2;
-static const uint16_t HP_BLUETOOTH = 1 << 3;
-static const uint16_t HP_ADVERT    = 1 << 4;
-static const uint16_t HP_GPS       = 1 << 5;
-static const uint16_t HP_SENSORS   = 1 << 6;
-static const uint16_t HP_TOOLS     = 1 << 7;
-static const uint16_t HP_SHUTDOWN  = 1 << 8;
-static const uint16_t HP_ALL       = 0x01FF;
 
 #include "KeyboardWidget.h"
 #include "FullscreenMsgView.h"
@@ -216,7 +204,7 @@ class HomeScreen : public UIScreen {
   bool isPageVisible(int page) const {
     int bit = pageBit(page);
     if (bit < 0) return true;
-    uint16_t mask = (_node_prefs && _node_prefs->home_pages_mask) ? _node_prefs->home_pages_mask : HP_ALL;
+    uint16_t mask = (_node_prefs && _node_prefs->home_pages_mask) ? _node_prefs->home_pages_mask : NodePrefs::HP_ALL;
     return (mask >> bit) & 1;
   }
 
@@ -698,7 +686,6 @@ public:
         // scan LPP buffer for this type
         LPPReader r(sensors_lpp.getBuffer(), sensors_lpp.getSize());
         uint8_t ch, type;
-        bool found = false;
         char buf[22] = "--";
         while (r.readHeader(ch, type)) {
           if (type == target) {
@@ -721,12 +708,10 @@ public:
               case LPP_CONCENTRATION: r.readConcentration(v); snprintf(buf, sizeof(buf), "%.0fppm", v); break;
               default:             r.skipData(type); continue;
             }
-            found = true;
             break;
           }
           r.skipData(type);
         }
-        (void)found;
 
         static const struct { uint8_t type; const char* name; } TYPE_NAMES[] = {
           { LPP_VOLTAGE,            "voltage"  },
@@ -1015,24 +1000,10 @@ void UITask::showAlert(const char* text, int duration_millis) {
 }
 
 static void buildMelodyFromPrefs(const NodePrefs* p, int slot, char* buf, int size) {
-  static const uint16_t BPM_OPTS[]  = { 60, 90, 120, 150, 180 };
-  static const uint8_t  DUR_VALS[]  = { 4, 8, 16, 32 };
-  static const char     PITCHES[]   = { 'p', 'c', 'd', 'e', 'f', 'g', 'a', 'b' };
-  const uint8_t* notes  = (slot == 2) ? p->ringtone2_notes  : p->ringtone_notes;
-  uint8_t        len    = (slot == 2) ? p->ringtone2_len     : p->ringtone_len;
-  uint8_t        bpm_i  = (slot == 2) ? p->ringtone2_bpm_idx : p->ringtone_bpm_idx;
-  if (len == 0) { buf[0] = '\0'; return; }
-  uint16_t bpm = BPM_OPTS[bpm_i < 5 ? bpm_i : 2];
-  int pos = snprintf(buf, size, "Ring:d=8,o=5,b=%u:", bpm);
-  for (int i = 0; i < len && pos < size - 8; i++) {
-    if (i > 0 && pos < size - 1) buf[pos++] = ',';
-    uint8_t pitch   = notes[i] & 0x07;
-    uint8_t octave  = ((notes[i] >> 3) & 0x03) + 4;
-    uint8_t dur_val = DUR_VALS[(notes[i] >> 5) & 0x03];
-    if (pitch == 0) pos += snprintf(buf + pos, size - pos, "%dp", dur_val);
-    else            pos += snprintf(buf + pos, size - pos, "%d%c%d", dur_val, PITCHES[pitch], octave);
-  }
-  if (pos < size) buf[pos] = '\0';
+  const uint8_t* notes = (slot == 2) ? p->ringtone2_notes   : p->ringtone_notes;
+  uint8_t        len   = (slot == 2) ? p->ringtone2_len      : p->ringtone_len;
+  uint8_t        bpm_i = (slot == 2) ? p->ringtone2_bpm_idx  : p->ringtone_bpm_idx;
+  NodePrefs::buildRTTTLString(notes, len, bpm_i, buf, size);
 }
 
 void UITask::notify(UIEventType t) {
@@ -1066,6 +1037,7 @@ switch(t){
       }
       bool custom_played = false;
       if (slot > 0 && _node_prefs) {
+        if (buzzer.isPlaying()) buzzer.stop();  // stop before overwriting _notif_mel_buf
         buildMelodyFromPrefs(_node_prefs, slot, _notif_mel_buf, sizeof(_notif_mel_buf));
         if (_notif_mel_buf[0]) {
           if (force) buzzer.playForced(_notif_mel_buf); else buzzer.play(_notif_mel_buf);
@@ -1101,6 +1073,7 @@ switch(t){
       }
       bool custom_played = false;
       if (slot > 0 && _node_prefs) {
+        if (buzzer.isPlaying()) buzzer.stop();  // stop before overwriting _notif_mel_buf
         buildMelodyFromPrefs(_node_prefs, slot, _notif_mel_buf, sizeof(_notif_mel_buf));
         if (_notif_mel_buf[0]) {
           if (force) buzzer.playForced(_notif_mel_buf); else buzzer.play(_notif_mel_buf);
@@ -1181,7 +1154,7 @@ void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, i
 
 void UITask::userLedHandler() {
 #ifdef PIN_STATUS_LED
-  int cur_time = millis();
+  unsigned long cur_time = millis();
   if (cur_time > next_led_change) {
     if (led_state == 0) {
       led_state = 1;
@@ -1276,8 +1249,7 @@ static void formatDashVal(uint8_t field, char* val, int val_len, uint16_t batt_m
     case DASH_CO2:  lpp_type = LPP_CONCENTRATION;       break;
   }
   if (lpp_type) {
-    CayenneLPP local_lpp(200);
-    if (!lpp) { local_lpp.reset(); sensors.querySensors(0xFF, local_lpp); lpp = &local_lpp; }
+    if (!lpp) { static CayenneLPP s_lpp(200); s_lpp.reset(); sensors.querySensors(0xFF, s_lpp); lpp = &s_lpp; }
     LPPReader r(lpp->getBuffer(), lpp->getSize());
     uint8_t ch, type;
     while (r.readHeader(ch, type)) {
@@ -1383,7 +1355,7 @@ void UITask::loop() {
   }
 #endif
 #if defined(PIN_USER_BTN_ANA)
-  if (abs(millis() - _analogue_pin_read_millis) > 10) {
+  if (millis() - _analogue_pin_read_millis > 10) {
     ev = analog_btn.check();
     if (ev == BUTTON_EVENT_CLICK) {
       c = checkDisplayOn(KEY_NEXT);
@@ -1474,14 +1446,13 @@ void UITask::loop() {
         // Two sensor values side by side (dashboard_fields[0] and [1])
         if (_node_prefs) {
           char v0[20] = "", v1[20] = "";
-          CayenneLPP shared_lpp(200);
           CayenneLPP* lpp_ptr = nullptr;
           uint8_t f0 = _node_prefs->dashboard_fields[0], f1 = _node_prefs->dashboard_fields[1];
           auto isLPP = [](uint8_t f) {
             return f==DASH_TEMP||f==DASH_HUM||f==DASH_PRES||f==DASH_ALT||f==DASH_LUX||f==DASH_CO2;
           };
           if (isLPP(f0) || isLPP(f1)) {
-            shared_lpp.reset(); sensors.querySensors(0xFF, shared_lpp); lpp_ptr = &shared_lpp;
+            _dash_lpp.reset(); sensors.querySensors(0xFF, _dash_lpp); lpp_ptr = &_dash_lpp;
           }
           formatDashVal(f0, v0, sizeof(v0), _batt_mv, lpp_ptr);
           formatDashVal(f1, v1, sizeof(v1), _batt_mv, lpp_ptr);
@@ -1597,6 +1568,8 @@ char UITask::checkDisplayOn(char c) {
         _next_refresh = 0;
         return 0;  // eat the waking key press
       }
+      _lock_seq_count = 0;
+      _lock_seq_used = false;
       c = 0;
     }
     if (!_locked) {
@@ -1627,8 +1600,7 @@ char UITask::handleTripleClick(char c) {
   MESH_DEBUG_PRINTLN("UITask: triple click triggered");
   checkDisplayOn(c);
   toggleBuzzer();
-  c = 0;
-  return c;
+  return 0;
 }
 
 bool UITask::getGPSState() {

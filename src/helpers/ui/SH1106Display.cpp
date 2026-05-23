@@ -50,6 +50,7 @@ void SH1106Display::startFrame(Color bkg)
 void SH1106Display::setTextSize(int sz)
 {
   _text_sz = sz;
+  _vw_dirty = true;
   display.setTextSize(sz);
 }
 

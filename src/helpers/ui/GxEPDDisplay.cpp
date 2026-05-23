@@ -80,6 +80,7 @@ void GxEPDDisplay::startFrame(Color bkg) {
 
 void GxEPDDisplay::setTextSize(int sz) {
   _text_sz = sz;
+  _vw_dirty = true;
   display_crc.update<int>(sz);
   // Size 1 scales with orientation: 1× in portrait (≈OLED width), 2× in landscape.
   // Size 2 always uses 2× built-in (12×16) — fixed because layout Y-positions are hardcoded.
@@ -163,7 +164,7 @@ void GxEPDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
   display_crc.update<int>(y);
   display_crc.update<int>(w);
   display_crc.update<int>(h);
-  display_crc.update<uint8_t>(bits, w * h / 8);
+  display_crc.update<uintptr_t>((uintptr_t)bits);
   uint16_t widthInBytes = (w + 7) / 8;
   for (uint16_t by = 0; by < h; by++) {
     for (uint16_t bx = 0; bx < w; bx++) {

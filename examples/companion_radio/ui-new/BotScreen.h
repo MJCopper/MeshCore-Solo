@@ -117,6 +117,7 @@ public:
         if (_kb_field == 2) {
           strncpy(_prefs->bot_trigger, _kb.buf, sizeof(_prefs->bot_trigger) - 1);
           _prefs->bot_trigger[sizeof(_prefs->bot_trigger) - 1] = '\0';
+          for (char* p = _prefs->bot_trigger; *p; p++) *p = (char)tolower((uint8_t)*p);
         } else if (_kb_field == 3) {
           strncpy(_prefs->bot_reply_dm, _kb.buf, sizeof(_prefs->bot_reply_dm) - 1);
           _prefs->bot_reply_dm[sizeof(_prefs->bot_reply_dm) - 1] = '\0';
@@ -184,7 +185,7 @@ public:
       }
       _kb.begin(initial, max);
       if (_sel == 2) {
-        _kb._ph_count = 0;  // trigger is literal text — placeholders never match incoming msgs
+        _kb.clearPlaceholders();  // trigger is literal text — placeholders never match incoming msgs
       } else {
         kbAddSensorPlaceholders(_kb, &sensors);
       }

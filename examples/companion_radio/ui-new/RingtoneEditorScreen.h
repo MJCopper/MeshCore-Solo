@@ -47,19 +47,7 @@ class RingtoneEditorScreen : public UIScreen {
   }
 
   void buildRTTTL() {
-    uint16_t bpm = BPM_OPTS[_bpm_idx < 5 ? _bpm_idx : 2];
-    int pos = snprintf(_play_buf, sizeof(_play_buf), "Ring:d=8,o=5,b=%u:", bpm);
-    for (int i = 0; i < _len && pos < (int)sizeof(_play_buf) - 8; i++) {
-      if (i > 0 && pos < (int)sizeof(_play_buf) - 1) _play_buf[pos++] = ',';
-      uint8_t pitch   = notePitch(_notes[i]);
-      uint8_t octave  = noteOctave(_notes[i]);
-      uint8_t dur_val = DUR_VALS[noteDurIdx(_notes[i])];
-      if (pitch == 0)
-        pos += snprintf(_play_buf + pos, sizeof(_play_buf) - pos, "%dp", dur_val);
-      else
-        pos += snprintf(_play_buf + pos, sizeof(_play_buf) - pos, "%d%c%d", dur_val, PITCH_NAMES[pitch], octave);
-    }
-    if (pos < (int)sizeof(_play_buf)) _play_buf[pos] = '\0';
+    NodePrefs::buildRTTTLString(_notes, _len, _bpm_idx, _play_buf, sizeof(_play_buf));
   }
 
   void previewNote(uint8_t note_byte) {
