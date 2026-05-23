@@ -378,7 +378,7 @@ class SettingsScreen : public UIScreen {
         display.print(pb);
       }
       display.print(homePageLabel(item));
-      display.setCursor(display.valCol(), y);
+      display.setCursor(display.width() - 6 * display.getCharWidth(), y);
       if (!homePageToggleable(item))
         display.print("always");
       else
