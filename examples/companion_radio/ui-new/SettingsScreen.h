@@ -2,13 +2,15 @@
 // Custom screen — not part of upstream UITask.cpp
 // Included by UITask.cpp after SensorPlaceholders.h is defined.
 
+#include "../Features.h"
+
 class SettingsScreen : public UIScreen {
   UITask* _task;
 
   enum SettingItem {
     // Display section
     SECTION_DISPLAY,
-#if !defined(EINK_DISPLAY_MODEL)
+#if FEAT_BRIGHTNESS_SETTING
     BRIGHTNESS,
 #endif
 #if AUTO_OFF_MILLIS > 0
@@ -16,18 +18,18 @@ class SettingsScreen : public UIScreen {
 #endif
     AUTO_LOCK,
     BATT_DISPLAY,
-#if !defined(EINK_DISPLAY_MODEL)
+#if FEAT_CLOCK_SECONDS_SETTING
     CLOCK_SECONDS,
 #endif
     CLOCK_FORMAT,
     FONT,
-#if defined(EINK_DISPLAY_MODEL)
+#if FEAT_DISPLAY_ROTATION_SETTING
     ROTATION,
 #endif
-#if defined(EINK_DISPLAY_MODEL)
+#if FEAT_JOYSTICK_ROTATION_SETTING
     JOY_ROTATION,
 #endif
-#if defined(EINK_DISPLAY_MODEL)
+#if FEAT_FULL_REFRESH_SETTING
     EINK_FULL_REFRESH,
 #endif
     // Sound section
@@ -88,7 +90,7 @@ class SettingsScreen : public UIScreen {
   static const int LOW_BAT_COUNT = 7;
   static const char* BATT_DISPLAY_LABELS[3];
   static const int BATT_DISPLAY_COUNT = 3;
-#if defined(EINK_DISPLAY_MODEL)
+#if FEAT_FULL_REFRESH_SETTING
   static const char* EINK_FULL_REFRESH_LABELS[5];
   static const int   EINK_FULL_REFRESH_COUNT = 5;
 #endif
@@ -322,7 +324,7 @@ class SettingsScreen : public UIScreen {
     display.print(sel ? ">" : " ");
     display.setCursor(display.getCharWidth() + 2, y);
 
-#if !defined(EINK_DISPLAY_MODEL)
+#if FEAT_BRIGHTNESS_SETTING
     if (item == BRIGHTNESS) {
       display.print("Bright");
       renderBar(display, display.valCol(), y, (p ? p->display_brightness : 2) + 1, 5);
@@ -410,7 +412,7 @@ class SettingsScreen : public UIScreen {
       display.setCursor(display.valCol(), y);
       uint8_t mode = p ? p->batt_display_mode : 0;
       display.print(BATT_DISPLAY_LABELS[mode < BATT_DISPLAY_COUNT ? mode : 0]);
-#if !defined(EINK_DISPLAY_MODEL)
+#if FEAT_CLOCK_SECONDS_SETTING
     } else if (item == CLOCK_SECONDS) {
       display.print("Seconds");
       display.setCursor(display.valCol(), y);
@@ -424,7 +426,7 @@ class SettingsScreen : public UIScreen {
       display.print("Font");
       display.setCursor(display.valCol(), y);
       display.print((p && p->use_lemon_font) ? "Lemon" : "Default");
-#if defined(EINK_DISPLAY_MODEL)
+#if FEAT_DISPLAY_ROTATION_SETTING
     } else if (item == ROTATION) {
       display.print("Rotation");
       display.setCursor(display.valCol(), y);
@@ -432,7 +434,7 @@ class SettingsScreen : public UIScreen {
         uint8_t r = p ? (p->display_rotation & 3) : 0;
         display.print(ROT_LABELS[r]); }
 #endif
-#if defined(EINK_DISPLAY_MODEL)
+#if FEAT_JOYSTICK_ROTATION_SETTING
     } else if (item == JOY_ROTATION) {
       display.print("Joystick");
       display.setCursor(display.valCol(), y);
@@ -440,7 +442,7 @@ class SettingsScreen : public UIScreen {
         uint8_t r = p ? (p->joystick_rotation & 3) : 0;
         display.print(ROT_LABELS[r]); }
 #endif
-#if defined(EINK_DISPLAY_MODEL)
+#if FEAT_FULL_REFRESH_SETTING
     } else if (item == EINK_FULL_REFRESH) {
       display.print("Full rfsh");
       display.setCursor(display.valCol(), y);
@@ -557,7 +559,7 @@ public:
     bool left  = (c == KEY_LEFT  || c == KEY_PREV);
     bool enter = (c == KEY_ENTER);
 
-#if !defined(EINK_DISPLAY_MODEL)
+#if FEAT_BRIGHTNESS_SETTING
     if (_selected == BRIGHTNESS) {
       uint8_t lvl = _task->getBrightnessLevel();
       if (right && lvl < 4) { _task->setBrightnessLevel(lvl + 1); _dirty = true; return true; }
@@ -646,7 +648,7 @@ public:
       if (left)  idx = (idx + BATT_DISPLAY_COUNT - 1) % BATT_DISPLAY_COUNT;
       if (left || right) { p->batt_display_mode = idx; _dirty = true; return true; }
     }
-#if !defined(EINK_DISPLAY_MODEL)
+#if FEAT_CLOCK_SECONDS_SETTING
     if (_selected == CLOCK_SECONDS && p && (left || right || enter)) {
       p->clock_hide_seconds ^= 1;
       _dirty = true;
@@ -664,7 +666,7 @@ public:
       _dirty = true;
       return true;
     }
-#if defined(EINK_DISPLAY_MODEL)
+#if FEAT_DISPLAY_ROTATION_SETTING
     if (_selected == ROTATION && p && (left || right || enter)) {
       p->display_rotation = (p->display_rotation + (left ? 3 : 1)) & 3;
       _task->applyRotation();
@@ -672,14 +674,14 @@ public:
       return true;
     }
 #endif
-#if defined(EINK_DISPLAY_MODEL)
+#if FEAT_JOYSTICK_ROTATION_SETTING
     if (_selected == JOY_ROTATION && p && (left || right || enter)) {
       p->joystick_rotation = (p->joystick_rotation + (left ? 3 : 1)) & 3;
       _dirty = true;
       return true;
     }
 #endif
-#if defined(EINK_DISPLAY_MODEL)
+#if FEAT_FULL_REFRESH_SETTING
     if (_selected == EINK_FULL_REFRESH && p && (left || right || enter)) {
       int idx = p->eink_full_refresh_every;
       if (idx >= EINK_FULL_REFRESH_COUNT) idx = 0;
@@ -722,6 +724,6 @@ const char*    SettingsScreen::GPS_INTERVAL_LABELS[6] = { "off", "30s", "1min", 
 const uint16_t SettingsScreen::LOW_BAT_OPTS[7]   = { 0, 3000, 3100, 3200, 3300, 3400, 3500 };
 const char*    SettingsScreen::LOW_BAT_LABELS[7]  = { "off", "3.0V", "3.1V", "3.2V", "3.3V", "3.4V", "3.5V" };
 const char*    SettingsScreen::BATT_DISPLAY_LABELS[3] = { "icon", "%", "V" };
-#if defined(EINK_DISPLAY_MODEL)
+#if FEAT_FULL_REFRESH_SETTING
 const char* SettingsScreen::EINK_FULL_REFRESH_LABELS[5] = { "off", "5", "10", "20", "30" };
 #endif

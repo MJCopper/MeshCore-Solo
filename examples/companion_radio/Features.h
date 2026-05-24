@@ -1,11 +1,33 @@
 #pragma once
 
-// Build-time feature flags derived from board defines.
-// Use these instead of `#ifdef EINK_DISPLAY_MODEL` for runtime-shape decisions
-// (booleans, timings, defaults). Compiler dead-branch-eliminates on the
-// constexpr, so cost is identical to a preprocessor branch but the code
-// remains readable and reachable to tooling. Conditional struct members
-// (enum entries, NodePrefs fields) still need a real `#if defined(...)`.
+// Build-time feature flags derived from board defines. Two flavours:
+//
+//   FEAT_* preprocessor macros — for conditional compilation of struct
+//   members, enum entries, and class fields where the preprocessor must
+//   run. Use `#if FEAT_X` instead of `#ifdef EINK_DISPLAY_MODEL`; the
+//   name documents *what* the flag toggles rather than *why* it's bound
+//   to e-ink.
+//
+//   Features::* constexpr values — for runtime-shape decisions (booleans,
+//   timings, defaults). Compiler dead-branch-eliminates on the constexpr,
+//   so cost is identical to a preprocessor branch but the code stays
+//   reachable to tooling.
+
+#if defined(EINK_DISPLAY_MODEL)
+  // E-ink build: slow refresh, rotatable panel, no per-second redraws
+  #define FEAT_BRIGHTNESS_SETTING         0
+  #define FEAT_CLOCK_SECONDS_SETTING      0
+  #define FEAT_DISPLAY_ROTATION_SETTING   1
+  #define FEAT_JOYSTICK_ROTATION_SETTING  1
+  #define FEAT_FULL_REFRESH_SETTING       1
+#else
+  // OLED build: fast refresh, fixed orientation
+  #define FEAT_BRIGHTNESS_SETTING         1
+  #define FEAT_CLOCK_SECONDS_SETTING      1
+  #define FEAT_DISPLAY_ROTATION_SETTING   0
+  #define FEAT_JOYSTICK_ROTATION_SETTING  0
+  #define FEAT_FULL_REFRESH_SETTING       0
+#endif
 
 namespace Features {
 
