@@ -19,9 +19,11 @@ Implementation:
 - Title is a `static const char*` table (PopupMenu stores the title pointer verbatim — locals would dangle)
 - Zero schema impact, all counters live in RAM
 
-### 📋 Favourites dial
+### 🚧 Favourites dial
 
-📋 planned
+Phase 1 ✅ (storage + read-only render + grid nav)
+Phase 2 📋 (pin from Contact options menu in QuickMsg)
+Phase 3 📋 (pin from empty slot via mini-picker: favourites first, then recent)
 
 A 2×3 grid (six slots) of pinned contacts on its own home page, between Clock and Messages. Joystick picks a tile, Enter opens the existing DM conversation or sends a pre-set quick reply.
 
