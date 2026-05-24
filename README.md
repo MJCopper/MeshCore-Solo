@@ -6,6 +6,9 @@ Join the discussion on offical MeshCore discord: https://discord.gg/sdhYArU2jr
 
 <img src="./img/radios.jpeg">
 
+[E-ink case](https://www.printables.com/model/1420534-seeed-wio-tracker-l1-e-ink-enclosure)
+[Oled case](https://www.printables.com/model/1380791-meshpack-seeed-l1-oled)
+
 ## Firmware Variants
 
 Two firmware builds are published with each release:
