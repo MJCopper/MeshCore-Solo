@@ -160,7 +160,48 @@ public:
   virtual void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) {
     translateUTF8Static(dest, src, dest_size);
   }
-  
+
+  // Advance a UTF-8 pointer by one codepoint, returning the decoded value.
+  // Invalid sequences return 0xFFFD and consume trailing continuation bytes.
+  static uint32_t decodeCodepoint(const uint8_t*& p) {
+    uint8_t c = *p++;
+    if (c < 0x80) return c;
+    if ((c & 0xE0) == 0xC0) {
+      uint32_t cp = c & 0x1F;
+      if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+      return cp;
+    }
+    if ((c & 0xF0) == 0xE0) {
+      uint32_t cp = c & 0x0F;
+      if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+      if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+      return cp;
+    }
+    if ((c & 0xF8) == 0xF0) {
+      uint32_t cp = c & 0x07;
+      if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+      if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+      if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+      return cp;
+    }
+    while (*p && (*p & 0xC0) == 0x80) p++;
+    return 0xFFFD;
+  }
+
+  // Width of a single codepoint in pixels. Default: fall back to getTextWidth
+  // on a one-codepoint UTF-8 string. Drivers can override for O(1) lookup.
+  virtual uint16_t getCodepointWidth(uint32_t cp) {
+    char buf[5];
+    int n = 0;
+    if (cp < 0x80) { buf[n++] = (char)cp; }
+    else if (cp < 0x800) { buf[n++] = 0xC0 | (cp >> 6); buf[n++] = 0x80 | (cp & 0x3F); }
+    else if (cp < 0x10000) { buf[n++] = 0xE0 | (cp >> 12); buf[n++] = 0x80 | ((cp >> 6) & 0x3F); buf[n++] = 0x80 | (cp & 0x3F); }
+    else { buf[n++] = 0xF0 | (cp >> 18); buf[n++] = 0x80 | ((cp >> 12) & 0x3F); buf[n++] = 0x80 | ((cp >> 6) & 0x3F); buf[n++] = 0x80 | (cp & 0x3F); }
+    buf[n] = '\0';
+    return getTextWidth(buf);
+  }
+
+
   // draw text with ellipsis if it exceeds max_width
   virtual void drawTextEllipsized(int x, int y, int max_width, const char* str) {
     char temp_str[256];  // reasonable buffer size

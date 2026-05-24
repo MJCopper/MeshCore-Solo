@@ -48,6 +48,10 @@ public:
   void drawRect(int x, int y, int w, int h) override;
   void drawXbm(int x, int y, const uint8_t *bits, int w, int h) override;
   uint16_t getTextWidth(const char *str) override;
+  uint16_t getCodepointWidth(uint32_t cp) override {
+    if (_use_lemon) return lemonXAdvance(cp);
+    return 6 * _text_sz;  // built-in 5x7 font: 6 px advance per glyph
+  }
   int getCharWidth() const override { return (_use_lemon ? 5 : 6) * _text_sz; }
   int getLineHeight() const override { return (_use_lemon ? 9 : 8) * _text_sz; }
   void setLemonFont(bool enabled) override { _use_lemon = enabled; _vw_dirty = true; }

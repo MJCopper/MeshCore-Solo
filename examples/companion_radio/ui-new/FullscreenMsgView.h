@@ -16,33 +16,33 @@ struct FullscreenMsgView {
   void begin() { scroll = 0; active = true; }
 
   // Pixel-accurate word-wrap: breaks at last space that fits within max_px,
-  // hard-breaks long words. Works for both fixed- and variable-width fonts.
+  // hard-breaks long words. Walks the string codepoint-by-codepoint, summing
+  // per-codepoint widths via DisplayDriver::getCodepointWidth — O(n) instead
+  // of O(n²) substring re-measurement. Works for both fixed- and
+  // variable-width fonts.
   static int wrapLines(DisplayDriver& display, const char* text, int max_px,
                        char out[][FS_CHARS_MAX], int max_lines) {
     int count = 0;
-    const char* seg = text;
+    const uint8_t* seg = (const uint8_t*)text;
     while (*seg && count < max_lines) {
-      const char* p       = seg;
-      const char* last_sp = nullptr;
-      const char* last_fit = seg;
+      const uint8_t* p        = seg;
+      const uint8_t* last_sp  = nullptr;       // pointer to space byte (cut here, drop the space)
+      const uint8_t* last_fit = seg;           // farthest point that still fits
+      int width = 0;
 
       while (*p && (p - seg) < FS_CHARS_MAX - 1) {
-        uint8_t b0 = (uint8_t)*p;
-        int cb = (b0 < 0x80) ? 1 : (b0 < 0xE0) ? 2 : (b0 < 0xF0) ? 3 : 4;
-        if ((p - seg) + cb >= FS_CHARS_MAX) break;
-
-        char buf[FS_CHARS_MAX];
-        int n = (int)(p - seg) + cb;
-        memcpy(buf, seg, n); buf[n] = '\0';
-        if (display.getTextWidth(buf) > max_px && p > seg) break;
-
-        if (*p == ' ') last_sp = p;
-        p       += cb;
+        const uint8_t* cp_start = p;
+        uint32_t cp = DisplayDriver::decodeCodepoint(p);
+        if ((p - seg) >= FS_CHARS_MAX) { p = cp_start; break; }
+        uint16_t cw = display.getCodepointWidth(cp);
+        if (width + cw > max_px && cp_start > seg) { p = cp_start; break; }
+        if (cp == ' ') last_sp = cp_start;
+        width   += cw;
         last_fit = p;
       }
 
-      const char* end;
-      const char* next_seg;
+      const uint8_t* end;
+      const uint8_t* next_seg;
       if (!*p) {
         end = p; next_seg = p;
       } else if (last_sp && last_sp > seg) {

@@ -114,6 +114,10 @@ public:
   void drawRect(int x, int y, int w, int h) override;
   void drawXbm(int x, int y, const uint8_t* bits, int w, int h) override;
   uint16_t getTextWidth(const char* str) override;
+  uint16_t getCodepointWidth(uint32_t cp) override {
+    if (_use_lemon && _text_sz == 1) return lemonXAdvance(cp, scale());
+    return DisplayDriver::getCodepointWidth(cp);
+  }
   void setDisplayRotation(uint8_t rot) override;
   void setFullRefreshInterval(uint8_t n) override { _full_refresh_interval = n; _partial_count = 0; }
   void endFrame() override;
