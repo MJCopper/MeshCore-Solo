@@ -90,6 +90,12 @@ struct NodePrefs {  // persisted to file
   uint8_t  page_order_set;      // 0xA5 = page_order is user-configured; anything else = use default
   static const uint8_t PAGE_ORDER_MAGIC = 0xA5;
 
+  // Tail sentinel written at the end of /new_prefs. Bump the low byte when
+  // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
+  // older saves are detected on load and skipped (zero-init defaults kept).
+  // High 24 bits identify the file format; low byte is the schema revision.
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0001;
+
   // Bitmasks for home_pages_mask (bit=1 → page visible; 0 field = all visible).
   static const uint16_t HP_CLOCK     = 1 << 0;
   static const uint16_t HP_RECENT    = 1 << 1;

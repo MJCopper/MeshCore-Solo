@@ -304,6 +304,16 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     _prefs.page_order_set = NodePrefs::PAGE_ORDER_MAGIC;
   }
 
+  // Schema sentinel: bumped on layout changes. Mismatch means an older file
+  // (or a different schema); rd() already zero-inits any fields not present,
+  // so we just log it — next savePrefs writes the current sentinel.
+  uint32_t sentinel = 0;
+  rd(&sentinel, sizeof(sentinel));
+  if (sentinel != NodePrefs::SCHEMA_SENTINEL) {
+    MESH_DEBUG_PRINTLN("prefs schema sentinel mismatch: got 0x%08X, expected 0x%08X — re-saving on next change",
+                       (unsigned)sentinel, (unsigned)NodePrefs::SCHEMA_SENTINEL);
+  }
+
   file.close();
 }
 
@@ -384,6 +394,10 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.joystick_rotation, sizeof(_prefs.joystick_rotation));
     file.write((uint8_t *)&_prefs.eink_full_refresh_every, sizeof(_prefs.eink_full_refresh_every));
     file.write((uint8_t *)&_prefs.page_order_set, sizeof(_prefs.page_order_set));
+
+    // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL.
+    uint32_t sentinel = NodePrefs::SCHEMA_SENTINEL;
+    file.write((uint8_t *)&sentinel, sizeof(sentinel));
 
     file.close();
   }
