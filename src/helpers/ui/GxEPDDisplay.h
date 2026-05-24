@@ -58,8 +58,9 @@ class GxEPDDisplay : public DisplayDriver {
   uint8_t _partial_count = 0;
 
   static uint32_t decodeUtf8(const uint8_t*& p);
-  int16_t drawLemonChar(int16_t x, int16_t y, uint32_t cp);
-  uint8_t lemonXAdvance(uint32_t cp);
+  int16_t drawLemonChar(int16_t x, int16_t y, uint32_t cp, int sc);
+  uint8_t lemonXAdvance(uint32_t cp, int sc);
+  int scale() const { return (width() >= height()) ? 2 : 1; }
 
 public:
 #if defined(EINK_DISPLAY_MODEL)
@@ -77,13 +78,13 @@ public:
   // Size 1 scales with orientation (portrait 1×, landscape 2×); size 2 is always 12×16;
   // size 3 is FreeSans18pt (~17×28). Landscape = width >= height.
   int getCharWidth() const override {
-    int sc = (width() >= height()) ? 2 : 1;
+    int sc = scale();
     if (_text_sz == 3) return 17;
     if (_text_sz == 2) return 12 * sc;
     return (_use_lemon ? 5 : 6) * sc;
   }
   int getLineHeight() const override {
-    int sc = (width() >= height()) ? 2 : 1;
+    int sc = scale();
     if (_text_sz == 3) return 28;
     if (_text_sz == 2) return 16 * sc;
     return (_use_lemon ? 10 : 8) * sc;

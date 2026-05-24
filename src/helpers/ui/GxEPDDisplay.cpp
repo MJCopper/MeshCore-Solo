@@ -51,8 +51,7 @@ uint32_t GxEPDDisplay::decodeUtf8(const uint8_t*& p) {
 // y is the GFX baseline (display.getCursorY()), which equals original_y + 8*sc.
 // Pixels are placed at y + yo*sc + row*sc — identical to how GFX would render
 // a scaled GFX font, but bypassing GFX so multi-byte UTF-8 is decoded correctly.
-int16_t GxEPDDisplay::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
-  int sc = (width() >= height()) ? 2 : 1;
+int16_t GxEPDDisplay::drawLemonChar(int16_t x, int16_t y, uint32_t cp, int sc) {
   for (uint8_t i = 0; i < lemonIconCount; i++) {
     if (pgm_read_dword(&lemonIconCPs[i]) == cp) {
       const GFXglyph* g = &lemonIconGlyphs[i];
@@ -95,11 +94,11 @@ int16_t GxEPDDisplay::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
   return x + xa * sc;
 }
 
-uint8_t GxEPDDisplay::lemonXAdvance(uint32_t cp) {
+uint8_t GxEPDDisplay::lemonXAdvance(uint32_t cp, int sc) {
   uint8_t xa;
   if (cp < Lemon.first || cp > Lemon.last) xa = 6;
   else xa = pgm_read_byte(&lemonGlyphs[cp - Lemon.first].xAdvance);
-  return xa * ((width() >= height()) ? 2 : 1);
+  return xa * sc;
 }
 
 bool GxEPDDisplay::begin() {
@@ -152,7 +151,7 @@ void GxEPDDisplay::startFrame(Color bkg) {
   display.fillScreen(GxEPD_WHITE);
   display.setTextColor(_curr_color = GxEPD_BLACK);
   _text_sz = 1;
-  int sc = (width() >= height()) ? 2 : 1;
+  int sc = scale();
   display.setFont(_use_lemon ? &Lemon : NULL);
   display.setTextSize(sc);
   display_crc.reset();
@@ -165,7 +164,7 @@ void GxEPDDisplay::setTextSize(int sz) {
   // Size 1 scales with orientation: 1× in portrait (≈OLED width), 2× in landscape.
   // Size 2 always uses 2× built-in (12×16) — fixed because layout Y-positions are hardcoded.
   // Size 3 always uses FreeSans18pt for large headings.
-  int sc = (width() >= height()) ? 2 : 1;
+  int sc = scale();
   switch (sz) {
     case 3:
       display.setFont(&FreeSans18pt7b);
@@ -173,7 +172,7 @@ void GxEPDDisplay::setTextSize(int sz) {
       break;
     case 2:
       display.setFont(NULL);
-      display.setTextSize((width() >= height()) ? 4 : 2);
+      display.setTextSize(scale() * 2);
       break;
     default:
       display.setFont(_use_lemon ? &Lemon : NULL);
@@ -197,7 +196,7 @@ void GxEPDDisplay::setCursor(int x, int y) {
   display_crc.update<int>(y);
   // Offset y by the font ascender: callers pass top-of-cell y, GFX fonts
   // expect baseline y. Without this, text would be clipped at the top.
-  int sc = (width() >= height()) ? 2 : 1;
+  int sc = scale();
   display.setCursor(x, y + fontAscender(_text_sz, _use_lemon, sc));
 }
 
@@ -207,17 +206,17 @@ void GxEPDDisplay::print(const char* str) {
   if (_use_lemon && _text_sz == 1) {
     int16_t cx = display.getCursorX();
     int16_t cy = display.getCursorY();
-    int sc = (width() >= height()) ? 2 : 1;
+    const int sc = scale();
     const uint8_t* p = (const uint8_t*)str;
     while (*p) {
       uint32_t cp = decodeUtf8(p);
       if (cp == '\n') { cy += Lemon.yAdvance * sc; cx = 0; }
-      else            { cx = drawLemonChar(cx, cy, cp); }
+      else            { cx = drawLemonChar(cx, cy, cp, sc); }
     }
     display.setCursor(cx, cy);
     return;
   }
-  int sc = (width() >= height()) ? 2 : 1;
+  int sc = scale();
   for (const char* p = str; *p; p++) {
     if ((uint8_t)*p == 0xDB) {
       int cx = display.getCursorX();
@@ -245,7 +244,7 @@ void GxEPDDisplay::drawRect(int x, int y, int w, int h) {
   display_crc.update<int>(w);
   display_crc.update<int>(h);
   display.drawRect(x, y, w, h, _curr_color);
-  if (width() >= height() && w > 2 && h > 2)
+  if (scale() == 2 && w > 2 && h > 2)
     display.drawRect(x + 1, y + 1, w - 2, h - 2, _curr_color);
 }
 
@@ -270,8 +269,9 @@ void GxEPDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
 uint16_t GxEPDDisplay::getTextWidth(const char* str) {
   if (_use_lemon && _text_sz == 1) {
     uint16_t total = 0;
+    const int sc = scale();
     const uint8_t* p = (const uint8_t*)str;
-    while (*p) total += lemonXAdvance(decodeUtf8(p));
+    while (*p) total += lemonXAdvance(decodeUtf8(p), sc);
     return total;
   }
   display.setTextWrap(false);
