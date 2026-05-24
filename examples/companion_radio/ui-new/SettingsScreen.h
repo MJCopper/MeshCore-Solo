@@ -258,10 +258,13 @@ class SettingsScreen : public UIScreen {
         // Corrupted/partial — full re-init below.
         memset(p->page_order, 0, sizeof(p->page_order));
       } else {
-        if (!has_fav && len < NodePrefs::PAGE_ORDER_LEN) {
-          // Insert FAVOURITES right after CLOCK; shift the tail down by one.
+        if (!has_fav) {
+          // Insert FAVOURITES right after CLOCK. If the array is full, the last
+          // entry (typically SHUTDOWN, which still appears via the missing-page
+          // fallback at end of nav) is overwritten to make room.
           int insert_at = clock_at + 1;
-          for (int i = len; i > insert_at; i--) p->page_order[i] = p->page_order[i - 1];
+          int tail = (len < NodePrefs::PAGE_ORDER_LEN) ? len : NodePrefs::PAGE_ORDER_LEN - 1;
+          for (int i = tail; i > insert_at; i--) p->page_order[i] = p->page_order[i - 1];
           p->page_order[insert_at] = NodePrefs::HPB_FAVOURITES + 1;
         }
         return;
