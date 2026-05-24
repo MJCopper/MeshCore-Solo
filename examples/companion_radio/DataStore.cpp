@@ -295,6 +295,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.display_rotation,          sizeof(_prefs.display_rotation));
   rd(_prefs.page_order,                 sizeof(_prefs.page_order));
   rd(&_prefs.joystick_rotation,         sizeof(_prefs.joystick_rotation));
+  rd(&_prefs.eink_full_refresh_every,   sizeof(_prefs.eink_full_refresh_every));
 
   file.close();
 }
@@ -374,6 +375,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.display_rotation, sizeof(_prefs.display_rotation));
     file.write((uint8_t *)_prefs.page_order, sizeof(_prefs.page_order));
     file.write((uint8_t *)&_prefs.joystick_rotation, sizeof(_prefs.joystick_rotation));
+    file.write((uint8_t *)&_prefs.eink_full_refresh_every, sizeof(_prefs.eink_full_refresh_every));
 
     file.close();
   }

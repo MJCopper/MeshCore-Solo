@@ -903,6 +903,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   applyBrightness();
   applyFont();
   applyRotation();
+  applyFullRefreshInterval();
   setCurrScreen(splash);
 }
 
@@ -1659,6 +1660,16 @@ void UITask::applyRotation() {
   if (_display != NULL && _node_prefs != NULL) {
     _display->setDisplayRotation(_node_prefs->display_rotation);
     _next_refresh = 0;
+  }
+}
+
+void UITask::applyFullRefreshInterval() {
+  if (_display != NULL && _node_prefs != NULL) {
+    static const uint8_t OPTS[] = { 0, 5, 10, 20, 30 };
+    static const int OPTS_COUNT = 5;
+    uint8_t idx = _node_prefs->eink_full_refresh_every;
+    if (idx >= OPTS_COUNT) idx = 0;
+    _display->setFullRefreshInterval(OPTS[idx]);
   }
 }
 

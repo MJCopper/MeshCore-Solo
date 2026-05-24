@@ -85,6 +85,7 @@ struct NodePrefs {  // persisted to file
   // 0 = end of list (also uninitialized legacy). hasCustomOrder iff page_order[0] in 1..11.
   uint8_t  page_order[11];
   uint8_t  joystick_rotation;   // 0-3 steps CW; independent of display_rotation
+  uint8_t  eink_full_refresh_every; // index into {0,5,10,20,30}: full refresh every N partials (0=off)
 
   // Bitmasks for home_pages_mask (bit=1 → page visible; 0 field = all visible).
   static const uint16_t HP_CLOCK     = 1 << 0;

@@ -27,6 +27,9 @@ class SettingsScreen : public UIScreen {
 #if defined(EINK_DISPLAY_MODEL)
     JOY_ROTATION,
 #endif
+#if defined(EINK_DISPLAY_MODEL)
+    EINK_FULL_REFRESH,
+#endif
     // Sound section
     SECTION_SOUND,
     BUZZER,
@@ -85,6 +88,10 @@ class SettingsScreen : public UIScreen {
   static const int LOW_BAT_COUNT = 7;
   static const char* BATT_DISPLAY_LABELS[3];
   static const int BATT_DISPLAY_COUNT = 3;
+#if defined(EINK_DISPLAY_MODEL)
+  static const char* EINK_FULL_REFRESH_LABELS[5];
+  static const int   EINK_FULL_REFRESH_COUNT = 5;
+#endif
 
   int lowBatIndex() {
     NodePrefs* p = _task->getNodePrefs();
@@ -439,6 +446,14 @@ class SettingsScreen : public UIScreen {
         uint8_t r = p ? (p->joystick_rotation & 3) : 0;
         display.print(ROT_LABELS[r]); }
 #endif
+#if defined(EINK_DISPLAY_MODEL)
+    } else if (item == EINK_FULL_REFRESH) {
+      display.print("Full rfsh");
+      display.setCursor(display.valCol(), y);
+      { uint8_t idx = p ? p->eink_full_refresh_every : 0;
+        if (idx >= EINK_FULL_REFRESH_COUNT) idx = 0;
+        display.print(EINK_FULL_REFRESH_LABELS[idx]); }
+#endif
     } else if (item == DM_FILTER) {
       display.print("DM");
       display.setCursor(display.valCol(), y);
@@ -670,6 +685,17 @@ public:
       return true;
     }
 #endif
+#if defined(EINK_DISPLAY_MODEL)
+    if (_selected == EINK_FULL_REFRESH && p && (left || right || enter)) {
+      int idx = p->eink_full_refresh_every;
+      if (idx >= EINK_FULL_REFRESH_COUNT) idx = 0;
+      idx = (idx + (left ? EINK_FULL_REFRESH_COUNT - 1 : 1)) % EINK_FULL_REFRESH_COUNT;
+      p->eink_full_refresh_every = idx;
+      _task->applyFullRefreshInterval();
+      _dirty = true;
+      return true;
+    }
+#endif
     if (_selected == DM_FILTER && p && (left || right || enter)) {
       p->dm_show_all = p->dm_show_all ? 0 : 1;
       _dirty = true;
@@ -702,3 +728,6 @@ const char*    SettingsScreen::GPS_INTERVAL_LABELS[6] = { "off", "30s", "1min", 
 const uint16_t SettingsScreen::LOW_BAT_OPTS[7]   = { 0, 3000, 3100, 3200, 3300, 3400, 3500 };
 const char*    SettingsScreen::LOW_BAT_LABELS[7]  = { "off", "3.0V", "3.1V", "3.2V", "3.3V", "3.4V", "3.5V" };
 const char*    SettingsScreen::BATT_DISPLAY_LABELS[3] = { "icon", "%", "V" };
+#if defined(EINK_DISPLAY_MODEL)
+const char* SettingsScreen::EINK_FULL_REFRESH_LABELS[5] = { "off", "5", "10", "20", "30" };
+#endif

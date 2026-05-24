@@ -195,7 +195,12 @@ void GxEPDDisplay::setDisplayRotation(uint8_t rot) {
 void GxEPDDisplay::endFrame() {
   uint32_t crc = display_crc.finalize();
   if (crc != last_display_crc_value) {
-    display.display(true);
+    bool partial = true;
+    if (_full_refresh_interval > 0 && ++_partial_count >= _full_refresh_interval) {
+      partial = false;
+      _partial_count = 0;
+    }
+    display.display(partial);
     last_display_crc_value = crc;
   }
 }

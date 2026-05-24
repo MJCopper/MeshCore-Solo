@@ -161,6 +161,7 @@ public:
   void applyGPSInterval();
   void applyFont();
   void applyRotation();
+  void applyFullRefreshInterval();
   uint32_t autoOffMillis() const {
     if (!_node_prefs || _node_prefs->auto_off_secs == 0) return 0;
     return (uint32_t)_node_prefs->auto_off_secs * 1000UL;

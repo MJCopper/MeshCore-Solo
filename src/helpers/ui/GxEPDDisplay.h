@@ -54,6 +54,8 @@ class GxEPDDisplay : public DisplayDriver {
   CRC32 display_crc;
   int last_display_crc_value = 0;
   int _text_sz = 1;
+  uint8_t _full_refresh_interval = 0;  // 0=never, N=full refresh every N partial refreshes
+  uint8_t _partial_count = 0;
 
 public:
 #if defined(EINK_DISPLAY_MODEL)
@@ -100,5 +102,6 @@ public:
   void drawXbm(int x, int y, const uint8_t* bits, int w, int h) override;
   uint16_t getTextWidth(const char* str) override;
   void setDisplayRotation(uint8_t rot) override;
+  void setFullRefreshInterval(uint8_t n) override { _full_refresh_interval = n; _partial_count = 0; }
   void endFrame() override;
 };
