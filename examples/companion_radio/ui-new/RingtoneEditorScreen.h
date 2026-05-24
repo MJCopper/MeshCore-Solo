@@ -119,13 +119,7 @@ public:
         display.print(label);
         display.setColor(DisplayDriver::LIGHT);
       } else if (ni == _len && _len < MAX_NOTES) {
-        if (sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(cx, notes_y, cell_w - 1, cell_h);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-        }
+        display.drawSelectionRow(cx, notes_y, cell_w - 1, cell_h, sel);
         display.setCursor(cx + (cell_w - cw) / 2, notes_y + 3);
         display.print("+");
         display.setColor(DisplayDriver::LIGHT);
@@ -164,10 +158,7 @@ public:
         if (item >= M_COUNT) break;
         int iy = my + 2 + i * menu_ih;
         bool sel = (item == _menu_sel);
-        if (sel) {
-          display.fillRect(mx + 1, iy - 1, mw - 2, menu_ih);
-          display.setColor(DisplayDriver::DARK);
-        }
+        display.drawSelectionRow(mx + 1, iy - 1, mw - 2, menu_ih, sel);
         display.setCursor(mx + 4, iy);
         if (item == M_PLAY_STOP)
           display.print(_task->isMelodyPlaying() ? "Stop" : "Play");

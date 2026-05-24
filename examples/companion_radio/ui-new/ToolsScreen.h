@@ -25,13 +25,7 @@ public:
     for (int i = 0; i < ITEM_COUNT; i++) {
       int y   = start_y + i * item_h;
       bool sel = (i == _sel);
-      if (sel) {
-        display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(0, y - 1, display.width(), item_h);
-        display.setColor(DisplayDriver::DARK);
-      } else {
-        display.setColor(DisplayDriver::LIGHT);
-      }
+      display.drawSelectionRow(0, y - 1, display.width(), item_h, sel);
       display.setCursor(0, y);
       display.print(sel ? ">" : " ");
       display.setCursor(cw + 2, y);

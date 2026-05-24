@@ -491,13 +491,7 @@ public:
       for (int i = 0; i < 3; i++) {
         int y = start_y + i * item_h;
         bool sel = (i == _mode_sel);
-        if (sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y - 1, display.width(), item_h - 1);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-        }
+        display.drawSelectionRow(0, y - 1, display.width(), item_h - 1, sel);
         display.setCursor(0, y);
         display.print(sel ? ">" : " ");
         display.setCursor(cw + 2, y);
@@ -527,13 +521,7 @@ public:
         bool sel = (list_idx == _contact_sel);
         int y = start_y + i * item_h;
 
-        if (sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y - 1, display.width(), item_h - 1);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-        }
+        display.drawSelectionRow(0, y - 1, display.width(), item_h - 1, sel);
 
         ContactInfo c;
         if (the_mesh.getContactByIdx(mesh_idx, c)) {
@@ -576,13 +564,7 @@ public:
         bool sel = (list_idx == _channel_sel);
         int y = start_y + i * item_h;
 
-        if (sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y - 1, display.width(), item_h - 1);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-        }
+        display.drawSelectionRow(0, y - 1, display.width(), item_h - 1, sel);
         display.setCursor(0, y);
         display.print(sel ? ">" : " ");
         ChannelDetails ch;
@@ -855,13 +837,7 @@ public:
         bool sel = (idx == _msg_sel);
         int y = start_y + i * item_h;
 
-        if (sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y - 1, display.width(), item_h - 1);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-        }
+        display.drawSelectionRow(0, y - 1, display.width(), item_h - 1, sel);
         display.setCursor(0, y);
         display.print(sel ? ">" : " ");
 

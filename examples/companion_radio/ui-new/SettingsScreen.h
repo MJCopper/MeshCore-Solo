@@ -316,14 +316,7 @@ class SettingsScreen : public UIScreen {
     }
 
     bool sel = (item == _selected);
-
-    if (sel) {
-      display.setColor(DisplayDriver::LIGHT);
-      display.fillRect(0, y - 1, display.width(), display.lineStep());
-      display.setColor(DisplayDriver::DARK);
-    } else {
-      display.setColor(DisplayDriver::LIGHT);
-    }
+    display.drawSelectionRow(0, y - 1, display.width(), display.lineStep(), sel);
 
     display.setCursor(0, y);
     display.print(sel ? ">" : " ");

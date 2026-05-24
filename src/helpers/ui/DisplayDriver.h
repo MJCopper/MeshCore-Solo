@@ -150,6 +150,18 @@ public:
     translateUTF8Static(dest, src, dest_size);
   }
 
+  // Common selection-row pattern: when sel, fills (x,y,w,h) with ink and sets
+  // colour to DARK so the next text render appears inverted; when not sel,
+  // just sets ink colour to LIGHT. Replaces the 5-line if/else copy-paste
+  // present in every list-style screen.
+  void drawSelectionRow(int x, int y, int w, int h, bool sel) {
+    setColor(LIGHT);
+    if (sel) {
+      fillRect(x, y, w, h);
+      setColor(DARK);
+    }
+  }
+
   // Advance a UTF-8 pointer by one codepoint, returning the decoded value.
   // Invalid sequences return 0xFFFD and consume trailing continuation bytes.
   static uint32_t decodeCodepoint(const uint8_t*& p) {

@@ -52,13 +52,7 @@ public:
     for (int i = 0; i < FIELD_SLOTS; i++) {
       int y = start_y + i * item_h;
       bool sel = (i == _sel);
-      if (sel) {
-        display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(0, y - 1, display.width(), item_h);
-        display.setColor(DisplayDriver::DARK);
-      } else {
-        display.setColor(DisplayDriver::LIGHT);
-      }
+      display.drawSelectionRow(0, y - 1, display.width(), item_h, sel);
       display.setCursor(2, y);
       display.print(labels[i]);
       display.setCursor(val_x, y);

@@ -473,13 +473,7 @@ public:
         int y = start_y + i * item_h;
         const Entry& e = _entries[idx];
 
-        if (sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y - 1, display.width(), item_h - 1);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-        }
+        display.drawSelectionRow(0, y - 1, display.width(), item_h - 1, sel);
 
         char filt[32];
         display.translateUTF8ToBlocks(filt, e.name, sizeof(filt));

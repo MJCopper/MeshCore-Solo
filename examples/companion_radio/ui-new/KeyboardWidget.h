@@ -109,13 +109,7 @@ struct KeyboardWidget {
         if (caps && ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
         char ch_buf[2] = { ch == ' ' ? '_' : ch, '\0' };
         int cx = c * cell_w;
-        if (sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(cx, y - 1, cell_w - 1, cell_h);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-        }
+        display.drawSelectionRow(cx, y - 1, cell_w - 1, cell_h, sel);
         display.setCursor(cx + (cell_w - cw) / 2, y);
         display.print(ch_buf);
       }
@@ -127,13 +121,7 @@ struct KeyboardWidget {
       bool sel    = (row == KB_ROWS_CHAR && col == i);
       bool active = (i == 0 && caps);
       int sx = i * spec_w;
-      if (sel || active) {
-        display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(sx, spec_y - 1, spec_w - 1, cell_h);
-        display.setColor(DisplayDriver::DARK);
-      } else {
-        display.setColor(DisplayDriver::LIGHT);
-      }
+      display.drawSelectionRow(sx, spec_y - 1, spec_w - 1, cell_h, sel || active);
       int tw = display.getTextWidth(spec[i]);
       display.setCursor(sx + (spec_w - tw) / 2, spec_y);
       display.print(spec[i]);
