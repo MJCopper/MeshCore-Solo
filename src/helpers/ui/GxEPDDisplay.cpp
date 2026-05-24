@@ -203,7 +203,8 @@ void GxEPDDisplay::setCursor(int x, int y) {
 
 void GxEPDDisplay::print(const char* str) {
   display_crc.update<char>(str, strlen(str));
-  if (_use_lemon) {
+  // Lemon path only for sz=1 — setTextSize(2/3) switches GFX to non-Lemon fonts.
+  if (_use_lemon && _text_sz == 1) {
     int16_t cx = display.getCursorX();
     int16_t cy = display.getCursorY();
     int sc = (width() >= height()) ? 2 : 1;
@@ -267,7 +268,7 @@ void GxEPDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
 }
 
 uint16_t GxEPDDisplay::getTextWidth(const char* str) {
-  if (_use_lemon) {
+  if (_use_lemon && _text_sz == 1) {
     uint16_t total = 0;
     const uint8_t* p = (const uint8_t*)str;
     while (*p) total += lemonXAdvance(decodeUtf8(p));
