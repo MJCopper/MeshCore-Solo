@@ -21,7 +21,7 @@ class SH1106Display : public DisplayDriver
   uint8_t _color;
   uint8_t _contrast;
   uint8_t _precharge;
-  bool _use_lemon;
+  bool _use_lemon = false;
   int  _text_sz;
 
   bool i2c_probe(TwoWire &wire, uint8_t addr);
@@ -30,7 +30,7 @@ class SH1106Display : public DisplayDriver
 
 public:
   SH1106Display() : DisplayDriver(128, 64), display(128, 64, &Wire, PIN_OLED_RESET) {
-    _isOn = false; _contrast = 255; _precharge = 0x1F; _use_lemon = false; _text_sz = 1;
+    _isOn = false; _contrast = 255; _precharge = 0x1F; _text_sz = 1;
   }
   bool begin();
 
