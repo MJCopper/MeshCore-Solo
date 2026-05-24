@@ -1,4 +1,5 @@
 #include "GxEPDDisplay.h"
+#include "LemonIcons.h"
 
 #ifdef EXP_PIN_BACKLIGHT
   #include <PCA9557.h>
@@ -20,6 +21,85 @@ static int fontAscender(int sz, bool use_lemon, int scale) {
   if (sz == 3) return 26;                       // FreeSans18pt7b: proportional, baseline origin
   if (sz == 1 && use_lemon) return 8 * scale;   // Lemon GFX font: baseline origin, ascender 8px×scale
   return 0;                                     // GFX built-in font: cursor is top-left of cell
+}
+
+uint32_t GxEPDDisplay::decodeUtf8(const uint8_t*& p) {
+  uint8_t c = *p++;
+  if (c < 0x80) return c;
+  if ((c & 0xE0) == 0xC0) {
+    uint32_t cp = c & 0x1F;
+    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+    return cp;
+  }
+  if ((c & 0xF0) == 0xE0) {
+    uint32_t cp = c & 0x0F;
+    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+    return cp;
+  }
+  if ((c & 0xF8) == 0xF0) {
+    uint32_t cp = c & 0x07;
+    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
+    return cp;
+  }
+  while (*p && (*p & 0xC0) == 0x80) p++;
+  return 0xFFFD;
+}
+
+// y is the GFX baseline (display.getCursorY()), which equals original_y + 8*sc.
+// Pixels are placed at y + yo*sc + row*sc — identical to how GFX would render
+// a scaled GFX font, but bypassing GFX so multi-byte UTF-8 is decoded correctly.
+int16_t GxEPDDisplay::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
+  int sc = (width() >= height()) ? 2 : 1;
+  for (uint8_t i = 0; i < lemonIconCount; i++) {
+    if (pgm_read_dword(&lemonIconCPs[i]) == cp) {
+      const GFXglyph* g = &lemonIconGlyphs[i];
+      uint8_t w = pgm_read_byte(&g->width), h = pgm_read_byte(&g->height);
+      int8_t  xo = (int8_t)pgm_read_byte(&g->xOffset), yo = (int8_t)pgm_read_byte(&g->yOffset);
+      uint8_t xa = pgm_read_byte(&g->xAdvance);
+      uint16_t bo = pgm_read_word(&g->bitmapOffset);
+      uint8_t bits = 0, bit = 0;
+      for (uint8_t row = 0; row < h; row++)
+        for (uint8_t col = 0; col < w; col++) {
+          if (!bit) { bits = pgm_read_byte(&lemonIconBitmaps[bo++]); bit = 0x80; }
+          if (bits & bit) {
+            if (sc == 1) display.drawPixel(x + xo + col, y + yo + row, _curr_color);
+            else display.fillRect(x + xo*sc + col*sc, y + yo*sc + row*sc, sc, sc, _curr_color);
+          }
+          bit >>= 1;
+        }
+      return x + xa * sc;
+    }
+  }
+  if (cp < Lemon.first || cp > Lemon.last) {
+    if (cp >= 0x20) display.fillRect(x + sc, y - 7*sc, 4*sc, 6*sc, _curr_color);
+    return x + 6 * sc;
+  }
+  const GFXglyph* g = &lemonGlyphs[cp - Lemon.first];
+  uint8_t w = pgm_read_byte(&g->width), h = pgm_read_byte(&g->height);
+  int8_t  xo = (int8_t)pgm_read_byte(&g->xOffset), yo = (int8_t)pgm_read_byte(&g->yOffset);
+  uint8_t xa = pgm_read_byte(&g->xAdvance);
+  uint16_t bo = pgm_read_word(&g->bitmapOffset);
+  uint8_t bits = 0, bit = 0;
+  for (uint8_t row = 0; row < h; row++)
+    for (uint8_t col = 0; col < w; col++) {
+      if (!bit) { bits = pgm_read_byte(&lemonBitmaps[bo++]); bit = 0x80; }
+      if (bits & bit) {
+        if (sc == 1) display.drawPixel(x + xo + col, y + yo + row, _curr_color);
+        else display.fillRect(x + xo*sc + col*sc, y + yo*sc + row*sc, sc, sc, _curr_color);
+      }
+      bit >>= 1;
+    }
+  return x + xa * sc;
+}
+
+uint8_t GxEPDDisplay::lemonXAdvance(uint32_t cp) {
+  uint8_t xa;
+  if (cp < Lemon.first || cp > Lemon.last) xa = 6;
+  else xa = pgm_read_byte(&lemonGlyphs[cp - Lemon.first].xAdvance);
+  return xa * ((width() >= height()) ? 2 : 1);
 }
 
 bool GxEPDDisplay::begin() {
@@ -123,8 +203,17 @@ void GxEPDDisplay::setCursor(int x, int y) {
 
 void GxEPDDisplay::print(const char* str) {
   display_crc.update<char>(str, strlen(str));
-  if (!_use_lemon) {
-    display.print(str);
+  if (_use_lemon) {
+    int16_t cx = display.getCursorX();
+    int16_t cy = display.getCursorY();
+    int sc = (width() >= height()) ? 2 : 1;
+    const uint8_t* p = (const uint8_t*)str;
+    while (*p) {
+      uint32_t cp = decodeUtf8(p);
+      if (cp == '\n') { cy += Lemon.yAdvance * sc; cx = 0; }
+      else            { cx = drawLemonChar(cx, cy, cp); }
+    }
+    display.setCursor(cx, cy);
     return;
   }
   int sc = (width() >= height()) ? 2 : 1;
@@ -178,6 +267,12 @@ void GxEPDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
 }
 
 uint16_t GxEPDDisplay::getTextWidth(const char* str) {
+  if (_use_lemon) {
+    uint16_t total = 0;
+    const uint8_t* p = (const uint8_t*)str;
+    while (*p) total += lemonXAdvance(decodeUtf8(p));
+    return total;
+  }
   display.setTextWrap(false);
   int16_t x1, y1;
   uint16_t w, h;

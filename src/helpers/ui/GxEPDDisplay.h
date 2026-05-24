@@ -54,8 +54,12 @@ class GxEPDDisplay : public DisplayDriver {
   CRC32 display_crc;
   int last_display_crc_value = 0;
   int _text_sz = 1;
-  uint8_t _full_refresh_interval = 0;  // 0=never, N=full refresh every N partial refreshes
+  uint8_t _full_refresh_interval = 0;
   uint8_t _partial_count = 0;
+
+  static uint32_t decodeUtf8(const uint8_t*& p);
+  int16_t drawLemonChar(int16_t x, int16_t y, uint32_t cp);
+  uint8_t lemonXAdvance(uint32_t cp);
 
 public:
 #if defined(EINK_DISPLAY_MODEL)
