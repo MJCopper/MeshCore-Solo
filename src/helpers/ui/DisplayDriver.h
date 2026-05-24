@@ -134,23 +134,12 @@ public:
     size_t j = 0;
     const uint8_t* p = (const uint8_t*)src;
     while (*p && j < dest_size - 1) {
-      uint8_t c = *p++;
-      if (c < 0x80) {
+      if (*p < 0x80) {
+        uint8_t c = *p++;
         if (c >= 32) dest[j++] = c;
       } else {
-        uint32_t cp = c;
-        if ((c & 0xE0) == 0xC0) {
-          cp = c & 0x1F;
-          if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-        } else if ((c & 0xF0) == 0xE0) {
-          cp = c & 0x0F;
-          if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-          if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-        } else {
-          while (*p && (*p & 0xC0) == 0x80) p++;
-          dest[j++] = '\xDB';
-          continue;
-        }
+        uint32_t cp = decodeCodepoint(p);
+        // transliterateCodepoint already returns '\xDB' for unmapped values (incl. 0xFFFD).
         dest[j++] = transliterateCodepoint(cp);
       }
     }

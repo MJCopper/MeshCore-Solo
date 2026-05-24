@@ -65,31 +65,6 @@ void SH1106Display::setCursor(int x, int y)
   display.setCursor(x, y);
 }
 
-uint32_t SH1106Display::decodeUtf8(const uint8_t*& p) {
-  uint8_t c = *p++;
-  if (c < 0x80) return c;
-  if ((c & 0xE0) == 0xC0) {
-    uint32_t cp = c & 0x1F;
-    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-    return cp;
-  }
-  if ((c & 0xF0) == 0xE0) {
-    uint32_t cp = c & 0x0F;
-    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-    return cp;
-  }
-  if ((c & 0xF8) == 0xF0) {
-    uint32_t cp = c & 0x07;
-    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-    return cp;
-  }
-  while (*p && (*p & 0xC0) == 0x80) p++;
-  return 0xFFFD;
-}
-
 int16_t SH1106Display::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
   int sz = _text_sz;
   for (uint8_t i = 0; i < lemonIconCount; i++) {
@@ -161,7 +136,7 @@ void SH1106Display::print(const char *str)
   int16_t cy = display.getCursorY();
   const uint8_t* p = (const uint8_t*)str;
   while (*p) {
-    uint32_t cp = decodeUtf8(p);
+    uint32_t cp = decodeCodepoint(p);
     if (cp == '\n') { cy += Lemon.yAdvance; cx = 0; }
     else            { cx = drawLemonChar(cx, cy, cp); }
   }
@@ -188,7 +163,7 @@ uint16_t SH1106Display::getTextWidth(const char *str)
   if (_use_lemon) {
     uint16_t width = 0;
     const uint8_t* p = (const uint8_t*)str;
-    while (*p) width += lemonXAdvance(decodeUtf8(p));
+    while (*p) width += lemonXAdvance(decodeCodepoint(p));
     return width;
   }
   int16_t x1, y1;

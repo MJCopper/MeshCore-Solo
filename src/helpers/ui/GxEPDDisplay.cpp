@@ -23,31 +23,6 @@ static int fontAscender(int sz, bool use_lemon, int scale) {
   return 0;                                     // GFX built-in font: cursor is top-left of cell
 }
 
-uint32_t GxEPDDisplay::decodeUtf8(const uint8_t*& p) {
-  uint8_t c = *p++;
-  if (c < 0x80) return c;
-  if ((c & 0xE0) == 0xC0) {
-    uint32_t cp = c & 0x1F;
-    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-    return cp;
-  }
-  if ((c & 0xF0) == 0xE0) {
-    uint32_t cp = c & 0x0F;
-    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-    return cp;
-  }
-  if ((c & 0xF8) == 0xF0) {
-    uint32_t cp = c & 0x07;
-    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-    if (*p) cp = (cp << 6) | (*p++ & 0x3F);
-    return cp;
-  }
-  while (*p && (*p & 0xC0) == 0x80) p++;
-  return 0xFFFD;
-}
-
 // y is the GFX baseline (display.getCursorY()), which equals original_y + 8*sc.
 // Pixels are placed at y + yo*sc + row*sc — identical to how GFX would render
 // a scaled GFX font, but bypassing GFX so multi-byte UTF-8 is decoded correctly.
@@ -209,7 +184,7 @@ void GxEPDDisplay::print(const char* str) {
     const int sc = scale();
     const uint8_t* p = (const uint8_t*)str;
     while (*p) {
-      uint32_t cp = decodeUtf8(p);
+      uint32_t cp = decodeCodepoint(p);
       if (cp == '\n') { cy += Lemon.yAdvance * sc; cx = 0; }
       else            { cx = drawLemonChar(cx, cy, cp, sc); }
     }
@@ -271,7 +246,7 @@ uint16_t GxEPDDisplay::getTextWidth(const char* str) {
     uint16_t total = 0;
     const int sc = scale();
     const uint8_t* p = (const uint8_t*)str;
-    while (*p) total += lemonXAdvance(decodeUtf8(p), sc);
+    while (*p) total += lemonXAdvance(decodeCodepoint(p), sc);
     return total;
   }
   display.setTextWrap(false);

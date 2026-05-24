@@ -25,7 +25,6 @@ class SH1106Display : public DisplayDriver
   int  _text_sz;
 
   bool i2c_probe(TwoWire &wire, uint8_t addr);
-  static uint32_t decodeUtf8(const uint8_t*& p);
   int16_t drawLemonChar(int16_t x, int16_t y, uint32_t cp);
   uint8_t lemonXAdvance(uint32_t cp);
 

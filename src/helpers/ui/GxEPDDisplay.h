@@ -57,7 +57,6 @@ class GxEPDDisplay : public DisplayDriver {
   uint8_t _full_refresh_interval = 0;
   uint8_t _partial_count = 0;
 
-  static uint32_t decodeUtf8(const uint8_t*& p);
   int16_t drawLemonChar(int16_t x, int16_t y, uint32_t cp, int sc);
   uint8_t lemonXAdvance(uint32_t cp, int sc);
   int scale() const { return (width() >= height()) ? 2 : 1; }
