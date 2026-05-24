@@ -93,8 +93,10 @@ struct KeyboardWidget {
       } else {
         linebuf[0] = '\0';
       }
+      char linebuf_t[32];
+      display.translateUTF8ToBlocks(linebuf_t, linebuf, sizeof(linebuf_t));
       display.setCursor(0, pl * lh);
-      display.print(linebuf);
+      display.print(linebuf_t);
     }
     display.fillRect(0, sep_y, display.width(), 1);
 
