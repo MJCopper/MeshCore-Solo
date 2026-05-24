@@ -283,13 +283,13 @@ class HomeScreen : public UIScreen {
     int battLeftX;
     if (mode == 1) {  // percent
       char buf[6];
-      sprintf(buf, "%d%%", pct);
+      snprintf(buf, sizeof(buf),"%d%%", pct);
       battLeftX = display.width() - display.getTextWidth(buf) - 1;
       display.setCursor(battLeftX, 0);
       display.print(buf);
     } else if (mode == 2) {  // voltage
       char buf[8];
-      sprintf(buf, "%u.%02uV", batteryMilliVolts / 1000, (batteryMilliVolts % 1000) / 10);
+      snprintf(buf, sizeof(buf),"%u.%02uV", batteryMilliVolts / 1000, (batteryMilliVolts % 1000) / 10);
       battLeftX = display.width() - display.getTextWidth(buf) - 1;
       display.setCursor(battLeftX, 0);
       display.print(buf);
@@ -456,11 +456,11 @@ public:
         if (h12) {
           int h = ti->tm_hour % 12; if (h == 0) h = 12;
           const char* ap = ti->tm_hour < 12 ? "AM" : "PM";
-          if (show_sec) sprintf(buf, "%d:%02d:%02d%s", h, ti->tm_min, ti->tm_sec, ap);
-          else          sprintf(buf, "%d:%02d %s", h, ti->tm_min, ap);
+          if (show_sec) snprintf(buf, sizeof(buf),"%d:%02d:%02d%s", h, ti->tm_min, ti->tm_sec, ap);
+          else          snprintf(buf, sizeof(buf),"%d:%02d %s", h, ti->tm_min, ap);
         } else {
-          if (show_sec) sprintf(buf, "%02d:%02d:%02d", ti->tm_hour, ti->tm_min, ti->tm_sec);
-          else          sprintf(buf, "%02d:%02d", ti->tm_hour, ti->tm_min);
+          if (show_sec) snprintf(buf, sizeof(buf),"%02d:%02d:%02d", ti->tm_hour, ti->tm_min, ti->tm_sec);
+          else          snprintf(buf, sizeof(buf),"%02d:%02d", ti->tm_hour, ti->tm_min);
         }
         int lh2 = display.getLineHeight();  // sz2 height: 16 (OLED) or 32 (landscape)
         display.drawTextCentered(display.width() / 2, 0, buf);
@@ -468,7 +468,7 @@ public:
         display.setTextSize(1);
         static const char* wd[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
         static const char* mo[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
-        sprintf(buf, "%s %d %s %d", wd[ti->tm_wday], ti->tm_mday, mo[ti->tm_mon], 1900 + ti->tm_year);
+        snprintf(buf, sizeof(buf),"%s %d %s %d", wd[ti->tm_wday], ti->tm_mday, mo[ti->tm_mon], 1900 + ti->tm_year);
         int date_y = lh2 + 2;
         display.drawTextCentered(display.width() / 2, date_y, buf);
 
@@ -564,11 +564,11 @@ public:
         if (a->name[0] == 0) continue;  // empty slot
         int secs = _rtc->getCurrentTime() - a->recv_timestamp;
         if (secs < 60) {
-          sprintf(tmp, "%ds", secs);
+          snprintf(tmp, sizeof(tmp),"%ds", secs);
         } else if (secs < 60*60) {
-          sprintf(tmp, "%dm", secs / 60);
+          snprintf(tmp, sizeof(tmp),"%dm", secs / 60);
         } else {
-          sprintf(tmp, "%dh", secs / (60*60));
+          snprintf(tmp, sizeof(tmp),"%dh", secs / (60*60));
         }
         
         int timestamp_width = display.getTextWidth(tmp);
@@ -584,19 +584,19 @@ public:
       display.setColor(DisplayDriver::LIGHT);
       // freq / sf
       display.setCursor(0, content_y);
-      sprintf(tmp, "FQ: %06.3f   SF: %d", _node_prefs->freq, _node_prefs->sf);
+      snprintf(tmp, sizeof(tmp),"FQ: %06.3f   SF: %d", _node_prefs->freq, _node_prefs->sf);
       display.print(tmp);
 
       display.setCursor(0, content_y + step);
-      sprintf(tmp, "BW: %03.2f     CR: %d", _node_prefs->bw, _node_prefs->cr);
+      snprintf(tmp, sizeof(tmp),"BW: %03.2f     CR: %d", _node_prefs->bw, _node_prefs->cr);
       display.print(tmp);
 
       // tx power, noise floor
       display.setCursor(0, content_y + step * 2);
-      sprintf(tmp, "TX: %ddBm", _node_prefs->tx_power_dbm);
+      snprintf(tmp, sizeof(tmp),"TX: %ddBm", _node_prefs->tx_power_dbm);
       display.print(tmp);
       display.setCursor(0, content_y + step * 3);
-      sprintf(tmp, "Noise floor: %d", radio_driver.getNoiseFloor());
+      snprintf(tmp, sizeof(tmp),"Noise floor: %d", radio_driver.getNoiseFloor());
       display.print(tmp);
     } else if (_page == HomePage::BLUETOOTH) {
       display.setColor(DisplayDriver::LIGHT);
@@ -646,16 +646,16 @@ public:
         display.drawTextRightAlign(display.width()-1, y, buf);
         y += step;
         display.drawTextLeftAlign(0, y, "sat");
-        sprintf(buf, "%d", nmea->satellitesCount());
+        snprintf(buf, sizeof(buf),"%d", nmea->satellitesCount());
         display.drawTextRightAlign(display.width()-1, y, buf);
         y += step;
         display.drawTextLeftAlign(0, y, "pos");
-        sprintf(buf, "%.4f %.4f",
+        snprintf(buf, sizeof(buf),"%.4f %.4f",
           nmea->getLatitude()/1000000., nmea->getLongitude()/1000000.);
         display.drawTextRightAlign(display.width()-1, y, buf);
         y += step;
         display.drawTextLeftAlign(0, y, "alt");
-        sprintf(buf, "%.2f", nmea->getAltitude()/1000.);
+        snprintf(buf, sizeof(buf),"%.2f", nmea->getAltitude()/1000.);
         display.drawTextRightAlign(display.width()-1, y, buf);
         y += step;
       }
@@ -1423,15 +1423,15 @@ void UITask::loop() {
         const int clk_y = 2;
         if (_node_prefs && _node_prefs->clock_12h) {
           int h = ti->tm_hour % 12; if (h == 0) h = 12;
-          sprintf(buf, "%d:%02d %s", h, ti->tm_min, ti->tm_hour < 12 ? "AM" : "PM");
+          snprintf(buf, sizeof(buf),"%d:%02d %s", h, ti->tm_min, ti->tm_hour < 12 ? "AM" : "PM");
         } else {
-          sprintf(buf, "%02d:%02d", ti->tm_hour, ti->tm_min);
+          snprintf(buf, sizeof(buf),"%02d:%02d", ti->tm_hour, ti->tm_min);
         }
         _display->drawTextCentered(_display->width() / 2, clk_y, buf);
         _display->setTextSize(1);
         static const char* wd[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
         static const char* mo[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
-        sprintf(buf, "%s %d %s", wd[ti->tm_wday], ti->tm_mday, mo[ti->tm_mon]);
+        snprintf(buf, sizeof(buf),"%s %d %s", wd[ti->tm_wday], ti->tm_mday, mo[ti->tm_mon]);
         int date_y = clk_y + lh2 + 2;
         _display->drawTextCentered(_display->width() / 2, date_y, buf);
 
@@ -1639,7 +1639,7 @@ void UITask::applyTxPower() {
 void UITask::applyGPSInterval() {
   if (_node_prefs == NULL) return;
   char buf[12];
-  sprintf(buf, "%u", _node_prefs->gps_interval);
+  snprintf(buf, sizeof(buf),"%u", _node_prefs->gps_interval);
   sensors.setSettingValue("gps_interval", buf);
 }
 

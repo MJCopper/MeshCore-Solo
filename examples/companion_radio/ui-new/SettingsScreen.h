@@ -374,7 +374,7 @@ class SettingsScreen : public UIScreen {
     } else if (item == TX_POWER) {
       display.print("TX Pwr");
       char buf[8];
-      sprintf(buf, "%ddBm", p ? p->tx_power_dbm : 0);
+      snprintf(buf, sizeof(buf),"%ddBm", p ? p->tx_power_dbm : 0);
       display.setCursor(display.valCol(), y);
       display.print(buf);
 #if AUTO_OFF_MILLIS > 0
@@ -397,8 +397,8 @@ class SettingsScreen : public UIScreen {
       display.print("TimeZone");
       char buf[8];
       int8_t tz = p ? p->tz_offset_hours : 0;
-      if (tz >= 0) sprintf(buf, "UTC+%d", (int)tz);
-      else         sprintf(buf, "UTC%d",  (int)tz);
+      if (tz >= 0) snprintf(buf, sizeof(buf),"UTC+%d", (int)tz);
+      else         snprintf(buf, sizeof(buf),"UTC%d",  (int)tz);
       display.setCursor(display.valCol(), y);
       display.print(buf);
     } else if (item == LOW_BAT) {
