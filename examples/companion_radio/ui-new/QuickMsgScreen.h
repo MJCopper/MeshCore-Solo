@@ -505,6 +505,7 @@ public:
         }
       }
       display.setColor(DisplayDriver::LIGHT);
+      if (_ctx_menu.active) _ctx_menu.render(display);
 
     } else if (_phase == CONTACT_PICK) {
       display.drawTextCentered(display.width()/2, 0, _room_mode ? "SELECT ROOM" : "SELECT CONTACT");
@@ -860,9 +861,33 @@ public:
 
   bool handleInput(char c) override {
     if (_phase == MODE_SELECT) {
+      // Context menu (Mark-all-read) takes precedence while active.
+      if (_ctx_menu.active) {
+        auto res = _ctx_menu.handleInput(c);
+        if (res == PopupMenu::SELECTED) {
+          if (_mode_sel == 0) {
+            _task->clearAllDMUnread();
+            _task->showAlert("DMs marked read", 800);
+          } else if (_mode_sel == 1) {
+            clearAllChannelUnread();
+            _task->showAlert("Channels marked read", 800);
+          } else {
+            _task->clearRoomUnread();
+            _task->showAlert("Rooms marked read", 800);
+          }
+        }
+        return true;
+      }
       if (c == KEY_CANCEL) { _task->gotoHomeScreen(); return true; }
       if (c == KEY_UP && _mode_sel > 0) { _mode_sel--; return true; }
       if (c == KEY_DOWN && _mode_sel < 2) { _mode_sel++; return true; }
+      if (c == KEY_CONTEXT_MENU) {
+        // PopupMenu stores the title pointer verbatim — use static strings.
+        static const char* MODE_TITLES[] = { "DM options", "Channel options", "Room options" };
+        _ctx_menu.begin(MODE_TITLES[_mode_sel < 3 ? _mode_sel : 0], 1);
+        _ctx_menu.addItem("Mark all read");
+        return true;
+      }
       if (c == KEY_ENTER) {
         if (_mode_sel == 1) {
           _phase = CHANNEL_PICK;

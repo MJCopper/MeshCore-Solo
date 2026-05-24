@@ -136,6 +136,7 @@ public:
       if (_dm_unread_table[i].count > 0 && memcmp(_dm_unread_table[i].prefix, pub_key, 4) == 0)
         { _dm_unread_table[i].count = 0; return; }
   }
+  void clearAllDMUnread() { memset(_dm_unread_table, 0, sizeof(_dm_unread_table)); }
   bool hasDisplay() const { return _display != NULL; }
   bool isButtonPressed() const;
 
