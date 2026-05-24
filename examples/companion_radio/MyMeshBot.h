@@ -8,15 +8,13 @@ void MyMesh::tryBotReplyDM(const ContactInfo& from, const char* text) {
         millis() - _bot_last_dm_reply_ms > 10000UL))
     return;
 
-  const char* tr = _prefs.bot_trigger;  // already lowercase (normalised at save/load time)
-  int tlen = strlen(tr);
-  bool matched = false;
-  for (const char* t = text; *t && !matched; t++) {
-    int i = 0;
-    while (i < tlen && tolower((uint8_t)t[i]) == (uint8_t)tr[i]) i++;
-    if (i == tlen) matched = true;
-  }
-  if (!matched) return;
+  // Lower-case the body once, then a single strstr — avoids O(n*m) tolower per offset.
+  char low[200];
+  size_t n = strlen(text);
+  if (n >= sizeof(low)) n = sizeof(low) - 1;
+  for (size_t i = 0; i < n; i++) low[i] = (char)tolower((uint8_t)text[i]);
+  low[n] = '\0';
+  if (!strstr(low, _prefs.bot_trigger)) return;
 
   uint32_t ts = getRTCClock()->getCurrentTime();
   char expanded[200];
@@ -45,15 +43,12 @@ void MyMesh::tryBotReplyChannel(uint8_t channel_idx, const char* text) {
   const char* sep = strstr(text, ": ");
   if (sep) msg = sep + 2;
 
-  const char* tr = _prefs.bot_trigger;  // already lowercase (normalised at save/load time)
-  int tlen = strlen(tr);
-  bool matched = false;
-  for (const char* t = msg; *t && !matched; t++) {
-    int i = 0;
-    while (i < tlen && tolower((uint8_t)t[i]) == (uint8_t)tr[i]) i++;
-    if (i == tlen) matched = true;
-  }
-  if (!matched) return;
+  char low[200];
+  size_t n = strlen(msg);
+  if (n >= sizeof(low)) n = sizeof(low) - 1;
+  for (size_t i = 0; i < n; i++) low[i] = (char)tolower((uint8_t)msg[i]);
+  low[n] = '\0';
+  if (!strstr(low, _prefs.bot_trigger)) return;
 
   ChannelDetails ch;
   if (!getChannel(channel_idx, ch)) return;

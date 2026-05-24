@@ -104,11 +104,14 @@ void genericBuzzer::_nrfStartPwm(uint16_t freq) {
     _duty_buf = 0x8000U | cmp;
     __DMB();
 
-    NRF_PWM2->TASKS_STOP = 1;
-    // Wait for STOPPED (short busy-wait, typically < 1 PWM period)
-    uint32_t t = millis();
-    while (!(NRF_PWM2->EVENTS_STOPPED) && (millis() - t) < 2) {}
-    NRF_PWM2->EVENTS_STOPPED = 0;
+    // Only wait for STOPPED if PWM was actually running — TASKS_STOP on a disabled
+    // PWM never fires EVENTS_STOPPED, so the wait would always time out at 2 ms.
+    if (_pwm_on) {
+      NRF_PWM2->TASKS_STOP = 1;
+      uint32_t t = millis();
+      while (!(NRF_PWM2->EVENTS_STOPPED) && (millis() - t) < 2) {}
+      NRF_PWM2->EVENTS_STOPPED = 0;
+    }
 
     NRF_PWM2->PSEL.OUT[0] = nrf_pin;
     NRF_PWM2->PSEL.OUT[1] = 0xFFFFFFFFUL;
