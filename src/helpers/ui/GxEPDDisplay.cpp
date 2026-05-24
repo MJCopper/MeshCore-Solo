@@ -74,7 +74,7 @@ int16_t GxEPDDisplay::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
     }
   }
   if (cp < Lemon.first || cp > Lemon.last) {
-    if (cp >= 0x20) display.fillRect(x + sc, y - 7*sc, 4*sc, 6*sc, _curr_color);
+    if (cp >= 0x20) display.fillRect(x + sc, y - 8*sc, 4*sc, 6*sc, _curr_color);
     return x + 6 * sc;
   }
   const GFXglyph* g = &lemonGlyphs[cp - Lemon.first];
