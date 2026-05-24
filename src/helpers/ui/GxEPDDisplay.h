@@ -86,6 +86,14 @@ public:
   }
   void setLemonFont(bool enabled) override { _use_lemon = enabled; _vw_dirty = true; }
   bool isLemonFont() const override { return _use_lemon; }
+  void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) override {
+    if (_use_lemon) {
+      strncpy(dest, src, dest_size - 1);
+      dest[dest_size - 1] = '\0';
+    } else {
+      translateUTF8Static(dest, src, dest_size);
+    }
+  }
   bool begin();
 
   bool isOn() override { return _isOn; }
