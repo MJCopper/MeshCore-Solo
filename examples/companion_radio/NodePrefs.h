@@ -82,10 +82,13 @@ struct NodePrefs {  // persisted to file
   uint8_t  use_lemon_font;      // 0=default Adafruit font, 1=Lemon font (Unicode, pixel-accurate wrap)
   uint8_t  display_rotation;    // 0-3; only used on e-ink displays
   // Home screen page order: each byte = bit-index+1 (see HP_* bit positions + 9=Settings, 10=Messages).
-  // 0 = end of list (also uninitialized legacy). hasCustomOrder iff page_order[0] in 1..11.
+  // 0 = end of list. Validity gated by page_order_set magic (see below) — not by entry value range,
+  // so a junk byte in 1..11 cannot trigger custom-order mode.
   uint8_t  page_order[11];
   uint8_t  joystick_rotation;   // 0-3 steps CW; independent of display_rotation
   uint8_t  eink_full_refresh_every; // index into {0,5,10,20,30}: full refresh every N partials (0=off)
+  uint8_t  page_order_set;      // 0xA5 = page_order is user-configured; anything else = use default
+  static const uint8_t PAGE_ORDER_MAGIC = 0xA5;
 
   // Bitmasks for home_pages_mask (bit=1 → page visible; 0 field = all visible).
   static const uint16_t HP_CLOCK     = 1 << 0;

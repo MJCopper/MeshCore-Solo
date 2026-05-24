@@ -218,7 +218,7 @@ class SettingsScreen : public UIScreen {
 
   // Returns 1-based position of item in page_order, or 0 if no custom order / not found.
   int homePagePosition(int item, const NodePrefs* p) const {
-    if (!p || p->page_order[0] < 1 || p->page_order[0] > 11) return 0;
+    if (!p || p->page_order_set != NodePrefs::PAGE_ORDER_MAGIC) return 0;
     int bit = homePageBitIndex(item);
     if (bit < 0) return 0;
     for (int i = 0; i < 11; i++) {
@@ -233,7 +233,7 @@ class SettingsScreen : public UIScreen {
   // Also repairs a partially-initialised order where CLOCK (bit 0, stored as 1) is absent.
   void ensurePageOrderInit(NodePrefs* p) const {
     if (!p) return;
-    if (p->page_order[0] >= 1 && p->page_order[0] <= 11) {
+    if (p->page_order_set == NodePrefs::PAGE_ORDER_MAGIC) {
       // Order was previously set — verify CLOCK is present to guard against partial/corrupted data.
       for (int i = 0; i < 11; i++) {
         uint8_t v = p->page_order[i];
@@ -261,6 +261,7 @@ class SettingsScreen : public UIScreen {
     p->page_order[j++] = 10 + 1; // MESSAGES (QUICK_MSG)
     p->page_order[j++] = 8 + 1;  // SHUTDOWN
     while (j < 11) p->page_order[j++] = 0;
+    p->page_order_set = NodePrefs::PAGE_ORDER_MAGIC;
   }
 
   // Swaps item's page_order slot with its neighbour in the given direction (-1=earlier, +1=later).

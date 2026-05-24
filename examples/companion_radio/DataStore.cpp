@@ -296,6 +296,13 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(_prefs.page_order,                 sizeof(_prefs.page_order));
   rd(&_prefs.joystick_rotation,         sizeof(_prefs.joystick_rotation));
   rd(&_prefs.eink_full_refresh_every,   sizeof(_prefs.eink_full_refresh_every));
+  rd(&_prefs.page_order_set,            sizeof(_prefs.page_order_set));
+  // Migration: pre-magic firmware wrote page_order without a flag. If we see a plausible
+  // first entry from such a save, accept it once — savePrefs will then persist the magic.
+  if (_prefs.page_order_set != NodePrefs::PAGE_ORDER_MAGIC
+      && _prefs.page_order[0] >= 1 && _prefs.page_order[0] <= 11) {
+    _prefs.page_order_set = NodePrefs::PAGE_ORDER_MAGIC;
+  }
 
   file.close();
 }
@@ -376,6 +383,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)_prefs.page_order, sizeof(_prefs.page_order));
     file.write((uint8_t *)&_prefs.joystick_rotation, sizeof(_prefs.joystick_rotation));
     file.write((uint8_t *)&_prefs.eink_full_refresh_every, sizeof(_prefs.eink_full_refresh_every));
+    file.write((uint8_t *)&_prefs.page_order_set, sizeof(_prefs.page_order_set));
 
     file.close();
   }

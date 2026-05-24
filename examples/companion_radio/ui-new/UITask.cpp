@@ -203,7 +203,7 @@ class HomeScreen : public UIScreen {
   // Returns count; out[] receives HomePage enum values.
   int buildVisibleOrder(int* out) const {
     int n = 0;
-    bool custom = _node_prefs && _node_prefs->page_order[0] >= 1 && _node_prefs->page_order[0] <= 11;
+    bool custom = _node_prefs && _node_prefs->page_order_set == NodePrefs::PAGE_ORDER_MAGIC;
     if (custom) {
       for (int i = 0; i < 11; i++) {
         uint8_t v = _node_prefs->page_order[i];

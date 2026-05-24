@@ -1185,10 +1185,17 @@ public:
       if (res == KeyboardWidget::CANCELLED) {
         _phase = MSG_PICK;
       } else if (res == KeyboardWidget::DONE) {
-        int min_len = _reply_mode ? (int)strlen(_reply_prefix) : 0;
-        if (_kb.len > min_len) {
+        int prefix_len = _reply_mode ? (int)strlen(_reply_prefix) : 0;
+        if (_kb.len > prefix_len) {
+          // Expand only the body — prefix "@[nick] " is preserved verbatim, so a nick
+          // that happens to contain a placeholder token isn't substituted.
           char expanded[KB_MAX_LEN + 1];
-          expandMsg(_kb.buf, expanded, sizeof(expanded));
+          if (prefix_len > 0) {
+            memcpy(expanded, _kb.buf, prefix_len);
+            expandMsg(_kb.buf + prefix_len, expanded + prefix_len, sizeof(expanded) - prefix_len);
+          } else {
+            expandMsg(_kb.buf, expanded, sizeof(expanded));
+          }
           bool ok = sendText(expanded);
           afterSend(ok, expanded);
         }
