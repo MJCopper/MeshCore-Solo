@@ -138,6 +138,7 @@ public:
   }
   void clearAllDMUnread() { memset(_dm_unread_table, 0, sizeof(_dm_unread_table)); }
   bool hasDisplay() const { return _display != NULL; }
+  DisplayDriver* getDisplay() const { return _display; }
   bool isButtonPressed() const;
 
   bool isBuzzerQuiet() { 

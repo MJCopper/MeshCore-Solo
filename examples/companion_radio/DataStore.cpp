@@ -304,6 +304,8 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     _prefs.page_order_set = NodePrefs::PAGE_ORDER_MAGIC;
   }
 
+  rd(_prefs.favourite_contacts, sizeof(_prefs.favourite_contacts));
+
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
   // so we just log it — next savePrefs writes the current sentinel.
@@ -394,6 +396,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.joystick_rotation, sizeof(_prefs.joystick_rotation));
     file.write((uint8_t *)&_prefs.eink_full_refresh_every, sizeof(_prefs.eink_full_refresh_every));
     file.write((uint8_t *)&_prefs.page_order_set, sizeof(_prefs.page_order_set));
+    file.write((uint8_t *)_prefs.favourite_contacts, sizeof(_prefs.favourite_contacts));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL.
     uint32_t sentinel = NodePrefs::SCHEMA_SENTINEL;

@@ -40,7 +40,7 @@ class SettingsScreen : public UIScreen {
     CH_MELODY,
     // Home pages section
     SECTION_HOME_PAGES,
-    HOME_CLOCK, HOME_RECENT, HOME_RADIO, HOME_BT, HOME_ADVERT,
+    HOME_CLOCK, HOME_FAVOURITES, HOME_RECENT, HOME_RADIO, HOME_BT, HOME_ADVERT,
 #if ENV_INCLUDE_GPS == 1
     HOME_GPS,
 #endif
@@ -164,9 +164,10 @@ class SettingsScreen : public UIScreen {
   }
 
   bool isHomePage(int item) const {
-    return item == HOME_CLOCK    || item == HOME_RECENT   || item == HOME_RADIO   ||
-           item == HOME_BT       || item == HOME_ADVERT   || item == HOME_TOOLS   ||
-           item == HOME_SHUTDOWN || item == HOME_SETTINGS || item == HOME_QUICK_MSG
+    return item == HOME_CLOCK    || item == HOME_RECENT     || item == HOME_RADIO   ||
+           item == HOME_BT       || item == HOME_ADVERT     || item == HOME_TOOLS   ||
+           item == HOME_SHUTDOWN || item == HOME_SETTINGS   || item == HOME_QUICK_MSG ||
+           item == HOME_FAVOURITES
 #if ENV_INCLUDE_GPS == 1
            || item == HOME_GPS
 #endif
@@ -178,9 +179,10 @@ class SettingsScreen : public UIScreen {
 
   uint16_t homePageBit(int item) const {
     int bit = homePageBitIndex(item);
-    // Bits 0..HPB_SHUTDOWN have mask bits in home_pages_mask; SETTINGS and
-    // QUICK_MSG are always visible (no mask bit) and return 0.
-    return (bit >= 0 && bit < NodePrefs::HPB_SETTINGS) ? (uint16_t)(1 << bit) : 0;
+    // SETTINGS and QUICK_MSG are always visible (no mask bit). All other pages
+    // — including FAVOURITES — toggle via home_pages_mask.
+    if (bit < 0 || bit == NodePrefs::HPB_SETTINGS || bit == NodePrefs::HPB_QUICK_MSG) return 0;
+    return (uint16_t)(1 << bit);
   }
 
   const char* homePageLabel(int item) const {
@@ -204,6 +206,7 @@ class SettingsScreen : public UIScreen {
   // Bit-index values are defined once in NodePrefs::HomePageBit.
   int homePageBitIndex(int item) const {
     if (item == HOME_CLOCK)     return NodePrefs::HPB_CLOCK;
+    if (item == HOME_FAVOURITES) return NodePrefs::HPB_FAVOURITES;
     if (item == HOME_RECENT)    return NodePrefs::HPB_RECENT;
     if (item == HOME_RADIO)     return NodePrefs::HPB_RADIO;
     if (item == HOME_BT)        return NodePrefs::HPB_BLUETOOTH;
@@ -226,7 +229,7 @@ class SettingsScreen : public UIScreen {
     if (!p || p->page_order_set != NodePrefs::PAGE_ORDER_MAGIC) return 0;
     int bit = homePageBitIndex(item);
     if (bit < 0) return 0;
-    for (int i = 0; i < NodePrefs::HPB_COUNT; i++) {
+    for (int i = 0; i < NodePrefs::PAGE_ORDER_LEN; i++) {
       uint8_t v = p->page_order[i];
       if (v < 1 || v > NodePrefs::HPB_COUNT) break;
       if ((int)(v - 1) == bit) return i + 1;
@@ -248,24 +251,27 @@ class SettingsScreen : public UIScreen {
       // CLOCK missing — reset and fall through to full re-init.
       memset(p->page_order, 0, sizeof(p->page_order));
     }
-    // Default: CLOCK RECENT RADIO BT ADVERT [GPS] [SENSORS] SETTINGS TOOLS MESSAGES SHUTDOWN
+    // Default: CLOCK FAVOURITES RECENT RADIO BT ADVERT [GPS] [SENSORS] SETTINGS TOOLS MESSAGES
+    // SHUTDOWN is omitted from the explicit list (PAGE_ORDER_LEN = 11 leaves room for the
+    // common case GPS+SENSORS+all-others) and appended by buildVisibleOrder's missing-page
+    // fallback at the end of the navigation sequence.
     int j = 0;
-    p->page_order[j++] = 0 + 1;  // CLOCK
-    p->page_order[j++] = 1 + 1;  // RECENT
-    p->page_order[j++] = 2 + 1;  // RADIO
-    p->page_order[j++] = 3 + 1;  // BLUETOOTH
-    p->page_order[j++] = 4 + 1;  // ADVERT
+    p->page_order[j++] = NodePrefs::HPB_CLOCK      + 1;
+    p->page_order[j++] = NodePrefs::HPB_FAVOURITES + 1;
+    p->page_order[j++] = NodePrefs::HPB_RECENT     + 1;
+    p->page_order[j++] = NodePrefs::HPB_RADIO      + 1;
+    p->page_order[j++] = NodePrefs::HPB_BLUETOOTH  + 1;
+    p->page_order[j++] = NodePrefs::HPB_ADVERT     + 1;
 #if ENV_INCLUDE_GPS == 1
-    p->page_order[j++] = 5 + 1;  // GPS
+    p->page_order[j++] = NodePrefs::HPB_GPS        + 1;
 #endif
 #if UI_SENSORS_PAGE == 1
-    p->page_order[j++] = 6 + 1;  // SENSORS
+    p->page_order[j++] = NodePrefs::HPB_SENSORS    + 1;
 #endif
-    p->page_order[j++] = 9 + 1;  // SETTINGS
-    p->page_order[j++] = 7 + 1;  // TOOLS
-    p->page_order[j++] = 10 + 1; // MESSAGES (QUICK_MSG)
-    p->page_order[j++] = 8 + 1;  // SHUTDOWN
-    while (j < NodePrefs::HPB_COUNT) p->page_order[j++] = 0;
+    p->page_order[j++] = NodePrefs::HPB_SETTINGS   + 1;
+    p->page_order[j++] = NodePrefs::HPB_TOOLS      + 1;
+    p->page_order[j++] = NodePrefs::HPB_QUICK_MSG  + 1;
+    while (j < NodePrefs::PAGE_ORDER_LEN) p->page_order[j++] = 0;
     p->page_order_set = NodePrefs::PAGE_ORDER_MAGIC;
   }
 
@@ -275,7 +281,7 @@ class SettingsScreen : public UIScreen {
     int bit = homePageBitIndex(item);
     if (bit < 0) return;
     int cur = -1, total = 0;
-    for (int i = 0; i < NodePrefs::HPB_COUNT; i++) {
+    for (int i = 0; i < NodePrefs::PAGE_ORDER_LEN; i++) {
       uint8_t v = p->page_order[i];
       if (v < 1 || v > NodePrefs::HPB_COUNT) break;
       if ((int)(v - 1) == bit) cur = i;

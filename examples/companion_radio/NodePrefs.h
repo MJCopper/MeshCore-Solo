@@ -92,49 +92,63 @@ struct NodePrefs {  // persisted to file
   uint8_t  page_order_set;      // 0xA5 = page_order is user-configured; anything else = use default
   static const uint8_t PAGE_ORDER_MAGIC = 0xA5;
 
+  // Favourites dial: 6 pinned contacts, stored as first 6 bytes of pub_key per slot.
+  // All-zero = empty slot (probability a real pub_key starts with 6 zero bytes is 2^-48).
+  // Layout transposes between landscape (3×2) and portrait (2×3).
+  static const uint8_t FAVOURITES_COUNT = 6;
+  static const uint8_t FAVOURITE_PREFIX_LEN = 6;
+  uint8_t favourite_contacts[FAVOURITES_COUNT][FAVOURITE_PREFIX_LEN];
+
   // Tail sentinel written at the end of /new_prefs. Bump the low byte when
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0001;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0002;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
   // and SettingsScreen::homePageBitIndex route their per-enum lookups through these.
   enum HomePageBit : uint8_t {
-    HPB_CLOCK     = 0,
-    HPB_RECENT    = 1,
-    HPB_RADIO     = 2,
-    HPB_BLUETOOTH = 3,
-    HPB_ADVERT    = 4,
-    HPB_GPS       = 5,
-    HPB_SENSORS   = 6,
-    HPB_TOOLS     = 7,
-    HPB_SHUTDOWN  = 8,
-    HPB_SETTINGS  = 9,
-    HPB_QUICK_MSG = 10,
-    HPB_COUNT     = 11,
+    HPB_CLOCK      = 0,
+    HPB_RECENT     = 1,
+    HPB_RADIO      = 2,
+    HPB_BLUETOOTH  = 3,
+    HPB_ADVERT     = 4,
+    HPB_GPS        = 5,
+    HPB_SENSORS    = 6,
+    HPB_TOOLS      = 7,
+    HPB_SHUTDOWN   = 8,
+    HPB_SETTINGS   = 9,
+    HPB_QUICK_MSG  = 10,
+    HPB_FAVOURITES = 11,
+    HPB_COUNT      = 12,
   };
+
+  // Length of the persisted page_order[] array. Stable across firmware versions
+  // (don't grow without a schema migration). When HPB_COUNT exceeds this, extra
+  // visible pages are appended at navigation time via buildVisibleOrder fallback.
+  static const uint8_t PAGE_ORDER_LEN = 11;
 
   // Bitmasks for home_pages_mask (bit=1 → page visible; 0 field = all visible).
   // SETTINGS and QUICK_MSG have no mask bit — they're always visible.
-  static const uint16_t HP_CLOCK     = 1 << HPB_CLOCK;
-  static const uint16_t HP_RECENT    = 1 << HPB_RECENT;
-  static const uint16_t HP_RADIO     = 1 << HPB_RADIO;
-  static const uint16_t HP_BLUETOOTH = 1 << HPB_BLUETOOTH;
-  static const uint16_t HP_ADVERT    = 1 << HPB_ADVERT;
-  static const uint16_t HP_GPS       = 1 << HPB_GPS;
-  static const uint16_t HP_SENSORS   = 1 << HPB_SENSORS;
-  static const uint16_t HP_TOOLS     = 1 << HPB_TOOLS;
-  static const uint16_t HP_SHUTDOWN  = 1 << HPB_SHUTDOWN;
-  static const uint16_t HP_ALL       = 0x01FF;
+  static const uint16_t HP_CLOCK      = 1 << HPB_CLOCK;
+  static const uint16_t HP_RECENT     = 1 << HPB_RECENT;
+  static const uint16_t HP_RADIO      = 1 << HPB_RADIO;
+  static const uint16_t HP_BLUETOOTH  = 1 << HPB_BLUETOOTH;
+  static const uint16_t HP_ADVERT     = 1 << HPB_ADVERT;
+  static const uint16_t HP_GPS        = 1 << HPB_GPS;
+  static const uint16_t HP_SENSORS    = 1 << HPB_SENSORS;
+  static const uint16_t HP_TOOLS      = 1 << HPB_TOOLS;
+  static const uint16_t HP_SHUTDOWN   = 1 << HPB_SHUTDOWN;
+  static const uint16_t HP_FAVOURITES = 1 << HPB_FAVOURITES;
+  static const uint16_t HP_ALL        = 0x01FF | HP_FAVOURITES;
 
   // Label for home page by bit-index; returns "" for out-of-range.
   // Array indices match HomePageBit values.
   static const char* homePageLabel(uint8_t bit) {
     static const char* labels[HPB_COUNT] = {
       "Clock", "Recent", "Radio", "Bluetooth", "Advert",
-      "GPS", "Sensors", "Tools", "Shutdown", "Settings", "Messages"
+      "GPS", "Sensors", "Tools", "Shutdown", "Settings", "Messages", "Favourites"
     };
     return (bit < HPB_COUNT) ? labels[bit] : "";
   }

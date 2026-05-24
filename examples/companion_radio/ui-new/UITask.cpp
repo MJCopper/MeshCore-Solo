@@ -122,6 +122,7 @@ static const int QUICK_MSGS_MAX = 10;
 class HomeScreen : public UIScreen {
   enum HomePage {
     CLOCK,
+    FAVOURITES,
     RECENT,
     RADIO,
     BLUETOOTH,
@@ -139,6 +140,9 @@ class HomeScreen : public UIScreen {
     Count    // keep as last
   };
 
+  // Selected slot on the Favourites page (0..FAVOURITES_COUNT - 1).
+  uint8_t _fav_sel = 0;
+
   UITask* _task;
   mesh::RTCClock* _rtc;
   SensorManager* _sensors;
@@ -148,7 +152,8 @@ class HomeScreen : public UIScreen {
   AdvertPath recent[UI_RECENT_LIST_SIZE];
 
   int pageBit(int page) const {
-    if (page == CLOCK)     return NodePrefs::HPB_CLOCK;
+    if (page == CLOCK)      return NodePrefs::HPB_CLOCK;
+    if (page == FAVOURITES) return NodePrefs::HPB_FAVOURITES;
     if (page == RECENT)    return NodePrefs::HPB_RECENT;
     if (page == RADIO)     return NodePrefs::HPB_RADIO;
     if (page == BLUETOOTH) return NodePrefs::HPB_BLUETOOTH;
@@ -168,7 +173,8 @@ class HomeScreen : public UIScreen {
   // Returns -1 if the page is not compiled in.
   int bitToPage(int bit) const {
     switch (bit) {
-      case NodePrefs::HPB_CLOCK:     return CLOCK;
+      case NodePrefs::HPB_CLOCK:      return CLOCK;
+      case NodePrefs::HPB_FAVOURITES: return FAVOURITES;
       case NodePrefs::HPB_RECENT:    return RECENT;
       case NodePrefs::HPB_RADIO:     return RADIO;
       case NodePrefs::HPB_BLUETOOTH: return BLUETOOTH;
@@ -200,7 +206,7 @@ class HomeScreen : public UIScreen {
     int n = 0;
     bool custom = _node_prefs && _node_prefs->page_order_set == NodePrefs::PAGE_ORDER_MAGIC;
     if (custom) {
-      for (int i = 0; i < NodePrefs::HPB_COUNT; i++) {
+      for (int i = 0; i < NodePrefs::PAGE_ORDER_LEN; i++) {
         uint8_t v = _node_prefs->page_order[i];
         if (v < 1 || v > NodePrefs::HPB_COUNT) break;
         int pg = bitToPage(v - 1);
@@ -738,6 +744,72 @@ public:
         display.drawTextCentered(display.width() / 2, content_y + step, badge);
       }
       display.drawTextCentered(display.width() / 2, content_y + step * 2, PRESS_LABEL " to open");
+    } else if (_page == HomePage::FAVOURITES) {
+      // Grid of pinned contacts. Layout transposes to current orientation:
+      // landscape → 3×2, portrait → 2×3. Selected tile inverts via drawSelectionRow.
+      display.setColor(DisplayDriver::LIGHT);
+      display.setTextSize(1);
+      display.drawTextCentered(display.width() / 2, 0, "FAVOURITES");
+      display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+
+      const int cols    = display.isLandscape() ? 3 : 2;
+      const int rows    = NodePrefs::FAVOURITES_COUNT / cols;
+      const int grid_y  = display.headerH() + display.sepH();
+      const int grid_h  = display.height() - grid_y;
+      const int cell_w  = display.width() / cols;
+      const int cell_h  = grid_h / rows;
+      const int lh      = display.getLineHeight();
+
+      if (_fav_sel >= NodePrefs::FAVOURITES_COUNT) _fav_sel = 0;
+
+      for (uint8_t i = 0; i < NodePrefs::FAVOURITES_COUNT; i++) {
+        int row = i / cols;
+        int col = i % cols;
+        int cx  = col * cell_w;
+        int cy  = grid_y + row * cell_h;
+        bool sel = (i == _fav_sel);
+        display.drawSelectionRow(cx, cy, cell_w - 1, cell_h - 1, sel);
+
+        // Empty slot → all-zero prefix. Real keys collide with this with probability 2^-48.
+        const uint8_t* prefix = _node_prefs ? _node_prefs->favourite_contacts[i] : nullptr;
+        bool filled = false;
+        if (prefix) {
+          for (uint8_t b = 0; b < NodePrefs::FAVOURITE_PREFIX_LEN; b++)
+            if (prefix[b] != 0) { filled = true; break; }
+        }
+
+        if (filled) {
+          ContactInfo ci;
+          bool found = false;
+          for (int idx = 0; ; idx++) {
+            ContactInfo c;
+            if (!the_mesh.getContactByIdx(idx, c)) break;
+            if (memcmp(c.id.pub_key, prefix, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
+              ci = c; found = true; break;
+            }
+          }
+          char name[24];
+          if (found) display.translateUTF8ToBlocks(name, ci.name, sizeof(name));
+          else       strncpy(name, "(gone)", sizeof(name) - 1), name[sizeof(name) - 1] = '\0';
+          int name_y = cy + (cell_h - lh) / 2;
+          display.drawTextEllipsized(cx + 2, name_y, cell_w - 4, name);
+
+          if (found) {
+            uint8_t unread = _task->getDMUnread(ci.id.pub_key);
+            if (unread > 0) {
+              char badge[5];
+              snprintf(badge, sizeof(badge), "%d", unread);
+              int bw = display.getTextWidth(badge);
+              display.setCursor(cx + cell_w - bw - 2, cy + 1);
+              display.print(badge);
+            }
+          }
+        } else {
+          int plus_y = cy + (cell_h - lh) / 2;
+          display.drawTextCentered(cx + cell_w / 2, plus_y, "+");
+        }
+        if (sel) display.setColor(DisplayDriver::LIGHT);
+      }
     } else if (_page == HomePage::SHUTDOWN) {
       display.setColor(DisplayDriver::LIGHT);
       display.setTextSize(1);
@@ -773,6 +845,27 @@ public:
   }
 
   bool handleInput(char c) override {
+    // Favourites grid claims joystick UP/DOWN and inner LEFT/RIGHT; LEFT at the
+    // left column and RIGHT at the right column fall through to page nav so the
+    // user can still leave the page sideways.
+    if (_page == HomePage::FAVOURITES) {
+      DisplayDriver* d = _task->getDisplay();
+      const int cols = (d && d->isLandscape()) ? 3 : 2;
+      const int rows = NodePrefs::FAVOURITES_COUNT / cols;
+      int col = _fav_sel % cols;
+      int row = _fav_sel / cols;
+      if ((c == KEY_LEFT  || c == KEY_PREV) && col > 0)        { _fav_sel--;        return true; }
+      if ((c == KEY_RIGHT || c == KEY_NEXT) && col < cols - 1) { _fav_sel++;        return true; }
+      if (c == KEY_UP    && row > 0)                            { _fav_sel -= cols; return true; }
+      if (c == KEY_DOWN  && row < rows - 1)                     { _fav_sel += cols; return true; }
+      if (c == KEY_ENTER) {
+        // Phase 2/3 wires this: open DM if filled, picker if empty. Consume for now.
+        _task->showAlert("Pin from contact options", 1000);
+        return true;
+      }
+      // Edge LEFT/RIGHT and unhandled keys fall through to page nav below.
+    }
+
     if (c == KEY_LEFT || c == KEY_PREV) {
       _page = navPage(_page, -1);
       return true;
