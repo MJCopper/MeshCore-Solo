@@ -238,18 +238,34 @@ class SettingsScreen : public UIScreen {
   }
 
   // Initialises page_order to the default display sequence if not already set.
-  // Also repairs a partially-initialised order where CLOCK (bit 0, stored as 1) is absent.
+  // Also repairs a partially-initialised order where CLOCK is absent, and migrates
+  // older orders by inserting FAVOURITES after CLOCK so the page is reorderable.
   void ensurePageOrderInit(NodePrefs* p) const {
     if (!p) return;
     if (p->page_order_set == NodePrefs::PAGE_ORDER_MAGIC) {
-      // Order was previously set — verify CLOCK is present to guard against partial/corrupted data.
-      for (int i = 0; i < NodePrefs::HPB_COUNT; i++) {
+      bool has_clock = false;
+      bool has_fav   = false;
+      int  len       = 0;
+      int  clock_at  = -1;
+      for (int i = 0; i < NodePrefs::PAGE_ORDER_LEN; i++) {
         uint8_t v = p->page_order[i];
         if (v < 1 || v > NodePrefs::HPB_COUNT) break;
-        if (v == 0 + 1) return;  // CLOCK found, order is intact
+        if ((int)(v - 1) == NodePrefs::HPB_CLOCK)      { has_clock = true; clock_at = i; }
+        if ((int)(v - 1) == NodePrefs::HPB_FAVOURITES) { has_fav = true; }
+        len = i + 1;
       }
-      // CLOCK missing — reset and fall through to full re-init.
-      memset(p->page_order, 0, sizeof(p->page_order));
+      if (!has_clock) {
+        // Corrupted/partial — full re-init below.
+        memset(p->page_order, 0, sizeof(p->page_order));
+      } else {
+        if (!has_fav && len < NodePrefs::PAGE_ORDER_LEN) {
+          // Insert FAVOURITES right after CLOCK; shift the tail down by one.
+          int insert_at = clock_at + 1;
+          for (int i = len; i > insert_at; i--) p->page_order[i] = p->page_order[i - 1];
+          p->page_order[insert_at] = NodePrefs::HPB_FAVOURITES + 1;
+        }
+        return;
+      }
     }
     // Default: CLOCK FAVOURITES RECENT RADIO BT ADVERT [GPS] [SENSORS] SETTINGS TOOLS MESSAGES
     // SHUTDOWN is omitted from the explicit list (PAGE_ORDER_LEN = 11 leaves room for the

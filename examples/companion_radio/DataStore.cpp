@@ -314,6 +314,12 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   if (sentinel != NodePrefs::SCHEMA_SENTINEL) {
     MESH_DEBUG_PRINTLN("prefs schema sentinel mismatch: got 0x%08X, expected 0x%08X — re-saving on next change",
                        (unsigned)sentinel, (unsigned)NodePrefs::SCHEMA_SENTINEL);
+    // 0xC0DE0001 → 0xC0DE0002: FAVOURITES home page added. Older saves have it
+    // implicitly off (their mask doesn't include HP_FAVOURITES); turn it on so
+    // upgraded users see the new page by default and can toggle it later.
+    if (_prefs.home_pages_mask != 0) {
+      _prefs.home_pages_mask |= NodePrefs::HP_FAVOURITES;
+    }
   }
 
   file.close();

@@ -747,18 +747,19 @@ public:
     } else if (_page == HomePage::FAVOURITES) {
       // Grid of pinned contacts. Layout transposes to current orientation:
       // landscape → 3×2, portrait → 2×3. Selected tile inverts via drawSelectionRow.
+      // No title — node name + battery (top bar) and the page-dots indicator above
+      // serve as the page identity.
       display.setColor(DisplayDriver::LIGHT);
       display.setTextSize(1);
-      display.drawTextCentered(display.width() / 2, 0, "FAVOURITES");
-      display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
       const int cols    = display.isLandscape() ? 3 : 2;
       const int rows    = NodePrefs::FAVOURITES_COUNT / cols;
-      const int grid_y  = display.headerH() + display.sepH();
-      const int grid_h  = display.height() - grid_y;
+      const int margin  = 2;
+      const int grid_y  = content_y + margin;
+      const int grid_h  = display.height() - grid_y - margin;
       const int cell_w  = display.width() / cols;
       const int cell_h  = grid_h / rows;
-      const int lh      = display.getLineHeight();
+      const int line_h  = display.getLineHeight();
 
       if (_fav_sel >= NodePrefs::FAVOURITES_COUNT) _fav_sel = 0;
 
@@ -791,7 +792,7 @@ public:
           char name[24];
           if (found) display.translateUTF8ToBlocks(name, ci.name, sizeof(name));
           else       strncpy(name, "(gone)", sizeof(name) - 1), name[sizeof(name) - 1] = '\0';
-          int name_y = cy + (cell_h - lh) / 2;
+          int name_y = cy + (cell_h - line_h) / 2;
           display.drawTextEllipsized(cx + 2, name_y, cell_w - 4, name);
 
           if (found) {
@@ -805,7 +806,7 @@ public:
             }
           }
         } else {
-          int plus_y = cy + (cell_h - lh) / 2;
+          int plus_y = cy + (cell_h - line_h) / 2;
           display.drawTextCentered(cx + cell_w / 2, plus_y, "+");
         }
         if (sel) display.setColor(DisplayDriver::LIGHT);
