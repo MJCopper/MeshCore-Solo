@@ -1,5 +1,6 @@
 #include "MyMesh.h"
 #include "MsgExpand.h"
+#include "Features.h"
 
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
@@ -952,9 +953,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.dm_show_all = 1;        // show all contacts by default
   memset(_prefs.dm_notif, 0, sizeof(_prefs.dm_notif));
   _prefs.auto_off_secs = 15;    // 15 seconds auto-off by default
-#ifdef EINK_DISPLAY_MODEL
-  _prefs.clock_hide_seconds = 1;  // e-ink: seconds cause a panel refresh every second
-#endif
+  _prefs.clock_hide_seconds = Features::CLOCK_HIDE_SECONDS_DEFAULT ? 1 : 0;
   _prefs.tz_offset_hours = 0;  // UTC by default
   _prefs.low_batt_mv = 3400;  // auto-shutdown at 3.4V by default
   _prefs.batt_display_mode = 0; // icon by default

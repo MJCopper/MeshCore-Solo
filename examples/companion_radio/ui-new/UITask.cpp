@@ -2,6 +2,7 @@
 #include <helpers/TxtDataHelpers.h>
 #include "../MyMesh.h"
 #include "../MsgExpand.h"
+#include "../Features.h"
 #include "target.h"
 #ifdef WIFI_SSID
   #include <WiFi.h>
@@ -337,11 +338,7 @@ class HomeScreen : public UIScreen {
       // "A" indicator — left of BT; blinks on OLED, always shown on e-ink
       if (_node_prefs && _node_prefs->advert_auto_interval_sec > 0) {
         int aX = leftmostX - ind;
-#ifdef EINK_DISPLAY_MODEL
-        bool show_a = true;
-#else
-        bool show_a = (millis() % 4000) < 2000;
-#endif
+        bool show_a = Features::BLINK_INDICATORS ? ((millis() % 4000) < 2000) : true;
         if (show_a) {
           display.setColor(DisplayDriver::LIGHT);
           display.fillRect(aX, 0, ind, ind_h);
@@ -447,11 +444,7 @@ public:
         char buf[24];
         display.setColor(DisplayDriver::LIGHT);
         display.setTextSize(2);
-#ifdef EINK_DISPLAY_MODEL
-        bool show_sec = false;
-#else
-        bool show_sec = !_node_prefs || !_node_prefs->clock_hide_seconds;
-#endif
+        bool show_sec = !Features::IS_EINK && (!_node_prefs || !_node_prefs->clock_hide_seconds);
         bool h12 = _node_prefs && _node_prefs->clock_12h;
         if (h12) {
           int h = ti->tm_hour % 12; if (h == 0) h = 12;
@@ -774,16 +767,15 @@ public:
       }
     }
     bool auto_adv = _node_prefs && _node_prefs->advert_auto_interval_sec > 0;
-#ifdef EINK_DISPLAY_MODEL
-    if (_page == HomePage::CLOCK) return 30000;  // no seconds on e-ink; refresh every 30s
-    return 30000;  // e-ink: limit base polling; new messages still force immediate refresh via notify()
-#else
+    if (Features::IS_EINK) {
+      // slow display: poll every 30 s; inbound msgs force immediate refresh via notify()
+      return Features::HOME_REFRESH_MS;
+    }
     if (_page == HomePage::CLOCK) {
       bool show_sec = !_node_prefs || !_node_prefs->clock_hide_seconds;
       return auto_adv ? 1000 : (show_sec ? 1000 : 60000);
     }
     return auto_adv ? 1000 : 5000;
-#endif
   }
 
   bool handleInput(char c) override {
@@ -1478,11 +1470,7 @@ void UITask::loop() {
       _display->setCursor(hx, hy);
       _display->print(hint);
       _display->endFrame();
-#ifdef EINK_DISPLAY_MODEL
-      _next_refresh = millis() + 30000;
-#else
-      _next_refresh = millis() + 1000;
-#endif
+      _next_refresh = millis() + Features::LOCKSCREEN_REFRESH_MS;
     } else if (!_locked && millis() >= _next_refresh && curr) {
       _display->startFrame();
       int delay_millis = curr->render(*_display);
