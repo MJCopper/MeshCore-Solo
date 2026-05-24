@@ -245,17 +245,15 @@ class QuickMsgScreen : public UIScreen {
       }
     } else {
       bool show_all = (p && p->dm_show_all);
+      // Build _sorted and counts[] in one pass — avoids a second getContactByIdx loop.
+      int counts[MAX_CONTACTS];
       for (int i = 0; i < total; i++) {
         if (!the_mesh.getContactByIdx(i, c) || c.type != ADV_TYPE_CHAT) continue;
         if (!show_all && !(c.flags & 0x01)) continue;
+        counts[_num_contacts] = dmHistCountForContact(c.id.pub_key);
         _sorted[_num_contacts++] = i;
       }
       // Sort by message count descending; contacts with no messages keep original order.
-      int counts[MAX_CONTACTS];
-      for (int i = 0; i < _num_contacts; i++) {
-        the_mesh.getContactByIdx(_sorted[i], c);
-        counts[i] = dmHistCountForContact(c.id.pub_key);
-      }
       for (int i = 1; i < _num_contacts; i++) {
         if (counts[i] == 0) continue;
         uint16_t key = _sorted[i]; int kc = counts[i];
@@ -665,7 +663,7 @@ public:
           display.fillRect(0, y, display.width(), hist_box_h);
           display.setColor(DisplayDriver::DARK);
           display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
-          if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
+          if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
           display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(e.text));
         } else {
           display.setColor(DisplayDriver::LIGHT);
@@ -673,7 +671,7 @@ public:
           display.fillRect(1, y + 1, display.width() - 2, lh);
           display.setColor(DisplayDriver::DARK);
           display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
-          if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
+          if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
           display.setColor(DisplayDriver::LIGHT);
           display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(e.text));
         }
@@ -780,7 +778,7 @@ public:
           display.fillRect(0, y, display.width(), hist_box_h);
           display.setColor(DisplayDriver::DARK);
           display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
-          if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
+          if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
           display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(msg_part));
         } else {
           display.setColor(DisplayDriver::LIGHT);
@@ -788,7 +786,7 @@ public:
           display.fillRect(1, y + 1, display.width() - 2, lh);
           display.setColor(DisplayDriver::DARK);
           display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
-          if (age[0]) { display.setCursor(display.width() - 3 - display.getTextWidth(age), y + 1); display.print(age); }
+          if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
           display.setColor(DisplayDriver::LIGHT);
           display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(msg_part));
         }
