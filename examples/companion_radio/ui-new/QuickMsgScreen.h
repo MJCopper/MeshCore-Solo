@@ -865,16 +865,20 @@ public:
       if (_ctx_menu.active) {
         auto res = _ctx_menu.handleInput(c);
         if (res == PopupMenu::SELECTED) {
+          int cleared = 0;
           if (_mode_sel == 0) {
+            cleared = getDMUnreadTotal();
             _task->clearAllDMUnread();
-            _task->showAlert("DMs marked read", 800);
           } else if (_mode_sel == 1) {
+            cleared = _task->getChannelUnreadCount();
             clearAllChannelUnread();
-            _task->showAlert("Channels marked read", 800);
           } else {
+            cleared = _task->getRoomUnreadCount();
             _task->clearRoomUnread();
-            _task->showAlert("Rooms marked read", 800);
           }
+          char msg[32];
+          snprintf(msg, sizeof(msg), "%d marked read", cleared);
+          _task->showAlert(msg, 800);
         }
         return true;
       }
