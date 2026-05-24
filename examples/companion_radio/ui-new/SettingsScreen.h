@@ -178,12 +178,14 @@ class SettingsScreen : public UIScreen {
 
   uint16_t homePageBit(int item) const {
     int bit = homePageBitIndex(item);
-    return (bit >= 0 && bit < 9) ? (uint16_t)(1 << bit) : 0;
+    // Bits 0..HPB_SHUTDOWN have mask bits in home_pages_mask; SETTINGS and
+    // QUICK_MSG are always visible (no mask bit) and return 0.
+    return (bit >= 0 && bit < NodePrefs::HPB_SETTINGS) ? (uint16_t)(1 << bit) : 0;
   }
 
   const char* homePageLabel(int item) const {
     int bit = homePageBitIndex(item);
-    return NodePrefs::homePageLabel((uint8_t)(bit >= 0 ? bit : 11));
+    return NodePrefs::homePageLabel((uint8_t)(bit >= 0 ? bit : NodePrefs::HPB_COUNT));
   }
 
   bool homePageVisible(int item, const NodePrefs* p) const {
@@ -198,23 +200,24 @@ class SettingsScreen : public UIScreen {
     return item != HOME_SETTINGS && item != HOME_QUICK_MSG;
   }
 
-  // Returns the bit-index (0-10) used in page_order for this SettingItem, or -1.
+  // Returns the bit-index used in page_order for this SettingItem, or -1.
+  // Bit-index values are defined once in NodePrefs::HomePageBit.
   int homePageBitIndex(int item) const {
-    if (item == HOME_CLOCK)     return 0;
-    if (item == HOME_RECENT)    return 1;
-    if (item == HOME_RADIO)     return 2;
-    if (item == HOME_BT)        return 3;
-    if (item == HOME_ADVERT)    return 4;
+    if (item == HOME_CLOCK)     return NodePrefs::HPB_CLOCK;
+    if (item == HOME_RECENT)    return NodePrefs::HPB_RECENT;
+    if (item == HOME_RADIO)     return NodePrefs::HPB_RADIO;
+    if (item == HOME_BT)        return NodePrefs::HPB_BLUETOOTH;
+    if (item == HOME_ADVERT)    return NodePrefs::HPB_ADVERT;
 #if ENV_INCLUDE_GPS == 1
-    if (item == HOME_GPS)       return 5;
+    if (item == HOME_GPS)       return NodePrefs::HPB_GPS;
 #endif
 #if UI_SENSORS_PAGE == 1
-    if (item == HOME_SENSORS)   return 6;
+    if (item == HOME_SENSORS)   return NodePrefs::HPB_SENSORS;
 #endif
-    if (item == HOME_TOOLS)     return 7;
-    if (item == HOME_SHUTDOWN)  return 8;
-    if (item == HOME_SETTINGS)  return 9;
-    if (item == HOME_QUICK_MSG) return 10;
+    if (item == HOME_TOOLS)     return NodePrefs::HPB_TOOLS;
+    if (item == HOME_SHUTDOWN)  return NodePrefs::HPB_SHUTDOWN;
+    if (item == HOME_SETTINGS)  return NodePrefs::HPB_SETTINGS;
+    if (item == HOME_QUICK_MSG) return NodePrefs::HPB_QUICK_MSG;
     return -1;
   }
 
@@ -223,9 +226,9 @@ class SettingsScreen : public UIScreen {
     if (!p || p->page_order_set != NodePrefs::PAGE_ORDER_MAGIC) return 0;
     int bit = homePageBitIndex(item);
     if (bit < 0) return 0;
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < NodePrefs::HPB_COUNT; i++) {
       uint8_t v = p->page_order[i];
-      if (v < 1 || v > 11) break;
+      if (v < 1 || v > NodePrefs::HPB_COUNT) break;
       if ((int)(v - 1) == bit) return i + 1;
     }
     return 0;
@@ -237,9 +240,9 @@ class SettingsScreen : public UIScreen {
     if (!p) return;
     if (p->page_order_set == NodePrefs::PAGE_ORDER_MAGIC) {
       // Order was previously set — verify CLOCK is present to guard against partial/corrupted data.
-      for (int i = 0; i < 11; i++) {
+      for (int i = 0; i < NodePrefs::HPB_COUNT; i++) {
         uint8_t v = p->page_order[i];
-        if (v < 1 || v > 11) break;
+        if (v < 1 || v > NodePrefs::HPB_COUNT) break;
         if (v == 0 + 1) return;  // CLOCK found, order is intact
       }
       // CLOCK missing — reset and fall through to full re-init.
@@ -262,7 +265,7 @@ class SettingsScreen : public UIScreen {
     p->page_order[j++] = 7 + 1;  // TOOLS
     p->page_order[j++] = 10 + 1; // MESSAGES (QUICK_MSG)
     p->page_order[j++] = 8 + 1;  // SHUTDOWN
-    while (j < 11) p->page_order[j++] = 0;
+    while (j < NodePrefs::HPB_COUNT) p->page_order[j++] = 0;
     p->page_order_set = NodePrefs::PAGE_ORDER_MAGIC;
   }
 
@@ -272,9 +275,9 @@ class SettingsScreen : public UIScreen {
     int bit = homePageBitIndex(item);
     if (bit < 0) return;
     int cur = -1, total = 0;
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < NodePrefs::HPB_COUNT; i++) {
       uint8_t v = p->page_order[i];
-      if (v < 1 || v > 11) break;
+      if (v < 1 || v > NodePrefs::HPB_COUNT) break;
       if ((int)(v - 1) == bit) cur = i;
       total++;
     }

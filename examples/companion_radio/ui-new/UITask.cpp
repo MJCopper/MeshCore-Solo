@@ -148,47 +148,41 @@ class HomeScreen : public UIScreen {
   AdvertPath recent[UI_RECENT_LIST_SIZE];
 
   int pageBit(int page) const {
-    if (page == CLOCK)     return 0;
-    if (page == RECENT)    return 1;
-    if (page == RADIO)     return 2;
-    if (page == BLUETOOTH) return 3;
-    if (page == ADVERT)    return 4;
+    if (page == CLOCK)     return NodePrefs::HPB_CLOCK;
+    if (page == RECENT)    return NodePrefs::HPB_RECENT;
+    if (page == RADIO)     return NodePrefs::HPB_RADIO;
+    if (page == BLUETOOTH) return NodePrefs::HPB_BLUETOOTH;
+    if (page == ADVERT)    return NodePrefs::HPB_ADVERT;
 #if ENV_INCLUDE_GPS == 1
-    if (page == GPS)       return 5;
+    if (page == GPS)       return NodePrefs::HPB_GPS;
 #endif
 #if UI_SENSORS_PAGE == 1
-    if (page == SENSORS)   return 6;
+    if (page == SENSORS)   return NodePrefs::HPB_SENSORS;
 #endif
-    if (page == TOOLS)     return 7;
-    if (page == SHUTDOWN)  return 8;
-    return -1;  // SETTINGS, QUICK_MSG always visible
+    if (page == TOOLS)     return NodePrefs::HPB_TOOLS;
+    if (page == SHUTDOWN)  return NodePrefs::HPB_SHUTDOWN;
+    return -1;  // SETTINGS, QUICK_MSG always visible (no mask bit)
   }
 
-  // Maps page_order bit-index (0-10) back to the HomePage enum value for this build.
+  // Maps page_order bit-index back to the HomePage enum value for this build.
   // Returns -1 if the page is not compiled in.
   int bitToPage(int bit) const {
     switch (bit) {
-      case 0: return CLOCK;
-      case 1: return RECENT;
-      case 2: return RADIO;
-      case 3: return BLUETOOTH;
-      case 4: return ADVERT;
-      case 5:
+      case NodePrefs::HPB_CLOCK:     return CLOCK;
+      case NodePrefs::HPB_RECENT:    return RECENT;
+      case NodePrefs::HPB_RADIO:     return RADIO;
+      case NodePrefs::HPB_BLUETOOTH: return BLUETOOTH;
+      case NodePrefs::HPB_ADVERT:    return ADVERT;
 #if ENV_INCLUDE_GPS == 1
-        return GPS;
-#else
-        return -1;
+      case NodePrefs::HPB_GPS:       return GPS;
 #endif
-      case 6:
 #if UI_SENSORS_PAGE == 1
-        return SENSORS;
-#else
-        return -1;
+      case NodePrefs::HPB_SENSORS:   return SENSORS;
 #endif
-      case 7: return TOOLS;
-      case 8: return SHUTDOWN;
-      case 9: return SETTINGS;
-      case 10: return QUICK_MSG;
+      case NodePrefs::HPB_TOOLS:     return TOOLS;
+      case NodePrefs::HPB_SHUTDOWN:  return SHUTDOWN;
+      case NodePrefs::HPB_SETTINGS:  return SETTINGS;
+      case NodePrefs::HPB_QUICK_MSG: return QUICK_MSG;
       default: return -1;
     }
   }
@@ -206,9 +200,9 @@ class HomeScreen : public UIScreen {
     int n = 0;
     bool custom = _node_prefs && _node_prefs->page_order_set == NodePrefs::PAGE_ORDER_MAGIC;
     if (custom) {
-      for (int i = 0; i < 11; i++) {
+      for (int i = 0; i < NodePrefs::HPB_COUNT; i++) {
         uint8_t v = _node_prefs->page_order[i];
-        if (v < 1 || v > 11) break;
+        if (v < 1 || v > NodePrefs::HPB_COUNT) break;
         int pg = bitToPage(v - 1);
         if (pg >= 0 && pg < (int)Count && isPageVisible(pg)) out[n++] = pg;
       }

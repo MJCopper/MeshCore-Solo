@@ -300,7 +300,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   // Migration: pre-magic firmware wrote page_order without a flag. If we see a plausible
   // first entry from such a save, accept it once — savePrefs will then persist the magic.
   if (_prefs.page_order_set != NodePrefs::PAGE_ORDER_MAGIC
-      && _prefs.page_order[0] >= 1 && _prefs.page_order[0] <= 11) {
+      && _prefs.page_order[0] >= 1 && _prefs.page_order[0] <= NodePrefs::HPB_COUNT) {
     _prefs.page_order_set = NodePrefs::PAGE_ORDER_MAGIC;
   }
 

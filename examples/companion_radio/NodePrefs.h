@@ -81,9 +81,11 @@ struct NodePrefs {  // persisted to file
   DmMelodyEntry dm_melody[DM_MELODY_TABLE_MAX];
   uint8_t  use_lemon_font;      // 0=default Adafruit font, 1=Lemon font (Unicode, pixel-accurate wrap)
   uint8_t  display_rotation;    // 0-3; only used on e-ink displays
-  // Home screen page order: each byte = bit-index+1 (see HP_* bit positions + 9=Settings, 10=Messages).
-  // 0 = end of list. Validity gated by page_order_set magic (see below) — not by entry value range,
-  // so a junk byte in 1..11 cannot trigger custom-order mode.
+  // Home screen page order: each byte = HomePageBit + 1. 0 terminates the list.
+  // Validity gated by page_order_set magic (see below) — not by entry value range,
+  // so a junk byte in 1..HPB_COUNT cannot trigger custom-order mode.
+  // (Array length = HPB_COUNT, declared as literal so the field offset is stable
+  // across builds that add new HomePageBit entries.)
   uint8_t  page_order[11];
   uint8_t  joystick_rotation;   // 0-3 steps CW; independent of display_rotation
   uint8_t  eink_full_refresh_every; // index into {0,5,10,20,30}: full refresh every N partials (0=off)
@@ -96,25 +98,45 @@ struct NodePrefs {  // persisted to file
   // High 24 bits identify the file format; low byte is the schema revision.
   static const uint32_t SCHEMA_SENTINEL = 0xC0DE0001;
 
+  // Bit-index for each home page. Used by page_order (entries store bit+1) and
+  // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
+  // and SettingsScreen::homePageBitIndex route their per-enum lookups through these.
+  enum HomePageBit : uint8_t {
+    HPB_CLOCK     = 0,
+    HPB_RECENT    = 1,
+    HPB_RADIO     = 2,
+    HPB_BLUETOOTH = 3,
+    HPB_ADVERT    = 4,
+    HPB_GPS       = 5,
+    HPB_SENSORS   = 6,
+    HPB_TOOLS     = 7,
+    HPB_SHUTDOWN  = 8,
+    HPB_SETTINGS  = 9,
+    HPB_QUICK_MSG = 10,
+    HPB_COUNT     = 11,
+  };
+
   // Bitmasks for home_pages_mask (bit=1 → page visible; 0 field = all visible).
-  static const uint16_t HP_CLOCK     = 1 << 0;
-  static const uint16_t HP_RECENT    = 1 << 1;
-  static const uint16_t HP_RADIO     = 1 << 2;
-  static const uint16_t HP_BLUETOOTH = 1 << 3;
-  static const uint16_t HP_ADVERT    = 1 << 4;
-  static const uint16_t HP_GPS       = 1 << 5;
-  static const uint16_t HP_SENSORS   = 1 << 6;
-  static const uint16_t HP_TOOLS     = 1 << 7;
-  static const uint16_t HP_SHUTDOWN  = 1 << 8;
+  // SETTINGS and QUICK_MSG have no mask bit — they're always visible.
+  static const uint16_t HP_CLOCK     = 1 << HPB_CLOCK;
+  static const uint16_t HP_RECENT    = 1 << HPB_RECENT;
+  static const uint16_t HP_RADIO     = 1 << HPB_RADIO;
+  static const uint16_t HP_BLUETOOTH = 1 << HPB_BLUETOOTH;
+  static const uint16_t HP_ADVERT    = 1 << HPB_ADVERT;
+  static const uint16_t HP_GPS       = 1 << HPB_GPS;
+  static const uint16_t HP_SENSORS   = 1 << HPB_SENSORS;
+  static const uint16_t HP_TOOLS     = 1 << HPB_TOOLS;
+  static const uint16_t HP_SHUTDOWN  = 1 << HPB_SHUTDOWN;
   static const uint16_t HP_ALL       = 0x01FF;
 
-  // Label for home page by bit-index (0–10); returns "" for out-of-range.
+  // Label for home page by bit-index; returns "" for out-of-range.
+  // Array indices match HomePageBit values.
   static const char* homePageLabel(uint8_t bit) {
-    static const char* labels[] = {
+    static const char* labels[HPB_COUNT] = {
       "Clock", "Recent", "Radio", "Bluetooth", "Advert",
       "GPS", "Sensors", "Tools", "Shutdown", "Settings", "Messages"
     };
-    return (bit < 11) ? labels[bit] : "";
+    return (bit < HPB_COUNT) ? labels[bit] : "";
   }
 
   static void buildRTTTLString(const uint8_t* notes, uint8_t len, uint8_t bpm_idx,
