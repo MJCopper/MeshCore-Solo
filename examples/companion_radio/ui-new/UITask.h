@@ -139,6 +139,35 @@ public:
   void clearAllDMUnread() { memset(_dm_unread_table, 0, sizeof(_dm_unread_table)); }
   bool hasDisplay() const { return _display != NULL; }
   DisplayDriver* getDisplay() const { return _display; }
+
+  // Favourites dial helpers. Slot index 0..FAVOURITES_COUNT-1.
+  int findFavouriteSlot(const uint8_t* pub_key) const {
+    if (!_node_prefs || !pub_key) return -1;
+    for (int i = 0; i < NodePrefs::FAVOURITES_COUNT; i++) {
+      if (memcmp(_node_prefs->favourite_contacts[i], pub_key, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
+        // All-zero prefix is "empty" — never matches a real key.
+        bool any = false;
+        for (uint8_t b = 0; b < NodePrefs::FAVOURITE_PREFIX_LEN; b++)
+          if (_node_prefs->favourite_contacts[i][b]) { any = true; break; }
+        if (any) return i;
+      }
+    }
+    return -1;
+  }
+  bool isFavouriteSlotEmpty(int slot) const {
+    if (!_node_prefs || slot < 0 || slot >= NodePrefs::FAVOURITES_COUNT) return true;
+    for (uint8_t b = 0; b < NodePrefs::FAVOURITE_PREFIX_LEN; b++)
+      if (_node_prefs->favourite_contacts[slot][b]) return false;
+    return true;
+  }
+  void setFavouriteSlot(int slot, const uint8_t* pub_key) {
+    if (!_node_prefs || slot < 0 || slot >= NodePrefs::FAVOURITES_COUNT || !pub_key) return;
+    memcpy(_node_prefs->favourite_contacts[slot], pub_key, NodePrefs::FAVOURITE_PREFIX_LEN);
+  }
+  void clearFavouriteSlot(int slot) {
+    if (!_node_prefs || slot < 0 || slot >= NodePrefs::FAVOURITES_COUNT) return;
+    memset(_node_prefs->favourite_contacts[slot], 0, NodePrefs::FAVOURITE_PREFIX_LEN);
+  }
   bool isButtonPressed() const;
 
   bool isBuzzerQuiet() { 

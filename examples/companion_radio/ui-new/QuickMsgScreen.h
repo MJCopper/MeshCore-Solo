@@ -46,6 +46,9 @@ class QuickMsgScreen : public UIScreen {
   bool      _ctx_dirty;
   char      _ctx_notif_item[22];
   char      _ctx_melody_item[20];
+  char      _ctx_pin_item[28];   // "Pin to dial" or "Unpin (slot N)"
+  char      _pin_slot_labels[NodePrefs::FAVOURITES_COUNT][22];  // per-slot picker labels
+  bool      _pin_picker_active;  // true while the slot-picker submenu is open
   char      _reply_prefix[36];   // "@[nick] " built when reply is triggered
   bool      _reply_mode;         // true while composing a reply (prefix is prepended)
 
@@ -400,7 +403,7 @@ public:
       _hist_head(0), _hist_count(0),
       _dm_hist_head(0), _dm_hist_count(0),
       _dm_hist_sel(-1), _dm_hist_scroll(0),
-      _ctx_dirty(false), _reply_mode(false) {
+      _ctx_dirty(false), _pin_picker_active(false), _reply_mode(false) {
     memset(_ch_unread, 0, sizeof(_ch_unread));
   }
 
@@ -465,6 +468,7 @@ public:
 
     _ctx_menu.active = false;
     _ctx_dirty = false;
+    _pin_picker_active = false;
     _unread_at_entry = 0;
     _viewing_max_seen = 0;
   }
@@ -909,6 +913,22 @@ public:
       // Context menu consumes all input while open
       if (_ctx_menu.active) {
         auto res = _ctx_menu.handleInput(c);
+        if (_pin_picker_active) {
+          // Slot picker sub-menu: index 0..FAVOURITES_COUNT-1 maps directly to slot.
+          if (res == PopupMenu::SELECTED && _num_contacts > 0) {
+            ContactInfo ci;
+            if (the_mesh.getContactByIdx(_sorted[_contact_sel], ci)) {
+              int slot = _ctx_menu.selectedIndex();
+              _task->setFavouriteSlot(slot, ci.id.pub_key);
+              the_mesh.savePrefs();
+              char alert[24];
+              snprintf(alert, sizeof(alert), "Pinned to slot %d", slot + 1);
+              _task->showAlert(alert, 800);
+            }
+          }
+          if (res != PopupMenu::NONE) _pin_picker_active = false;
+          return true;
+        }
         if (res == PopupMenu::SELECTED && _num_contacts > 0) {
           ContactInfo ci;
           if (the_mesh.getContactByIdx(_sorted[_contact_sel], ci)) {
@@ -918,10 +938,46 @@ public:
               uint8_t nstate = dmNotifState(ci.id.pub_key);
               setDmNotifState(ci.id.pub_key, (nstate + 1) % 3);
               _ctx_dirty = true;
-            } else {
+            } else if (_ctx_menu.selectedIndex() == 2) {
               uint8_t slot = dmMelodySlot(ci.id.pub_key);
               setDmMelody(ci.id.pub_key, (slot + 1) % 3);
               _ctx_dirty = true;
+            } else if (_ctx_menu.selectedIndex() == 3) {
+              // Pin / Unpin
+              int pinned_slot = _task->findFavouriteSlot(ci.id.pub_key);
+              if (pinned_slot >= 0) {
+                _task->clearFavouriteSlot(pinned_slot);
+                the_mesh.savePrefs();
+                char alert[24];
+                snprintf(alert, sizeof(alert), "Unpinned (slot %d)", pinned_slot + 1);
+                _task->showAlert(alert, 800);
+              } else {
+                // Open slot picker. Each label shows "Slot N: <name>" or "Slot N: empty".
+                for (int s = 0; s < NodePrefs::FAVOURITES_COUNT; s++) {
+                  if (_task->isFavouriteSlotEmpty(s)) {
+                    snprintf(_pin_slot_labels[s], sizeof(_pin_slot_labels[s]), "Slot %d: empty", s + 1);
+                  } else {
+                    // Resolve current occupant name by walking contacts.
+                    char nm[16] = "?";
+                    NodePrefs* p = _task->getNodePrefs();
+                    if (p) {
+                      const uint8_t* pfx = p->favourite_contacts[s];
+                      for (int idx = 0; ; idx++) {
+                        ContactInfo c2;
+                        if (!the_mesh.getContactByIdx(idx, c2)) break;
+                        if (memcmp(c2.id.pub_key, pfx, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
+                          DisplayDriver::translateUTF8Static(nm, c2.name, sizeof(nm));
+                          break;
+                        }
+                      }
+                    }
+                    snprintf(_pin_slot_labels[s], sizeof(_pin_slot_labels[s]), "Slot %d: %s", s + 1, nm);
+                  }
+                }
+                _ctx_menu.begin("Pick slot", 3);
+                for (int s = 0; s < NodePrefs::FAVOURITES_COUNT; s++) _ctx_menu.addItem(_pin_slot_labels[s]);
+                _pin_picker_active = true;
+              }
             }
           }
         }
@@ -960,10 +1016,14 @@ public:
         { static const char* ML[] = { "global", "M1", "M2" };
           snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s",
                    ML[dmMelodySlot(ci.id.pub_key)]); }
+        int pinned_slot = _task->findFavouriteSlot(ci.id.pub_key);
+        if (pinned_slot >= 0) snprintf(_ctx_pin_item, sizeof(_ctx_pin_item), "Unpin (slot %d)", pinned_slot + 1);
+        else                  snprintf(_ctx_pin_item, sizeof(_ctx_pin_item), "Pin to dial");
         _ctx_menu.begin("Contact options", 3);
         _ctx_menu.addItem("Mark as read");
         _ctx_menu.addItem(_ctx_notif_item);
         _ctx_menu.addItem(_ctx_melody_item);
+        _ctx_menu.addItem(_ctx_pin_item);
         _ctx_dirty = false;
         return true;
       }
