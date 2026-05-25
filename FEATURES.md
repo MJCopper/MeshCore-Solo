@@ -58,7 +58,13 @@ Render layout (250×122 landscape e-ink):
 
 Joystick navigation is natural with 6 tiles (UP/DOWN between rows, LEFT/RIGHT within row).
 
-### 🚧 GPS breadcrumb
+### 🚧 GPS trail (renamed from breadcrumb)
+
+Phase 1 ✅ (storage + sampling + Summary view + G indicator in status bar)
+Phase 2 ✅ (auto-fit Map view with cos(lat) aspect compensation; LEFT/RIGHT cycles views)
+Phase 3 📋 (per-point list view with timestamps + segment deltas)
+Phase 4 📋 (context menu: reset, save → slot N, load ← slot N, GPX export over USB)
+Phase 5 📋 (Settings › GPS › Trail interval + min-delta)
 
 Tools › Breadcrumb. Periodically samples `(lat, lon, ts)` into a RAM ring buffer; user explicitly saves snapshots to flash.
 
