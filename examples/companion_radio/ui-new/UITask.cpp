@@ -116,7 +116,7 @@ static const int QUICK_MSGS_MAX = 10;
 #include "NearbyScreen.h"
 #include "DashboardConfigScreen.h"
 #include "AutoAdvertScreen.h"
-#include "BreadcrumbScreen.h"
+#include "TrailScreen.h"
 #include "ToolsScreen.h"
 
 // ── HomeScreen ────────────────────────────────────────────────────────────────
@@ -403,8 +403,8 @@ class HomeScreen : public UIScreen {
         leftmostX = aX - 1;
       }
 
-      // "G" indicator — GPS breadcrumb logging active. Same blink convention.
-      if (_task->breadcrumb().isActive()) {
+      // "G" indicator — GPS trail logging active. Same blink convention.
+      if (_task->trail().isActive()) {
         int gX = leftmostX - ind;
         bool show_g = Features::BLINK_INDICATORS ? ((millis() % 4000) < 2000) : true;
         if (show_g) {
@@ -1088,7 +1088,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   nearby_screen = new NearbyScreen(this);
   dashboard_config = new DashboardConfigScreen(this, node_prefs);
   auto_advert_screen = new AutoAdvertScreen(this, node_prefs);
-  breadcrumb_screen  = new BreadcrumbScreen(this, &_breadcrumb);
+  trail_screen       = new TrailScreen(this, &_trail);
   applyBrightness();
   applyFont();
   applyRotation();
@@ -1125,9 +1125,9 @@ void UITask::gotoDashboardConfig() {
   setCurrScreen(dashboard_config);
 }
 
-void UITask::gotoBreadcrumbScreen() {
-  ((BreadcrumbScreen*)breadcrumb_screen)->enter();
-  setCurrScreen(breadcrumb_screen);
+void UITask::gotoTrailScreen() {
+  ((TrailScreen*)trail_screen)->enter();
+  setCurrScreen(trail_screen);
 }
 
 void UITask::gotoAutoAdvertScreen() {
@@ -1747,19 +1747,19 @@ void UITask::loop() {
     next_batt_chck = millis() + 8000;
   }
 
-  // GPS breadcrumb sampling — runs in the background while the trail is
+  // GPS trail sampling — runs in the background while the trail is
   // active, independent of which screen is shown. Skips silently if no GPS
   // fix; min-delta gate inside addPoint() avoids near-stationary spam.
-  if (_breadcrumb.isActive() && _node_prefs != NULL
-      && (int32_t)(millis() - _next_breadcrumb_sample_ms) >= 0) {
-    uint16_t interval_s = BreadcrumbStore::intervalSecs(_node_prefs->breadcrumb_interval_idx);
-    _next_breadcrumb_sample_ms = millis() + (uint32_t)interval_s * 1000UL;
+  if (_trail.isActive() && _node_prefs != NULL
+      && (int32_t)(millis() - _next_trail_sample_ms) >= 0) {
+    uint16_t interval_s = TrailStore::intervalSecs(_node_prefs->trail_interval_idx);
+    _next_trail_sample_ms = millis() + (uint32_t)interval_s * 1000UL;
     LocationProvider* loc = _sensors ? _sensors->getLocationProvider() : nullptr;
     if (loc && loc->isValid()) {
-      uint16_t md = BreadcrumbStore::minDeltaMeters(_node_prefs->breadcrumb_min_delta_idx);
-      _breadcrumb.addPoint((int32_t)loc->getLatitude(),
-                            (int32_t)loc->getLongitude(),
-                            (uint32_t)rtc_clock.getCurrentTime(), md);
+      uint16_t md = TrailStore::minDeltaMeters(_node_prefs->trail_min_delta_idx);
+      _trail.addPoint((int32_t)loc->getLatitude(),
+                      (int32_t)loc->getLongitude(),
+                      (uint32_t)rtc_clock.getCurrentTime(), md);
     }
   }
 }

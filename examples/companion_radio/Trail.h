@@ -4,18 +4,18 @@
 #include <math.h>
 #include <stdint.h>
 
-// RAM-only GPS breadcrumb ring buffer.
+// RAM-only GPS trail ring buffer.
 // Storage cost: 256 × 12 B = 3 KB. The trail survives auto-off (only the
 // display blanks) but is lost on reboot — user explicitly snapshots to a
 // LittleFS slot before powering down to keep it.
 
-struct BreadcrumbPoint {
+struct TrailPoint {
   int32_t  lat_1e6;
   int32_t  lon_1e6;
   uint32_t ts;            // epoch seconds (RTC)
 };
 
-class BreadcrumbStore {
+class TrailStore {
 public:
   static const int CAPACITY = 256;
 
@@ -48,9 +48,9 @@ public:
   bool empty() const { return _count == 0; }
 
   // i = 0 → oldest entry, i = count()-1 → newest.
-  const BreadcrumbPoint& at(int i) const { return _buf[(_head + i) % CAPACITY]; }
-  const BreadcrumbPoint& first() const   { return at(0); }
-  const BreadcrumbPoint& last()  const   { return at(_count - 1); }
+  const TrailPoint& at(int i) const { return _buf[(_head + i) % CAPACITY]; }
+  const TrailPoint& first() const   { return at(0); }
+  const TrailPoint& last()  const   { return at(_count - 1); }
 
   void clear() { _head = 0; _count = 0; }
 
@@ -133,7 +133,7 @@ public:
   }
 
 private:
-  BreadcrumbPoint _buf[CAPACITY];
+  TrailPoint _buf[CAPACITY];
   int  _head   = 0;
   int  _count  = 0;
   bool _active = false;

@@ -1,23 +1,23 @@
 #pragma once
-// GPS breadcrumb viewer. Tools › Breadcrumb.
+// GPS trail viewer. Tools › Trail.
 // Phase 1: Summary view only. Phases 2/3 add Map and List views.
-// Included by UITask.cpp after Breadcrumb store + ToolsScreen.
+// Included by UITask.cpp after Trail store + ToolsScreen.
 
-#include "../Breadcrumb.h"
+#include "../Trail.h"
 
-class BreadcrumbScreen : public UIScreen {
-  UITask*          _task;
-  BreadcrumbStore* _store;
+class TrailScreen : public UIScreen {
+  UITask*     _task;
+  TrailStore* _store;
 
 public:
-  BreadcrumbScreen(UITask* task, BreadcrumbStore* store) : _task(task), _store(store) {}
+  TrailScreen(UITask* task, TrailStore* store) : _task(task), _store(store) {}
 
   void enter() { /* nothing to reset; live trail stays */ }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
-    display.drawTextCentered(display.width() / 2, 0, "BREADCRUMB");
+    display.drawTextCentered(display.width() / 2, 0, "TRAIL");
     display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
     const int y0   = display.listStart();
@@ -31,7 +31,7 @@ public:
     display.setCursor(2, y0);
     display.print(buf);
 
-    snprintf(buf, sizeof(buf), "Points: %d / %d", _store->count(), BreadcrumbStore::CAPACITY);
+    snprintf(buf, sizeof(buf), "Points: %d / %d", _store->count(), TrailStore::CAPACITY);
     display.setCursor(2, y0 + step);
     display.print(buf);
 
