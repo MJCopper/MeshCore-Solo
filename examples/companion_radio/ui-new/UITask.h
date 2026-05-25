@@ -108,6 +108,7 @@ public:
   void gotoHomeScreen() { setCurrScreen(home); }
   void gotoSettingsScreen();
   void gotoQuickMsgScreen();
+  void openContactDM(const ContactInfo& ci);
   void gotoToolsScreen();
   void gotoRingtoneEditor(int slot = 0);
   void gotoBotScreen();

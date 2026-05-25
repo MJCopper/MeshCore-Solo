@@ -473,6 +473,18 @@ public:
     _viewing_max_seen = 0;
   }
 
+  // Jump straight into a contact's DM history (used by the Favourites dial).
+  // Caller must have already reset() the screen.
+  void enterDM(const ContactInfo& ci) {
+    _sel_contact = ci;
+    _task->clearDMUnread(ci.id.pub_key);
+    _dm_hist_sel = -1;
+    _dm_hist_scroll = 0;
+    _dm_fs.active = false;
+    _room_mode = false;
+    _phase = DM_HIST;
+  }
+
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);

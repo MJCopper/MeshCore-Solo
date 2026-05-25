@@ -860,8 +860,27 @@ public:
       if (c == KEY_UP    && row > 0)                            { _fav_sel -= cols; return true; }
       if (c == KEY_DOWN  && row < rows - 1)                     { _fav_sel += cols; return true; }
       if (c == KEY_ENTER) {
-        // Phase 2/3 wires this: open DM if filled, picker if empty. Consume for now.
-        _task->showAlert("Pin from contact options", 1000);
+        // Filled slot → open the DM directly. Empty slot waits for phase 3
+        // (mini-picker); for now show the pin hint.
+        NodePrefs* p = _task->getNodePrefs();
+        const uint8_t* pfx = (p && _fav_sel < NodePrefs::FAVOURITES_COUNT)
+                             ? p->favourite_contacts[_fav_sel] : nullptr;
+        bool filled = false;
+        if (pfx) for (uint8_t b = 0; b < NodePrefs::FAVOURITE_PREFIX_LEN; b++)
+          if (pfx[b]) { filled = true; break; }
+        if (filled) {
+          for (int idx = 0; ; idx++) {
+            ContactInfo c2;
+            if (!the_mesh.getContactByIdx(idx, c2)) break;
+            if (memcmp(c2.id.pub_key, pfx, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
+              _task->openContactDM(c2);
+              return true;
+            }
+          }
+          _task->showAlert("Contact not found", 800);
+        } else {
+          _task->showAlert("Pin from contact options", 1000);
+        }
         return true;
       }
       // Edge LEFT/RIGHT and unhandled keys fall through to page nav below.
@@ -1043,6 +1062,12 @@ bool UITask::isMelodyPlaying() {
 
 void UITask::gotoQuickMsgScreen() {
   ((QuickMsgScreen*)quick_msg)->reset();
+  setCurrScreen(quick_msg);
+}
+
+void UITask::openContactDM(const ContactInfo& ci) {
+  ((QuickMsgScreen*)quick_msg)->reset();
+  ((QuickMsgScreen*)quick_msg)->enterDM(ci);
   setCurrScreen(quick_msg);
 }
 
