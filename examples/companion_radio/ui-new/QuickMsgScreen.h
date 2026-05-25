@@ -49,6 +49,7 @@ class QuickMsgScreen : public UIScreen {
   char      _ctx_pin_item[28];   // "Pin to dial" or "Unpin (slot N)"
   char      _pin_slot_labels[NodePrefs::FAVOURITES_COUNT][22];  // per-slot picker labels
   bool      _pin_picker_active;  // true while the slot-picker submenu is open
+  bool      _dm_direct_entry;    // entered DM_HIST via Favourites shortcut; CANCEL returns home
   char      _reply_prefix[36];   // "@[nick] " built when reply is triggered
   bool      _reply_mode;         // true while composing a reply (prefix is prepended)
 
@@ -403,7 +404,7 @@ public:
       _hist_head(0), _hist_count(0),
       _dm_hist_head(0), _dm_hist_count(0),
       _dm_hist_sel(-1), _dm_hist_scroll(0),
-      _ctx_dirty(false), _pin_picker_active(false), _reply_mode(false) {
+      _ctx_dirty(false), _pin_picker_active(false), _dm_direct_entry(false), _reply_mode(false) {
     memset(_ch_unread, 0, sizeof(_ch_unread));
   }
 
@@ -469,12 +470,15 @@ public:
     _ctx_menu.active = false;
     _ctx_dirty = false;
     _pin_picker_active = false;
+    _dm_direct_entry = false;
     _unread_at_entry = 0;
     _viewing_max_seen = 0;
   }
 
   // Jump straight into a contact's DM history (used by the Favourites dial).
-  // Caller must have already reset() the screen.
+  // Caller must have already reset() the screen. Marks the entry so KEY_CANCEL
+  // from DM_HIST returns to the home screen instead of falling back through
+  // CONTACT_PICK → MODE_SELECT.
   void enterDM(const ContactInfo& ci) {
     _sel_contact = ci;
     _task->clearDMUnread(ci.id.pub_key);
@@ -483,6 +487,7 @@ public:
     _dm_fs.active = false;
     _room_mode = false;
     _phase = DM_HIST;
+    _dm_direct_entry = true;
   }
 
   int render(DisplayDriver& display) override {
@@ -1141,7 +1146,15 @@ public:
         }
         return true;
       }
-      if (c == KEY_CANCEL) { _phase = CONTACT_PICK; return true; }
+      if (c == KEY_CANCEL) {
+        if (_dm_direct_entry) {
+          _dm_direct_entry = false;
+          _task->gotoHomeScreen();
+        } else {
+          _phase = CONTACT_PICK;
+        }
+        return true;
+      }
       if (c == KEY_UP) {
         if (_dm_hist_sel > 0) {
           _dm_hist_sel--;
