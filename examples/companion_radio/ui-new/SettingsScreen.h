@@ -60,6 +60,8 @@ class SettingsScreen : public UIScreen {
     // GPS section
     SECTION_GPS,
     GPS_INTERVAL,
+    TRAIL_INTERVAL,
+    TRAIL_MIN_DELTA,
 #endif
     // Contacts section
     SECTION_CONTACTS, DM_FILTER, ROOM_FILTER,
@@ -422,6 +424,14 @@ class SettingsScreen : public UIScreen {
       display.print("GPS upd");
       display.setCursor(display.valCol(), y);
       display.print(GPS_INTERVAL_LABELS[gpsIntervalIndex()]);
+    } else if (item == TRAIL_INTERVAL) {
+      display.print("Trail int");
+      display.setCursor(display.valCol(), y);
+      display.print(TrailStore::intervalLabel(p ? p->trail_interval_idx : 0));
+    } else if (item == TRAIL_MIN_DELTA) {
+      display.print("Trail dist");
+      display.setCursor(display.valCol(), y);
+      display.print(TrailStore::minDeltaLabel(p ? p->trail_min_delta_idx : 0));
 #endif
     } else if (item == TIMEZONE) {
       display.print("TimeZone");
@@ -658,6 +668,22 @@ public:
         _dirty = true;
         return true;
       }
+    }
+    if (_selected == TRAIL_INTERVAL && p && (left || right)) {
+      int idx = p->trail_interval_idx;
+      if (idx >= TrailStore::INTERVAL_COUNT) idx = 0;
+      idx = (idx + (right ? 1 : TrailStore::INTERVAL_COUNT - 1)) % TrailStore::INTERVAL_COUNT;
+      p->trail_interval_idx = (uint8_t)idx;
+      _dirty = true;
+      return true;
+    }
+    if (_selected == TRAIL_MIN_DELTA && p && (left || right)) {
+      int idx = p->trail_min_delta_idx;
+      if (idx >= TrailStore::MIN_DELTA_COUNT) idx = 0;
+      idx = (idx + (right ? 1 : TrailStore::MIN_DELTA_COUNT - 1)) % TrailStore::MIN_DELTA_COUNT;
+      p->trail_min_delta_idx = (uint8_t)idx;
+      _dirty = true;
+      return true;
     }
 #endif
     if (_selected == TIMEZONE && p) {
