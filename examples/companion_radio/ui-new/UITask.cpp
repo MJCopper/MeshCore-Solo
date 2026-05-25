@@ -143,6 +143,58 @@ class HomeScreen : public UIScreen {
   // Selected slot on the Favourites page (0..FAVOURITES_COUNT - 1).
   uint8_t _fav_sel = 0;
 
+  // Build the in-place pin picker list for an empty slot. Favourited chat
+  // contacts first (`c.flags & 0x01`), then recent DM contacts deduped
+  // against the favourites list. Up to PIN_PICKER_MAX.
+  void buildPinPicker(int slot) {
+    _pin_target_slot = slot;
+    _pin_count = 0;
+    // 1) Upstream-favourited chat contacts.
+    for (int idx = 0; _pin_count < PIN_PICKER_MAX; idx++) {
+      ContactInfo c;
+      if (!the_mesh.getContactByIdx(idx, c)) break;
+      if (c.type != ADV_TYPE_CHAT) continue;
+      if (!(c.flags & 0x01)) continue;
+      memcpy(_pin_keys[_pin_count], c.id.pub_key, NodePrefs::FAVOURITE_PREFIX_LEN);
+      DisplayDriver::translateUTF8Static(_pin_labels[_pin_count], c.name, sizeof(_pin_labels[_pin_count]));
+      _pin_count++;
+    }
+    // 2) Recent DM contacts (deduped).
+    uint8_t recent[PIN_PICKER_MAX][NodePrefs::FAVOURITE_PREFIX_LEN];
+    int rn = _task->getRecentDMContacts(recent, PIN_PICKER_MAX);
+    for (int i = 0; i < rn && _pin_count < PIN_PICKER_MAX; i++) {
+      bool dup = false;
+      for (int j = 0; j < _pin_count; j++)
+        if (memcmp(_pin_keys[j], recent[i], NodePrefs::FAVOURITE_PREFIX_LEN) == 0) { dup = true; break; }
+      if (dup) continue;
+      for (int idx = 0; ; idx++) {
+        ContactInfo c;
+        if (!the_mesh.getContactByIdx(idx, c)) break;
+        if (memcmp(c.id.pub_key, recent[i], NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
+          memcpy(_pin_keys[_pin_count], recent[i], NodePrefs::FAVOURITE_PREFIX_LEN);
+          DisplayDriver::translateUTF8Static(_pin_labels[_pin_count], c.name, sizeof(_pin_labels[_pin_count]));
+          _pin_count++;
+          break;
+        }
+      }
+    }
+    if (_pin_count == 0) {
+      _task->showAlert("No contacts available", 1000);
+      _pin_target_slot = -1;
+      return;
+    }
+    _pin_menu.begin("Pick contact", 3);
+    for (int i = 0; i < _pin_count; i++) _pin_menu.addItem(_pin_labels[i]);
+  }
+
+  // In-place pin picker (opens when Enter hits an empty Favourites tile).
+  static const int PIN_PICKER_MAX = 12;
+  PopupMenu _pin_menu;
+  uint8_t   _pin_keys[PIN_PICKER_MAX][NodePrefs::FAVOURITE_PREFIX_LEN];
+  char      _pin_labels[PIN_PICKER_MAX][22];
+  int       _pin_count = 0;
+  int       _pin_target_slot = -1;
+
   UITask* _task;
   mesh::RTCClock* _rtc;
   SensorManager* _sensors;
@@ -811,6 +863,7 @@ public:
         }
         if (sel) display.setColor(DisplayDriver::LIGHT);
       }
+      if (_pin_menu.active) _pin_menu.render(display);
     } else if (_page == HomePage::SHUTDOWN) {
       display.setColor(DisplayDriver::LIGHT);
       display.setTextSize(1);
@@ -850,6 +903,25 @@ public:
     // left column and RIGHT at the right column fall through to page nav so the
     // user can still leave the page sideways.
     if (_page == HomePage::FAVOURITES) {
+      // Pin picker consumes all input while open.
+      if (_pin_menu.active) {
+        auto res = _pin_menu.handleInput(c);
+        if (res == PopupMenu::SELECTED && _pin_target_slot >= 0) {
+          int idx = _pin_menu.selectedIndex();
+          if (idx >= 0 && idx < _pin_count) {
+            // If this contact is already pinned elsewhere, vacate that slot first.
+            int existing = _task->findFavouriteSlot(_pin_keys[idx]);
+            if (existing >= 0 && existing != _pin_target_slot) _task->clearFavouriteSlot(existing);
+            _task->setFavouriteSlot(_pin_target_slot, _pin_keys[idx]);
+            the_mesh.savePrefs();
+            char alert[24];
+            snprintf(alert, sizeof(alert), "Pinned to slot %d", _pin_target_slot + 1);
+            _task->showAlert(alert, 800);
+          }
+        }
+        if (res != PopupMenu::NONE) _pin_target_slot = -1;
+        return true;
+      }
       DisplayDriver* d = _task->getDisplay();
       const int cols = (d && d->isLandscape()) ? 3 : 2;
       const int rows = NodePrefs::FAVOURITES_COUNT / cols;
@@ -879,7 +951,8 @@ public:
           }
           _task->showAlert("Contact not found", 800);
         } else {
-          _task->showAlert("Pin from contact options", 1000);
+          // Empty slot → open in-place pin picker.
+          buildPinPicker(_fav_sel);
         }
         return true;
       }
@@ -1069,6 +1142,10 @@ void UITask::openContactDM(const ContactInfo& ci) {
   ((QuickMsgScreen*)quick_msg)->reset();
   ((QuickMsgScreen*)quick_msg)->enterDM(ci);
   setCurrScreen(quick_msg);
+}
+
+int UITask::getRecentDMContacts(uint8_t out[][NodePrefs::FAVOURITE_PREFIX_LEN], int max) const {
+  return ((QuickMsgScreen*)quick_msg)->getRecentDMContacts(out, max);
 }
 
 void UITask::addChannelMsg(uint8_t channel_idx, const char* text) {
