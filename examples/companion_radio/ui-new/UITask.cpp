@@ -903,15 +903,17 @@ public:
       }
     }
     bool auto_adv = _node_prefs && _node_prefs->advert_auto_interval_sec > 0;
+    // Any blinking status-bar indicator needs a 1 s refresh to animate evenly.
+    bool need_blink = auto_adv || _task->trail().isActive();
     if (Features::IS_EINK) {
       // slow display: poll every 30 s; inbound msgs force immediate refresh via notify()
       return Features::HOME_REFRESH_MS;
     }
     if (_page == HomePage::CLOCK) {
       bool show_sec = !_node_prefs || !_node_prefs->clock_hide_seconds;
-      return auto_adv ? 1000 : (show_sec ? 1000 : 60000);
+      return need_blink ? 1000 : (show_sec ? 1000 : 60000);
     }
-    return auto_adv ? 1000 : 5000;
+    return need_blink ? 1000 : 5000;
   }
 
   bool handleInput(char c) override {
