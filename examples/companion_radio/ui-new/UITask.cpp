@@ -860,18 +860,25 @@ public:
           char name[24];
           if (found) display.translateUTF8ToBlocks(name, ci.name, sizeof(name));
           else       strncpy(name, "(gone)", sizeof(name) - 1), name[sizeof(name) - 1] = '\0';
-          int name_y = cy + (cell_h - line_h) / 2;
-          display.drawTextEllipsized(cx + 2, name_y, cell_w - 4, name);
 
+          // Reserve space for the unread badge so the name's ellipsis lands
+          // before it instead of underneath. Badge and name share one baseline.
+          char badge[5] = "";
+          int  bw = 0;
           if (found) {
             uint8_t unread = _task->getDMUnread(ci.id.pub_key);
             if (unread > 0) {
-              char badge[5];
               snprintf(badge, sizeof(badge), "%d", unread);
-              int bw = display.getTextWidth(badge);
-              display.setCursor(cx + cell_w - bw - 2, cy + 1);
-              display.print(badge);
+              bw = display.getTextWidth(badge) + 3;  // badge + 3 px gap
             }
+          }
+          int name_y     = cy + (cell_h - line_h) / 2;
+          int name_max_w = cell_w - 4 - bw;
+          if (name_max_w < 6) name_max_w = 6;
+          display.drawTextEllipsized(cx + 2, name_y, name_max_w, name);
+          if (badge[0]) {
+            display.setCursor(cx + cell_w - (bw - 3) - 2, name_y);
+            display.print(badge);
           }
         } else {
           int plus_y = cy + (cell_h - line_h) / 2;
