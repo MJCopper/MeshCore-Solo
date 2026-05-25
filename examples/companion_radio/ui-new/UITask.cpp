@@ -280,7 +280,7 @@ class HomeScreen : public UIScreen {
   }
 
   int navPage(int from, int dir) const {
-    int order[11]; int n = buildVisibleOrder(order);
+    int order[(int)Count]; int n = buildVisibleOrder(order);
     if (n == 0) return from;
     int cur = 0;
     for (int i = 0; i < n; i++) if (order[i] == from) { cur = i; break; }
@@ -482,7 +482,7 @@ public:
 
     // curr page indicator — hidden on CLOCK page (full screen used for dashboard)
     if (_page != CLOCK) {
-      int order[11]; int n = buildVisibleOrder(order);
+      int order[(int)Count]; int n = buildVisibleOrder(order);
       int curr_vis = 0;
       for (int i = 0; i < n; i++) if (order[i] == _page) { curr_vis = i; break; }
       int x = display.width() / 2 - 5 * (n - 1);
