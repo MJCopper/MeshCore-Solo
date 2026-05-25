@@ -40,6 +40,21 @@ public:
     return L[idx < MIN_DELTA_COUNT ? idx : 0];
   }
 
+  // Speed / pace display units. UNITS_KMH / UNITS_MPH show speed; UNITS_PACE_KM
+  // / UNITS_PACE_MI show time per distance ("pace"). Index 0 = km/h default.
+  enum Units : uint8_t {
+    UNITS_KMH     = 0,
+    UNITS_MPH     = 1,
+    UNITS_PACE_KM = 2,
+    UNITS_PACE_MI = 3,
+  };
+  static const uint8_t UNITS_COUNT = 4;
+  static const char* unitLabel(uint8_t idx) {
+    static const char* L[UNITS_COUNT] = { "km/h", "mph", "min/km", "min/mi" };
+    return L[idx < UNITS_COUNT ? idx : 0];
+  }
+  static bool unitIsPace(uint8_t idx) { return idx == UNITS_PACE_KM || idx == UNITS_PACE_MI; }
+
   bool isActive() const { return _active; }
   void setActive(bool a) {
     if (a && !_active) {

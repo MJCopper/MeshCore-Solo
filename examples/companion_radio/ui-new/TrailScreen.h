@@ -20,7 +20,12 @@ class TrailScreen : public UIScreen {
   uint8_t _view           = V_CONFIG;
   int     _summary_scroll = 0;  // top visible item index in Summary view
   int     _list_scroll    = 0;  // top visible row in List view (newest = row 0)
-  bool    _cfg_dirty      = false;  // unsaved Min-dist edits; flushed on start or back
+  bool    _cfg_dirty      = false;  // unsaved Config edits; flushed on start or back
+
+  // Selected row in the Config view. UP/DOWN moves between rows;
+  // LEFT/RIGHT cycles the value of the focused row.
+  enum CfgRow { CFG_MIN_DIST = 0, CFG_UNITS = 1, CFG_ROW_COUNT };
+  uint8_t _cfg_sel = CFG_MIN_DIST;
 
   static const int SUMMARY_ITEM_COUNT = 5;
 
@@ -79,8 +84,10 @@ public:
 
     if (_view == V_CONFIG) {
       NodePrefs* p = _task->getNodePrefs();
-      if ((c == KEY_LEFT  || c == KEY_PREV) && p) { cycleMinDelta(p, -1); return true; }
-      if ((c == KEY_RIGHT || c == KEY_NEXT) && p) { cycleMinDelta(p, +1); return true; }
+      if (c == KEY_UP   && _cfg_sel > 0)                  { _cfg_sel--; return true; }
+      if (c == KEY_DOWN && _cfg_sel < CFG_ROW_COUNT - 1)  { _cfg_sel++; return true; }
+      if ((c == KEY_LEFT  || c == KEY_PREV) && p) { cycleCfg(p, -1); return true; }
+      if ((c == KEY_RIGHT || c == KEY_NEXT) && p) { cycleCfg(p, +1); return true; }
       if (c == KEY_ENTER) {
         if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
         _store->setActive(true);
@@ -128,40 +135,92 @@ public:
   }
 
 private:
-  void cycleMinDelta(NodePrefs* p, int dir) {
-    uint8_t idx = p->trail_min_delta_idx;
-    if (idx >= TrailStore::MIN_DELTA_COUNT) idx = 0;
-    if (dir > 0) idx = (idx + 1) % TrailStore::MIN_DELTA_COUNT;
-    else         idx = (idx + TrailStore::MIN_DELTA_COUNT - 1) % TrailStore::MIN_DELTA_COUNT;
-    p->trail_min_delta_idx = idx;
+  // Cycle the focused Config row's value. Dirty flag commits on Start / Back.
+  void cycleCfg(NodePrefs* p, int dir) {
+    if (_cfg_sel == CFG_MIN_DIST) {
+      uint8_t idx = p->trail_min_delta_idx;
+      if (idx >= TrailStore::MIN_DELTA_COUNT) idx = 0;
+      idx = (dir > 0) ? (idx + 1) % TrailStore::MIN_DELTA_COUNT
+                      : (idx + TrailStore::MIN_DELTA_COUNT - 1) % TrailStore::MIN_DELTA_COUNT;
+      p->trail_min_delta_idx = idx;
+    } else if (_cfg_sel == CFG_UNITS) {
+      uint8_t idx = p->trail_units_idx;
+      if (idx >= TrailStore::UNITS_COUNT) idx = 0;
+      idx = (dir > 0) ? (idx + 1) % TrailStore::UNITS_COUNT
+                      : (idx + TrailStore::UNITS_COUNT - 1) % TrailStore::UNITS_COUNT;
+      p->trail_units_idx = idx;
+    }
     _cfg_dirty = true;
+  }
+
+  // Render the average speed (or pace) in the user-selected units.
+  void formatAvgPaceOrSpeed(char* buf, size_t n, NodePrefs* p) const {
+    uint8_t u = p ? p->trail_units_idx : 0;
+    if (u >= TrailStore::UNITS_COUNT) u = 0;
+    uint16_t kmh = _store->avgSpeedKmh();
+    if (u == TrailStore::UNITS_KMH) {
+      snprintf(buf, n, "Avg: %u km/h", (unsigned)kmh);
+    } else if (u == TrailStore::UNITS_MPH) {
+      // 1 km = 0.621371 mi
+      unsigned mph = (unsigned)((float)kmh * 0.621371f + 0.5f);
+      snprintf(buf, n, "Avg: %u mph", mph);
+    } else {
+      // Pace = elapsed / distance. Compute directly from raw totals for precision.
+      uint32_t d_m  = _store->totalDistanceMeters();
+      uint32_t es_s = _store->elapsedSeconds();
+      const char* unit = (u == TrailStore::UNITS_PACE_KM) ? "/km" : "/mi";
+      if (d_m == 0 || es_s == 0) {
+        snprintf(buf, n, "Pace: --:-- %s", unit);
+      } else {
+        float dist_unit = (u == TrailStore::UNITS_PACE_KM) ? (d_m / 1000.0f)
+                                                            : (d_m / 1609.344f);
+        if (dist_unit <= 0) { snprintf(buf, n, "Pace: --:-- %s", unit); return; }
+        float pace_min = (es_s / 60.0f) / dist_unit;
+        unsigned pm = (unsigned)pace_min;
+        unsigned ps = (unsigned)((pace_min - pm) * 60.0f);
+        snprintf(buf, n, "Pace: %u:%02u %s", pm, ps, unit);
+      }
+    }
   }
 
   void renderConfig(DisplayDriver& display) {
     NodePrefs* p = _task->getNodePrefs();
     const int y0   = display.listStart();
     const int step = display.lineStep();
+    const int cw   = display.getCharWidth();
 
     char buf[24];
+
+    // Row 0 — Min dist
+    display.setCursor(0, y0);
+    display.print(_cfg_sel == CFG_MIN_DIST ? ">" : " ");
     snprintf(buf, sizeof(buf), "Min dist: %s",
               TrailStore::minDeltaLabel(p ? p->trail_min_delta_idx : 0));
-    display.setCursor(2, y0);
+    display.setCursor(cw + 2, y0);
+    display.print(buf);
+
+    // Row 1 — Units
+    display.setCursor(0, y0 + step);
+    display.print(_cfg_sel == CFG_UNITS ? ">" : " ");
+    snprintf(buf, sizeof(buf), "Units:    %s",
+              TrailStore::unitLabel(p ? p->trail_units_idx : 0));
+    display.setCursor(cw + 2, y0 + step);
     display.print(buf);
 
     // Existing trail summary (if any) so the user sees what Enter will resume.
     if (!_store->empty()) {
       snprintf(buf, sizeof(buf), "Stored: %d pts", _store->count());
-      display.setCursor(2, y0 + step * 2);
+      display.setCursor(2, y0 + step * 3);
       display.print(buf);
 
       uint32_t d = _store->totalDistanceMeters();
       if (d < 1000) snprintf(buf, sizeof(buf), "Dist: %lu m", (unsigned long)d);
       else          snprintf(buf, sizeof(buf), "Dist: %lu.%02lu km",
                               (unsigned long)(d / 1000), (unsigned long)((d % 1000) / 10));
-      display.setCursor(2, y0 + step * 3);
+      display.setCursor(2, y0 + step * 4);
       display.print(buf);
     } else {
-      display.setCursor(2, y0 + step * 2);
+      display.setCursor(2, y0 + step * 3);
       display.print("No trail yet.");
     }
   }
@@ -197,7 +256,7 @@ private:
         break;
       }
       case 4:
-        snprintf(buf, n, "Avg speed: %u km/h", (unsigned)_store->avgSpeedKmh());
+        formatAvgPaceOrSpeed(buf, n, _task->getNodePrefs());
         break;
       default:
         buf[0] = '\0';

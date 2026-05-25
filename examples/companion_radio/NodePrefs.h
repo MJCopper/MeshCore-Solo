@@ -103,6 +103,7 @@ struct NodePrefs {  // persisted to file
   // not a persisted preference.
   uint8_t trail_interval_idx;   // reserved — sampling cadence is now fixed at TrailStore::SAMPLING_SECS
   uint8_t trail_min_delta_idx;  // indexes TrailStore::minDeltaMeters (5/10/25/100 m)
+  uint8_t trail_units_idx;      // indexes TrailStore::unitLabel (km/h, mph, min/km, min/mi)
 
   // Tail sentinel written at the end of /new_prefs. Bump the low byte when
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so

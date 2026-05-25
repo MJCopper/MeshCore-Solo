@@ -307,6 +307,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(_prefs.favourite_contacts, sizeof(_prefs.favourite_contacts));
   rd(&_prefs.trail_interval_idx,  sizeof(_prefs.trail_interval_idx));
   rd(&_prefs.trail_min_delta_idx, sizeof(_prefs.trail_min_delta_idx));
+  rd(&_prefs.trail_units_idx,     sizeof(_prefs.trail_units_idx));
 
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
@@ -407,6 +408,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)_prefs.favourite_contacts, sizeof(_prefs.favourite_contacts));
     file.write((uint8_t *)&_prefs.trail_interval_idx,  sizeof(_prefs.trail_interval_idx));
     file.write((uint8_t *)&_prefs.trail_min_delta_idx, sizeof(_prefs.trail_min_delta_idx));
+    file.write((uint8_t *)&_prefs.trail_units_idx,     sizeof(_prefs.trail_units_idx));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL.
     uint32_t sentinel = NodePrefs::SCHEMA_SENTINEL;
