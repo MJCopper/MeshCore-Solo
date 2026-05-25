@@ -62,6 +62,12 @@ Joystick navigation is natural with 6 tiles (UP/DOWN between rows, LEFT/RIGHT wi
 
 Phase 1 ✅ (storage + sampling + Summary view + G indicator in status bar)
 Phase 2 ✅ (auto-fit Map view with cos(lat) aspect compensation; LEFT/RIGHT cycles views)
+  - Summary scrolls on short panels (OLED) so hint stops overlapping
+  - Status-bar G blinks at the same cadence as A (forces 1 s home refresh)
+  - Default sampling 30 s + 5 m min-delta (was 60 s + 25 m — too sparse on foot)
+  - "Avg speed" replaces "Speed"; Time uses RTC so it ticks every render
+  - Stop → start creates a new segment; the map doesn't bridge dead time,
+    and total distance skips segment boundaries
 Phase 3 📋 (per-point list view with timestamps + segment deltas)
 Phase 4 📋 (context menu: reset, save → slot N, load ← slot N, GPX export over USB)
 Phase 5 📋 (Settings › GPS › Trail interval + min-delta)
