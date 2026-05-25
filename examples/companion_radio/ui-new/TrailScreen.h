@@ -436,6 +436,10 @@ private:
     project(_store->last(),  ex, ey);
     drawStartMarker(display, sx, sy);
     drawCurrentMarker(display, ex, ey);
+
+    // North indicator in the top-right of the map area — the projection is
+    // strictly north-up (y inverted from latitude), so the arrow is fixed.
+    drawNorthArrow(display, area_x + area_w - 4, area_y + display.getLineHeight() + 1);
   }
 
   // Bresenham line via 1×1 fillRect. Acceptable for occasional view renders.
@@ -477,5 +481,20 @@ private:
       d.fillRect(cx + i, cy + i, 1, 1);
       d.fillRect(cx + i, cy - i, 1, 1);
     }
+  }
+
+  // North arrow + "N" label. Tip at (cx, cy), arrow body extends down for 6 px;
+  // the "N" sits one line height above the tip.
+  static void drawNorthArrow(DisplayDriver& d, int cx, int cy) {
+    int lh = d.getLineHeight();
+    int cw = d.getCharWidth();
+    d.setCursor(cx - cw / 2, cy - lh);
+    d.print("N");
+    // arrowhead
+    d.fillRect(cx,     cy,     1, 1);
+    d.fillRect(cx - 1, cy + 1, 3, 1);
+    d.fillRect(cx - 2, cy + 2, 5, 1);
+    // shaft
+    d.fillRect(cx,     cy + 3, 1, 4);
   }
 };
