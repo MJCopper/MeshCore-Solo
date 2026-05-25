@@ -77,9 +77,10 @@ Phase 2 ✅ (auto-fit Map view with cos(lat) aspect compensation; LEFT/RIGHT cyc
 Phase 3 ✅ (per-point list view with HH:MM local time + delta-from-previous;
    segment-start rows show "start" instead of a delta)
 Phase 4 📋 (context menu: reset, save → slot N, load ← slot N, GPX export over USB)
-Phase 5 ✅ (Min-dist setting accessed via Hold Enter on the Trail screen
-   itself; sampling cadence is fixed at 1 s, GPS upd setting also removed —
-   both rely on the sensor manager's defaults)
+Phase 5 ✅ (Min-dist setting on a Config view that's the resting state of the
+   Trail screen — LEFT/RIGHT cycles, Enter starts/resumes tracking; live
+   views only reachable while tracking. Sampling cadence is fixed at 1 s,
+   GPS upd setting also removed — both rely on the sensor manager's defaults)
 Polish ✅ (map view: filled/open dot markers around segment breaks;
    "Waiting for GPS fix" status when started without a lock;
    capacity bumped to 512 points; elapsed/avg-speed run on millis() instead
