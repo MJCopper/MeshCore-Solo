@@ -99,10 +99,10 @@ struct NodePrefs {  // persisted to file
   static const uint8_t FAVOURITE_PREFIX_LEN = 6;
   uint8_t favourite_contacts[FAVOURITES_COUNT][FAVOURITE_PREFIX_LEN];
 
-  // GPS trail cadence — indices into TrailStore::intervalSecs / minDeltaMeters.
-  // Logging on/off is a runtime state (Tools › Trail), not a persisted preference.
-  uint8_t trail_interval_idx;   // 0..3: 1min / 30s / 5min / 15min
-  uint8_t trail_min_delta_idx;  // 0..2: 25m / 5m / 100m
+  // GPS trail cadence. Logging on/off is a runtime state (Tools › Trail),
+  // not a persisted preference.
+  uint8_t trail_interval_idx;   // reserved — sampling cadence is now fixed at TrailStore::SAMPLING_SECS
+  uint8_t trail_min_delta_idx;  // indexes TrailStore::minDeltaMeters (5/10/25/100 m)
 
   // Tail sentinel written at the end of /new_prefs. Bump the low byte when
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so

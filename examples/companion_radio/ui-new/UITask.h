@@ -198,7 +198,6 @@ public:
   void setBuzzerVolumeLevel(uint8_t level);
   uint8_t getBuzzerVolume() const { return _node_prefs ? _node_prefs->buzzer_volume : 4; }
   void applyTxPower();
-  void applyGPSInterval();
   void applyFont();
   void applyRotation();
   void applyFullRefreshInterval();

@@ -1754,8 +1754,7 @@ void UITask::loop() {
   // fix; min-delta gate inside addPoint() avoids near-stationary spam.
   if (_trail.isActive() && _node_prefs != NULL
       && (int32_t)(millis() - _next_trail_sample_ms) >= 0) {
-    uint16_t interval_s = TrailStore::intervalSecs(_node_prefs->trail_interval_idx);
-    _next_trail_sample_ms = millis() + (uint32_t)interval_s * 1000UL;
+    _next_trail_sample_ms = millis() + (uint32_t)TrailStore::SAMPLING_SECS * 1000UL;
     LocationProvider* loc = _sensors ? _sensors->getLocationProvider() : nullptr;
     if (loc && loc->isValid()) {
       uint16_t md = TrailStore::minDeltaMeters(_node_prefs->trail_min_delta_idx);
@@ -1852,13 +1851,6 @@ void UITask::toggleGPS() {
 void UITask::applyTxPower() {
   if (_node_prefs == NULL) return;
   radio_set_tx_power(_node_prefs->tx_power_dbm);
-}
-
-void UITask::applyGPSInterval() {
-  if (_node_prefs == NULL) return;
-  char buf[12];
-  snprintf(buf, sizeof(buf),"%u", _node_prefs->gps_interval);
-  sensors.setSettingValue("gps_interval", buf);
 }
 
 void UITask::applyBrightness() {

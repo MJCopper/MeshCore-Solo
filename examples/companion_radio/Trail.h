@@ -22,17 +22,11 @@ class TrailStore {
 public:
   static const int CAPACITY = 256;
 
-  // Interval options (seconds) and their settings labels. Index 0 default = 30 s,
-  // a reasonable middle for walking/cycling without burning GPS frames.
-  static const uint8_t INTERVAL_COUNT = 6;
-  static uint16_t intervalSecs(uint8_t idx) {
-    static const uint16_t OPTS[INTERVAL_COUNT] = { 30, 10, 20, 60, 300, 900 };
-    return OPTS[idx < INTERVAL_COUNT ? idx : 0];
-  }
-  static const char* intervalLabel(uint8_t idx) {
-    static const char* L[INTERVAL_COUNT] = { "30 s", "10 s", "20 s", "1 min", "5 min", "15 min" };
-    return L[idx < INTERVAL_COUNT ? idx : 0];
-  }
+  // Fixed sampling cadence — matches the sensor manager's default GPS update
+  // rate (1 s). Density is controlled by the min-delta gate (settings) rather
+  // than by throttling the GPS poll. The NodePrefs::trail_interval_idx field
+  // is retained as reserved for backwards compatibility but no longer used.
+  static const uint16_t SAMPLING_SECS = 1;
 
   // Min-delta (metres) gates samples too close to the previous one.
   // Default 5 m: keeps walking jitter out, dense enough for a visible trail.

@@ -59,8 +59,6 @@ class SettingsScreen : public UIScreen {
 #if ENV_INCLUDE_GPS == 1
     // GPS section
     SECTION_GPS,
-    GPS_INTERVAL,
-    TRAIL_INTERVAL,
     TRAIL_MIN_DELTA,
 #endif
     // Contacts section
@@ -82,11 +80,9 @@ class SettingsScreen : public UIScreen {
   static const char* AUTO_OFF_LABELS[5];
   static const int AUTO_OFF_COUNT = 5;
 #endif
-#if ENV_INCLUDE_GPS == 1
-  static const uint32_t GPS_INTERVAL_OPTS[6];
-  static const char* GPS_INTERVAL_LABELS[6];
-  static const int GPS_INTERVAL_COUNT = 6;
-#endif
+// GPS update interval tables are no longer surfaced in Settings — the sensor
+// manager defaults to 1 s when nothing else sets it. Pref byte _prefs.gps_interval
+// is retained for backwards compatibility.
   static const uint16_t LOW_BAT_OPTS[7];
   static const char* LOW_BAT_LABELS[7];
   static const int LOW_BAT_COUNT = 7;
@@ -130,15 +126,6 @@ class SettingsScreen : public UIScreen {
   }
 #endif
 
-#if ENV_INCLUDE_GPS == 1
-  int gpsIntervalIndex() {
-    NodePrefs* p = _task->getNodePrefs();
-    if (!p) return 0;
-    for (int i = 0; i < GPS_INTERVAL_COUNT; i++)
-      if (GPS_INTERVAL_OPTS[i] == p->gps_interval) return i;
-    return 0;
-  }
-#endif
 
   bool isSection(int item) const {
     return item == SECTION_DISPLAY || item == SECTION_SOUND ||
@@ -420,14 +407,6 @@ class SettingsScreen : public UIScreen {
       display.setCursor(display.valCol(), y);
       display.print((p && p->auto_lock) ? "ON" : "OFF");
 #if ENV_INCLUDE_GPS == 1
-    } else if (item == GPS_INTERVAL) {
-      display.print("GPS upd");
-      display.setCursor(display.valCol(), y);
-      display.print(GPS_INTERVAL_LABELS[gpsIntervalIndex()]);
-    } else if (item == TRAIL_INTERVAL) {
-      display.print("Trail int");
-      display.setCursor(display.valCol(), y);
-      display.print(TrailStore::intervalLabel(p ? p->trail_interval_idx : 0));
     } else if (item == TRAIL_MIN_DELTA) {
       display.print("Trail dist");
       display.setCursor(display.valCol(), y);
@@ -658,25 +637,6 @@ public:
       return true;
     }
 #if ENV_INCLUDE_GPS == 1
-    if (_selected == GPS_INTERVAL && p) {
-      int idx = gpsIntervalIndex();
-      if (right) idx = (idx + 1) % GPS_INTERVAL_COUNT;
-      if (left)  idx = (idx + GPS_INTERVAL_COUNT - 1) % GPS_INTERVAL_COUNT;
-      if (left || right) {
-        p->gps_interval = GPS_INTERVAL_OPTS[idx];
-        _task->applyGPSInterval();
-        _dirty = true;
-        return true;
-      }
-    }
-    if (_selected == TRAIL_INTERVAL && p && (left || right)) {
-      int idx = p->trail_interval_idx;
-      if (idx >= TrailStore::INTERVAL_COUNT) idx = 0;
-      idx = (idx + (right ? 1 : TrailStore::INTERVAL_COUNT - 1)) % TrailStore::INTERVAL_COUNT;
-      p->trail_interval_idx = (uint8_t)idx;
-      _dirty = true;
-      return true;
-    }
     if (_selected == TRAIL_MIN_DELTA && p && (left || right)) {
       int idx = p->trail_min_delta_idx;
       if (idx >= TrailStore::MIN_DELTA_COUNT) idx = 0;
@@ -770,10 +730,6 @@ public:
 #if AUTO_OFF_MILLIS > 0
 const uint16_t SettingsScreen::AUTO_OFF_OPTS[5]   = { 5, 15, 30, 60, 0 };
 const char*    SettingsScreen::AUTO_OFF_LABELS[5]  = { "5s", "15s", "30s", "60s", "never" };
-#endif
-#if ENV_INCLUDE_GPS == 1
-const uint32_t SettingsScreen::GPS_INTERVAL_OPTS[6]  = { 0, 30, 60, 300, 900, 1800 };
-const char*    SettingsScreen::GPS_INTERVAL_LABELS[6] = { "off", "30s", "1min", "5min", "15min", "30min" };
 #endif
 const uint16_t SettingsScreen::LOW_BAT_OPTS[7]   = { 0, 3000, 3100, 3200, 3300, 3400, 3500 };
 const char*    SettingsScreen::LOW_BAT_LABELS[7]  = { "off", "3.0V", "3.1V", "3.2V", "3.3V", "3.4V", "3.5V" };
