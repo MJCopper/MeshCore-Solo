@@ -22,6 +22,7 @@
 
 #include "../AbstractUITask.h"
 #include "../NodePrefs.h"
+#include "../Breadcrumb.h"
 
 class UITask : public AbstractUITask {
   DisplayDriver* _display;
@@ -73,8 +74,11 @@ class UITask : public AbstractUITask {
   UIScreen* nearby_screen;
   UIScreen* dashboard_config;
   UIScreen* auto_advert_screen;
+  UIScreen* breadcrumb_screen;
   UIScreen* curr;
   CayenneLPP _dash_lpp;
+  BreadcrumbStore _breadcrumb;
+  uint32_t _next_breadcrumb_sample_ms = 0;
 
   void userLedHandler();
 
@@ -117,6 +121,8 @@ public:
   void gotoNearbyScreen();
   void gotoDashboardConfig();
   void gotoAutoAdvertScreen();
+  void gotoBreadcrumbScreen();
+  BreadcrumbStore& breadcrumb() { return _breadcrumb; }
   void playMelody(const char* melody);
   void stopMelody();
   bool isMelodyPlaying();

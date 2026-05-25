@@ -116,6 +116,7 @@ static const int QUICK_MSGS_MAX = 10;
 #include "NearbyScreen.h"
 #include "DashboardConfigScreen.h"
 #include "AutoAdvertScreen.h"
+#include "BreadcrumbScreen.h"
 #include "ToolsScreen.h"
 
 // ── HomeScreen ────────────────────────────────────────────────────────────────
@@ -400,6 +401,21 @@ class HomeScreen : public UIScreen {
           display.setColor(DisplayDriver::LIGHT);
         }
         leftmostX = aX - 1;
+      }
+
+      // "G" indicator — GPS breadcrumb logging active. Same blink convention.
+      if (_task->breadcrumb().isActive()) {
+        int gX = leftmostX - ind;
+        bool show_g = Features::BLINK_INDICATORS ? ((millis() % 4000) < 2000) : true;
+        if (show_g) {
+          display.setColor(DisplayDriver::LIGHT);
+          display.fillRect(gX, 0, ind, ind_h);
+          display.setColor(DisplayDriver::DARK);
+          display.setCursor(gX + 1, 0);
+          display.print("G");
+          display.setColor(DisplayDriver::LIGHT);
+        }
+        leftmostX = gX - 1;
       }
     }
     return leftmostX;
@@ -1072,6 +1088,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   nearby_screen = new NearbyScreen(this);
   dashboard_config = new DashboardConfigScreen(this, node_prefs);
   auto_advert_screen = new AutoAdvertScreen(this, node_prefs);
+  breadcrumb_screen  = new BreadcrumbScreen(this, &_breadcrumb);
   applyBrightness();
   applyFont();
   applyRotation();
@@ -1106,6 +1123,11 @@ void UITask::gotoNearbyScreen() {
 void UITask::gotoDashboardConfig() {
   ((DashboardConfigScreen*)dashboard_config)->enter();
   setCurrScreen(dashboard_config);
+}
+
+void UITask::gotoBreadcrumbScreen() {
+  ((BreadcrumbScreen*)breadcrumb_screen)->enter();
+  setCurrScreen(breadcrumb_screen);
 }
 
 void UITask::gotoAutoAdvertScreen() {
@@ -1723,6 +1745,22 @@ void UITask::loop() {
       shutdown();
     }
     next_batt_chck = millis() + 8000;
+  }
+
+  // GPS breadcrumb sampling — runs in the background while the trail is
+  // active, independent of which screen is shown. Skips silently if no GPS
+  // fix; min-delta gate inside addPoint() avoids near-stationary spam.
+  if (_breadcrumb.isActive() && _node_prefs != NULL
+      && (int32_t)(millis() - _next_breadcrumb_sample_ms) >= 0) {
+    uint16_t interval_s = BreadcrumbStore::intervalSecs(_node_prefs->breadcrumb_interval_idx);
+    _next_breadcrumb_sample_ms = millis() + (uint32_t)interval_s * 1000UL;
+    LocationProvider* loc = _sensors ? _sensors->getLocationProvider() : nullptr;
+    if (loc && loc->isValid()) {
+      uint16_t md = BreadcrumbStore::minDeltaMeters(_node_prefs->breadcrumb_min_delta_idx);
+      _breadcrumb.addPoint((int32_t)loc->getLatitude(),
+                            (int32_t)loc->getLongitude(),
+                            (uint32_t)rtc_clock.getCurrentTime(), md);
+    }
   }
 }
 

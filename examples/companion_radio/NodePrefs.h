@@ -99,11 +99,16 @@ struct NodePrefs {  // persisted to file
   static const uint8_t FAVOURITE_PREFIX_LEN = 6;
   uint8_t favourite_contacts[FAVOURITES_COUNT][FAVOURITE_PREFIX_LEN];
 
+  // GPS breadcrumb cadence — indices into BreadcrumbStore::intervalSecs / minDeltaMeters.
+  // Logging on/off is a runtime state (Tools › Breadcrumb), not a persisted preference.
+  uint8_t breadcrumb_interval_idx;   // 0..3: 1min / 30s / 5min / 15min
+  uint8_t breadcrumb_min_delta_idx;  // 0..2: 25m / 5m / 100m
+
   // Tail sentinel written at the end of /new_prefs. Bump the low byte when
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0002;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0003;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage

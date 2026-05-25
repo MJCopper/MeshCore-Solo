@@ -58,11 +58,18 @@ Render layout (250×122 landscape e-ink):
 
 Joystick navigation is natural with 6 tiles (UP/DOWN between rows, LEFT/RIGHT within row).
 
-### 📋 GPS breadcrumb
-
-📋 planned
+### 🚧 GPS breadcrumb
 
 Tools › Breadcrumb. Periodically samples `(lat, lon, ts)` into a RAM ring buffer; user explicitly saves snapshots to flash.
+
+**Logging is a runtime state**, not a settings value. User starts/stops from the
+Tools › Breadcrumb screen. Once active, sampling continues in the background
+regardless of which screen is shown, and a `G` indicator appears in the status
+bar (analogous to `A` for auto-advert). A reboot resets the active state to
+off; the RAM trail is also lost on reboot unless saved to a flash slot first.
+
+Settings only control sampling cadence and the min-distance gate — they don't
+enable/disable the feature.
 
 **Storage model — RAM ring with explicit save**
 
@@ -98,8 +105,9 @@ Statistics computed on the fly walking the ring:
 - Current speed: dist(last, prev) / (ts[last] - ts[prev])
 
 Settings:
-- Settings › GPS › Breadcrumb interval: off / 30 s / 1 min / 5 min / 15 min (default 1 min)
+- Settings › GPS › Breadcrumb interval: 30 s / 1 min / 5 min / 15 min (default 1 min) — only the cadence; logging on/off is a Tools toggle
 - Settings › GPS › Breadcrumb min delta: 5 m / 25 m / 100 m (skip near-stationary samples to keep the ring densely populated with real movement)
+- Export format: GPX (standard for GPS tracks; OSMAnd / Garmin compatible)
 
 Schema impact: new prefs fields `uint8_t breadcrumb_interval_idx`, `uint8_t breadcrumb_min_delta_idx`. Sentinel bump. The slot files are separate from prefs.
 
