@@ -77,7 +77,7 @@ Phase 2 ✅ (auto-fit Map view with cos(lat) aspect compensation; LEFT/RIGHT cyc
 Phase 3 ✅ (per-point list view with HH:MM local time + delta-from-previous;
    segment-start rows show "start" instead of a delta)
 Phase 4 📋 (context menu: reset, save → slot N, load ← slot N, GPX export over USB)
-Phase 5 📋 (Settings › GPS › Trail interval + min-delta)
+Phase 5 ✅ (Settings › GPS › Trail interval + min-delta with LEFT/RIGHT cycling)
 
 Tools › Breadcrumb. Periodically samples `(lat, lon, ts)` into a RAM ring buffer; user explicitly saves snapshots to flash.
 
