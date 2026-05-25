@@ -1,8 +1,7 @@
 #pragma once
 // GPS trail viewer. Tools › Trail.
-// Summary view: counters, distance, time, speed.
-// Map view: pixel-by-pixel auto-fit of the polyline with start (+) and current (×) markers.
-// Phase 3 adds a per-point list view.
+// Config view (stopped): shows the Min-dist setting and lets Enter start tracking.
+// Active views (running): Summary counters, Map polyline, per-point List.
 // Included by UITask.cpp after Trail store + ToolsScreen.
 
 #include "../Trail.h"
@@ -12,114 +11,110 @@ class TrailScreen : public UIScreen {
   UITask*     _task;
   TrailStore* _store;
 
-  enum View { V_SUMMARY = 0, V_MAP = 1, V_LIST = 2, V_COUNT };
-  uint8_t _view = V_SUMMARY;
+  // V_CONFIG is the resting screen — shown whenever the trail is stopped.
+  // Once tracking starts, the user cycles between V_SUMMARY/V_MAP/V_LIST with
+  // LEFT/RIGHT. Stop returns to V_CONFIG.
+  enum View { V_CONFIG = 0, V_SUMMARY = 1, V_MAP = 2, V_LIST = 3 };
+  static const uint8_t ACTIVE_VIEW_COUNT = 3;  // Summary, Map, List
+
+  uint8_t _view           = V_CONFIG;
   int     _summary_scroll = 0;  // top visible item index in Summary view
   int     _list_scroll    = 0;  // top visible row in List view (newest = row 0)
-  bool    _opts_open      = false;  // tool-local options popup (min-delta)
+  bool    _cfg_dirty      = false;  // unsaved Min-dist edits; flushed on start or back
 
   static const int SUMMARY_ITEM_COUNT = 5;
 
 public:
   TrailScreen(UITask* task, TrailStore* store) : _task(task), _store(store) {}
 
-  void enter() { /* nothing to reset; live trail stays */ }
+  void enter() {
+    _view = _store->isActive() ? V_SUMMARY : V_CONFIG;
+    _summary_scroll = 0;
+    _list_scroll    = 0;
+    _cfg_dirty      = false;
+  }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
-    const char* title = (_view == V_MAP)  ? "TRAIL MAP"
-                       : (_view == V_LIST) ? "TRAIL LIST"
-                       :                      "TRAIL";
+
+    // Snap _view to whatever the active-state allows. Stopped → always V_CONFIG;
+    // active and stuck on V_CONFIG → flip to Summary.
+    if (!_store->isActive() && _view != V_CONFIG)             _view = V_CONFIG;
+    if ( _store->isActive() && _view == V_CONFIG)             _view = V_SUMMARY;
+
+    const char* title = (_view == V_MAP)   ? "TRAIL MAP"
+                      : (_view == V_LIST)  ? "TRAIL LIST"
+                      :                       "TRAIL";
     display.drawTextCentered(display.width() / 2, 0, title);
     display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
-    if      (_view == V_MAP)  renderMap(display);
-    else if (_view == V_LIST) renderList(display);
-    else                       renderSummary(display);
+    if      (_view == V_CONFIG)  renderConfig(display);
+    else if (_view == V_MAP)     renderMap(display);
+    else if (_view == V_LIST)    renderList(display);
+    else                          renderSummary(display);
 
-    // Bottom hint — current view indicator + control reminders.
+    // Bottom hint
     display.setColor(DisplayDriver::LIGHT);
     int hint_y = display.height() - display.lineStep();
-    char hint[28];
-    snprintf(hint, sizeof(hint), "<>%d/%d  [Ent] %s",
-             (int)_view + 1, (int)V_COUNT,
-             _store->isActive() ? "stop" : "start");
     display.setCursor(2, hint_y);
-    display.print(hint);
-
-    // Options popup overlay (Hold Enter to open) — tool-local Min-delta setting.
-    if (_opts_open) renderOptions(display);
+    if (_view == V_CONFIG) {
+      display.print(_store->empty() ? "<>dist [Ent] start" : "<>dist [Ent] resume");
+    } else {
+      char hint[28];
+      snprintf(hint, sizeof(hint), "<>%d/%d  [Ent] stop",
+                (int)(_view - V_SUMMARY + 1), (int)ACTIVE_VIEW_COUNT);
+      display.print(hint);
+    }
 
     return _store->isActive() ? 1000 : 5000;
   }
 
   bool handleInput(char c) override {
-    // Options popup consumes all input while open.
-    if (_opts_open) {
-      if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) { _opts_open = false; return true; }
-      if (c == KEY_ENTER) {
-        NodePrefs* p = _task->getNodePrefs();
-        if (p) {
-          uint8_t idx = p->trail_min_delta_idx;
-          if (idx >= TrailStore::MIN_DELTA_COUNT) idx = 0;
-          idx = (idx + 1) % TrailStore::MIN_DELTA_COUNT;
-          p->trail_min_delta_idx = idx;
-          the_mesh.savePrefs();
-        }
-      }
+    if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
+      if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
+      _task->gotoToolsScreen();
       return true;
     }
 
-    if (c == KEY_CANCEL)        { _task->gotoToolsScreen(); return true; }
-    if (c == KEY_CONTEXT_MENU)  { _opts_open = true;        return true; }
-    if (c == KEY_LEFT  || c == KEY_PREV) { _view = (_view + V_COUNT - 1) % V_COUNT; return true; }
-    if (c == KEY_RIGHT || c == KEY_NEXT) { _view = (_view + 1)           % V_COUNT; return true; }
-    if (_view == V_SUMMARY && c == KEY_UP   && _summary_scroll > 0) { _summary_scroll--; return true; }
-    if (_view == V_SUMMARY && c == KEY_DOWN)                        { _summary_scroll++; return true; }  // clamped on render
-    if (_view == V_LIST    && c == KEY_UP   && _list_scroll > 0)    { _list_scroll--;    return true; }
-    if (_view == V_LIST    && c == KEY_DOWN)                        { _list_scroll++;    return true; }  // clamped on render
-    if (c == KEY_ENTER) {
-      bool now_active = !_store->isActive();
-      _store->setActive(now_active);
-      if (now_active) {
+    if (_view == V_CONFIG) {
+      NodePrefs* p = _task->getNodePrefs();
+      if ((c == KEY_LEFT  || c == KEY_PREV) && p) { cycleMinDelta(p, -1); return true; }
+      if ((c == KEY_RIGHT || c == KEY_NEXT) && p) { cycleMinDelta(p, +1); return true; }
+      if (c == KEY_ENTER) {
+        if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
+        _store->setActive(true);
+        _view = V_SUMMARY;
         _task->showAlert(gpsHasFix() ? "Tracking started" : "Waiting for GPS fix", 1000);
-      } else {
-        _task->showAlert("Tracking stopped", 800);
+        return true;
       }
+      return false;
+    }
+
+    // Active views: Summary / Map / List
+    if (c == KEY_LEFT || c == KEY_PREV) {
+      int v = (int)_view - V_SUMMARY;
+      v = (v + ACTIVE_VIEW_COUNT - 1) % ACTIVE_VIEW_COUNT;
+      _view = (uint8_t)(V_SUMMARY + v);
+      return true;
+    }
+    if (c == KEY_RIGHT || c == KEY_NEXT) {
+      int v = (int)_view - V_SUMMARY;
+      v = (v + 1) % ACTIVE_VIEW_COUNT;
+      _view = (uint8_t)(V_SUMMARY + v);
+      return true;
+    }
+    if (_view == V_SUMMARY && c == KEY_UP   && _summary_scroll > 0) { _summary_scroll--; return true; }
+    if (_view == V_SUMMARY && c == KEY_DOWN)                        { _summary_scroll++; return true; }
+    if (_view == V_LIST    && c == KEY_UP   && _list_scroll > 0)    { _list_scroll--;    return true; }
+    if (_view == V_LIST    && c == KEY_DOWN)                        { _list_scroll++;    return true; }
+    if (c == KEY_ENTER) {
+      _store->setActive(false);
+      _view = V_CONFIG;
+      _task->showAlert("Tracking stopped", 800);
       return true;
     }
     return false;
-  }
-
-  // Small modal overlay with the only tool-local option: minimum distance
-  // between consecutive samples. Pressing Enter cycles through the 4 options
-  // (5/10/25/100 m) so the user can keep tapping; Esc closes the popup.
-  void renderOptions(DisplayDriver& display) {
-    NodePrefs* p = _task->getNodePrefs();
-    int step = display.lineStep();
-    int bw = display.width() - 16;
-    int bh = step * 3 + 4;
-    int bx = (display.width()  - bw) / 2;
-    int by = (display.height() - bh) / 2;
-
-    display.setColor(DisplayDriver::DARK);
-    display.fillRect(bx, by, bw, bh);
-    display.setColor(DisplayDriver::LIGHT);
-    display.drawRect(bx, by, bw, bh);
-
-    display.setCursor(bx + 4, by + 2);
-    display.print("Trail options");
-    display.fillRect(bx, by + step + 1, bw, 1);
-
-    char buf[24];
-    snprintf(buf, sizeof(buf), "Min dist: %s",
-              TrailStore::minDeltaLabel(p ? p->trail_min_delta_idx : 0));
-    display.setCursor(bx + 4, by + step + 3);
-    display.print(buf);
-
-    display.setCursor(bx + 4, by + step * 2 + 3);
-    display.print("[Ent] cycle [Esc]");
   }
 
   // True when the global SensorManager has a usable GPS fix.
@@ -133,6 +128,44 @@ public:
   }
 
 private:
+  void cycleMinDelta(NodePrefs* p, int dir) {
+    uint8_t idx = p->trail_min_delta_idx;
+    if (idx >= TrailStore::MIN_DELTA_COUNT) idx = 0;
+    if (dir > 0) idx = (idx + 1) % TrailStore::MIN_DELTA_COUNT;
+    else         idx = (idx + TrailStore::MIN_DELTA_COUNT - 1) % TrailStore::MIN_DELTA_COUNT;
+    p->trail_min_delta_idx = idx;
+    _cfg_dirty = true;
+  }
+
+  void renderConfig(DisplayDriver& display) {
+    NodePrefs* p = _task->getNodePrefs();
+    const int y0   = display.listStart();
+    const int step = display.lineStep();
+
+    char buf[24];
+    snprintf(buf, sizeof(buf), "Min dist: %s",
+              TrailStore::minDeltaLabel(p ? p->trail_min_delta_idx : 0));
+    display.setCursor(2, y0);
+    display.print(buf);
+
+    // Existing trail summary (if any) so the user sees what Enter will resume.
+    if (!_store->empty()) {
+      snprintf(buf, sizeof(buf), "Stored: %d pts", _store->count());
+      display.setCursor(2, y0 + step * 2);
+      display.print(buf);
+
+      uint32_t d = _store->totalDistanceMeters();
+      if (d < 1000) snprintf(buf, sizeof(buf), "Dist: %lu m", (unsigned long)d);
+      else          snprintf(buf, sizeof(buf), "Dist: %lu.%02lu km",
+                              (unsigned long)(d / 1000), (unsigned long)((d % 1000) / 10));
+      display.setCursor(2, y0 + step * 3);
+      display.print(buf);
+    } else {
+      display.setCursor(2, y0 + step * 2);
+      display.print("No trail yet.");
+    }
+  }
+
   // Format the i-th summary line into buf. Indices match SUMMARY_ITEM_COUNT.
   void summaryItem(int i, char* buf, size_t n) const {
     switch (i) {
@@ -194,7 +227,6 @@ private:
       display.print(buf);
     }
 
-    // Scroll arrows on the right edge when there's more above/below.
     int cw = display.getCharWidth();
     if (_summary_scroll > 0) {
       display.setCursor(display.width() - cw, y0);
