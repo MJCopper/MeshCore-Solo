@@ -68,7 +68,8 @@ Phase 2 ✅ (auto-fit Map view with cos(lat) aspect compensation; LEFT/RIGHT cyc
   - "Avg speed" replaces "Speed"; Time uses RTC so it ticks every render
   - Stop → start creates a new segment; the map doesn't bridge dead time,
     and total distance skips segment boundaries
-Phase 3 📋 (per-point list view with timestamps + segment deltas)
+Phase 3 ✅ (per-point list view with HH:MM local time + delta-from-previous;
+   segment-start rows show "start" instead of a delta)
 Phase 4 📋 (context menu: reset, save → slot N, load ← slot N, GPX export over USB)
 Phase 5 📋 (Settings › GPS › Trail interval + min-delta)
 
