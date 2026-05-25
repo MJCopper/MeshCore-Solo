@@ -14,6 +14,9 @@ class TrailScreen : public UIScreen {
 
   enum View { V_SUMMARY = 0, V_MAP = 1, V_COUNT };
   uint8_t _view = V_SUMMARY;
+  int     _summary_scroll = 0;  // top visible item index in Summary view
+
+  static const int SUMMARY_ITEM_COUNT = 5;
 
 public:
   TrailScreen(UITask* task, TrailStore* store) : _task(task), _store(store) {}
@@ -50,6 +53,8 @@ public:
     }
     if (c == KEY_LEFT  || c == KEY_PREV) { _view = (_view + V_COUNT - 1) % V_COUNT; return true; }
     if (c == KEY_RIGHT || c == KEY_NEXT) { _view = (_view + 1)           % V_COUNT; return true; }
+    if (_view == V_SUMMARY && c == KEY_UP   && _summary_scroll > 0) { _summary_scroll--; return true; }
+    if (_view == V_SUMMARY && c == KEY_DOWN)                        { _summary_scroll++; return true; }  // clamped on render
     if (c == KEY_ENTER) {
       _store->setActive(!_store->isActive());
       _task->showAlert(_store->isActive() ? "Tracking started" : "Tracking stopped", 800);
@@ -59,39 +64,69 @@ public:
   }
 
 private:
+  // Format the i-th summary line into buf. Indices match SUMMARY_ITEM_COUNT.
+  void summaryItem(int i, char* buf, size_t n) const {
+    switch (i) {
+      case 0:
+        snprintf(buf, n, "Status: %s", _store->isActive() ? "tracking" : "stopped");
+        break;
+      case 1:
+        snprintf(buf, n, "Points: %d / %d", _store->count(), TrailStore::CAPACITY);
+        break;
+      case 2: {
+        uint32_t d = _store->totalDistanceMeters();
+        if (d < 1000) snprintf(buf, n, "Dist: %lu m", (unsigned long)d);
+        else          snprintf(buf, n, "Dist: %lu.%02lu km",
+                                (unsigned long)(d / 1000), (unsigned long)((d % 1000) / 10));
+        break;
+      }
+      case 3: {
+        uint32_t es = _store->elapsedSeconds();
+        snprintf(buf, n, "Time: %lu:%02lu",
+                  (unsigned long)(es / 3600), (unsigned long)((es % 3600) / 60));
+        break;
+      }
+      case 4:
+        snprintf(buf, n, "Speed: %u km/h", (unsigned)_store->currentSpeedKmh());
+        break;
+      default:
+        buf[0] = '\0';
+    }
+  }
+
   void renderSummary(DisplayDriver& display) {
-    const int y0   = display.listStart();
-    const int step = display.lineStep();
+    const int y0     = display.listStart();
+    const int step   = display.lineStep();
+    const int hint_h = step;
+    const int avail  = display.height() - y0 - hint_h - 2;
+    int visible      = avail / step;
+    if (visible < 1) visible = 1;
+    if (visible > SUMMARY_ITEM_COUNT) visible = SUMMARY_ITEM_COUNT;
 
-    char buf[28];
+    // Clamp scroll once we know visible count.
+    int max_scroll = SUMMARY_ITEM_COUNT - visible;
+    if (_summary_scroll > max_scroll) _summary_scroll = max_scroll;
+    if (_summary_scroll < 0)          _summary_scroll = 0;
 
-    snprintf(buf, sizeof(buf), "Status: %s",
-             _store->isActive() ? "tracking" : "stopped");
-    display.setCursor(2, y0);
-    display.print(buf);
+    for (int i = 0; i < visible; i++) {
+      int idx = _summary_scroll + i;
+      if (idx >= SUMMARY_ITEM_COUNT) break;
+      char buf[28];
+      summaryItem(idx, buf, sizeof(buf));
+      display.setCursor(2, y0 + i * step);
+      display.print(buf);
+    }
 
-    snprintf(buf, sizeof(buf), "Points: %d / %d", _store->count(), TrailStore::CAPACITY);
-    display.setCursor(2, y0 + step);
-    display.print(buf);
-
-    uint32_t dist = _store->totalDistanceMeters();
-    if (dist < 1000) snprintf(buf, sizeof(buf), "Dist: %lu m", (unsigned long)dist);
-    else             snprintf(buf, sizeof(buf), "Dist: %lu.%02lu km",
-                              (unsigned long)(dist / 1000),
-                              (unsigned long)((dist % 1000) / 10));
-    display.setCursor(2, y0 + step * 2);
-    display.print(buf);
-
-    uint32_t es = _store->elapsedSeconds();
-    snprintf(buf, sizeof(buf), "Time: %lu:%02lu",
-             (unsigned long)(es / 3600),
-             (unsigned long)((es % 3600) / 60));
-    display.setCursor(2, y0 + step * 3);
-    display.print(buf);
-
-    snprintf(buf, sizeof(buf), "Speed: %u km/h", (unsigned)_store->currentSpeedKmh());
-    display.setCursor(2, y0 + step * 4);
-    display.print(buf);
+    // Scroll arrows on the right edge when there's more above/below.
+    int cw = display.getCharWidth();
+    if (_summary_scroll > 0) {
+      display.setCursor(display.width() - cw, y0);
+      display.print("^");
+    }
+    if (_summary_scroll + visible < SUMMARY_ITEM_COUNT) {
+      display.setCursor(display.width() - cw, y0 + (visible - 1) * step);
+      display.print("v");
+    }
   }
 
   // Pixel-by-pixel polyline. Bounds are auto-fitted to the available area and
