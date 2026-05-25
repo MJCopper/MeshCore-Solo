@@ -16,6 +16,7 @@ class TrailScreen : public UIScreen {
   uint8_t _view = V_SUMMARY;
   int     _summary_scroll = 0;  // top visible item index in Summary view
   int     _list_scroll    = 0;  // top visible row in List view (newest = row 0)
+  bool    _opts_open      = false;  // tool-local options popup (min-delta)
 
   static const int SUMMARY_ITEM_COUNT = 5;
 
@@ -47,14 +48,31 @@ public:
     display.setCursor(2, hint_y);
     display.print(hint);
 
+    // Options popup overlay (Hold Enter to open) — tool-local Min-delta setting.
+    if (_opts_open) renderOptions(display);
+
     return _store->isActive() ? 1000 : 5000;
   }
 
   bool handleInput(char c) override {
-    if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
-      _task->gotoToolsScreen();
+    // Options popup consumes all input while open.
+    if (_opts_open) {
+      if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) { _opts_open = false; return true; }
+      if (c == KEY_ENTER) {
+        NodePrefs* p = _task->getNodePrefs();
+        if (p) {
+          uint8_t idx = p->trail_min_delta_idx;
+          if (idx >= TrailStore::MIN_DELTA_COUNT) idx = 0;
+          idx = (idx + 1) % TrailStore::MIN_DELTA_COUNT;
+          p->trail_min_delta_idx = idx;
+          the_mesh.savePrefs();
+        }
+      }
       return true;
     }
+
+    if (c == KEY_CANCEL)        { _task->gotoToolsScreen(); return true; }
+    if (c == KEY_CONTEXT_MENU)  { _opts_open = true;        return true; }
     if (c == KEY_LEFT  || c == KEY_PREV) { _view = (_view + V_COUNT - 1) % V_COUNT; return true; }
     if (c == KEY_RIGHT || c == KEY_NEXT) { _view = (_view + 1)           % V_COUNT; return true; }
     if (_view == V_SUMMARY && c == KEY_UP   && _summary_scroll > 0) { _summary_scroll--; return true; }
@@ -72,6 +90,36 @@ public:
       return true;
     }
     return false;
+  }
+
+  // Small modal overlay with the only tool-local option: minimum distance
+  // between consecutive samples. Pressing Enter cycles through the 4 options
+  // (5/10/25/100 m) so the user can keep tapping; Esc closes the popup.
+  void renderOptions(DisplayDriver& display) {
+    NodePrefs* p = _task->getNodePrefs();
+    int step = display.lineStep();
+    int bw = display.width() - 16;
+    int bh = step * 3 + 4;
+    int bx = (display.width()  - bw) / 2;
+    int by = (display.height() - bh) / 2;
+
+    display.setColor(DisplayDriver::DARK);
+    display.fillRect(bx, by, bw, bh);
+    display.setColor(DisplayDriver::LIGHT);
+    display.drawRect(bx, by, bw, bh);
+
+    display.setCursor(bx + 4, by + 2);
+    display.print("Trail options");
+    display.fillRect(bx, by + step + 1, bw, 1);
+
+    char buf[24];
+    snprintf(buf, sizeof(buf), "Min dist: %s",
+              TrailStore::minDeltaLabel(p ? p->trail_min_delta_idx : 0));
+    display.setCursor(bx + 4, by + step + 3);
+    display.print(buf);
+
+    display.setCursor(bx + 4, by + step * 2 + 3);
+    display.print("[Ent] cycle [Esc]");
   }
 
   // True when the global SensorManager has a usable GPS fix.

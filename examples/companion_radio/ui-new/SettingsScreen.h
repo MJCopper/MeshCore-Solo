@@ -56,11 +56,6 @@ class SettingsScreen : public UIScreen {
     SECTION_SYSTEM,
     TIMEZONE,
     LOW_BAT,
-#if ENV_INCLUDE_GPS == 1
-    // GPS section
-    SECTION_GPS,
-    TRAIL_MIN_DELTA,
-#endif
     // Contacts section
     SECTION_CONTACTS, DM_FILTER, ROOM_FILTER,
     // Messages section
@@ -406,12 +401,6 @@ class SettingsScreen : public UIScreen {
       display.print("AutoLock");
       display.setCursor(display.valCol(), y);
       display.print((p && p->auto_lock) ? "ON" : "OFF");
-#if ENV_INCLUDE_GPS == 1
-    } else if (item == TRAIL_MIN_DELTA) {
-      display.print("Trail dist");
-      display.setCursor(display.valCol(), y);
-      display.print(TrailStore::minDeltaLabel(p ? p->trail_min_delta_idx : 0));
-#endif
     } else if (item == TIMEZONE) {
       display.print("TimeZone");
       char buf[8];
@@ -636,16 +625,6 @@ public:
       _dirty = true;
       return true;
     }
-#if ENV_INCLUDE_GPS == 1
-    if (_selected == TRAIL_MIN_DELTA && p && (left || right)) {
-      int idx = p->trail_min_delta_idx;
-      if (idx >= TrailStore::MIN_DELTA_COUNT) idx = 0;
-      idx = (idx + (right ? 1 : TrailStore::MIN_DELTA_COUNT - 1)) % TrailStore::MIN_DELTA_COUNT;
-      p->trail_min_delta_idx = (uint8_t)idx;
-      _dirty = true;
-      return true;
-    }
-#endif
     if (_selected == TIMEZONE && p) {
       if (right && p->tz_offset_hours < 14)  { p->tz_offset_hours++; _dirty = true; return true; }
       if (left  && p->tz_offset_hours > -12) { p->tz_offset_hours--; _dirty = true; return true; }
