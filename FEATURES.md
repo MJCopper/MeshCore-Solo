@@ -77,11 +77,13 @@ Phase 2 ✅ (auto-fit Map view with cos(lat) aspect compensation; LEFT/RIGHT cyc
 Phase 3 ✅ (per-point list view with HH:MM local time + delta-from-previous;
    segment-start rows show "start" instead of a delta)
 Phase 4 📋 (context menu: reset, save → slot N, load ← slot N, GPX export over USB)
-Phase 5 ✅ (Settings › GPS › Trail dist with LEFT/RIGHT cycling — min-delta only;
-   the sampling cadence is now a fixed 1 s constant, the GPS upd setting is
-   gone too, both rely on the sensor manager's defaults)
+Phase 5 ✅ (Min-dist setting accessed via Hold Enter on the Trail screen
+   itself; sampling cadence is fixed at 1 s, GPS upd setting also removed —
+   both rely on the sensor manager's defaults)
 Polish ✅ (map view: filled/open dot markers around segment breaks;
-   "Waiting for GPS fix" status when started without a lock)
+   "Waiting for GPS fix" status when started without a lock;
+   capacity bumped to 512 points; elapsed/avg-speed run on millis() instead
+   of RTC so they tick even before GPS time is synced)
 
 Tools › Breadcrumb. Periodically samples `(lat, lon, ts)` into a RAM ring buffer; user explicitly saves snapshots to flash.
 
