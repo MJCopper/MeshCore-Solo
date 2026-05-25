@@ -274,8 +274,9 @@ private:
     };
 
     // Draw connected segments. A point flagged SEG_START starts a new segment;
-    // its predecessor is not joined to it. Single-point segments still get a
-    // visible pixel.
+    // its predecessor is not joined to it. At every break we mark the segment
+    // end (filled dot) and the resume point (open dot) so the user can see
+    // where tracking paused.
     int x0, y0;
     project(_store->at(0), x0, y0);
     display.fillRect(x0, y0, 1, 1);
@@ -283,7 +284,8 @@ private:
       int x1, y1;
       project(_store->at(i), x1, y1);
       if (_store->at(i).flags & TRAIL_FLAG_SEG_START) {
-        display.fillRect(x1, y1, 1, 1);  // mark the segment's first point
+        drawFilledDot(display, x0, y0);  // end of the previous segment
+        drawOpenDot(display, x1, y1);    // resume point
       } else {
         drawLine(display, x0, y0, x1, y1);
       }
@@ -310,6 +312,19 @@ private:
       if (e2 >= dy) { err += dy; x0 += sx; }
       if (e2 <= dx) { err += dx; y0 += sy; }
     }
+  }
+
+  // 3×3 filled square — end of a segment before a break.
+  static void drawFilledDot(DisplayDriver& d, int cx, int cy) {
+    d.fillRect(cx - 1, cy - 1, 3, 3);
+  }
+
+  // 3×3 outline square — start of a segment after a break (resume point).
+  static void drawOpenDot(DisplayDriver& d, int cx, int cy) {
+    d.fillRect(cx - 1, cy - 1, 3, 1);  // top
+    d.fillRect(cx - 1, cy + 1, 3, 1);  // bottom
+    d.fillRect(cx - 1, cy,     1, 1);  // left
+    d.fillRect(cx + 1, cy,     1, 1);  // right
   }
 
   // 5×5 plus-sign marker for the start point.
