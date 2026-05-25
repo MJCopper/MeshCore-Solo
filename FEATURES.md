@@ -23,6 +23,8 @@ Implementation:
 
 Phase 1 ✅ (storage + read-only render + grid nav)
 Phase 2 ✅ (pin from Contact options menu in QuickMsg + slot picker submenu)
+  - Enter on a filled tile opens that contact's DM directly
+  - Cancel from a Favourites-opened DM returns to the home screen
 Phase 3 📋 (pin from empty slot on the grid via mini-picker: favourites first, then recent)
 
 A 2×3 grid (six slots) of pinned contacts on its own home page, between Clock and Messages. Joystick picks a tile, Enter opens the existing DM conversation or sends a pre-set quick reply.
