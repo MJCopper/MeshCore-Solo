@@ -47,7 +47,7 @@ public:
     display.setCursor(2, hint_y);
     display.print(hint);
 
-    return _store->isActive() ? 2000 : 5000;
+    return _store->isActive() ? 1000 : 5000;
   }
 
   bool handleInput(char c) override {
@@ -107,7 +107,7 @@ private:
         break;
       }
       case 3: {
-        uint32_t es = _store->elapsedSeconds((uint32_t)rtc_clock.getCurrentTime());
+        uint32_t es = _store->elapsedSeconds();
         // Below 1 h show m:ss so the seconds counter updates visibly each refresh.
         if (es < 3600) snprintf(buf, n, "Time: %lu:%02lu",
                                   (unsigned long)(es / 60), (unsigned long)(es % 60));
@@ -116,8 +116,7 @@ private:
         break;
       }
       case 4:
-        snprintf(buf, n, "Avg speed: %u km/h",
-                  (unsigned)_store->avgSpeedKmh((uint32_t)rtc_clock.getCurrentTime()));
+        snprintf(buf, n, "Avg speed: %u km/h", (unsigned)_store->avgSpeedKmh());
         break;
       default:
         buf[0] = '\0';

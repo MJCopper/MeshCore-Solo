@@ -42,9 +42,18 @@ public:
 
   bool isActive() const { return _active; }
   void setActive(bool a) {
-    // Re-arming after a stop marks the next addPoint as a segment start, so
-    // the renderer doesn't draw a straight line through the dead time.
-    if (_active && !a) _pending_seg_break = true;
+    if (a && !_active) {
+      // off → on: start a new session timer.
+      _session_start_ms = millis();
+    } else if (_active && !a) {
+      // on → off: bank the elapsed of this session and arm a segment break
+      // so the renderer doesn't draw a straight line through the dead time.
+      if (_session_start_ms != 0) {
+        _accumulated_ms   += millis() - _session_start_ms;
+        _session_start_ms  = 0;
+      }
+      _pending_seg_break = true;
+    }
     _active = a;
   }
 
@@ -56,7 +65,12 @@ public:
   const TrailPoint& first() const   { return at(0); }
   const TrailPoint& last()  const   { return at(_count - 1); }
 
-  void clear() { _head = 0; _count = 0; _pending_seg_break = false; }
+  void clear() {
+    _head = 0; _count = 0;
+    _pending_seg_break = false;
+    _accumulated_ms    = 0;
+    _session_start_ms  = 0;
+  }
 
   // Returns true if the point was stored (passed the min-delta gate).
   // First point of the ring and the first point after a stop/start cycle
@@ -96,20 +110,18 @@ public:
     return (uint32_t)d;
   }
 
-  // Seconds between the first sample and either the most recent sample (when
-  // stopped) or the current RTC time passed in by the caller (when active).
-  // Using `now_ts` while active lets the UI advance the displayed time
-  // smoothly even when samples land on the floor of the min-delta gate.
-  uint32_t elapsedSeconds(uint32_t now_ts = 0) const {
-    if (_count == 0) return 0;
-    uint32_t start = first().ts;
-    uint32_t end   = (_active && now_ts > start) ? now_ts : last().ts;
-    return (end > start) ? (end - start) : 0;
+  // Cumulative active tracking time across all start→stop sessions, in
+  // seconds. Counts ticks while the trail is on, freezes while it's off.
+  // millis()-based so it doesn't depend on RTC sync.
+  uint32_t elapsedSeconds() const {
+    uint32_t ms = _accumulated_ms;
+    if (_active && _session_start_ms != 0) ms += millis() - _session_start_ms;
+    return ms / 1000;
   }
 
-  // Average speed in km/h = total distance / elapsed time.
-  uint16_t avgSpeedKmh(uint32_t now_ts = 0) const {
-    uint32_t es = elapsedSeconds(now_ts);
+  // Average speed in km/h = total distance / cumulative active time.
+  uint16_t avgSpeedKmh() const {
+    uint32_t es = elapsedSeconds();
     if (es == 0) return 0;
     return (uint16_t)((float)totalDistanceMeters() / (float)es * 3.6f);
   }
@@ -147,8 +159,10 @@ public:
 
 private:
   TrailPoint _buf[CAPACITY];
-  int  _head   = 0;
-  int  _count  = 0;
-  bool _active = false;
-  bool _pending_seg_break = false;  // next addPoint flags itself SEG_START
+  int      _head             = 0;
+  int      _count            = 0;
+  bool     _active           = false;
+  bool     _pending_seg_break = false;  // next addPoint flags itself SEG_START
+  uint32_t _accumulated_ms   = 0;       // banked active time across previous sessions
+  uint32_t _session_start_ms = 0;       // millis() of the current active session, 0 if none
 };
