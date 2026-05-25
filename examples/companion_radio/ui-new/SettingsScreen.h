@@ -126,11 +126,7 @@ class SettingsScreen : public UIScreen {
     return item == SECTION_DISPLAY || item == SECTION_SOUND ||
            item == SECTION_HOME_PAGES ||
            item == SECTION_RADIO   || item == SECTION_SYSTEM ||
-           item == SECTION_CONTACTS || item == SECTION_MESSAGES
-#if ENV_INCLUDE_GPS == 1
-           || item == SECTION_GPS
-#endif
-    ;
+           item == SECTION_CONTACTS || item == SECTION_MESSAGES;
   }
 
   const char* sectionName(int item) const {
@@ -141,9 +137,6 @@ class SettingsScreen : public UIScreen {
     if (item == SECTION_SYSTEM)     return "System";
     if (item == SECTION_CONTACTS)   return "Contacts";
     if (item == SECTION_MESSAGES)   return "Messages";
-#if ENV_INCLUDE_GPS == 1
-    if (item == SECTION_GPS)        return "GPS";
-#endif
     return "";
   }
 
