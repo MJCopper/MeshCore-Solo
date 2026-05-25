@@ -29,11 +29,9 @@ Phase 3 ✅ (in-place pin picker on empty tile: upstream-favourited contacts fir
    then recent DM contacts deduped; selecting a contact that's already pinned
    elsewhere moves it to the new slot)
 
-**Follow-up to revisit**: on OLED, the unread-count badge in the top-right of a
-favourite tile overlaps the contact name. Reserve a few pixels for the badge
-when computing the name's `drawTextEllipsized` max width so the name shortens
-to "Nam…" instead of running under the digit. HomeScreen FAVOURITES render in
-UITask.cpp.
+**Follow-up done**: OLED unread-badge overlap fixed — badge and name share the
+same baseline, drawTextEllipsized's max width subtracts badge width + a 3 px
+gap so names shorten to "Nam…" before the digit.
 
 A 2×3 grid (six slots) of pinned contacts on its own home page, between Clock and Messages. Joystick picks a tile, Enter opens the existing DM conversation or sends a pre-set quick reply.
 
