@@ -12,9 +12,10 @@ class TrailScreen : public UIScreen {
   UITask*     _task;
   TrailStore* _store;
 
-  enum View { V_SUMMARY = 0, V_MAP = 1, V_COUNT };
+  enum View { V_SUMMARY = 0, V_MAP = 1, V_LIST = 2, V_COUNT };
   uint8_t _view = V_SUMMARY;
   int     _summary_scroll = 0;  // top visible item index in Summary view
+  int     _list_scroll    = 0;  // top visible row in List view (newest = row 0)
 
   static const int SUMMARY_ITEM_COUNT = 5;
 
@@ -26,12 +27,15 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
-    display.drawTextCentered(display.width() / 2, 0,
-                              _view == V_MAP ? "TRAIL MAP" : "TRAIL");
+    const char* title = (_view == V_MAP)  ? "TRAIL MAP"
+                       : (_view == V_LIST) ? "TRAIL LIST"
+                       :                      "TRAIL";
+    display.drawTextCentered(display.width() / 2, 0, title);
     display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
-    if (_view == V_MAP) renderMap(display);
-    else                renderSummary(display);
+    if      (_view == V_MAP)  renderMap(display);
+    else if (_view == V_LIST) renderList(display);
+    else                       renderSummary(display);
 
     // Bottom hint — current view indicator + control reminders.
     display.setColor(DisplayDriver::LIGHT);
@@ -55,6 +59,8 @@ public:
     if (c == KEY_RIGHT || c == KEY_NEXT) { _view = (_view + 1)           % V_COUNT; return true; }
     if (_view == V_SUMMARY && c == KEY_UP   && _summary_scroll > 0) { _summary_scroll--; return true; }
     if (_view == V_SUMMARY && c == KEY_DOWN)                        { _summary_scroll++; return true; }  // clamped on render
+    if (_view == V_LIST    && c == KEY_UP   && _list_scroll > 0)    { _list_scroll--;    return true; }
+    if (_view == V_LIST    && c == KEY_DOWN)                        { _list_scroll++;    return true; }  // clamped on render
     if (c == KEY_ENTER) {
       _store->setActive(!_store->isActive());
       _task->showAlert(_store->isActive() ? "Tracking started" : "Tracking stopped", 800);
@@ -129,6 +135,68 @@ private:
     }
     if (_summary_scroll + visible < SUMMARY_ITEM_COUNT) {
       display.setCursor(display.width() - cw, y0 + (visible - 1) * step);
+      display.print("v");
+    }
+  }
+
+  // Per-point list, newest first. Each row: HH:MM (local) + delta from the
+  // previous point in the same segment, or "start" for segment-start rows.
+  void renderList(DisplayDriver& display) {
+    const int top    = display.listStart();
+    const int step   = display.lineStep();
+    const int hint_h = step;
+    const int avail  = display.height() - top - hint_h - 2;
+
+    if (_store->empty()) {
+      display.drawTextCentered(display.width() / 2, top + avail / 2, "No trail yet");
+      return;
+    }
+
+    int visible = avail / step;
+    if (visible < 1) visible = 1;
+    const int total = _store->count();
+    if (visible > total) visible = total;
+
+    int max_scroll = total - visible;
+    if (_list_scroll > max_scroll) _list_scroll = max_scroll;
+    if (_list_scroll < 0)          _list_scroll = 0;
+
+    NodePrefs* p = _task->getNodePrefs();
+    int32_t tz_off = (int32_t)(p ? p->tz_offset_hours : 0) * 3600;
+
+    for (int i = 0; i < visible; i++) {
+      int idx = total - 1 - (_list_scroll + i);  // newest first
+      if (idx < 0) break;
+      const TrailPoint& pt = _store->at(idx);
+
+      time_t lt = (time_t)((int32_t)pt.ts + tz_off);
+      struct tm* ti = gmtime(&lt);
+
+      char dist[12];
+      if (idx == 0 || (pt.flags & TRAIL_FLAG_SEG_START)) {
+        snprintf(dist, sizeof(dist), "start");
+      } else {
+        const TrailPoint& prev = _store->at(idx - 1);
+        float d = TrailStore::haversineMeters(prev.lat_1e6, prev.lon_1e6,
+                                                pt.lat_1e6,    pt.lon_1e6);
+        if (d < 1000.0f) snprintf(dist, sizeof(dist), "+%d m", (int)d);
+        else             snprintf(dist, sizeof(dist), "+%.1f km", d / 1000.0f);
+      }
+
+      char row[28];
+      snprintf(row, sizeof(row), "%02d:%02d  %s",
+                ti->tm_hour, ti->tm_min, dist);
+      display.setCursor(2, top + i * step);
+      display.print(row);
+    }
+
+    int cw = display.getCharWidth();
+    if (_list_scroll > 0) {
+      display.setCursor(display.width() - cw, top);
+      display.print("^");
+    }
+    if (_list_scroll + visible < total) {
+      display.setCursor(display.width() - cw, top + (visible - 1) * step);
       display.print("v");
     }
   }
