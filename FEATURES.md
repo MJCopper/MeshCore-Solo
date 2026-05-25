@@ -77,10 +77,11 @@ Phase 3 ✅ (per-point list view with HH:MM local time + delta-from-previous;
 Phase 4 📋 (context menu: reset, save → slot N, load ← slot N, GPX export over USB)
 Phase 5 ✅ (Settings + actions consolidated into a single Hold-Enter popup —
    Min dist + Units cycled with LEFT/RIGHT (popup stays open), plus
-   Start/Stop tracking and Reset action items. Short Enter starts a stopped
-   trail; on an active trail it shows a hint instead of stopping, so a stray
-   tap never ends a recording. Sampling cadence fixed at 1 s, GPS upd setting
-   also removed; both rely on the sensor manager's defaults)
+   Start/Stop tracking and Reset action items. Short Enter never toggles —
+   both start and stop go through the popup, so a stray tap can never change
+   tracking state. View counter (N/3) lives in the title bar; the bottom hint
+   row is gone, content fills the freed space. Sampling cadence fixed at 1 s,
+   GPS upd setting also removed; both rely on the sensor manager's defaults)
 Polish ✅ (map view: filled/open dot markers around segment breaks;
    "Waiting for GPS fix" status when started without a lock;
    capacity bumped to 512 points; elapsed/avg-speed run on millis() instead
