@@ -62,20 +62,40 @@ public:
     if (_view == V_LIST    && c == KEY_UP   && _list_scroll > 0)    { _list_scroll--;    return true; }
     if (_view == V_LIST    && c == KEY_DOWN)                        { _list_scroll++;    return true; }  // clamped on render
     if (c == KEY_ENTER) {
-      _store->setActive(!_store->isActive());
-      _task->showAlert(_store->isActive() ? "Tracking started" : "Tracking stopped", 800);
+      bool now_active = !_store->isActive();
+      _store->setActive(now_active);
+      if (now_active) {
+        _task->showAlert(gpsHasFix() ? "Tracking started" : "Waiting for GPS fix", 1000);
+      } else {
+        _task->showAlert("Tracking stopped", 800);
+      }
       return true;
     }
     return false;
+  }
+
+  // True when the global SensorManager has a usable GPS fix.
+  static bool gpsHasFix() {
+#if ENV_INCLUDE_GPS == 1
+    LocationProvider* loc = sensors.getLocationProvider();
+    return loc && loc->isValid();
+#else
+    return false;
+#endif
   }
 
 private:
   // Format the i-th summary line into buf. Indices match SUMMARY_ITEM_COUNT.
   void summaryItem(int i, char* buf, size_t n) const {
     switch (i) {
-      case 0:
-        snprintf(buf, n, "Status: %s", _store->isActive() ? "tracking" : "stopped");
+      case 0: {
+        const char* st;
+        if (!_store->isActive())     st = "stopped";
+        else if (_store->empty())    st = "waiting fix";
+        else                          st = "tracking";
+        snprintf(buf, n, "Status: %s", st);
         break;
+      }
       case 1:
         snprintf(buf, n, "Points: %d / %d", _store->count(), TrailStore::CAPACITY);
         break;
