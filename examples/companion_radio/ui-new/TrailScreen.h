@@ -81,13 +81,17 @@ private:
         break;
       }
       case 3: {
-        uint32_t es = _store->elapsedSeconds();
-        snprintf(buf, n, "Time: %lu:%02lu",
-                  (unsigned long)(es / 3600), (unsigned long)((es % 3600) / 60));
+        uint32_t es = _store->elapsedSeconds((uint32_t)rtc_clock.getCurrentTime());
+        // Below 1 h show m:ss so the seconds counter updates visibly each refresh.
+        if (es < 3600) snprintf(buf, n, "Time: %lu:%02lu",
+                                  (unsigned long)(es / 60), (unsigned long)(es % 60));
+        else           snprintf(buf, n, "Time: %lu:%02lu",
+                                  (unsigned long)(es / 3600), (unsigned long)((es % 3600) / 60));
         break;
       }
       case 4:
-        snprintf(buf, n, "Speed: %u km/h", (unsigned)_store->currentSpeedKmh());
+        snprintf(buf, n, "Avg speed: %u km/h",
+                  (unsigned)_store->avgSpeedKmh((uint32_t)rtc_clock.getCurrentTime()));
         break;
       default:
         buf[0] = '\0';
@@ -181,12 +185,20 @@ private:
       py = off_y + (int)dy;
     };
 
+    // Draw connected segments. A point flagged SEG_START starts a new segment;
+    // its predecessor is not joined to it. Single-point segments still get a
+    // visible pixel.
     int x0, y0;
     project(_store->at(0), x0, y0);
+    display.fillRect(x0, y0, 1, 1);
     for (int i = 1; i < _store->count(); i++) {
       int x1, y1;
       project(_store->at(i), x1, y1);
-      drawLine(display, x0, y0, x1, y1);
+      if (_store->at(i).flags & TRAIL_FLAG_SEG_START) {
+        display.fillRect(x1, y1, 1, 1);  // mark the segment's first point
+      } else {
+        drawLine(display, x0, y0, x1, y1);
+      }
       x0 = x1;
       y0 = y1;
     }
