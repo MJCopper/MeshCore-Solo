@@ -1020,7 +1020,7 @@ public:
 #endif
 #if UI_SENSORS_PAGE == 1
     if (c == KEY_ENTER && _page == HomePage::SENSORS) {
-      _task->toggleGPS();
+      // _task->toggleGPS();
       next_sensors_refresh=0;
       return true;
     }
