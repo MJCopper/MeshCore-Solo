@@ -1,7 +1,8 @@
 #pragma once
 // GPS trail viewer. Tools › Trail.
-// Config view (stopped): shows the Min-dist setting and lets Enter start tracking.
-// Active views (running): Summary counters, Map polyline, per-point List.
+// Three live views — Summary, Map, List — cyclable with LEFT/RIGHT.
+// All settings and actions live in the Hold-Enter popup so a short Enter never
+// accidentally stops tracking.
 // Included by UITask.cpp after Trail store + ToolsScreen.
 
 #include "../Trail.h"
@@ -11,25 +12,24 @@ class TrailScreen : public UIScreen {
   UITask*     _task;
   TrailStore* _store;
 
-  // All four views are always cyclable with LEFT/RIGHT. Config holds the
-  // settings + stored-trail summary; the other three render the live or
-  // last-recorded trail in different ways.
-  enum View { V_CONFIG = 0, V_SUMMARY = 1, V_MAP = 2, V_LIST = 3, V_COUNT };
+  enum View { V_SUMMARY = 0, V_MAP = 1, V_LIST = 2, V_COUNT };
+  uint8_t _view           = V_SUMMARY;
+  int     _summary_scroll = 0;
+  int     _list_scroll    = 0;
+  bool    _cfg_dirty      = false;
 
-  uint8_t _view           = V_CONFIG;
-  int     _summary_scroll = 0;  // top visible item index in Summary view
-  int     _list_scroll    = 0;  // top visible row in List view (newest = row 0)
-  bool    _cfg_dirty      = false;  // unsaved Config edits; flushed on start or back
-
-  // Selected row in the Config view. UP/DOWN moves between rows;
-  // LEFT/RIGHT cycles the value of the focused row.
-  enum CfgRow { CFG_MIN_DIST = 0, CFG_UNITS = 1, CFG_ROW_COUNT };
-  uint8_t _cfg_sel = CFG_MIN_DIST;
-
-  // Action popup (Hold Enter): Reset trail, and later phase-4 entries
-  // (Save/Load/Export GPX). Owns the labels because PopupMenu stores
-  // const char* pointers verbatim.
+  // Action popup (Hold Enter / KEY_CONTEXT_MENU). Carries both settings rows
+  // (Min dist, Units — cycled with LEFT/RIGHT while focused) and actions
+  // (Start/Stop tracking, Reset). PopupMenu stores label pointers verbatim, so
+  // the labels live in member buffers that get refreshed in openActionMenu()
+  // and after every LEFT/RIGHT cycle.
+  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_TOGGLE, ACT_RESET };
   PopupMenu _action_menu;
+  uint8_t   _act_map[8];
+  uint8_t   _act_count = 0;
+  char      _act_min_dist_label[24];
+  char      _act_units_label[24];
+  char      _act_toggle_label[20];
 
   static const int SUMMARY_ITEM_COUNT = 5;
 
@@ -37,7 +37,7 @@ public:
   TrailScreen(UITask* task, TrailStore* store) : _task(task), _store(store) {}
 
   void enter() {
-    _view = _store->isActive() ? V_SUMMARY : V_CONFIG;
+    _view = V_SUMMARY;
     _summary_scroll = 0;
     _list_scroll    = 0;
     _cfg_dirty      = false;
@@ -48,52 +48,58 @@ public:
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
 
-    const char* title = (_view == V_MAP)   ? "TRAIL MAP"
-                      : (_view == V_LIST)  ? "TRAIL LIST"
-                      :                       "TRAIL";
+    const char* title = (_view == V_MAP)  ? "TRAIL MAP"
+                      : (_view == V_LIST) ? "TRAIL LIST"
+                      :                      "TRAIL";
     display.drawTextCentered(display.width() / 2, 0, title);
     display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
-    if      (_view == V_CONFIG)  renderConfig(display);
-    else if (_view == V_MAP)     renderMap(display);
-    else if (_view == V_LIST)    renderList(display);
-    else                          renderSummary(display);
+    if      (_view == V_MAP)  renderMap(display);
+    else if (_view == V_LIST) renderList(display);
+    else                       renderSummary(display);
 
-    // Bottom hint with a thin separator above so the line never touches the
-    // content rendered just above it.
+    // Bottom hint with separator above so content never touches it.
     display.setColor(DisplayDriver::LIGHT);
     const int hint_y = display.height() - display.lineStep();
     display.fillRect(0, hint_y - 2, display.width(), 1);
     display.setCursor(2, hint_y);
     char hint[28];
-    if (_view == V_CONFIG) {
-      snprintf(hint, sizeof(hint), "<>1/%d  [Ent] %s", (int)V_COUNT,
-                _store->isActive() ? "stop" : (_store->empty() ? "start" : "resume"));
-    } else {
-      snprintf(hint, sizeof(hint), "<>%d/%d  [Ent] %s",
-                (int)_view + 1, (int)V_COUNT,
-                _store->isActive() ? "stop" : "start");
-    }
+    snprintf(hint, sizeof(hint), "<>%d/%d  %s [Hold]menu",
+              (int)_view + 1, (int)V_COUNT,
+              _store->isActive() ? "act" : "[Ent]start");
     display.print(hint);
 
-    // Action popup overlay (Hold Enter): Reset / Save / Load / Export GPX.
     if (_action_menu.active) _action_menu.render(display);
-
     return _store->isActive() ? 1000 : 5000;
   }
 
   bool handleInput(char c) override {
-    // Action popup overrides everything else while open.
+    // Action popup overrides everything else.
     if (_action_menu.active) {
+      // LEFT/RIGHT on settings rows cycles the value in-place and refreshes
+      // the popup label — the popup stays open so the user can keep tapping.
+      if (c == KEY_LEFT || c == KEY_RIGHT || c == KEY_PREV || c == KEY_NEXT) {
+        int idx = _action_menu.selectedIndex();
+        if (idx >= 0 && idx < _act_count) {
+          NodePrefs* p = _task->getNodePrefs();
+          int dir = (c == KEY_RIGHT || c == KEY_NEXT) ? 1 : -1;
+          if (_act_map[idx] == ACT_MIN_DIST && p) { cycleMinDelta(p, dir); _cfg_dirty = true; refreshActionLabels(); return true; }
+          if (_act_map[idx] == ACT_UNITS    && p) { cycleUnits(p, dir);    _cfg_dirty = true; refreshActionLabels(); return true; }
+        }
+        return true;  // swallow on action rows
+      }
       auto res = _action_menu.handleInput(c);
       if (res == PopupMenu::SELECTED) {
-        // Item 0 = "Reset trail"; future Save/Load/Export to come.
-        if (_action_menu.selectedIndex() == 0) {
-          if (_store->isActive()) _store->setActive(false);
-          _store->clear();
-          _view = V_CONFIG;
-          _task->showAlert("Trail reset", 800);
+        int sel = _action_menu.selectedIndex();
+        if (sel >= 0 && sel < _act_count) {
+          ActionId act = (ActionId)_act_map[sel];
+          if (act == ACT_TOGGLE)        { handleToggle(); }
+          else if (act == ACT_RESET)    { handleReset(); }
+          else /* MIN_DIST / UNITS */   { reopenAt(sel); return true; }  // re-open keeping focus
         }
+        if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
+      } else if (res == PopupMenu::CANCELLED) {
+        if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
       }
       return true;
     }
@@ -103,66 +109,27 @@ public:
       _task->gotoToolsScreen();
       return true;
     }
-    if (c == KEY_CONTEXT_MENU) {
-      openActionMenu();
-      return true;
-    }
+    if (c == KEY_CONTEXT_MENU) { openActionMenu(); return true; }
 
-    if (_view == V_CONFIG) {
-      NodePrefs* p = _task->getNodePrefs();
-      if (c == KEY_UP   && _cfg_sel > 0)                  { _cfg_sel--; return true; }
-      if (c == KEY_DOWN && _cfg_sel < CFG_ROW_COUNT - 1)  { _cfg_sel++; return true; }
-      if ((c == KEY_LEFT  || c == KEY_PREV) && p) { cycleCfg(p, -1); return true; }
-      if ((c == KEY_RIGHT || c == KEY_NEXT) && p) { cycleCfg(p, +1); return true; }
-      if (c == KEY_ENTER) {
-        if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
-        bool was_active = _store->isActive();
-        _store->setActive(!was_active);
-        if (!was_active) {
-          _view = V_SUMMARY;
-          _task->showAlert(gpsHasFix() ? "Tracking started" : "Waiting for GPS fix", 1000);
-        } else {
-          _task->showAlert("Tracking stopped", 800);
-        }
-        return true;
-      }
-      return false;
-    }
-
-    // Summary / Map / List — cycle through all 4 views (including back to Config).
-    if (c == KEY_LEFT || c == KEY_PREV) {
-      _view = (uint8_t)((_view + V_COUNT - 1) % V_COUNT);
-      return true;
-    }
-    if (c == KEY_RIGHT || c == KEY_NEXT) {
-      _view = (uint8_t)((_view + 1) % V_COUNT);
-      return true;
-    }
+    if (c == KEY_LEFT  || c == KEY_PREV) { _view = (uint8_t)((_view + V_COUNT - 1) % V_COUNT); return true; }
+    if (c == KEY_RIGHT || c == KEY_NEXT) { _view = (uint8_t)((_view + 1) % V_COUNT);          return true; }
     if (_view == V_SUMMARY && c == KEY_UP   && _summary_scroll > 0) { _summary_scroll--; return true; }
     if (_view == V_SUMMARY && c == KEY_DOWN)                        { _summary_scroll++; return true; }
     if (_view == V_LIST    && c == KEY_UP   && _list_scroll > 0)    { _list_scroll--;    return true; }
     if (_view == V_LIST    && c == KEY_DOWN)                        { _list_scroll++;    return true; }
     if (c == KEY_ENTER) {
-      bool was_active = _store->isActive();
-      _store->setActive(!was_active);
-      _task->showAlert(was_active ? "Tracking stopped"
-                                  : (gpsHasFix() ? "Tracking started" : "Waiting for GPS fix"),
-                        was_active ? 800 : 1000);
+      // Short Enter starts the trail if it's stopped — start is safe. Once
+      // active, short Enter does nothing on purpose: stop is only reachable
+      // through the popup so a stray tap can't end a recording.
+      if (!_store->isActive()) {
+        _store->setActive(true);
+        _task->showAlert(gpsHasFix() ? "Tracking started" : "Waiting for GPS fix", 1000);
+      } else {
+        _task->showAlert("Hold Enter for menu", 1000);
+      }
       return true;
     }
     return false;
-  }
-
-  // Build and open the action popup. Items depend on what makes sense for the
-  // current state: Reset is only useful when there's something to reset.
-  void openActionMenu() {
-    _action_menu.begin("Trail actions", 3);
-    if (!_store->empty()) _action_menu.addItem("Reset trail");
-    // Phase 4 will add: Save trail, Load trail, Export GPX.
-    if (_action_menu._count == 0) {
-      _action_menu.active = false;
-      _task->showAlert("No actions yet", 800);
-    }
   }
 
   // True when the global SensorManager has a usable GPS fix.
@@ -176,22 +143,64 @@ public:
   }
 
 private:
-  // Cycle the focused Config row's value. Dirty flag commits on Start / Back.
-  void cycleCfg(NodePrefs* p, int dir) {
-    if (_cfg_sel == CFG_MIN_DIST) {
-      uint8_t idx = p->trail_min_delta_idx;
-      if (idx >= TrailStore::MIN_DELTA_COUNT) idx = 0;
-      idx = (dir > 0) ? (idx + 1) % TrailStore::MIN_DELTA_COUNT
-                      : (idx + TrailStore::MIN_DELTA_COUNT - 1) % TrailStore::MIN_DELTA_COUNT;
-      p->trail_min_delta_idx = idx;
-    } else if (_cfg_sel == CFG_UNITS) {
-      uint8_t idx = p->trail_units_idx;
-      if (idx >= TrailStore::UNITS_COUNT) idx = 0;
-      idx = (dir > 0) ? (idx + 1) % TrailStore::UNITS_COUNT
-                      : (idx + TrailStore::UNITS_COUNT - 1) % TrailStore::UNITS_COUNT;
-      p->trail_units_idx = idx;
+  void handleToggle() {
+    bool was = _store->isActive();
+    _store->setActive(!was);
+    _task->showAlert(was ? "Tracking stopped"
+                         : (gpsHasFix() ? "Tracking started" : "Waiting for GPS fix"),
+                      was ? 800 : 1000);
+  }
+  void handleReset() {
+    if (_store->isActive()) _store->setActive(false);
+    _store->clear();
+    _task->showAlert("Trail reset", 800);
+  }
+
+  // Refresh the three settings/action labels in-place. Pointer identity is
+  // preserved, so PopupMenu picks up the new text on the next render.
+  void refreshActionLabels() {
+    NodePrefs* p = _task->getNodePrefs();
+    snprintf(_act_min_dist_label, sizeof(_act_min_dist_label),
+              "Min dist: %s", TrailStore::minDeltaLabel(p ? p->trail_min_delta_idx : 0));
+    snprintf(_act_units_label, sizeof(_act_units_label),
+              "Units: %s",    TrailStore::unitLabel(p    ? p->trail_units_idx     : 0));
+    snprintf(_act_toggle_label, sizeof(_act_toggle_label),
+              "%s tracking",  _store->isActive() ? "Stop" : "Start");
+  }
+
+  void openActionMenu() {
+    refreshActionLabels();
+    _act_count = 0;
+    _action_menu.begin("Trail", 4);
+    _act_map[_act_count++] = ACT_MIN_DIST; _action_menu.addItem(_act_min_dist_label);
+    _act_map[_act_count++] = ACT_UNITS;    _action_menu.addItem(_act_units_label);
+    _act_map[_act_count++] = ACT_TOGGLE;   _action_menu.addItem(_act_toggle_label);
+    if (!_store->empty()) {
+      _act_map[_act_count++] = ACT_RESET;  _action_menu.addItem("Reset trail");
     }
-    _cfg_dirty = true;
+  }
+
+  // After Enter on a settings row, the popup auto-closes per PopupMenu's
+  // semantics. Re-open it with focus restored to that row so the user can
+  // continue cycling.
+  void reopenAt(int sel) {
+    openActionMenu();
+    if (sel >= 0 && sel < _act_count) _action_menu._sel = sel;
+  }
+
+  void cycleMinDelta(NodePrefs* p, int dir) {
+    uint8_t idx = p->trail_min_delta_idx;
+    if (idx >= TrailStore::MIN_DELTA_COUNT) idx = 0;
+    idx = (dir > 0) ? (idx + 1) % TrailStore::MIN_DELTA_COUNT
+                    : (idx + TrailStore::MIN_DELTA_COUNT - 1) % TrailStore::MIN_DELTA_COUNT;
+    p->trail_min_delta_idx = idx;
+  }
+  void cycleUnits(NodePrefs* p, int dir) {
+    uint8_t idx = p->trail_units_idx;
+    if (idx >= TrailStore::UNITS_COUNT) idx = 0;
+    idx = (dir > 0) ? (idx + 1) % TrailStore::UNITS_COUNT
+                    : (idx + TrailStore::UNITS_COUNT - 1) % TrailStore::UNITS_COUNT;
+    p->trail_units_idx = idx;
   }
 
   // Render the average speed (or pace) in the user-selected units.
@@ -202,11 +211,9 @@ private:
     if (u == TrailStore::UNITS_KMH) {
       snprintf(buf, n, "Avg: %u km/h", (unsigned)kmh);
     } else if (u == TrailStore::UNITS_MPH) {
-      // 1 km = 0.621371 mi
       unsigned mph = (unsigned)((float)kmh * 0.621371f + 0.5f);
       snprintf(buf, n, "Avg: %u mph", mph);
     } else {
-      // Pace = elapsed / distance. Compute directly from raw totals for precision.
       uint32_t d_m  = _store->totalDistanceMeters();
       uint32_t es_s = _store->elapsedSeconds();
       const char* unit = (u == TrailStore::UNITS_PACE_KM) ? "/km" : "/mi";
@@ -224,49 +231,6 @@ private:
     }
   }
 
-  void renderConfig(DisplayDriver& display) {
-    NodePrefs* p = _task->getNodePrefs();
-    const int y0   = display.listStart();
-    const int step = display.lineStep();
-    const int cw   = display.getCharWidth();
-
-    char buf[24];
-
-    // Row 0 — Min dist
-    display.setCursor(0, y0);
-    display.print(_cfg_sel == CFG_MIN_DIST ? ">" : " ");
-    snprintf(buf, sizeof(buf), "Min dist: %s",
-              TrailStore::minDeltaLabel(p ? p->trail_min_delta_idx : 0));
-    display.setCursor(cw + 2, y0);
-    display.print(buf);
-
-    // Row 1 — Units
-    display.setCursor(0, y0 + step);
-    display.print(_cfg_sel == CFG_UNITS ? ">" : " ");
-    snprintf(buf, sizeof(buf), "Units:    %s",
-              TrailStore::unitLabel(p ? p->trail_units_idx : 0));
-    display.setCursor(cw + 2, y0 + step);
-    display.print(buf);
-
-    // Existing trail summary (if any) so the user sees what Enter will resume.
-    if (!_store->empty()) {
-      snprintf(buf, sizeof(buf), "Stored: %d pts", _store->count());
-      display.setCursor(2, y0 + step * 3);
-      display.print(buf);
-
-      uint32_t d = _store->totalDistanceMeters();
-      if (d < 1000) snprintf(buf, sizeof(buf), "Dist: %lu m", (unsigned long)d);
-      else          snprintf(buf, sizeof(buf), "Dist: %lu.%02lu km",
-                              (unsigned long)(d / 1000), (unsigned long)((d % 1000) / 10));
-      display.setCursor(2, y0 + step * 4);
-      display.print(buf);
-    } else {
-      display.setCursor(2, y0 + step * 3);
-      display.print("No trail yet.");
-    }
-  }
-
-  // Format the i-th summary line into buf. Indices match SUMMARY_ITEM_COUNT.
   void summaryItem(int i, char* buf, size_t n) const {
     switch (i) {
       case 0: {
@@ -289,7 +253,6 @@ private:
       }
       case 3: {
         uint32_t es = _store->elapsedSeconds();
-        // Below 1 h show m:ss so the seconds counter updates visibly each refresh.
         if (es < 3600) snprintf(buf, n, "Time: %lu:%02lu",
                                   (unsigned long)(es / 60), (unsigned long)(es % 60));
         else           snprintf(buf, n, "Time: %lu:%02lu",
@@ -313,7 +276,6 @@ private:
     if (visible < 1) visible = 1;
     if (visible > SUMMARY_ITEM_COUNT) visible = SUMMARY_ITEM_COUNT;
 
-    // Clamp scroll once we know visible count.
     int max_scroll = SUMMARY_ITEM_COUNT - visible;
     if (_summary_scroll > max_scroll) _summary_scroll = max_scroll;
     if (_summary_scroll < 0)          _summary_scroll = 0;
@@ -338,8 +300,6 @@ private:
     }
   }
 
-  // Per-point list, newest first. Each row: HH:MM (local) + delta from the
-  // previous point in the same segment, or "start" for segment-start rows.
   void renderList(DisplayDriver& display) {
     const int top    = display.listStart();
     const int step   = display.lineStep();
@@ -364,7 +324,7 @@ private:
     int32_t tz_off = (int32_t)(p ? p->tz_offset_hours : 0) * 3600;
 
     for (int i = 0; i < visible; i++) {
-      int idx = total - 1 - (_list_scroll + i);  // newest first
+      int idx = total - 1 - (_list_scroll + i);
       if (idx < 0) break;
       const TrailPoint& pt = _store->at(idx);
 
@@ -400,8 +360,6 @@ private:
     }
   }
 
-  // Pixel-by-pixel polyline. Bounds are auto-fitted to the available area and
-  // longitude is scaled by cos(avg_lat) so high-latitude trails don't stretch.
   void renderMap(DisplayDriver& display) {
     const int top    = display.listStart();
     const int bottom = display.height() - display.lineStep() - 3;
@@ -415,31 +373,27 @@ private:
     const int area_y = top + 1;
     const int area_w = display.width() - 4;
     const int area_h = bottom - top - 2;
-    if (area_w < 6 || area_h < 6) return;  // no room to draw anything sensible
+    if (area_w < 6 || area_h < 6) return;
 
     int32_t min_lat, min_lon, max_lat, max_lon;
     _store->boundingBox(min_lat, min_lon, max_lat, max_lon);
 
     if (_store->count() == 1 || (min_lat == max_lat && min_lon == max_lon)) {
-      // Degenerate — single point or all samples colocated. Mark centre.
       drawCurrentMarker(display, area_x + area_w / 2, area_y + area_h / 2);
       return;
     }
 
-    // cos(lat) correction prevents east/west stretching at higher latitudes.
     float avg_lat_rad = ((min_lat + max_lat) / 2.0e6f) * (float)M_PI / 180.0f;
     float lon_scale_geo = cosf(avg_lat_rad);
-    if (lon_scale_geo < 0.05f) lon_scale_geo = 0.05f;  // guard near poles
+    if (lon_scale_geo < 0.05f) lon_scale_geo = 0.05f;
 
     float lat_span = (float)(max_lat - min_lat);
     float lon_span = (float)(max_lon - min_lon) * lon_scale_geo;
 
-    // Pick the limiting axis so the polyline fills the area without distorting.
     float scale_lat = (float)area_h / (lat_span > 0 ? lat_span : 1.0f);
     float scale_lon = (float)area_w / (lon_span > 0 ? lon_span : 1.0f);
     float scale     = (scale_lat < scale_lon) ? scale_lat : scale_lon;
 
-    // After scaling, the used area is smaller in the non-limiting dim; centre it.
     int used_w = (int)(lon_span * scale);
     int used_h = (int)(lat_span * scale);
     int off_x  = area_x + (area_w - used_w) / 2;
@@ -447,15 +401,11 @@ private:
 
     auto project = [&](const TrailPoint& p, int& px, int& py) {
       float dx = (float)(p.lon_1e6 - min_lon) * lon_scale_geo * scale;
-      float dy = (float)(max_lat - p.lat_1e6) * scale;  // north = up
+      float dy = (float)(max_lat - p.lat_1e6) * scale;
       px = off_x + (int)dx;
       py = off_y + (int)dy;
     };
 
-    // Draw connected segments. A point flagged SEG_START starts a new segment;
-    // its predecessor is not joined to it. At every break we mark the segment
-    // end (filled dot) and the resume point (open dot) so the user can see
-    // where tracking paused.
     int x0, y0;
     project(_store->at(0), x0, y0);
     display.fillRect(x0, y0, 1, 1);
@@ -463,8 +413,8 @@ private:
       int x1, y1;
       project(_store->at(i), x1, y1);
       if (_store->at(i).flags & TRAIL_FLAG_SEG_START) {
-        drawFilledDot(display, x0, y0);  // end of the previous segment
-        drawOpenDot(display, x1, y1);    // resume point
+        drawFilledDot(display, x0, y0);
+        drawOpenDot(display, x1, y1);
       } else {
         drawLine(display, x0, y0, x1, y1);
       }
@@ -478,12 +428,9 @@ private:
     drawStartMarker(display, sx, sy);
     drawCurrentMarker(display, ex, ey);
 
-    // North indicator in the top-right of the map area — the projection is
-    // strictly north-up (y inverted from latitude), so the arrow is fixed.
     drawNorthArrow(display, area_x + area_w - 4, area_y + display.getLineHeight() + 1);
   }
 
-  // Bresenham line via 1×1 fillRect. Acceptable for occasional view renders.
   static void drawLine(DisplayDriver& d, int x0, int y0, int x1, int y1) {
     int dx =  abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
     int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
@@ -497,45 +444,33 @@ private:
     }
   }
 
-  // 3×3 filled square — end of a segment before a break.
   static void drawFilledDot(DisplayDriver& d, int cx, int cy) {
     d.fillRect(cx - 1, cy - 1, 3, 3);
   }
-
-  // 3×3 outline square — start of a segment after a break (resume point).
   static void drawOpenDot(DisplayDriver& d, int cx, int cy) {
-    d.fillRect(cx - 1, cy - 1, 3, 1);  // top
-    d.fillRect(cx - 1, cy + 1, 3, 1);  // bottom
-    d.fillRect(cx - 1, cy,     1, 1);  // left
-    d.fillRect(cx + 1, cy,     1, 1);  // right
+    d.fillRect(cx - 1, cy - 1, 3, 1);
+    d.fillRect(cx - 1, cy + 1, 3, 1);
+    d.fillRect(cx - 1, cy,     1, 1);
+    d.fillRect(cx + 1, cy,     1, 1);
   }
-
-  // 5×5 plus-sign marker for the start point.
   static void drawStartMarker(DisplayDriver& d, int cx, int cy) {
     d.fillRect(cx - 2, cy,     5, 1);
     d.fillRect(cx,     cy - 2, 1, 5);
   }
-
-  // 5×5 cross marker for the current/last point.
   static void drawCurrentMarker(DisplayDriver& d, int cx, int cy) {
     for (int i = -2; i <= 2; i++) {
       d.fillRect(cx + i, cy + i, 1, 1);
       d.fillRect(cx + i, cy - i, 1, 1);
     }
   }
-
-  // North arrow + "N" label. Tip at (cx, cy), arrow body extends down for 6 px;
-  // the "N" sits one line height above the tip.
   static void drawNorthArrow(DisplayDriver& d, int cx, int cy) {
     int lh = d.getLineHeight();
     int cw = d.getCharWidth();
     d.setCursor(cx - cw / 2, cy - lh);
     d.print("N");
-    // arrowhead
     d.fillRect(cx,     cy,     1, 1);
     d.fillRect(cx - 1, cy + 1, 3, 1);
     d.fillRect(cx - 2, cy + 2, 5, 1);
-    // shaft
     d.fillRect(cx,     cy + 3, 1, 4);
   }
 };
