@@ -5,6 +5,7 @@
 #include <helpers/ui/UIScreen.h>
 #include <helpers/SensorManager.h>
 #include <helpers/BaseSerialInterface.h>
+#include <helpers/ContactInfo.h>
 #include <Arduino.h>
 #include <helpers/sensors/LPPDataHelpers.h>
 
