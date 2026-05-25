@@ -11,11 +11,10 @@ class TrailScreen : public UIScreen {
   UITask*     _task;
   TrailStore* _store;
 
-  // V_CONFIG is the resting screen — shown whenever the trail is stopped.
-  // Once tracking starts, the user cycles between V_SUMMARY/V_MAP/V_LIST with
-  // LEFT/RIGHT. Stop returns to V_CONFIG.
-  enum View { V_CONFIG = 0, V_SUMMARY = 1, V_MAP = 2, V_LIST = 3 };
-  static const uint8_t ACTIVE_VIEW_COUNT = 3;  // Summary, Map, List
+  // All four views are always cyclable with LEFT/RIGHT. Config holds the
+  // settings + stored-trail summary; the other three render the live or
+  // last-recorded trail in different ways.
+  enum View { V_CONFIG = 0, V_SUMMARY = 1, V_MAP = 2, V_LIST = 3, V_COUNT };
 
   uint8_t _view           = V_CONFIG;
   int     _summary_scroll = 0;  // top visible item index in Summary view
@@ -27,6 +26,11 @@ class TrailScreen : public UIScreen {
   enum CfgRow { CFG_MIN_DIST = 0, CFG_UNITS = 1, CFG_ROW_COUNT };
   uint8_t _cfg_sel = CFG_MIN_DIST;
 
+  // Action popup (Hold Enter): Reset trail, and later phase-4 entries
+  // (Save/Load/Export GPX). Owns the labels because PopupMenu stores
+  // const char* pointers verbatim.
+  PopupMenu _action_menu;
+
   static const int SUMMARY_ITEM_COUNT = 5;
 
 public:
@@ -37,16 +41,12 @@ public:
     _summary_scroll = 0;
     _list_scroll    = 0;
     _cfg_dirty      = false;
+    _action_menu.active = false;
   }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
-
-    // Snap _view to whatever the active-state allows. Stopped → always V_CONFIG;
-    // active and stuck on V_CONFIG → flip to Summary.
-    if (!_store->isActive() && _view != V_CONFIG)             _view = V_CONFIG;
-    if ( _store->isActive() && _view == V_CONFIG)             _view = V_SUMMARY;
 
     const char* title = (_view == V_MAP)   ? "TRAIL MAP"
                       : (_view == V_LIST)  ? "TRAIL LIST"
@@ -59,26 +59,52 @@ public:
     else if (_view == V_LIST)    renderList(display);
     else                          renderSummary(display);
 
-    // Bottom hint
+    // Bottom hint with a thin separator above so the line never touches the
+    // content rendered just above it.
     display.setColor(DisplayDriver::LIGHT);
-    int hint_y = display.height() - display.lineStep();
+    const int hint_y = display.height() - display.lineStep();
+    display.fillRect(0, hint_y - 2, display.width(), 1);
     display.setCursor(2, hint_y);
+    char hint[28];
     if (_view == V_CONFIG) {
-      display.print(_store->empty() ? "<>dist [Ent] start" : "<>dist [Ent] resume");
+      snprintf(hint, sizeof(hint), "<>1/%d  [Ent] %s", (int)V_COUNT,
+                _store->isActive() ? "stop" : (_store->empty() ? "start" : "resume"));
     } else {
-      char hint[28];
-      snprintf(hint, sizeof(hint), "<>%d/%d  [Ent] stop",
-                (int)(_view - V_SUMMARY + 1), (int)ACTIVE_VIEW_COUNT);
-      display.print(hint);
+      snprintf(hint, sizeof(hint), "<>%d/%d  [Ent] %s",
+                (int)_view + 1, (int)V_COUNT,
+                _store->isActive() ? "stop" : "start");
     }
+    display.print(hint);
+
+    // Action popup overlay (Hold Enter): Reset / Save / Load / Export GPX.
+    if (_action_menu.active) _action_menu.render(display);
 
     return _store->isActive() ? 1000 : 5000;
   }
 
   bool handleInput(char c) override {
-    if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
+    // Action popup overrides everything else while open.
+    if (_action_menu.active) {
+      auto res = _action_menu.handleInput(c);
+      if (res == PopupMenu::SELECTED) {
+        // Item 0 = "Reset trail"; future Save/Load/Export to come.
+        if (_action_menu.selectedIndex() == 0) {
+          if (_store->isActive()) _store->setActive(false);
+          _store->clear();
+          _view = V_CONFIG;
+          _task->showAlert("Trail reset", 800);
+        }
+      }
+      return true;
+    }
+
+    if (c == KEY_CANCEL) {
       if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
       _task->gotoToolsScreen();
+      return true;
+    }
+    if (c == KEY_CONTEXT_MENU) {
+      openActionMenu();
       return true;
     }
 
@@ -90,25 +116,26 @@ public:
       if ((c == KEY_RIGHT || c == KEY_NEXT) && p) { cycleCfg(p, +1); return true; }
       if (c == KEY_ENTER) {
         if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
-        _store->setActive(true);
-        _view = V_SUMMARY;
-        _task->showAlert(gpsHasFix() ? "Tracking started" : "Waiting for GPS fix", 1000);
+        bool was_active = _store->isActive();
+        _store->setActive(!was_active);
+        if (!was_active) {
+          _view = V_SUMMARY;
+          _task->showAlert(gpsHasFix() ? "Tracking started" : "Waiting for GPS fix", 1000);
+        } else {
+          _task->showAlert("Tracking stopped", 800);
+        }
         return true;
       }
       return false;
     }
 
-    // Active views: Summary / Map / List
+    // Summary / Map / List — cycle through all 4 views (including back to Config).
     if (c == KEY_LEFT || c == KEY_PREV) {
-      int v = (int)_view - V_SUMMARY;
-      v = (v + ACTIVE_VIEW_COUNT - 1) % ACTIVE_VIEW_COUNT;
-      _view = (uint8_t)(V_SUMMARY + v);
+      _view = (uint8_t)((_view + V_COUNT - 1) % V_COUNT);
       return true;
     }
     if (c == KEY_RIGHT || c == KEY_NEXT) {
-      int v = (int)_view - V_SUMMARY;
-      v = (v + 1) % ACTIVE_VIEW_COUNT;
-      _view = (uint8_t)(V_SUMMARY + v);
+      _view = (uint8_t)((_view + 1) % V_COUNT);
       return true;
     }
     if (_view == V_SUMMARY && c == KEY_UP   && _summary_scroll > 0) { _summary_scroll--; return true; }
@@ -116,12 +143,26 @@ public:
     if (_view == V_LIST    && c == KEY_UP   && _list_scroll > 0)    { _list_scroll--;    return true; }
     if (_view == V_LIST    && c == KEY_DOWN)                        { _list_scroll++;    return true; }
     if (c == KEY_ENTER) {
-      _store->setActive(false);
-      _view = V_CONFIG;
-      _task->showAlert("Tracking stopped", 800);
+      bool was_active = _store->isActive();
+      _store->setActive(!was_active);
+      _task->showAlert(was_active ? "Tracking stopped"
+                                  : (gpsHasFix() ? "Tracking started" : "Waiting for GPS fix"),
+                        was_active ? 800 : 1000);
       return true;
     }
     return false;
+  }
+
+  // Build and open the action popup. Items depend on what makes sense for the
+  // current state: Reset is only useful when there's something to reset.
+  void openActionMenu() {
+    _action_menu.begin("Trail actions", 3);
+    if (!_store->empty()) _action_menu.addItem("Reset trail");
+    // Phase 4 will add: Save trail, Load trail, Export GPX.
+    if (_action_menu._count == 0) {
+      _action_menu.active = false;
+      _task->showAlert("No actions yet", 800);
+    }
   }
 
   // True when the global SensorManager has a usable GPS fix.
@@ -267,7 +308,7 @@ private:
     const int y0     = display.listStart();
     const int step   = display.lineStep();
     const int hint_h = step;
-    const int avail  = display.height() - y0 - hint_h - 2;
+    const int avail  = display.height() - y0 - hint_h - 4;
     int visible      = avail / step;
     if (visible < 1) visible = 1;
     if (visible > SUMMARY_ITEM_COUNT) visible = SUMMARY_ITEM_COUNT;
@@ -303,7 +344,7 @@ private:
     const int top    = display.listStart();
     const int step   = display.lineStep();
     const int hint_h = step;
-    const int avail  = display.height() - top - hint_h - 2;
+    const int avail  = display.height() - top - hint_h - 4;
 
     if (_store->empty()) {
       display.drawTextCentered(display.width() / 2, top + avail / 2, "No trail yet");
@@ -363,7 +404,7 @@ private:
   // longitude is scaled by cos(avg_lat) so high-latitude trails don't stretch.
   void renderMap(DisplayDriver& display) {
     const int top    = display.listStart();
-    const int bottom = display.height() - display.lineStep() - 1;
+    const int bottom = display.height() - display.lineStep() - 3;
 
     if (_store->empty()) {
       display.drawTextCentered(display.width() / 2, (top + bottom) / 2, "No trail yet");
