@@ -48,26 +48,19 @@ public:
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
 
-    const char* title = (_view == V_MAP)  ? "TRAIL MAP"
-                      : (_view == V_LIST) ? "TRAIL LIST"
-                      :                      "TRAIL";
+    // Title carries the view counter so the bottom hint row can be reclaimed
+    // for content.
+    const char* base = (_view == V_MAP)  ? "TRAIL MAP"
+                     : (_view == V_LIST) ? "TRAIL LIST"
+                     :                      "TRAIL";
+    char title[20];
+    snprintf(title, sizeof(title), "%s %d/%d", base, (int)_view + 1, (int)V_COUNT);
     display.drawTextCentered(display.width() / 2, 0, title);
     display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
     if      (_view == V_MAP)  renderMap(display);
     else if (_view == V_LIST) renderList(display);
     else                       renderSummary(display);
-
-    // Bottom hint with separator above so content never touches it.
-    display.setColor(DisplayDriver::LIGHT);
-    const int hint_y = display.height() - display.lineStep();
-    display.fillRect(0, hint_y - 2, display.width(), 1);
-    display.setCursor(2, hint_y);
-    char hint[28];
-    snprintf(hint, sizeof(hint), "<>%d/%d  %s [Hold]menu",
-              (int)_view + 1, (int)V_COUNT,
-              _store->isActive() ? "act" : "[Ent]start");
-    display.print(hint);
 
     if (_action_menu.active) _action_menu.render(display);
     return _store->isActive() ? 1000 : 5000;
@@ -118,15 +111,10 @@ public:
     if (_view == V_LIST    && c == KEY_UP   && _list_scroll > 0)    { _list_scroll--;    return true; }
     if (_view == V_LIST    && c == KEY_DOWN)                        { _list_scroll++;    return true; }
     if (c == KEY_ENTER) {
-      // Short Enter starts the trail if it's stopped — start is safe. Once
-      // active, short Enter does nothing on purpose: stop is only reachable
-      // through the popup so a stray tap can't end a recording.
-      if (!_store->isActive()) {
-        _store->setActive(true);
-        _task->showAlert(gpsHasFix() ? "Tracking started" : "Waiting for GPS fix", 1000);
-      } else {
-        _task->showAlert("Hold Enter for menu", 1000);
-      }
+      // Short Enter intentionally does nothing destructive — both start and
+      // stop go through the Hold-Enter popup so a stray tap can't change the
+      // tracking state.
+      _task->showAlert("Hold Enter for menu", 1000);
       return true;
     }
     return false;
@@ -270,8 +258,7 @@ private:
   void renderSummary(DisplayDriver& display) {
     const int y0     = display.listStart();
     const int step   = display.lineStep();
-    const int hint_h = step;
-    const int avail  = display.height() - y0 - hint_h - 4;
+    const int avail  = display.height() - y0 - 2;
     int visible      = avail / step;
     if (visible < 1) visible = 1;
     if (visible > SUMMARY_ITEM_COUNT) visible = SUMMARY_ITEM_COUNT;
@@ -303,8 +290,7 @@ private:
   void renderList(DisplayDriver& display) {
     const int top    = display.listStart();
     const int step   = display.lineStep();
-    const int hint_h = step;
-    const int avail  = display.height() - top - hint_h - 4;
+    const int avail  = display.height() - top - 2;
 
     if (_store->empty()) {
       display.drawTextCentered(display.width() / 2, top + avail / 2, "No trail yet");
@@ -362,7 +348,7 @@ private:
 
   void renderMap(DisplayDriver& display) {
     const int top    = display.listStart();
-    const int bottom = display.height() - display.lineStep() - 3;
+    const int bottom = display.height() - 2;
 
     if (_store->empty()) {
       display.drawTextCentered(display.width() / 2, (top + bottom) / 2, "No trail yet");
