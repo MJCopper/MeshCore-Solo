@@ -20,7 +20,7 @@ static const uint8_t TRAIL_FLAG_SEG_START = 0x01;
 
 class TrailStore {
 public:
-  static const int CAPACITY = 256;
+  static const int CAPACITY = 512;
 
   // Fixed sampling cadence — matches the sensor manager's default GPS update
   // rate (1 s). Density is controlled by the min-delta gate (settings) rather
