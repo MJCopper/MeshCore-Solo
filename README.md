@@ -236,13 +236,13 @@ Three views cycle with **LEFT / RIGHT**:
 
 #### Auto-Advert
 
-Periodically broadcasts a 0-hop advert with your GPS position so nearby nodes can track your location automatically. Configurable interval: off / 1 min / 2 min / 5 min / 10 min / 30 min / 1 h.
+Periodically broadcasts a 0-hop advert with your GPS position so nearby nodes can track your location automatically. Configurable interval: off / 30 s / 1 min / 2 min / 5 min / 10 min / 30 min / 1 h.
 
 A blinking **A** indicator appears in the status bar while Auto-Advert is active.
 
 #### Ringtone Editor
 
-A step sequencer for composing custom notification melodies stored on the device. Two independent melody slots are available — **Melody 1** and **Melody 2** — switchable from within the editor. Each melody supports up to 32 notes with adjustable pitch (C–B + pause), octave (4–7), duration (whole / half / quarter / eighth), and BPM (60 / 90 / 120 / 150 / 180). Playback preview is available directly from the editor.
+A step sequencer for composing custom notification melodies stored on the device. Two independent melody slots are available — **Melody 1** and **Melody 2** — switchable from within the editor. Each melody supports up to 32 notes with adjustable pitch (C–B + pause), octave (4–7), duration (1/4 / 1/8 / 1/16 / 1/32), and BPM (60 / 90 / 120 / 150 / 180). Playback preview is available directly from the editor.
 
 Melodies can be assigned as notification sounds per message type (DM / channel) in Settings, and individually overridden per channel or per contact from the message screen context menu.
 
@@ -266,7 +266,7 @@ The Lemon font offers:
 
 - **Native Unicode rendering** — Latin Extended, Greek, and Cyrillic characters (U+0020–U+04FF) are displayed directly without transliteration, covering Polish, Czech, Slovak, German, French, Scandinavian, Hungarian, Romanian, Croatian, Turkish, Baltic, Russian, and Greek scripts.
 - **Pixel-accurate word wrap** — text wraps based on actual glyph widths rather than a fixed character count.
-- **Slightly taller glyphs** — the font uses a 10 px line height compared to 8 px for the default font.
+- **Slightly taller glyphs** — the font uses a 9 px line height on OLED and 10 px on e-ink, compared to 8 px for the default font on both displays.
 
 ---
 
