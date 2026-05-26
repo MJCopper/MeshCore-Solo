@@ -74,10 +74,13 @@ Phase 2 ✅ (auto-fit Map view with cos(lat) aspect compensation; LEFT/RIGHT cyc
     and total distance skips segment boundaries
 Phase 3 ✅ (per-point list view with HH:MM local time + delta-from-previous;
    segment-start rows show "start" instead of a delta)
-Phase 4 ✅ (Hold-Enter popup grows Save / Load / Reset / Export GPX entries.
-   Single flash slot at /trail (binary header with magic+version+count+
-   accumulated_ms then raw TrailPoint records). GPX 1.1 dump goes over USB
-   Serial; segments respect SEG_START boundaries)
+Phase 4 ✅ (Hold-Enter popup grows Save / Load / Reset / Export GPX /
+   Export saved entries. Single flash slot at /trail (binary header with
+   magic+version+count+accumulated_ms then raw TrailPoint records). GPX 1.1
+   dump goes over USB Serial; "Export GPX" streams the live RAM ring,
+   "Export saved" streams the flash file straight to USB without touching
+   the live ring. Segments respect SEG_START boundaries. Alert reflects
+   BLE-app-collision state)
 Phase 5 ✅ (Settings + actions consolidated into a single Hold-Enter popup —
    Min dist + Units cycled with LEFT/RIGHT (popup stays open), plus
    Start/Stop tracking and Reset action items. Short Enter never toggles —
