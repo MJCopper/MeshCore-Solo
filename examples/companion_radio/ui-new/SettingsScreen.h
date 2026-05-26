@@ -305,21 +305,21 @@ class SettingsScreen : public UIScreen {
 #endif
             NodePrefs::HPB_SETTINGS, NodePrefs::HPB_TOOLS, NodePrefs::HPB_QUICK_MSG,
           };
-          // If the array is full but a required page is missing, evict SHUTDOWN
-          // (it is handled by buildVisibleOrder's fallback and need not be explicit).
-          if (cur_len == NodePrefs::PAGE_ORDER_LEN) {
-            bool any_missing = false;
-            for (int ri = 0; ri < (int)(sizeof(REQUIRED)/sizeof(REQUIRED[0])); ri++) {
-              if (!(present & (uint16_t)(1u << REQUIRED[ri]))) { any_missing = true; break; }
-            }
-            if (any_missing) {
-              for (int i = 0; i < cur_len; i++) {
-                if (p->page_order[i] == NodePrefs::HPB_SHUTDOWN + 1) {
-                  for (int j = i; j < cur_len - 1; j++) p->page_order[j] = p->page_order[j + 1];
-                  p->page_order[--cur_len] = 0;
-                  present &= ~(uint16_t)(1u << NodePrefs::HPB_SHUTDOWN);
-                  break;
-                }
+          // If any required page is missing, evict SHUTDOWN to make room — it is
+          // handled by buildVisibleOrder's fallback and need not be in the explicit
+          // list. This frees a slot regardless of whether the array is full or not,
+          // so multiple missing pages (e.g. TOOLS + QUICK_MSG) can all be appended.
+          bool any_missing = false;
+          for (int ri = 0; ri < (int)(sizeof(REQUIRED)/sizeof(REQUIRED[0])); ri++) {
+            if (!(present & (uint16_t)(1u << REQUIRED[ri]))) { any_missing = true; break; }
+          }
+          if (any_missing && (present & (uint16_t)(1u << NodePrefs::HPB_SHUTDOWN))) {
+            for (int i = 0; i < cur_len; i++) {
+              if (p->page_order[i] == NodePrefs::HPB_SHUTDOWN + 1) {
+                for (int j = i; j < cur_len - 1; j++) p->page_order[j] = p->page_order[j + 1];
+                p->page_order[--cur_len] = 0;
+                present &= ~(uint16_t)(1u << NodePrefs::HPB_SHUTDOWN);
+                break;
               }
             }
           }
