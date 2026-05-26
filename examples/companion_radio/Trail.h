@@ -215,40 +215,89 @@ public:
     return true;
   }
 
-  // Dump the trail as a minimal GPX <trk>/<trkseg> document over the given
-  // Stream. Segments split on SEG_START flags. Returns bytes written.
-  // Caller must ensure the stream is ready (e.g. USB serial connected).
+  // GPX writers — shared helpers so we can dump from RAM and from flash
+  // through the same formatting code.
+
+  template <typename S>
+  static size_t gpxHeader(S& out, const char* name) {
+    size_t n = 0;
+    n += out.print(F("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"));
+    n += out.print(F("<gpx version=\"1.1\" creator=\"MeshCore\" "
+                      "xmlns=\"http://www.topografix.com/GPX/1/1\">\n"));
+    n += out.print(F("<trk><name>"));
+    n += out.print(name);
+    n += out.print(F("</name>\n"));
+    return n;
+  }
+
+  template <typename S>
+  static size_t gpxFooter(S& out, bool in_segment) {
+    size_t n = 0;
+    if (in_segment) n += out.print(F("</trkseg>\n"));
+    n += out.print(F("</trk></gpx>\n"));
+    return n;
+  }
+
+  // Emit a single <trkpt>; opens a <trkseg> on a segment boundary. Updates
+  // `in_segment` to track open/close pairing.
+  template <typename S>
+  static size_t gpxPoint(S& out, const TrailPoint& p, bool first, bool& in_segment) {
+    size_t n = 0;
+    bool seg_start = first || (p.flags & TRAIL_FLAG_SEG_START);
+    if (seg_start) {
+      if (in_segment) n += out.print(F("</trkseg>\n"));
+      n += out.print(F("<trkseg>\n"));
+      in_segment = true;
+    }
+    char buf[120];
+    time_t t = (time_t)p.ts;
+    struct tm* gt = gmtime(&t);
+    int len = snprintf(buf, sizeof(buf),
+      "<trkpt lat=\"%.6f\" lon=\"%.6f\"><time>%04d-%02d-%02dT%02d:%02d:%02dZ</time></trkpt>\n",
+      p.lat_1e6 / 1.0e6, p.lon_1e6 / 1.0e6,
+      gt->tm_year + 1900, gt->tm_mon + 1, gt->tm_mday,
+      gt->tm_hour, gt->tm_min, gt->tm_sec);
+    n += out.write((const uint8_t*)buf, len);
+    return n;
+  }
+
+  // Dump the live RAM ring as GPX. Returns bytes written.
   template <typename S>
   size_t exportGpx(S& out, const char* trk_name = "MeshCore Trail") {
-    size_t total = 0;
-    total += out.print(F("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"));
-    total += out.print(F("<gpx version=\"1.1\" creator=\"MeshCore\" "
-                          "xmlns=\"http://www.topografix.com/GPX/1/1\">\n"));
-    total += out.print(F("<trk><name>"));
-    total += out.print(trk_name);
-    total += out.print(F("</name>\n"));
+    size_t total = gpxHeader(out, trk_name);
     bool in_segment = false;
     for (int i = 0; i < _count; i++) {
-      const auto& p = at(i);
-      bool seg_start = (i == 0) || (p.flags & TRAIL_FLAG_SEG_START);
-      if (seg_start) {
-        if (in_segment) total += out.print(F("</trkseg>\n"));
-        total += out.print(F("<trkseg>\n"));
-        in_segment = true;
-      }
-      char buf[120];
-      // RFC 3339 timestamp from UNIX seconds.
-      time_t t = (time_t)p.ts;
-      struct tm* gt = gmtime(&t);
-      int n = snprintf(buf, sizeof(buf),
-        "<trkpt lat=\"%.6f\" lon=\"%.6f\"><time>%04d-%02d-%02dT%02d:%02d:%02dZ</time></trkpt>\n",
-        p.lat_1e6 / 1.0e6, p.lon_1e6 / 1.0e6,
-        gt->tm_year + 1900, gt->tm_mon + 1, gt->tm_mday,
-        gt->tm_hour, gt->tm_min, gt->tm_sec);
-      total += out.write((const uint8_t*)buf, n);
+      total += gpxPoint(out, at(i), i == 0, in_segment);
     }
-    if (in_segment) total += out.print(F("</trkseg>\n"));
-    total += out.print(F("</trk></gpx>\n"));
+    total += gpxFooter(out, in_segment);
+    return total;
+  }
+
+  // Stream a saved trail straight from the open file as GPX without
+  // touching the live RAM ring. Returns 0 on format mismatch.
+  template <typename F, typename S>
+  static size_t exportGpxFromFile(F& file, S& out, const char* trk_name = "MeshCore Trail") {
+    uint32_t magic = 0;
+    if (file.read((uint8_t*)&magic, sizeof(magic)) != (int)sizeof(magic)) return 0;
+    if (magic != SAVE_MAGIC) return 0;
+    uint8_t  ver = 0, res = 0;
+    uint16_t cnt = 0;
+    uint32_t accum = 0;
+    file.read(&ver, 1);
+    file.read(&res, 1);
+    file.read((uint8_t*)&cnt, sizeof(cnt));
+    file.read((uint8_t*)&accum, sizeof(accum));
+    if (ver != SAVE_VERSION || cnt > CAPACITY) return 0;
+
+    size_t total = gpxHeader(out, trk_name);
+    bool in_segment = false;
+    for (uint16_t i = 0; i < cnt; i++) {
+      TrailPoint p;
+      int n = file.read((uint8_t*)&p, sizeof(TrailPoint));
+      if (n != (int)sizeof(TrailPoint)) break;
+      total += gpxPoint(out, p, i == 0, in_segment);
+    }
+    total += gpxFooter(out, in_segment);
     return total;
   }
 

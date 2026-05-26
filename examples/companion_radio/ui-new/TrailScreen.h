@@ -23,7 +23,7 @@ class TrailScreen : public UIScreen {
   // (Start/Stop tracking, Reset). PopupMenu stores label pointers verbatim, so
   // the labels live in member buffers that get refreshed in openActionMenu()
   // and after every LEFT/RIGHT cycle.
-  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT };
+  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED };
   PopupMenu _action_menu;
   uint8_t   _act_map[8];
   uint8_t   _act_count = 0;
@@ -90,8 +90,9 @@ public:
           else if (act == ACT_SAVE)     { handleSave(); }
           else if (act == ACT_LOAD)     { handleLoad(); }
           else if (act == ACT_RESET)    { handleReset(); }
-          else if (act == ACT_EXPORT)   { handleExport(); }
-          else /* MIN_DIST / UNITS */   { reopenAt(sel); return true; }  // re-open keeping focus
+          else if (act == ACT_EXPORT)       { handleExport(); }
+          else if (act == ACT_EXPORT_SAVED) { handleExportSaved(); }
+          else /* MIN_DIST / UNITS */       { reopenAt(sel); return true; }  // re-open keeping focus
         }
         if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
       } else if (res == PopupMenu::CANCELLED) {
@@ -166,18 +167,30 @@ private:
   }
   void handleExport() {
     if (!Serial) { _task->showAlert("Connect USB first", 1200); return; }
+    size_t n = _store->exportGpx(Serial);
+    showExportAlert(n);
+  }
+
+  void handleExportSaved() {
+    if (!Serial) { _task->showAlert("Connect USB first", 1200); return; }
+    DataStore* ds = the_mesh.getDataStore();
+    if (!ds) { _task->showAlert("FS unavailable", 800); return; }
+    File f = ds->openRead(TRAIL_FILE);
+    if (!f) { _task->showAlert("No saved trail", 800); return; }
+    size_t n = TrailStore::exportGpxFromFile(f, Serial);
+    f.close();
+    if (n == 0) { _task->showAlert("Bad saved file", 1000); return; }
+    showExportAlert(n);
+  }
+
+  void showExportAlert(size_t n) {
     // The companion app multiplexes BLE + USB on the same frame protocol.
     // When BLE is connected, USB-receive is ignored and the dump can't
-    // collide. Without a BLE link the app might be on USB itself, in
-    // which case the raw GPX would land mid-frame and confuse it — warn
-    // the user but proceed (they may have no app attached at all).
-    size_t n = _store->exportGpx(Serial);
+    // collide. Without a BLE link the app might be on USB itself, so warn
+    // the user — they may need to reconnect their app afterwards.
     char alert[28];
-    if (_task->hasConnection()) {
-      snprintf(alert, sizeof(alert), "GPX %u B (USB)", (unsigned)n);
-    } else {
-      snprintf(alert, sizeof(alert), "GPX %u B - disc. app", (unsigned)n);
-    }
+    if (_task->hasConnection()) snprintf(alert, sizeof(alert), "GPX %u B (USB)",       (unsigned)n);
+    else                         snprintf(alert, sizeof(alert), "GPX %u B - disc. app", (unsigned)n);
     _task->showAlert(alert, 1500);
   }
 
@@ -205,12 +218,18 @@ private:
     if (!_store->empty()) {
       _act_map[_act_count++] = ACT_SAVE;   _action_menu.addItem("Save trail");
     }
-    if (savedTrailExists()) {
-      _act_map[_act_count++] = ACT_LOAD;   _action_menu.addItem("Load trail");
+    bool saved = savedTrailExists();
+    if (saved) {
+      _act_map[_act_count++] = ACT_LOAD;          _action_menu.addItem("Load trail");
     }
     if (!_store->empty()) {
-      _act_map[_act_count++] = ACT_EXPORT; _action_menu.addItem("Export GPX");
-      _act_map[_act_count++] = ACT_RESET;  _action_menu.addItem("Reset trail");
+      _act_map[_act_count++] = ACT_EXPORT;        _action_menu.addItem("Export GPX");
+    }
+    if (saved) {
+      _act_map[_act_count++] = ACT_EXPORT_SAVED;  _action_menu.addItem("Export saved");
+    }
+    if (!_store->empty()) {
+      _act_map[_act_count++] = ACT_RESET;         _action_menu.addItem("Reset trail");
     }
   }
 
