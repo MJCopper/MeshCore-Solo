@@ -25,7 +25,7 @@ class TrailScreen : public UIScreen {
   // and after every LEFT/RIGHT cycle.
   enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED };
   PopupMenu _action_menu;
-  uint8_t   _act_map[8];
+  uint8_t   _act_map[12];  // 8 used today; pad so adding an action doesn't OOB
   uint8_t   _act_count = 0;
   char      _act_min_dist_label[24];
   char      _act_units_label[24];

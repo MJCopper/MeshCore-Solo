@@ -171,17 +171,17 @@ public:
   template <typename F>
   bool writeTo(F& file) {
     uint32_t magic = SAVE_MAGIC;
-    if (file.write((uint8_t*)&magic, sizeof(magic)) != sizeof(magic)) return false;
     uint8_t  ver = SAVE_VERSION;
     uint8_t  res = 0;
     uint16_t cnt = (uint16_t)_count;
-    file.write(&ver, 1);
-    file.write(&res, 1);
-    file.write((uint8_t*)&cnt, sizeof(cnt));
     uint32_t accum = currentAccumulatedMs();
-    file.write((uint8_t*)&accum, sizeof(accum));
+    if (file.write((uint8_t*)&magic, sizeof(magic)) != sizeof(magic)) return false;
+    if (file.write(&ver, 1)                          != 1)             return false;
+    if (file.write(&res, 1)                          != 1)             return false;
+    if (file.write((uint8_t*)&cnt,   sizeof(cnt))    != sizeof(cnt))   return false;
+    if (file.write((uint8_t*)&accum, sizeof(accum))  != sizeof(accum)) return false;
     for (int i = 0; i < _count; i++) {
-      file.write((uint8_t*)&at(i), sizeof(TrailPoint));
+      if (file.write((uint8_t*)&at(i), sizeof(TrailPoint)) != sizeof(TrailPoint)) return false;
     }
     return true;
   }
@@ -253,12 +253,15 @@ public:
     char buf[120];
     time_t t = (time_t)p.ts;
     struct tm* gt = ::gmtime(&t);
+    if (!gt) return n;  // defensive: skip malformed timestamps
     int len = snprintf(buf, sizeof(buf),
       "<trkpt lat=\"%.6f\" lon=\"%.6f\"><time>%04d-%02d-%02dT%02d:%02d:%02dZ</time></trkpt>\n",
       p.lat_1e6 / 1.0e6, p.lon_1e6 / 1.0e6,
       gt->tm_year + 1900, gt->tm_mon + 1, gt->tm_mday,
       gt->tm_hour, gt->tm_min, gt->tm_sec);
-    n += out.write((const uint8_t*)buf, len);
+    if (len < 0) return n;
+    if ((size_t)len > sizeof(buf)) len = sizeof(buf);  // snprintf returns intended size
+    n += out.write((const uint8_t*)buf, (size_t)len);
     return n;
   }
 

@@ -1695,7 +1695,7 @@ void UITask::loop() {
     } else if (!_locked && millis() >= _next_refresh && curr) {
       _display->startFrame();
       int delay_millis = curr->render(*_display);
-      if (millis() < _alert_expiry && curr == home) {  // render alert only on home screen
+      if (millis() < _alert_expiry) {  // alert overlay on top of any screen
         _display->setTextSize(1);
         int lh    = _display->getLineHeight();
         int pad   = 3;
