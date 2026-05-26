@@ -305,8 +305,26 @@ class SettingsScreen : public UIScreen {
 #endif
             NodePrefs::HPB_SETTINGS, NodePrefs::HPB_TOOLS, NodePrefs::HPB_QUICK_MSG,
           };
-          for (int i = 0; i < (int)(sizeof(REQUIRED)/sizeof(REQUIRED[0])); i++) {
-            uint8_t bit = REQUIRED[i];
+          // If the array is full but a required page is missing, evict SHUTDOWN
+          // (it is handled by buildVisibleOrder's fallback and need not be explicit).
+          if (cur_len == NodePrefs::PAGE_ORDER_LEN) {
+            bool any_missing = false;
+            for (int ri = 0; ri < (int)(sizeof(REQUIRED)/sizeof(REQUIRED[0])); ri++) {
+              if (!(present & (uint16_t)(1u << REQUIRED[ri]))) { any_missing = true; break; }
+            }
+            if (any_missing) {
+              for (int i = 0; i < cur_len; i++) {
+                if (p->page_order[i] == NodePrefs::HPB_SHUTDOWN + 1) {
+                  for (int j = i; j < cur_len - 1; j++) p->page_order[j] = p->page_order[j + 1];
+                  p->page_order[--cur_len] = 0;
+                  present &= ~(uint16_t)(1u << NodePrefs::HPB_SHUTDOWN);
+                  break;
+                }
+              }
+            }
+          }
+          for (int ri = 0; ri < (int)(sizeof(REQUIRED)/sizeof(REQUIRED[0])); ri++) {
+            uint8_t bit = REQUIRED[ri];
             if (!(present & (uint16_t)(1u << bit)) && cur_len < NodePrefs::PAGE_ORDER_LEN)
               p->page_order[cur_len++] = bit + 1;
           }
