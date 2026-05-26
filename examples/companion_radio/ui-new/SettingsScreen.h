@@ -69,6 +69,10 @@ class SettingsScreen : public UIScreen {
   int _scroll;
   int _visible;   // items fitting on screen; updated each render, used by handleInput
   bool _dirty;
+  uint8_t _collapsed = 0x7F; // bit N set = section N collapsed (Display=0..Messages=6)
+  static const int MAX_VIS = 60;
+  uint8_t _vis[MAX_VIS];    // filtered list of visible SettingItem values
+  int _vis_count = 0;
 
 #if AUTO_OFF_MILLIS > 0
   static const uint16_t AUTO_OFF_OPTS[5];
@@ -138,6 +142,38 @@ class SettingsScreen : public UIScreen {
     if (item == SECTION_CONTACTS)   return "Contacts";
     if (item == SECTION_MESSAGES)   return "Messages";
     return "";
+  }
+
+  int sectionIndex(int item) const {
+    if (item == SECTION_DISPLAY)    return 0;
+    if (item == SECTION_SOUND)      return 1;
+    if (item == SECTION_HOME_PAGES) return 2;
+    if (item == SECTION_RADIO)      return 3;
+    if (item == SECTION_SYSTEM)     return 4;
+    if (item == SECTION_CONTACTS)   return 5;
+    if (item == SECTION_MESSAGES)   return 6;
+    return -1;
+  }
+
+  int visIndexOf(int item) const {
+    for (int i = 0; i < _vis_count; i++)
+      if (_vis[i] == (uint8_t)item) return i;
+    return 0;
+  }
+
+  void buildVis() {
+    _vis_count = 0;
+    int cur_sec = -1;
+    bool cur_collapsed = false;
+    for (int i = 0; i < (int)Count; i++) {
+      if (isSection(i)) {
+        cur_sec++;
+        cur_collapsed = (_collapsed >> cur_sec) & 1;
+        if (_vis_count < MAX_VIS) _vis[_vis_count++] = (uint8_t)i;
+      } else if (!cur_collapsed && _vis_count < MAX_VIS) {
+        _vis[_vis_count++] = (uint8_t)i;
+      }
+    }
   }
 
   bool isHomePage(int item) const {
@@ -299,25 +335,20 @@ class SettingsScreen : public UIScreen {
     return item - MSG_SLOT_0;
   }
 
-  int nextSelectable(int from) const {
-    for (int i = from + 1; i < (int)Count; i++)
-      if (!isSection(i)) return i;
-    return from;
-  }
-
-  int prevSelectable(int from) const {
-    for (int i = from - 1; i >= 0; i--)
-      if (!isSection(i)) return i;
-    return from;
-  }
-
   void renderItem(DisplayDriver& display, int item, int y) {
     NodePrefs* p = _task->getNodePrefs();
 
     if (isSection(item)) {
+      int si = sectionIndex(item);
+      bool collapsed = (_collapsed >> si) & 1;
+      bool sel = (item == _selected);
       display.setColor(DisplayDriver::LIGHT);
-      display.fillRect(0, y, display.width(), 1);
-      display.setCursor(2, y + 2);
+      display.drawSelectionRow(0, y - 1, display.width(), display.lineStep(), sel);
+      display.setCursor(0, y);
+      display.print(sel ? ">" : " ");
+      display.setCursor(display.getCharWidth() + 2, y);
+      display.print(collapsed ? "+" : "-");
+      display.print(" ");
       display.print(sectionName(item));
       return;
     }
@@ -474,10 +505,18 @@ class SettingsScreen : public UIScreen {
 
 public:
   SettingsScreen(UITask* task)
-    : _task(task), _selected(AUTO_LOCK), _scroll(0), _visible(4), _dirty(false), _edit_slot(-1) {}
+    : _task(task), _selected(SECTION_DISPLAY), _scroll(0), _visible(4), _dirty(false), _edit_slot(-1) {
+    buildVis();
+  }
 
 
-  void markClean() { _dirty = false; }
+  void markClean() {
+    _dirty = false;
+    _collapsed = 0x7F;
+    _selected = SECTION_DISPLAY;
+    buildVis();
+    _scroll = 0;
+  }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
@@ -494,8 +533,8 @@ public:
     display.drawTextCentered(display.width() / 2, 0, "SETTINGS");
     display.fillRect(0, display.headerH() - display.sepH(), display.width(), display.sepH());
 
-    for (int i = 0; i < _visible && (_scroll + i) < SettingItem::Count; i++) {
-      renderItem(display, _scroll + i, start_y + i * item_h);
+    for (int i = 0; i < _visible && (_scroll + i) < _vis_count; i++) {
+      renderItem(display, _vis[_scroll + i], start_y + i * item_h);
     }
 
     // scroll indicators
@@ -504,7 +543,7 @@ public:
       display.setCursor(display.width() - display.getCharWidth(), start_y);
       display.print("^");
     }
-    if (_scroll + _visible < SettingItem::Count) {
+    if (_scroll + _visible < _vis_count) {
       display.setColor(DisplayDriver::LIGHT);
       display.setCursor(display.width() - display.getCharWidth(), start_y + (_visible - 1) * item_h);
       display.print("v");
@@ -533,18 +572,20 @@ public:
     }
 
     if (c == KEY_UP) {
-      int prev = prevSelectable(_selected);
-      if (prev != _selected) {
-        _selected = prev;
-        if (_selected < _scroll) _scroll = _selected;
+      int vi = visIndexOf(_selected);
+      if (vi > 0) {
+        vi--;
+        _selected = _vis[vi];
+        if (vi < _scroll) _scroll = vi;
       }
       return true;
     }
     if (c == KEY_DOWN) {
-      int next = nextSelectable(_selected);
-      if (next != _selected) {
-        _selected = next;
-        if (_selected >= _scroll + _visible) _scroll = _selected - _visible + 1;
+      int vi = visIndexOf(_selected);
+      if (vi + 1 < _vis_count) {
+        vi++;
+        _selected = _vis[vi];
+        if (vi >= _scroll + _visible) _scroll = vi - _visible + 1;
       }
       return true;
     }
@@ -557,6 +598,16 @@ public:
     bool right = (c == KEY_RIGHT || c == KEY_NEXT);
     bool left  = (c == KEY_LEFT  || c == KEY_PREV);
     bool enter = (c == KEY_ENTER);
+
+    if (enter && isSection(_selected)) {
+      int si = sectionIndex(_selected);
+      _collapsed ^= (1 << si);
+      buildVis();
+      int vi = visIndexOf(_selected);
+      if (vi < _scroll) _scroll = vi;
+      if (_visible > 0 && vi >= _scroll + _visible) _scroll = vi - _visible + 1;
+      return true;
+    }
 
 #if FEAT_BRIGHTNESS_SETTING
     if (_selected == BRIGHTNESS) {

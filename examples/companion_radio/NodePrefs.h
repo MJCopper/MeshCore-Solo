@@ -109,7 +109,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0003;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0004;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage

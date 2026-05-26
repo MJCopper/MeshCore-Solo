@@ -84,18 +84,44 @@ Hold Enter on a message to open a context menu. From the list or fullscreen view
 
 On channel or contact list entries, the context menu also lets you change per-channel notification settings (mute, follow global, or force-on), per-channel melody override (follow global, Melody 1, or Melody 2), or mark messages as read.
 
+**Mark all read** — Hold Enter on the DM / Channels / Rooms mode-select screen to clear all unread counters for the highlighted category at once.
+
+### Favourites Dial
+
+A dedicated home page showing a 2×3 grid of pinned contacts. Navigate tiles with the joystick; press Enter on a filled tile to open that contact's DM directly.
+
+```
+╔══════════════════════════════╗
+║         Favourites           ║
+╠══════════════════════════════╣
+║ ┌──────┐ ┌──────┐ ┌──────┐   ║
+║ │Alice │ │Bob  3│ │  +   │   ║
+║ └──────┘ └──────┘ └──────┘   ║
+║ ┌──────┐ ┌──────┐ ┌──────┐   ║
+║ │Carol │ │  +   │ │  +   │   ║
+║ └──────┘ └──────┘ └──────┘   ║
+╚══════════════════════════════╝
+```
+
+- Unread badge shown on filled tiles
+- Enter on an empty tile (`+`) opens a contact picker (upstream-favourited contacts first, then recent DMs)
+- **Pin / unpin** — open a DM, then Hold Enter › options menu › "Pin to dial" to choose a slot; selecting a contact already pinned elsewhere moves it to the new slot
+- LEFT/RIGHT in the Home Pages settings reorders the Favourites page in the navigation sequence
+
 ### Settings Screen
 
-All settings are saved to flash and restored on next boot.
+All settings are saved to flash and restored on next boot. Settings are organised into collapsible sections — press Enter on a section header to expand or collapse it. All sections start collapsed for faster navigation.
 
 - **Display**
   - Brightness
   - Auto-off timeout
   - Battery display mode (icon, %, V)
   - Clock seconds (show/hide — hiding reduces display refresh from 1 s to 60 s)
+  - Clock format (12 h / 24 h)
   - Font — **Default** (5×7 Adafruit, ASCII + transliteration) or **Lemon** (native Unicode, pixel-accurate wrap)
   - Display rotation *(e-ink only)* — 0 ° / 90 ° / 180 ° / 270 °; applied immediately
   - Joystick rotation *(e-ink only)* — rotates the joystick input mapping independently of the display rotation; useful when mounting the device in a custom enclosure
+  - Full refresh interval *(e-ink only)* — how many partial refreshes before a cleansing full refresh (off / 5 / 10 / 20 / 30); reduces ghosting on long sessions
 - **Sound**
   - Buzzer: On / Off / **Auto** — Auto mode silences the device while connected via Bluetooth, and re-enables sound when the connection drops
   - Volume (1–5; preview tone plays on each change)
@@ -108,8 +134,6 @@ All settings are saved to flash and restored on next boot.
   - Timezone (UTC offset in hours)
   - Low battery shutdown threshold
   - Auto-lock — automatically locks the device when the display turns off
-- **GPS**
-  - Position broadcast interval
 - **Contacts**
   - Show all DMs or favourites only
   - Show all room servers or favourites only
@@ -169,21 +193,46 @@ Press **Enter** from the Nearby screen to send a live `NODE_DISCOVER_REQ` ping. 
 
 Navigate with **UP/DOWN**. Press **Enter** on a node to open a full-screen detail view showing the public key, RSSI, SNR, remote SNR and whether the node is already in your contacts.
 
-```
-╔══════════════════════════════╗
-║▓▓▓▓▓▓▓▓▓▓▓▓▓ Rptr-A ▓▓▓▓▓▓▓  ║
-╠══════════════════════════════╣
-║ Key: ABCdef12XYZ...          ║
-║ RSSI: -79 dBm                ║
-║ SNR:   9 dB                  ║
-║ Rem:   6 dB                  ║
-║ Status: known                ║
-╚══════════════════════════════╝
-```
-
 Hold **Enter** from the discovery list to rescan. Press **Cancel** or **Back** to return.
 
 ### Tools Screen
+
+#### GPS Trail
+
+Records your route in a RAM ring buffer (up to 512 points). Sampling runs in the background whenever tracking is active — a blinking **G** indicator appears in the status bar. The trail survives display auto-off but is lost on reboot unless saved to flash first.
+
+Three views cycle with **LEFT / RIGHT**:
+
+| View | Content |
+|------|---------|
+| **Summary** | Total distance, elapsed time, avg speed or pace, point count, tracking status |
+| **Map** | Auto-fit dot-and-line plot with cos(lat) aspect correction; segment breaks marked with open/filled dots; north arrow |
+| **List** | Per-point rows showing local time (HH:MM) and delta distance from the previous point; segment-start rows show `start` |
+
+**Hold Enter** opens the action menu:
+
+| Item | Action |
+|------|--------|
+| Min dist | Cycle min-distance gate: 5 m / 10 m / 25 m / 100 m (LEFT/RIGHT while focused) |
+| Units | Cycle speed/pace units: km/h / mph / min/km / min/mi (LEFT/RIGHT while focused) |
+| Start / Stop tracking | Begin or end a recording session |
+| Save trail | Write the current RAM ring to flash (`/trail`) |
+| Load trail | Restore the saved flash trail into RAM |
+| Export GPX | Stream the live RAM trail as GPX 1.1 over USB Serial |
+| Export saved | Stream the saved flash trail as GPX 1.1 over USB Serial without loading it into RAM |
+| Reset trail | Clear the RAM ring and elapsed time |
+
+#### Downloading GPX to your computer
+
+1. Connect the device to your computer with a USB cable.
+2. Open a serial terminal at **115200 baud** on the device's serial port:
+   - **macOS / Linux** — `screen /dev/tty.usbmodem* 115200` or `cat /dev/tty.usbmodem*` (replace with your port, e.g. `/dev/ttyACM0` on Linux); to save directly to a file use `cat /dev/tty.usbmodem* > track.gpx` and stop with Ctrl-C after the dump completes
+   - **Windows** — open PuTTY (Connection type: Serial, Speed: 115200), or use Arduino IDE › Tools › Serial Monitor (set line ending to "No line ending")
+3. On the device, navigate to **Tools › Trail**, then **Hold Enter** and select **Export GPX** (live ring) or **Export saved** (flash slot).
+4. The device streams a GPX 1.1 XML document to the serial port. Copy the output starting from `<?xml` to `</gpx>` and save it as a `.gpx` file.
+5. Import the file into any GPX-compatible application — OsmAnd, Garmin BaseCamp, GPX Studio, Google Earth, etc.
+
+> **Note:** If the companion app is connected over **BLE**, the export is safe — the app ignores USB input while BLE is active and the device alert will read *"GPX N B (USB)"*. If you are using the app over **USB**, disconnect from the app first before exporting; the raw XML stream will otherwise disrupt the app's serial framing. The alert *"GPX N B - disc. app"* indicates no BLE link was detected and serves as a reminder to reconnect the app afterwards.
 
 #### Auto-Advert
 

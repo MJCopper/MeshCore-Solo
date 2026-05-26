@@ -180,7 +180,7 @@ class HomeScreen : public UIScreen {
       }
     }
     if (_pin_count == 0) {
-      _task->showAlert("No contacts available", 1000);
+      _task->showAlert("No fav contacts", 1000);
       _pin_target_slot = -1;
       return;
     }
