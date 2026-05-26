@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <math.h>
 #include <stdint.h>
+#include <time.h>
 
 // RAM-only GPS trail ring buffer.
 // Storage cost: 256 × 12 B = 3 KB. The trail survives auto-off (only the
@@ -251,7 +252,7 @@ public:
     }
     char buf[120];
     time_t t = (time_t)p.ts;
-    struct tm* gt = gmtime(&t);
+    struct tm* gt = ::gmtime(&t);
     int len = snprintf(buf, sizeof(buf),
       "<trkpt lat=\"%.6f\" lon=\"%.6f\"><time>%04d-%02d-%02dT%02d:%02d:%02dZ</time></trkpt>\n",
       p.lat_1e6 / 1.0e6, p.lon_1e6 / 1.0e6,

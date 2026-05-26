@@ -333,7 +333,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
 }
 
 void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_lon) {
-  File file = openWrite(_fs, "/new_prefs");
+  File file = ::openWrite(_fs, "/new_prefs");
   if (file) {
     uint8_t pad[8];
     memset(pad, 0, sizeof(pad));
@@ -425,7 +425,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
 void DataStore::saveRTCTime() {
   uint32_t t = _clock->getCurrentTime();
   if (t < 1000000000UL) return;  // don't save if time not yet synced
-  File file = openWrite(_fs, "/rtc_save");
+  File file = ::openWrite(_fs, "/rtc_save");
   if (file) {
     file.write((uint8_t *)&t, sizeof(t));
     file.close();
@@ -474,7 +474,7 @@ File file = openRead(_getContactsChannelsFS(), "/contacts3");
 }
 
 void DataStore::saveContacts(DataStoreHost* host) {
-  File file = openWrite(_getContactsChannelsFS(), "/contacts3");
+  File file = ::openWrite(_getContactsChannelsFS(), "/contacts3");
   if (file) {
     uint32_t idx = 0;
     ContactInfo c;
@@ -528,7 +528,7 @@ void DataStore::loadChannels(DataStoreHost* host) {
 }
 
 void DataStore::saveChannels(DataStoreHost* host) {
-  File file = openWrite(_getContactsChannelsFS(), "/channels2");
+  File file = ::openWrite(_getContactsChannelsFS(), "/channels2");
   if (file) {
     uint8_t channel_idx = 0;
     ChannelDetails ch;
@@ -560,7 +560,7 @@ struct BlobRec {
 
 void DataStore::checkAdvBlobFile() {
   if (!_getContactsChannelsFS()->exists("/adv_blobs")) {
-    File file = openWrite(_getContactsChannelsFS(), "/adv_blobs");
+    File file = ::openWrite(_getContactsChannelsFS(), "/adv_blobs");
     if (file) {
       BlobRec zeroes;
       memset(&zeroes, 0, sizeof(zeroes));
@@ -577,7 +577,7 @@ void DataStore::migrateToSecondaryFS() {
   if (!_fsExtra->exists("/adv_blobs")) {
     if (_fs->exists("/adv_blobs")) {
     File oldAdvBlobs = openRead(_fs, "/adv_blobs");
-    File newAdvBlobs = openWrite(_fsExtra, "/adv_blobs");
+    File newAdvBlobs = ::openWrite(_fsExtra, "/adv_blobs");
 
     if (oldAdvBlobs && newAdvBlobs) {
       BlobRec rec;
@@ -598,7 +598,7 @@ void DataStore::migrateToSecondaryFS() {
   if (!_fsExtra->exists("/contacts3")) {
     if (_fs->exists("/contacts3")) {
       File oldFile = openRead(_fs, "/contacts3");
-      File newFile = openWrite(_fsExtra, "/contacts3");
+      File newFile = ::openWrite(_fsExtra, "/contacts3");
 
       if (oldFile && newFile) {
         uint8_t buf[64];
@@ -615,7 +615,7 @@ void DataStore::migrateToSecondaryFS() {
   if (!_fsExtra->exists("/channels2")) {
     if (_fs->exists("/channels2")) {
       File oldFile = openRead(_fs, "/channels2");
-      File newFile = openWrite(_fsExtra, "/channels2");
+      File newFile = ::openWrite(_fsExtra, "/channels2");
 
       if (oldFile && newFile) {
         uint8_t buf[64];
@@ -633,7 +633,7 @@ void DataStore::migrateToSecondaryFS() {
   if (_fsExtra->exists("/_main.id")) {
       if (_fs->exists("/_main.id")) {_fs->remove("/_main.id");}
       File oldFile = openRead(_fsExtra, "/_main.id");
-      File newFile = openWrite(_fs, "/_main.id");
+      File newFile = ::openWrite(_fs, "/_main.id");
 
       if (oldFile && newFile) {
         uint8_t buf[64];
@@ -649,7 +649,7 @@ void DataStore::migrateToSecondaryFS() {
   if (_fsExtra->exists("/new_prefs")) {
     if (_fs->exists("/new_prefs")) {_fs->remove("/new_prefs");}
       File oldFile = openRead(_fsExtra, "/new_prefs");
-      File newFile = openWrite(_fs, "/new_prefs");
+      File newFile = ::openWrite(_fs, "/new_prefs");
 
       if (oldFile && newFile) {
         uint8_t buf[64];
@@ -764,7 +764,7 @@ bool DataStore::putBlobByKey(const uint8_t key[], int key_len, const uint8_t src
   char path[64];
   makeBlobPath(key, key_len, path, sizeof(path));
 
-  File f = openWrite(_fs, path);
+  File f = ::openWrite(_fs, path);
   if (f) {
     int n = f.write(src_buf, len);
     f.close();
