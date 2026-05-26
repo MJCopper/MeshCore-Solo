@@ -165,11 +165,20 @@ private:
     _task->showAlert(ok ? "Trail loaded" : "Load failed", 800);
   }
   void handleExport() {
-    if (!Serial) { _task->showAlert("Connect USB first", 1000); return; }
+    if (!Serial) { _task->showAlert("Connect USB first", 1200); return; }
+    // The companion app multiplexes BLE + USB on the same frame protocol.
+    // When BLE is connected, USB-receive is ignored and we can safely push
+    // raw GPX bytes to USB. With BLE off the app would be on USB itself,
+    // so the dump would corrupt its incoming frames — refuse and tell the
+    // user how to make space.
+    if (!_task->hasConnection()) {
+      _task->showAlert("Connect BLE or disconnect app", 1500);
+      return;
+    }
     size_t n = _store->exportGpx(Serial);
     char alert[24];
-    snprintf(alert, sizeof(alert), "GPX %u B sent", (unsigned)n);
-    _task->showAlert(alert, 1200);
+    snprintf(alert, sizeof(alert), "GPX %u B over USB", (unsigned)n);
+    _task->showAlert(alert, 1500);
   }
 
   static constexpr const char* TRAIL_FILE = "/trail";
