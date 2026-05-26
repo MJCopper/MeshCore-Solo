@@ -45,6 +45,7 @@ public:
   bool deleteBlobByKey(const uint8_t key[], int key_len);
   File openRead(const char* filename);
   File openRead(FILESYSTEM* fs, const char* filename);
+  File openWrite(const char* filename);
   bool removeFile(const char* filename);
   bool removeFile(FILESYSTEM* fs, const char* filename);
   uint32_t getStorageUsedKb() const;

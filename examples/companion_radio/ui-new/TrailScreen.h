@@ -23,7 +23,7 @@ class TrailScreen : public UIScreen {
   // (Start/Stop tracking, Reset). PopupMenu stores label pointers verbatim, so
   // the labels live in member buffers that get refreshed in openActionMenu()
   // and after every LEFT/RIGHT cycle.
-  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_TOGGLE, ACT_RESET };
+  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT };
   PopupMenu _action_menu;
   uint8_t   _act_map[8];
   uint8_t   _act_count = 0;
@@ -87,7 +87,10 @@ public:
         if (sel >= 0 && sel < _act_count) {
           ActionId act = (ActionId)_act_map[sel];
           if (act == ACT_TOGGLE)        { handleToggle(); }
+          else if (act == ACT_SAVE)     { handleSave(); }
+          else if (act == ACT_LOAD)     { handleLoad(); }
           else if (act == ACT_RESET)    { handleReset(); }
+          else if (act == ACT_EXPORT)   { handleExport(); }
           else /* MIN_DIST / UNITS */   { reopenAt(sel); return true; }  // re-open keeping focus
         }
         if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
@@ -143,6 +146,33 @@ private:
     _store->clear();
     _task->showAlert("Trail reset", 800);
   }
+  void handleSave() {
+    DataStore* ds = the_mesh.getDataStore();
+    if (!ds) { _task->showAlert("FS unavailable", 800); return; }
+    File f = ds->openWrite(TRAIL_FILE);
+    if (!f) { _task->showAlert("Save failed", 800); return; }
+    bool ok = _store->writeTo(f);
+    f.close();
+    _task->showAlert(ok ? "Trail saved" : "Save failed", 800);
+  }
+  void handleLoad() {
+    DataStore* ds = the_mesh.getDataStore();
+    if (!ds) { _task->showAlert("FS unavailable", 800); return; }
+    File f = ds->openRead(TRAIL_FILE);
+    if (!f) { _task->showAlert("No saved trail", 800); return; }
+    bool ok = _store->readFrom(f);
+    f.close();
+    _task->showAlert(ok ? "Trail loaded" : "Load failed", 800);
+  }
+  void handleExport() {
+    if (!Serial) { _task->showAlert("Connect USB first", 1000); return; }
+    size_t n = _store->exportGpx(Serial);
+    char alert[24];
+    snprintf(alert, sizeof(alert), "GPX %u B sent", (unsigned)n);
+    _task->showAlert(alert, 1200);
+  }
+
+  static constexpr const char* TRAIL_FILE = "/trail";
 
   // Refresh the three settings/action labels in-place. Pointer identity is
   // preserved, so PopupMenu picks up the new text on the next render.
@@ -164,8 +194,24 @@ private:
     _act_map[_act_count++] = ACT_UNITS;    _action_menu.addItem(_act_units_label);
     _act_map[_act_count++] = ACT_TOGGLE;   _action_menu.addItem(_act_toggle_label);
     if (!_store->empty()) {
+      _act_map[_act_count++] = ACT_SAVE;   _action_menu.addItem("Save trail");
+    }
+    if (savedTrailExists()) {
+      _act_map[_act_count++] = ACT_LOAD;   _action_menu.addItem("Load trail");
+    }
+    if (!_store->empty()) {
+      _act_map[_act_count++] = ACT_EXPORT; _action_menu.addItem("Export GPX");
       _act_map[_act_count++] = ACT_RESET;  _action_menu.addItem("Reset trail");
     }
+  }
+
+  static bool savedTrailExists() {
+    DataStore* ds = the_mesh.getDataStore();
+    if (!ds) return false;
+    File f = ds->openRead(TRAIL_FILE);
+    bool ok = (bool)f;
+    if (f) f.close();
+    return ok;
   }
 
   // After Enter on a settings row, the popup auto-closes per PopupMenu's

@@ -157,6 +157,107 @@ public:
     return true;
   }
 
+  // Persistent snapshot — single slot at the given filesystem path.
+  // Layout: 4-byte magic "TRAL", uint8 version, uint8 reserved, uint16 count,
+  // uint32 accumulated_ms, then `count` raw TrailPoint records. count is
+  // clamped to CAPACITY on load.
+  static const uint32_t SAVE_MAGIC = 0x4C415254;  // "TRAL"
+  static const uint8_t  SAVE_VERSION = 1;
+
+  // Caller supplies an opened, writable File (the FS-open call is
+  // platform-specific). Returns true if the header and every point wrote
+  // cleanly. The file is left open for the caller to close.
+  template <typename F>
+  bool writeTo(F& file) {
+    uint32_t magic = SAVE_MAGIC;
+    if (file.write((uint8_t*)&magic, sizeof(magic)) != sizeof(magic)) return false;
+    uint8_t  ver = SAVE_VERSION;
+    uint8_t  res = 0;
+    uint16_t cnt = (uint16_t)_count;
+    file.write(&ver, 1);
+    file.write(&res, 1);
+    file.write((uint8_t*)&cnt, sizeof(cnt));
+    uint32_t accum = currentAccumulatedMs();
+    file.write((uint8_t*)&accum, sizeof(accum));
+    for (int i = 0; i < _count; i++) {
+      file.write((uint8_t*)&at(i), sizeof(TrailPoint));
+    }
+    return true;
+  }
+
+  template <typename F>
+  bool readFrom(F& file) {
+    uint32_t magic = 0;
+    if (file.read((uint8_t*)&magic, sizeof(magic)) != (int)sizeof(magic)) return false;
+    if (magic != SAVE_MAGIC) return false;
+    uint8_t  ver = 0, res = 0;
+    uint16_t cnt = 0;
+    uint32_t accum = 0;
+    file.read(&ver, 1);
+    file.read(&res, 1);
+    file.read((uint8_t*)&cnt, sizeof(cnt));
+    file.read((uint8_t*)&accum, sizeof(accum));
+    if (ver != SAVE_VERSION || cnt > CAPACITY) return false;
+    if (_active) {
+      _active = false;
+      _session_start_ms = 0;
+    }
+    _head = 0;
+    _count = 0;
+    for (int i = 0; i < cnt; i++) {
+      TrailPoint p;
+      int n = file.read((uint8_t*)&p, sizeof(TrailPoint));
+      if (n != (int)sizeof(TrailPoint)) break;
+      _buf[_count++] = p;
+    }
+    _accumulated_ms = accum;
+    _pending_seg_break = true;
+    return true;
+  }
+
+  // Dump the trail as a minimal GPX <trk>/<trkseg> document over the given
+  // Stream. Segments split on SEG_START flags. Returns bytes written.
+  // Caller must ensure the stream is ready (e.g. USB serial connected).
+  template <typename S>
+  size_t exportGpx(S& out, const char* trk_name = "MeshCore Trail") {
+    size_t total = 0;
+    total += out.print(F("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"));
+    total += out.print(F("<gpx version=\"1.1\" creator=\"MeshCore\" "
+                          "xmlns=\"http://www.topografix.com/GPX/1/1\">\n"));
+    total += out.print(F("<trk><name>"));
+    total += out.print(trk_name);
+    total += out.print(F("</name>\n"));
+    bool in_segment = false;
+    for (int i = 0; i < _count; i++) {
+      const auto& p = at(i);
+      bool seg_start = (i == 0) || (p.flags & TRAIL_FLAG_SEG_START);
+      if (seg_start) {
+        if (in_segment) total += out.print(F("</trkseg>\n"));
+        total += out.print(F("<trkseg>\n"));
+        in_segment = true;
+      }
+      char buf[120];
+      // RFC 3339 timestamp from UNIX seconds.
+      time_t t = (time_t)p.ts;
+      struct tm* gt = gmtime(&t);
+      int n = snprintf(buf, sizeof(buf),
+        "<trkpt lat=\"%.6f\" lon=\"%.6f\"><time>%04d-%02d-%02dT%02d:%02d:%02dZ</time></trkpt>\n",
+        p.lat_1e6 / 1.0e6, p.lon_1e6 / 1.0e6,
+        gt->tm_year + 1900, gt->tm_mon + 1, gt->tm_mday,
+        gt->tm_hour, gt->tm_min, gt->tm_sec);
+      total += out.write((const uint8_t*)buf, n);
+    }
+    if (in_segment) total += out.print(F("</trkseg>\n"));
+    total += out.print(F("</trk></gpx>\n"));
+    return total;
+  }
+
+  uint32_t currentAccumulatedMs() const {
+    uint32_t ms = _accumulated_ms;
+    if (_active && _session_start_ms != 0) ms += millis() - _session_start_ms;
+    return ms;
+  }
+
   // Approximate great-circle distance in metres (Haversine).
   static float haversineMeters(int32_t la1, int32_t lo1, int32_t la2, int32_t lo2) {
     const float R   = 6371000.0f;

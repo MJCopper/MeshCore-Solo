@@ -182,6 +182,7 @@ protected:
 public:
   void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
   void saveRTCTime() { _store->saveRTCTime(); }
+  DataStore* getDataStore() const { return _store; }
 
   bool isAckPending(uint32_t expected_ack) const {
     for (int i = 0; i < EXPECTED_ACK_TABLE_SIZE; i++)
