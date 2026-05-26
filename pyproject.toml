@@ -1,0 +1,10 @@
+[project]
+name = "meshcore"
+version = "0.1.0"
+description = "Managing python dependencies for tools"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pillow>=12.2.0",
+    "pyserial>=3.5",
+]

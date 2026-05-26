@@ -58,4 +58,9 @@ public:
   void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) override;
   void setBrightness(uint8_t level) override;
   void endFrame() override;
+  
+#ifdef ENABLE_SCREENSHOT
+  // Screenshot support
+  uint8_t* getBuffer() { return display.getBuffer(); }
+#endif
 };
