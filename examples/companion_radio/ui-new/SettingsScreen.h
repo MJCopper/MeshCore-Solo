@@ -251,8 +251,9 @@ class SettingsScreen : public UIScreen {
   }
 
   // Initialises page_order to the default display sequence if not already set.
-  // Also repairs a partially-initialised order where CLOCK is absent, and migrates
-  // older orders by inserting FAVOURITES after CLOCK so the page is reorderable.
+  // Also repairs a partially-initialised order where CLOCK is absent; migrates
+  // older orders by inserting FAVOURITES after CLOCK; and appends any pages that
+  // are absent from a stale saved order (e.g. TOOLS/MESSAGES added by later firmware).
   void ensurePageOrderInit(NodePrefs* p) const {
     if (!p) return;
     if (p->page_order_set == NodePrefs::PAGE_ORDER_MAGIC) {
@@ -279,6 +280,36 @@ class SettingsScreen : public UIScreen {
           int tail = (len < NodePrefs::PAGE_ORDER_LEN) ? len : NodePrefs::PAGE_ORDER_LEN - 1;
           for (int i = tail; i > insert_at; i--) p->page_order[i] = p->page_order[i - 1];
           p->page_order[insert_at] = NodePrefs::HPB_FAVOURITES + 1;
+        }
+        // Append any pages that are absent from the saved order (e.g. added by a
+        // later firmware version). Recount first since the block above may have
+        // just inserted FAVOURITES.
+        {
+          uint16_t present = 0;
+          int cur_len = 0;
+          for (int i = 0; i < NodePrefs::PAGE_ORDER_LEN; i++) {
+            uint8_t v = p->page_order[i];
+            if (v < 1 || v > NodePrefs::HPB_COUNT) break;
+            present |= (uint16_t)(1u << (v - 1));
+            cur_len++;
+          }
+          static const uint8_t REQUIRED[] = {
+            NodePrefs::HPB_CLOCK, NodePrefs::HPB_FAVOURITES,
+            NodePrefs::HPB_RECENT, NodePrefs::HPB_RADIO,
+            NodePrefs::HPB_BLUETOOTH, NodePrefs::HPB_ADVERT,
+#if ENV_INCLUDE_GPS == 1
+            NodePrefs::HPB_GPS,
+#endif
+#if UI_SENSORS_PAGE == 1
+            NodePrefs::HPB_SENSORS,
+#endif
+            NodePrefs::HPB_SETTINGS, NodePrefs::HPB_TOOLS, NodePrefs::HPB_QUICK_MSG,
+          };
+          for (int i = 0; i < (int)(sizeof(REQUIRED)/sizeof(REQUIRED[0])); i++) {
+            uint8_t bit = REQUIRED[i];
+            if (!(present & (uint16_t)(1u << bit)) && cur_len < NodePrefs::PAGE_ORDER_LEN)
+              p->page_order[cur_len++] = bit + 1;
+          }
         }
         return;
       }
