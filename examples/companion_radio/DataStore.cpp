@@ -211,6 +211,10 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
 #endif
 #ifdef JOYSTICK_ROTATION
   _prefs.joystick_rotation = JOYSTICK_ROTATION;
+#elif !FEAT_JOYSTICK_ROTATION_SETTING
+  // OLED: no rotation setting in UI — always reset to 0 so stale e-ink prefs
+  // (which could have a non-zero value) don't silently reverse the joystick.
+  _prefs.joystick_rotation = 0;
 #endif
 
   File file = openRead(_fs, filename);
@@ -312,6 +316,8 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.trail_interval_idx,  sizeof(_prefs.trail_interval_idx));
   rd(&_prefs.trail_min_delta_idx, sizeof(_prefs.trail_min_delta_idx));
   rd(&_prefs.trail_units_idx,     sizeof(_prefs.trail_units_idx));
+  rd(&_prefs.ch_fav_bitmask,      sizeof(_prefs.ch_fav_bitmask));
+  rd(&_prefs.ch_fav_only,         sizeof(_prefs.ch_fav_only));
 
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
@@ -417,6 +423,8 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.trail_interval_idx,  sizeof(_prefs.trail_interval_idx));
     file.write((uint8_t *)&_prefs.trail_min_delta_idx, sizeof(_prefs.trail_min_delta_idx));
     file.write((uint8_t *)&_prefs.trail_units_idx,     sizeof(_prefs.trail_units_idx));
+    file.write((uint8_t *)&_prefs.ch_fav_bitmask,      sizeof(_prefs.ch_fav_bitmask));
+    file.write((uint8_t *)&_prefs.ch_fav_only,         sizeof(_prefs.ch_fav_only));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL.
     uint32_t sentinel = NodePrefs::SCHEMA_SENTINEL;

@@ -1590,7 +1590,18 @@ void UITask::loop() {
     if (!_locked && curr) {
       curr->handleInput(c);
       { uint32_t aoff = autoOffMillis(); if (aoff > 0) _auto_off = millis() + aoff; }  // extend auto-off timer
+#ifdef PIN_BUZZER
+      if (buzzer.isPlaying()) {
+        // Keep the next render at least 300 ms away so the blocking e-ink endFrame()
+        // doesn't extend the current note.  300 ms covers the slowest note at 120 BPM (1/4).
+        unsigned long deadline = millis() + 300;
+        if (_next_refresh < deadline) _next_refresh = deadline;
+      } else {
+        _next_refresh = 100;  // trigger refresh immediately
+      }
+#else
       _next_refresh = 100;  // trigger refresh
+#endif
     } else if (_locked) {
       // Locked: eat all keys — wake window is set only when display first turns on
       _next_refresh = 0;
