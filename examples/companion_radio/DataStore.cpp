@@ -209,14 +209,6 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
 #ifdef DISPLAY_ROTATION
   _prefs.display_rotation = DISPLAY_ROTATION;
 #endif
-#ifdef JOYSTICK_ROTATION
-  _prefs.joystick_rotation = JOYSTICK_ROTATION;
-#elif !FEAT_JOYSTICK_ROTATION_SETTING
-  // OLED: no rotation setting in UI — always reset to 0 so stale e-ink prefs
-  // (which could have a non-zero value) don't silently reverse the joystick.
-  _prefs.joystick_rotation = 0;
-#endif
-
   File file = openRead(_fs, filename);
   if (!file) return;
 
@@ -303,6 +295,13 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.display_rotation,          sizeof(_prefs.display_rotation));
   rd(_prefs.page_order,                 sizeof(_prefs.page_order));
   rd(&_prefs.joystick_rotation,         sizeof(_prefs.joystick_rotation));
+  // Override any stale stored value — must come AFTER rd() so files that already
+  // have the field (e.g. migrated from e-ink with rotation=2) are also corrected.
+#ifdef JOYSTICK_ROTATION
+  _prefs.joystick_rotation = JOYSTICK_ROTATION;
+#elif !FEAT_JOYSTICK_ROTATION_SETTING
+  _prefs.joystick_rotation = 0;
+#endif
   rd(&_prefs.eink_full_refresh_every,   sizeof(_prefs.eink_full_refresh_every));
   rd(&_prefs.page_order_set,            sizeof(_prefs.page_order_set));
   // Migration: pre-magic firmware wrote page_order without a flag. If we see a plausible

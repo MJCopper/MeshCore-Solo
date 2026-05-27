@@ -661,12 +661,8 @@ public:
         return 500;
       }
 
-      int hist_box_h  = 2 * lh + 1;
-      int hist_item_h = hist_box_h + 1;
       int hist_start_y = display.headerH();
       int cby = display.height() - lh - 2;
-      _hist_visible   = (cby - 1 - hist_start_y) / hist_item_h;
-      if (_hist_visible < 1) _hist_visible = 1;
 
       char title[24];
       display.setColor(DisplayDriver::LIGHT);
@@ -677,10 +673,38 @@ public:
       int dm_count = dmHistCountForContact(_sel_contact.id.pub_key);
       uint32_t now_ts = rtc_clock.getCurrentTime();
 
-      for (int i = 0; i < _hist_visible && (_dm_hist_scroll + i) < dm_count; i++) {
+      // Portrait e-ink (height > width): variable-height boxes that show the full
+      // wrapped message text. All other displays/orientations: compact 2-line boxes.
+      bool portrait_expand = (display.height() > display.width());
+      const int MAX_VIS_BOXES = 8;
+      int box_ys[MAX_VIS_BOXES], box_hs[MAX_VIS_BOXES], n_vis = 0;
+      {
+        const int fixed_bh = 2 * lh + 1;
+        int cur_y = hist_start_y;
+        for (int ii = 0; ii < MAX_VIS_BOXES && (_dm_hist_scroll + ii) < dm_count; ii++) {
+          int bh = fixed_bh;
+          if (portrait_expand) {
+            int rp = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_scroll + ii);
+            if (rp >= 0) {
+              char trans[160];
+              display.translateUTF8ToBlocks(trans, skipReplyPrefix(_dm_hist[rp].text), sizeof(trans));
+              char wl[8][FS_CHARS_MAX];
+              int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6, wl, 8);
+              bh = (1 + (nl > 0 ? nl : 1)) * lh + 1;
+            }
+          }
+          if (cur_y + bh > cby) break;
+          box_ys[n_vis] = cur_y; box_hs[n_vis] = bh; n_vis++;
+          cur_y += bh + (portrait_expand ? 2 : 1);
+        }
+      }
+      _hist_visible = n_vis;
+
+      for (int i = 0; i < n_vis && (_dm_hist_scroll + i) < dm_count; i++) {
         int item = _dm_hist_scroll + i;
         bool sel = (item == _dm_hist_sel);
-        int y = hist_start_y + i * hist_item_h;
+        int y = box_ys[i];
+        int bh = box_hs[i];
 
         int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, item);
         if (ring_pos < 0) continue;
@@ -693,19 +717,24 @@ public:
 
         if (sel) {
           display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y, display.width(), hist_box_h);
+          display.fillRect(0, y, display.width(), bh);
           display.setColor(DisplayDriver::DARK);
-          display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
-          if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
-          display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(e.text));
         } else {
           display.setColor(DisplayDriver::LIGHT);
-          display.drawRect(0, y, display.width(), hist_box_h);
+          display.drawRect(0, y, display.width(), bh);
           display.fillRect(1, y + 1, display.width() - 2, lh);
           display.setColor(DisplayDriver::DARK);
-          display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
-          if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
-          display.setColor(DisplayDriver::LIGHT);
+        }
+        display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
+        if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
+        if (!sel) display.setColor(DisplayDriver::LIGHT);
+        if (portrait_expand) {
+          char trans[160];
+          display.translateUTF8ToBlocks(trans, skipReplyPrefix(e.text), sizeof(trans));
+          char wl[8][FS_CHARS_MAX];
+          int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6, wl, 8);
+          for (int li = 0; li < nl; li++) { display.setCursor(3, y + (li + 1) * lh + 1); display.print(wl[li]); }
+        } else {
           display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(e.text));
         }
       }
@@ -721,7 +750,8 @@ public:
         display.print("^");
       }
       if (_dm_hist_scroll + _hist_visible < dm_count) {
-        display.setCursor(display.width() - cw, hist_start_y + (_hist_visible - 1) * hist_item_h + hist_box_h - lh);
+        int arrow_y = (n_vis > 0) ? box_ys[n_vis - 1] + box_hs[n_vis - 1] - lh : hist_start_y;
+        display.setCursor(display.width() - cw, arrow_y);
         display.print("v");
       }
 
@@ -764,12 +794,8 @@ public:
         return 2000;
       }
 
-      int hist_box_h  = 2 * lh + 1;
-      int hist_item_h = hist_box_h + 1;
       int hist_start_y = display.headerH();
       int cby = display.height() - lh - 2;
-      _hist_visible   = (cby - 1 - hist_start_y) / hist_item_h;
-      if (_hist_visible < 1) _hist_visible = 1;
 
       ChannelDetails ch;
       the_mesh.getChannel(_sel_channel_idx, ch);
@@ -781,17 +807,48 @@ public:
       int ch_hist_count = histCountForChannel(_sel_channel_idx);
       uint32_t now_ts = rtc_clock.getCurrentTime();
 
-      for (int i = 0; i < _hist_visible && (_hist_scroll + i) < ch_hist_count; i++) {
+      // Portrait e-ink (height > width): variable-height boxes that show the full
+      // wrapped message text. All other displays/orientations: compact 2-line boxes.
+      bool portrait_expand = (display.height() > display.width());
+      const int MAX_VIS_BOXES = 8;
+      int box_ys[MAX_VIS_BOXES], box_hs[MAX_VIS_BOXES], n_vis = 0;
+      {
+        const int fixed_bh = 2 * lh + 1;
+        int cur_y = hist_start_y;
+        for (int ii = 0; ii < MAX_VIS_BOXES && (_hist_scroll + ii) < ch_hist_count; ii++) {
+          int bh = fixed_bh;
+          if (portrait_expand) {
+            int rp = histEntryForChannel(_sel_channel_idx, _hist_scroll + ii);
+            if (rp >= 0) {
+              const char* rtext = _hist[rp].text;
+              const char* rsep = strstr(rtext, ": ");
+              const char* rbody = rsep ? rsep + 2 : rtext;
+              char trans[160];
+              display.translateUTF8ToBlocks(trans, skipReplyPrefix(rbody), sizeof(trans));
+              char wl[8][FS_CHARS_MAX];
+              int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6, wl, 8);
+              bh = (1 + (nl > 0 ? nl : 1)) * lh + 1;
+            }
+          }
+          if (cur_y + bh > cby) break;
+          box_ys[n_vis] = cur_y; box_hs[n_vis] = bh; n_vis++;
+          cur_y += bh + (portrait_expand ? 2 : 1);
+        }
+      }
+      _hist_visible = n_vis;
+
+      for (int i = 0; i < n_vis && (_hist_scroll + i) < ch_hist_count; i++) {
         int item = _hist_scroll + i;
         bool sel = (item == _hist_sel);
-        int y = hist_start_y + i * hist_item_h;
+        int y = box_ys[i];
+        int bh = box_hs[i];
 
         int ring_pos = histEntryForChannel(_sel_channel_idx, item);
         if (ring_pos < 0) continue;
 
         const char* text = _hist[ring_pos].text;
         const char* sep = strstr(text, ": ");
-        char sender[22], msg_part[79];
+        char sender[22], msg_part[140];
         if (sep) {
           int nl = sep - text; if (nl > 21) nl = 21;
           strncpy(sender, text, nl); sender[nl] = '\0';
@@ -808,19 +865,24 @@ public:
 
         if (sel) {
           display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y, display.width(), hist_box_h);
+          display.fillRect(0, y, display.width(), bh);
           display.setColor(DisplayDriver::DARK);
-          display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
-          if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
-          display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(msg_part));
         } else {
           display.setColor(DisplayDriver::LIGHT);
-          display.drawRect(0, y, display.width(), hist_box_h);
+          display.drawRect(0, y, display.width(), bh);
           display.fillRect(1, y + 1, display.width() - 2, lh);
           display.setColor(DisplayDriver::DARK);
-          display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
-          if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
-          display.setColor(DisplayDriver::LIGHT);
+        }
+        display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
+        if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
+        if (!sel) display.setColor(DisplayDriver::LIGHT);
+        if (portrait_expand) {
+          char trans[160];
+          display.translateUTF8ToBlocks(trans, skipReplyPrefix(msg_part), sizeof(trans));
+          char wl[8][FS_CHARS_MAX];
+          int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6, wl, 8);
+          for (int li = 0; li < nl; li++) { display.setCursor(3, y + (li + 1) * lh + 1); display.print(wl[li]); }
+        } else {
           display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(msg_part));
         }
       }
@@ -837,7 +899,8 @@ public:
         display.print("^");
       }
       if (_hist_scroll + _hist_visible < ch_hist_count) {
-        display.setCursor(display.width() - cw, hist_start_y + (_hist_visible - 1) * hist_item_h + hist_box_h - lh);
+        int arrow_y = (n_vis > 0) ? box_ys[n_vis - 1] + box_hs[n_vis - 1] - lh : hist_start_y;
+        display.setCursor(display.width() - cw, arrow_y);
         display.print("v");
       }
 
@@ -1138,7 +1201,7 @@ public:
                    ML[chNotifMelody(ch_idx)]); }
         { NodePrefs* p2 = _task->getNodePrefs();
           bool is_fav = p2 && (p2->ch_fav_bitmask & (1ULL << ch_idx));
-          snprintf(_ctx_ch_fav_item, sizeof(_ctx_ch_fav_item), is_fav ? "Unfav" : "Fav"); }
+          snprintf(_ctx_ch_fav_item, sizeof(_ctx_ch_fav_item), is_fav ? "Fav: yes" : "Fav: no"); }
         _ctx_menu.begin("Channel options", 4);
         _ctx_menu.addItem("Mark all read");
         _ctx_menu.addItem(_ctx_notif_item);
