@@ -82,6 +82,10 @@ public:
   const uint8_t* getBuffer() override { return display.getBuffer(); }
   uint16_t getBufferSize() override { return display.getBufferSize(); }
   uint8_t getDisplayType() override { return 1; }  // 1 = e-ink
+  // Return GxEPD2's own reported dimensions (uses WIDTH_VISIBLE, not the full physical WIDTH
+  // stored in DisplayDriver).  After setRotation(1): width()=HEIGHT, height()=WIDTH_VISIBLE.
+  int screenshotWidth()  override { return (int)display.width(); }
+  int screenshotHeight() override { return (int)display.height(); }
 #endif
 
   // Line height and approx. char width for each font size:

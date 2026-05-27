@@ -254,5 +254,11 @@ public:
   virtual const uint8_t* getBuffer() { return nullptr; }
   virtual uint16_t getBufferSize() { return 0; }
   virtual uint8_t getDisplayType() { return 0; }
+  // Visible pixel dimensions to embed in the screenshot header.
+  // Override in e-ink drivers to return the GxEPD2-reported dimensions (which use
+  // WIDTH_VISIBLE instead of the full physical WIDTH used by DisplayDriver).
+  // OLED drivers: width()/height() already reflect the visible canvas, so no override needed.
+  virtual int screenshotWidth()  { return width(); }
+  virtual int screenshotHeight() { return height(); }
 #endif
 };

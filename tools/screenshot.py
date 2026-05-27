@@ -31,9 +31,9 @@ RESP_CODE_ERR = 1
 DISPLAY_TYPE_OLED = 0   # page-based, column-major (SH1106/SSD1306)
 DISPLAY_TYPE_EINK = 1   # row-major, MSB-first, 1=white/0=black (GxEPD2)
 
-# E-ink panel constants for GxEPD2_213_B74 / GxEPD2_213_BN
-EINK_PHYS_WIDTH = 128   # full hardware width including invisible columns
-EINK_VISIBLE_W  = 122   # WIDTH_VISIBLE — columns actually shown on panel
+# No panel-specific constants needed — the firmware now sends GxEPD2's own reported
+# dimensions (which use WIDTH_VISIBLE, not the full physical WIDTH), so the header
+# already carries the correct visible height and width for any panel/rotation.
 
 
 def parse_args():
@@ -193,36 +193,43 @@ def oled_buffer_to_image(buffer, width, height):
 
 
 def eink_buffer_to_image(buffer, log_width, log_height):
-    """Decode GxEPD2 framebuffer for GxEPD2_213_B74 with DISPLAY_ROTATION=1 (landscape).
+    """Decode GxEPD2 framebuffer for any panel with DISPLAY_ROTATION=1 (landscape).
 
-    Physical panel: PHYS_WIDTH=128, HEIGHT=250.
-    Buffer layout: row-major, stride=PHYS_WIDTH/8=16 bytes, MSB-first.
-      byte index = phys_y * 16 + phys_x // 8
+    The firmware now sends GxEPD2's own width()/height() in the header, which already
+    reflect WIDTH_VISIBLE (not the full physical WIDTH).  So log_width = HEIGHT and
+    log_height = WIDTH_VISIBLE for this rotation.
+
+    Buffer layout (always in physical panel coordinates, regardless of rotation):
+      row-major, stride = ceil(phys_width/8) bytes, MSB-first
+      byte index = phys_x // 8 + phys_y * stride
       bit        = 7 - phys_x % 8
       value 1    = white (paper), 0 = black (ink)
 
-    With setRotation(1), GxEPD2 maps logical (lx, ly) to physical:
-      phys_x = PHYS_WIDTH - 1 - ly  (= 127 - ly)
+    With setRotation(1), GxEPD2 maps logical (lx, ly) → physical:
+      phys_x = WIDTH_VISIBLE - 1 - ly  (= log_height - 1 - ly)
       phys_y = lx
 
-    Visible logical height = EINK_VISIBLE_W = 122 (PHYS_WIDTH_VISIBLE).
-    We trim to visible_h rows so the 6 invisible physical columns don't appear.
+    phys_stride is derived from buffer size so no panel-specific constants are needed:
+      phys_stride = buffer_size / phys_height = buffer_size / log_width
     """
-    phys_stride = EINK_PHYS_WIDTH // 8          # 16 bytes per physical row
-    visible_h   = min(log_height, EINK_VISIBLE_W)  # trim to 122
+    if log_width == 0 or log_height == 0:
+        return Image.new("RGB", (1, 1), (255, 255, 255))
 
-    image = Image.new("RGB", (log_width, visible_h), (255, 255, 255))
+    phys_stride = len(buffer) // log_width      # bytes per physical row
+    vis_w       = log_height                    # WIDTH_VISIBLE — from header after firmware fix
+
+    image = Image.new("RGB", (log_width, vis_w), (255, 255, 255))
     pixels = image.load()
 
-    for ly in range(visible_h):
-        phys_x = EINK_PHYS_WIDTH - 1 - ly        # 127 - ly
+    for ly in range(vis_w):
+        phys_x = vis_w - 1 - ly                 # WIDTH_VISIBLE - 1 - ly
         for lx in range(log_width):
-            phys_y    = lx
-            byte_idx  = phys_y * phys_stride + phys_x // 8
-            bit       = 7 - phys_x % 8
+            phys_y   = lx
+            byte_idx = phys_x // 8 + phys_y * phys_stride
+            bit      = 7 - phys_x % 8
             if byte_idx < len(buffer):
                 raw = (buffer[byte_idx] >> bit) & 1
-                # 1=white (paper), 0=black (ink)
+                # 1 = white (paper), 0 = black (ink)
                 color = (255, 255, 255) if raw else (0, 0, 0)
                 pixels[lx, ly] = color
 

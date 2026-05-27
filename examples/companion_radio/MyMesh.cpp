@@ -2107,8 +2107,8 @@ void MyMesh::sendScreenshotResponse(DisplayDriver* display, const uint8_t* buffe
     for (int chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
         int i = 0;
         out_frame[i++] = RESP_CODE_SCREENSHOT;
-        out_frame[i++] = (uint8_t)display->width();
-        out_frame[i++] = (uint8_t)display->height();
+        out_frame[i++] = (uint8_t)display->screenshotWidth();
+        out_frame[i++] = (uint8_t)display->screenshotHeight();
         out_frame[i++] = (uint8_t)chunkIdx;
         out_frame[i++] = (uint8_t)totalChunks;
         out_frame[i++] = display->getDisplayType();
