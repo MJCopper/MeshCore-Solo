@@ -63,7 +63,7 @@ struct NodePrefs {  // persisted to file
   struct DmNotifEntry { uint8_t prefix[4]; uint8_t state; }; // state: 0=default,1=muted,2=force-on
   static const int DM_NOTIF_TABLE_MAX = 16;
   DmNotifEntry dm_notif[DM_NOTIF_TABLE_MAX]; // 16*5 = 80 bytes
-  uint8_t  dashboard_fields[3]; // 0=None,1=Batt,2=Temp,3=Hum,4=Pres,5=GPS,6=Alt,7=Lux,8=CO2,9=Nodes
+  uint8_t  dashboard_fields[3]; // 0=None,1=Batt V,2=Temp,3=Hum,4=Pres,5=GPS,6=Alt,7=Lux,8=CO2,9=Nodes,10=Msgs,11=Batt %
   uint32_t advert_auto_interval_sec; // periodic 0-hop advert with GPS: 0=off, else seconds
   // Second melody slot (same packing as ringtone_*)
   uint8_t  ringtone2_bpm_idx;

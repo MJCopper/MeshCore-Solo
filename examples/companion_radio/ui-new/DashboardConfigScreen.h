@@ -3,18 +3,19 @@
 // Included by UITask.cpp after BotScreen.h.
 
 // Field type constants — used here and in UITask.cpp HP_CLOCK render.
-static const uint8_t DASH_NONE   = 0;
-static const uint8_t DASH_BATT   = 1;
-static const uint8_t DASH_TEMP   = 2;
-static const uint8_t DASH_HUM    = 3;
-static const uint8_t DASH_PRES   = 4;
-static const uint8_t DASH_GPS    = 5;
-static const uint8_t DASH_ALT    = 6;
-static const uint8_t DASH_LUX    = 7;
-static const uint8_t DASH_CO2    = 8;
-static const uint8_t DASH_NODES  = 9;
-static const uint8_t DASH_MSGS   = 10;
-static const uint8_t DASH_COUNT  = 11;
+static const uint8_t DASH_NONE    = 0;
+static const uint8_t DASH_BATT_V  = 1;
+static const uint8_t DASH_TEMP    = 2;
+static const uint8_t DASH_HUM     = 3;
+static const uint8_t DASH_PRES    = 4;
+static const uint8_t DASH_GPS     = 5;
+static const uint8_t DASH_ALT     = 6;
+static const uint8_t DASH_LUX     = 7;
+static const uint8_t DASH_CO2     = 8;
+static const uint8_t DASH_NODES   = 9;
+static const uint8_t DASH_MSGS    = 10;
+static const uint8_t DASH_BATT_PCT = 11;
+static const uint8_t DASH_COUNT   = 12;
 
 class DashboardConfigScreen : public UIScreen {
   UITask*    _task;
@@ -79,6 +80,6 @@ public:
 };
 
 const char* DashboardConfigScreen::OPTION_NAMES[DASH_COUNT] = {
-  "None", "Battery", "Temp", "Humidity", "Pressure",
-  "GPS", "Altitude", "Lux", "CO2", "Contacts", "Messages"
+  "None", "Batt V", "Temp", "Humidity", "Pressure",
+  "GPS", "Altitude", "Lux", "CO2", "Contacts", "Messages", "Batt %"
 };
