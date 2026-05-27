@@ -45,4 +45,9 @@ public:
   void drawXbm(int x, int y, const uint8_t* bits, int w, int h) override;
   uint16_t getTextWidth(const char* str) override;
   void endFrame() override;
+  
+#ifdef ENABLE_SCREENSHOT
+  // Screenshot support
+  uint8_t* getBuffer() { return display.getBuffer(); }
+#endif
 };

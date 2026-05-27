@@ -3,6 +3,10 @@
 #include <Arduino.h>
 #include <Mesh.h>
 #include "AbstractUITask.h"
+#include <helpers/ui/DisplayDriver.h>
+
+// Forward declaration for UITask
+class UITask;
 
 /*------------ Frame Protocol --------------*/
 #define FIRMWARE_VER_CODE 11
@@ -223,6 +227,12 @@ private:
   void checkCLIRescueCmd();
   void checkSerialInterface();
   bool isValidClientRepeatFreq(uint32_t f) const;
+#ifdef ENABLE_SCREENSHOT
+  void handleScreenshotRequest();
+  void sendScreenshotResponse(DisplayDriver* display, uint8_t* buffer, int bufferSize);
+#endif
+
+  UITask* getUITask() { return (UITask*)_ui; }
 
   // helpers, short-cuts
   void saveChannels() { _store->saveChannels(this); }

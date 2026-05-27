@@ -5,6 +5,13 @@
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
 
+#ifdef DISPLAY_CLASS
+#include "helpers/ui/DisplayDriver.h"
+#include "helpers/ui/SH1106Display.h"
+#include "helpers/ui/SSD1306Display.h"
+#include "UITask.h"
+#endif
+
 #define CMD_APP_START                 1
 #define CMD_SEND_TXT_MSG              2
 #define CMD_SEND_CHANNEL_TXT_MSG      3
@@ -63,6 +70,9 @@
 #define CMD_SEND_CHANNEL_DATA         62
 #define CMD_SET_DEFAULT_FLOOD_SCOPE   63
 #define CMD_GET_DEFAULT_FLOOD_SCOPE   64
+#ifdef ENABLE_SCREENSHOT
+#define CMD_GET_SCREENSHOT             66   // Request screenshot from display
+#endif
 
 // Stats sub-types for CMD_GET_STATS
 #define STATS_TYPE_CORE               0
@@ -98,6 +108,9 @@
 #define RESP_ALLOWED_REPEAT_FREQ      26
 #define RESP_CODE_CHANNEL_DATA_RECV   27
 #define RESP_CODE_DEFAULT_FLOOD_SCOPE 28
+#ifdef ENABLE_SCREENSHOT
+#define RESP_CODE_SCREENSHOT           29   // Response with screenshot data
+#endif
 
 #define MAX_CHANNEL_DATA_LENGTH       (MAX_FRAME_SIZE - 9)
 
@@ -2046,11 +2059,84 @@ void MyMesh::handleCmdFrame(size_t len) {
       memcpy(&out_frame[i], &r->upper_freq, 4); i += 4;
     }
     _serial->writeFrame(out_frame, i);
+#ifdef ENABLE_SCREENSHOT
+  } else if (cmd_frame[0] == CMD_GET_SCREENSHOT) {
+    handleScreenshotRequest();
+#endif
   } else {
     writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
     MESH_DEBUG_PRINTLN("ERROR: unknown command: %02X", cmd_frame[0]);
   }
 }
+
+#ifdef ENABLE_SCREENSHOT
+void MyMesh::handleScreenshotRequest() {
+    #ifdef DISPLAY_CLASS
+    UITask* ui_task = getUITask();
+    if (!ui_task || !ui_task->hasDisplay()) {
+        writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
+        return;
+    }
+    
+    DisplayDriver* display = ui_task->getDisplay();
+    if (!display) {
+        writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
+        return;
+    }
+    
+    uint8_t* buffer = nullptr;
+    int bufferSize = 0;
+    
+    // Try SH1106Display first (used by Wio L1)
+    // Use C-style cast since RTTI is disabled (-fno-rtti)
+    SH1106Display* sh1106 = (SH1106Display*)display;
+    if (sh1106) {
+        buffer = sh1106->getBuffer();
+        bufferSize = (display->width() * display->height()) / 8;
+    } else {
+        // Fallback: try SSD1306Display
+        SSD1306Display* ssd1306 = (SSD1306Display*)display;
+        if (ssd1306) {
+            buffer = ssd1306->getBuffer();
+            bufferSize = (display->width() * display->height()) / 8;
+        }
+    }
+    
+    if (buffer && bufferSize > 0) {
+        sendScreenshotResponse(display, buffer, bufferSize);
+    } else {
+        // No supported display type
+        writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
+    }
+    #else
+    writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
+    #endif
+}
+
+void MyMesh::sendScreenshotResponse(DisplayDriver* display, uint8_t* buffer, int bufferSize) {
+    // MAX_FRAME_SIZE is 172 bytes, but we need to send 1026 bytes (3 header + 1024 buffer)
+    // We need to split into multiple frames
+    // Frame format: RESP_CODE_SCREENSHOT, width, height, chunk_index, total_chunks, [chunk_data...]
+    
+    const int MAX_DATA_PER_FRAME = MAX_FRAME_SIZE - 5; // 5 bytes header
+    int totalChunks = (bufferSize + MAX_DATA_PER_FRAME - 1) / MAX_DATA_PER_FRAME;
+    
+    for (int chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+        int i = 0;
+        out_frame[i++] = RESP_CODE_SCREENSHOT;
+        out_frame[i++] = display->width();
+        out_frame[i++] = display->height();
+        out_frame[i++] = chunkIdx;
+        out_frame[i++] = totalChunks;
+        
+        int chunkSize = min(MAX_DATA_PER_FRAME, bufferSize - chunkIdx * MAX_DATA_PER_FRAME);
+        memcpy(&out_frame[i], buffer + chunkIdx * MAX_DATA_PER_FRAME, chunkSize);
+        i += chunkSize;
+        
+        _serial->writeFrame(out_frame, i);
+    }
+}
+#endif // ENABLE_SCREENSHOT
 
 void MyMesh::enterCLIRescue() {
   _cli_rescue = true;
