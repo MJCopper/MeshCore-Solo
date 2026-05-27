@@ -17,18 +17,20 @@ class TrailScreen : public UIScreen {
   int     _summary_scroll = 0;
   int     _list_scroll    = 0;
   bool    _cfg_dirty      = false;
+  bool    _map_grid       = true;   // show scale grid in map view (Enter to toggle)
 
   // Action popup (Hold Enter / KEY_CONTEXT_MENU). Carries both settings rows
   // (Min dist, Units — cycled with LEFT/RIGHT while focused) and actions
   // (Start/Stop tracking, Reset). PopupMenu stores label pointers verbatim, so
   // the labels live in member buffers that get refreshed in openActionMenu()
   // and after every LEFT/RIGHT cycle.
-  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED };
+  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED };
   PopupMenu _action_menu;
-  uint8_t   _act_map[12];  // 8 used today; pad so adding an action doesn't OOB
+  uint8_t   _act_map[12];  // 9 used today; pad so adding an action doesn't OOB
   uint8_t   _act_count = 0;
   char      _act_min_dist_label[24];
   char      _act_units_label[24];
+  char      _act_grid_label[16];
   char      _act_toggle_label[20];
 
   static const int SUMMARY_ITEM_COUNT = 5;
@@ -50,7 +52,7 @@ public:
 
     // Title carries the view counter so the bottom hint row can be reclaimed
     // for content.
-    const char* base = (_view == V_MAP)  ? "TRAIL MAP"
+    const char* base = (_view == V_MAP)  ? (_map_grid ? "TRAIL MAP+" : "TRAIL MAP")
                      : (_view == V_LIST) ? "TRAIL LIST"
                      :                      "TRAIL";
     char title[20];
@@ -90,6 +92,7 @@ public:
           else if (act == ACT_SAVE)     { handleSave(); }
           else if (act == ACT_LOAD)     { handleLoad(); }
           else if (act == ACT_RESET)    { handleReset(); }
+          else if (act == ACT_GRID)         { _map_grid = !_map_grid; }
           else if (act == ACT_EXPORT)       { handleExport(); }
           else if (act == ACT_EXPORT_SAVED) { handleExportSaved(); }
           else /* MIN_DIST / UNITS */       { reopenAt(sel); return true; }  // re-open keeping focus
@@ -204,6 +207,8 @@ private:
               "Min dist: %s", TrailStore::minDeltaLabel(p ? p->trail_min_delta_idx : 0));
     snprintf(_act_units_label, sizeof(_act_units_label),
               "Units: %s",    TrailStore::unitLabel(p    ? p->trail_units_idx     : 0));
+    snprintf(_act_grid_label,   sizeof(_act_grid_label),
+              "Grid: %s",      _map_grid ? "ON" : "OFF");
     snprintf(_act_toggle_label, sizeof(_act_toggle_label),
               "%s tracking",  _store->isActive() ? "Stop" : "Start");
   }
@@ -214,6 +219,7 @@ private:
     _action_menu.begin("Trail", 4);
     _act_map[_act_count++] = ACT_MIN_DIST; _action_menu.addItem(_act_min_dist_label);
     _act_map[_act_count++] = ACT_UNITS;    _action_menu.addItem(_act_units_label);
+    _act_map[_act_count++] = ACT_GRID;     _action_menu.addItem(_act_grid_label);
     _act_map[_act_count++] = ACT_TOGGLE;   _action_menu.addItem(_act_toggle_label);
     if (!_store->empty()) {
       _act_map[_act_count++] = ACT_SAVE;   _action_menu.addItem("Save trail");
@@ -466,6 +472,10 @@ private:
       py = off_y + (int)dy;
     };
 
+    if (_map_grid)
+      renderGrid(display, area_x, area_y, area_w, area_h,
+                 min_lat, max_lat, min_lon, lon_scale_geo, scale, off_x, off_y);
+
     int x0, y0;
     project(_store->at(0), x0, y0);
     display.fillRect(x0, y0, 1, 1);
@@ -489,6 +499,106 @@ private:
     drawCurrentMarker(display, ex, ey);
 
     drawNorthArrow(display, area_x + area_w - 4, area_y + display.getLineHeight() + 1);
+  }
+
+  void renderGrid(DisplayDriver& display,
+                  int area_x, int area_y, int area_w, int area_h,
+                  int32_t min_lat, int32_t max_lat, int32_t min_lon,
+                  float lon_scale_geo, float scale, int off_x, int off_y) {
+    static constexpr float M_PER_1E6 = 0.11132f;  // metres per 1e-6 deg lat
+    float ppm = scale / M_PER_1E6;
+    if (ppm <= 0.0f) return;
+
+    float shorter_m = (float)(area_w < area_h ? area_w : area_h) / ppm;
+    float target_m  = shorter_m / 3.0f;
+
+    static const uint32_t STEPS[] = {
+      1, 2, 5, 10, 20, 50, 100, 200, 500,
+      1000, 2000, 5000, 10000, 20000, 50000, 100000
+    };
+    static const int N_STEPS = (int)(sizeof(STEPS)/sizeof(STEPS[0]));
+
+    // Pick largest step ≤ target_m (gives ~4 intervals across shorter dim).
+    int sel = 0;
+    for (int si = N_STEPS - 1; si >= 0; si--) {
+      if ((float)STEPS[si] <= target_m) { sel = si; break; }
+    }
+    // Bump up until pixel spacing between intersections is at least MIN_GRID_PX.
+    // This keeps OLED grids sparse even when target_m selects a fine step.
+    static const float MIN_GRID_PX = 22.0f;
+    while (sel < N_STEPS - 1 && (float)STEPS[sel] / M_PER_1E6 * scale < MIN_GRID_PX)
+      sel++;
+    // Clamp back down: ensure at least 2 intervals (3 visible lines) across
+    // the shorter dimension. MIN_GRID_PX must not leave only 1 interval.
+    float shorter_px = (float)(area_w < area_h ? area_w : area_h);
+    while (sel > 0 && (float)STEPS[sel] / M_PER_1E6 * scale > shorter_px / 2.0f)
+      sel--;
+    uint32_t grid_m = STEPS[sel];
+
+    float gs_lat = (float)grid_m / M_PER_1E6;
+    float gs_lon = (float)grid_m / (M_PER_1E6 * lon_scale_geo);
+
+    float vis_lat_max = (float)max_lat + (float)(off_y - area_y) / scale;
+    float vis_lat_min = (float)max_lat - (float)(area_y + area_h - off_y) / scale;
+    float vis_lon_min = (float)min_lon - (float)(off_x - area_x) / (lon_scale_geo * scale);
+    float vis_lon_max = (float)min_lon + (float)(area_x + area_w - off_x) / (lon_scale_geo * scale);
+
+    // Anchor to display edges so lines always start at the border and space inward.
+    float first_lat = vis_lat_min;
+    float first_lon = vis_lon_min;
+
+    int lat_n = (int)((vis_lat_max - first_lat) / gs_lat) + 2;
+    int lon_n = (int)((vis_lon_max - first_lon) / gs_lon) + 2;
+    if (lat_n > 40 || lon_n > 40) return;
+
+    int x_max = area_x + area_w - 1;
+    int y_max = area_y + area_h - 1;
+
+    auto fillSafe = [&](int x, int y) {
+      if (x >= area_x && x <= x_max && y >= area_y && y <= y_max)
+        display.fillRect(x, y, 1, 1);
+    };
+
+    char lbl[12];
+    if (grid_m < 1000) snprintf(lbl, sizeof(lbl), "%um",  (unsigned)grid_m);
+    else               snprintf(lbl, sizeof(lbl), "%ukm", (unsigned)(grid_m / 1000));
+    int lh  = display.getLineHeight();
+    int cw  = display.getCharWidth();
+
+    // Scale label bbox (bottom-left corner)
+    int lbl_x1 = area_x;
+    int lbl_x2 = area_x + (int)strlen(lbl) * cw + 1;
+    int lbl_y1 = area_y + area_h - lh - 1;
+    int lbl_y2 = area_y + area_h;
+
+    // North-arrow bbox — mirrors drawNorthArrow(cx = area_x+area_w-4, cy = area_y+lh+1)
+    int arr_cx  = area_x + area_w - 4;
+    int arr_cy  = area_y + lh + 1;
+    int arr_x1  = arr_cx - cw - 1;
+    int arr_x2  = x_max;
+    int arr_y1  = area_y;
+    int arr_y2  = arr_cy + 7;
+
+    for (int i = 0; i < lat_n; i++) {
+      float lat_val = first_lat + (float)i * gs_lat;
+      int py = off_y + (int)(((float)max_lat - lat_val) * scale);
+      if (py < area_y - 1 || py > y_max + 1) continue;
+      for (int j = 0; j < lon_n; j++) {
+        float lon_val = first_lon + (float)j * gs_lon;
+        int px = off_x + (int)((lon_val - (float)min_lon) * lon_scale_geo * scale);
+        if (px < area_x - 1 || px > x_max + 1) continue;
+        if (px >= lbl_x1 && px <= lbl_x2 && py >= lbl_y1 && py <= lbl_y2) continue;
+        if (px >= arr_x1 && px <= arr_x2 && py >= arr_y1 && py <= arr_y2) continue;
+        fillSafe(px,     py);
+        fillSafe(px - 1, py);
+        fillSafe(px + 1, py);
+        fillSafe(px,     py - 1);
+        fillSafe(px,     py + 1);
+      }
+    }
+
+    display.setCursor(area_x, area_y + area_h - lh);
+    display.print(lbl);
   }
 
   static void drawLine(DisplayDriver& d, int x0, int y0, int x1, int y1) {

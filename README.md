@@ -206,7 +206,7 @@ Three views cycle with **LEFT / RIGHT**:
 | View | Content |
 |------|---------|
 | **Summary** | Total distance, elapsed time, avg speed or pace, point count, tracking status |
-| **Map** | Auto-fit dot-and-line plot with cos(lat) aspect correction; segment breaks marked with open/filled dots; north arrow |
+| **Map** | Auto-fit dot-and-line plot with cos(lat) aspect correction; segment breaks marked with open/filled dots; north arrow; scale grid (toggle with Enter) |
 | **List** | Per-point rows showing local time (HH:MM) and delta distance from the previous point; segment-start rows show `start` |
 
 **Hold Enter** opens the action menu:
