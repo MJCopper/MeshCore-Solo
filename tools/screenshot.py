@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Screenshot tool for Wio L1 Tracker Pro with SH1106 display.
+Screenshot tool for Wio L1 Tracker Pro (OLED SH1106 and e-ink GxEPD2).
 Connects via USB serial using mesh companion protocol, captures framebuffer, saves as PNG.
 
 Usage:
@@ -26,14 +26,19 @@ FRAME_START_IN = 0x3E  # '>' - used when receiving FROM device
 CMD_GET_SCREENSHOT = 66
 RESP_CODE_SCREENSHOT = 29
 RESP_CODE_ERR = 1
-DISPLAY_WIDTH = 128
-DISPLAY_HEIGHT = 64
-BUFFER_SIZE = (DISPLAY_WIDTH * DISPLAY_HEIGHT) // 8  # 1024 bytes
+
+# display_type values (byte [5] in response frame)
+DISPLAY_TYPE_OLED = 0   # page-based, column-major (SH1106/SSD1306)
+DISPLAY_TYPE_EINK = 1   # row-major, MSB-first, 1=white/0=black (GxEPD2)
+
+# E-ink panel constants for GxEPD2_213_B74 / GxEPD2_213_BN
+EINK_PHYS_WIDTH = 128   # full hardware width including invisible columns
+EINK_VISIBLE_W  = 122   # WIDTH_VISIBLE — columns actually shown on panel
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Capture screenshots from Wio L1 Tracker Pro with SH1106 display"
+        description="Capture screenshots from Wio L1 Tracker Pro (OLED or e-ink)"
     )
     parser.add_argument(
         "--port", "-p", help="Serial port to use (default: auto-detect)"
@@ -101,11 +106,16 @@ def send_command(ser, command, data=b""):
 
 
 def receive_screenshot(ser, timeout=5):
-    """Receive screenshot data (may be split across multiple frames)"""
+    """Receive screenshot data (may be split across multiple frames).
+
+    Frame format: RESP_CODE_SCREENSHOT, width, height, chunk_idx,
+                  total_chunks, display_type, [chunk_data...]
+    """
     start_time = time.time()
     buffer_data = bytearray()
     width = None
     height = None
+    display_type = None
     total_chunks = None
     received_chunks = 0
 
@@ -114,24 +124,26 @@ def receive_screenshot(ser, timeout=5):
         if frame is None:
             continue
 
-        if len(frame) < 5:
+        if len(frame) < 6:
             print(f"Error: Frame too short: {len(frame)} bytes")
             return None
 
         resp_code = frame[0]
 
         if resp_code == RESP_CODE_SCREENSHOT:
-            w = frame[1]
-            h = frame[2]
-            chunk_idx = frame[3]
-            num_chunks = frame[4]
-            chunk_data = frame[5:]
+            w            = frame[1]
+            h            = frame[2]
+            chunk_idx    = frame[3]
+            num_chunks   = frame[4]
+            disp_type    = frame[5]
+            chunk_data   = frame[6:]
 
             if chunk_idx == 0:
-                width = w
-                height = h
-                total_chunks = num_chunks
-                buffer_data = bytearray()
+                width         = w
+                height        = h
+                display_type  = disp_type
+                total_chunks  = num_chunks
+                buffer_data   = bytearray()
                 received_chunks = 0
 
             if width is None or width != w or height != h:
@@ -146,14 +158,7 @@ def receive_screenshot(ser, timeout=5):
             received_chunks += 1
 
             if received_chunks >= total_chunks:
-                expected_size = (width * height) // 8
-                if len(buffer_data) == expected_size:
-                    return bytes(buffer_data), width, height
-                else:
-                    print(
-                        f"Error: Expected {expected_size} bytes, got {len(buffer_data)}"
-                    )
-                    return None
+                return bytes(buffer_data), width, height, display_type
 
         elif resp_code == RESP_CODE_ERR:
             print("Error: Device returned error")
@@ -168,13 +173,13 @@ def receive_screenshot(ser, timeout=5):
     return None
 
 
-def buffer_to_image(buffer, width, height, scale=1):
-    """Convert SH1106/SH1106 framebuffer to PIL Image with white text on black background and black frame"""
+def oled_buffer_to_image(buffer, width, height):
+    """Decode SH1106/SSD1306 framebuffer (page-based, column-major).
+    Each byte covers 8 vertical pixels; bit 0 = top pixel of the byte.
+    """
     image = Image.new("1", (width, height), 0)
     pixels = image.load()
-
     bytes_per_page = width
-
     for page in range(0, height, 8):
         page_start = (page // 8) * bytes_per_page
         for col in range(width):
@@ -183,22 +188,61 @@ def buffer_to_image(buffer, width, height, scale=1):
                 byte_val = buffer[byte_idx]
                 for bit in range(8):
                     if page + bit < height:
-                        pixel_value = 1 if (byte_val & (1 << bit)) else 0
-                        pixels[col, page + bit] = pixel_value
+                        pixels[col, page + bit] = 1 if (byte_val & (1 << bit)) else 0
+    return image.convert("RGB")
 
-    # Convert to RGB: white text on black background (no inversion)
-    image_rgb = image.convert("RGB")
 
-    # Add 3-pixel black frame around the image
+def eink_buffer_to_image(buffer, log_width, log_height):
+    """Decode GxEPD2 framebuffer for GxEPD2_213_B74 with DISPLAY_ROTATION=1 (landscape).
+
+    Physical panel: PHYS_WIDTH=128, HEIGHT=250.
+    Buffer layout: row-major, stride=PHYS_WIDTH/8=16 bytes, MSB-first.
+      byte index = phys_y * 16 + phys_x // 8
+      bit        = 7 - phys_x % 8
+      value 1    = white (paper), 0 = black (ink)
+
+    With setRotation(1), GxEPD2 maps logical (lx, ly) to physical:
+      phys_x = PHYS_WIDTH - 1 - ly  (= 127 - ly)
+      phys_y = lx
+
+    Visible logical height = EINK_VISIBLE_W = 122 (PHYS_WIDTH_VISIBLE).
+    We trim to visible_h rows so the 6 invisible physical columns don't appear.
+    """
+    phys_stride = EINK_PHYS_WIDTH // 8          # 16 bytes per physical row
+    visible_h   = min(log_height, EINK_VISIBLE_W)  # trim to 122
+
+    image = Image.new("RGB", (log_width, visible_h), (255, 255, 255))
+    pixels = image.load()
+
+    for ly in range(visible_h):
+        phys_x = EINK_PHYS_WIDTH - 1 - ly        # 127 - ly
+        for lx in range(log_width):
+            phys_y    = lx
+            byte_idx  = phys_y * phys_stride + phys_x // 8
+            bit       = 7 - phys_x % 8
+            if byte_idx < len(buffer):
+                raw = (buffer[byte_idx] >> bit) & 1
+                # 1=white (paper), 0=black (ink)
+                color = (255, 255, 255) if raw else (0, 0, 0)
+                pixels[lx, ly] = color
+
+    return image
+
+
+def buffer_to_image(buffer, width, height, display_type, scale=1):
+    """Convert framebuffer to PIL Image with a 3-pixel black frame."""
+    if display_type == DISPLAY_TYPE_EINK:
+        image_rgb = eink_buffer_to_image(buffer, width, height)
+    else:
+        image_rgb = oled_buffer_to_image(buffer, width, height)
+
+    # Add 3-pixel black frame
     FRAME_WIDTH = 3
-    new_width = width + FRAME_WIDTH * 2
-    new_height = height + FRAME_WIDTH * 2
-    final_image = Image.new("RGB", (new_width, new_height), (0, 0, 0))
-
-    # Paste the display content in the center
+    fw = image_rgb.width  + FRAME_WIDTH * 2
+    fh = image_rgb.height + FRAME_WIDTH * 2
+    final_image = Image.new("RGB", (fw, fh), (0, 0, 0))
     final_image.paste(image_rgb, (FRAME_WIDTH, FRAME_WIDTH))
 
-    # Upscale if requested
     if scale > 1:
         final_image = final_image.resize(
             (final_image.width * scale, final_image.height * scale),
@@ -240,7 +284,7 @@ def main():
         sys.exit(1)
 
     try:
-        print("Screenshot Tool for Wio L1 Tracker Pro")
+        print("Screenshot Tool for Wio L1 Tracker Pro (OLED + e-ink)")
         print("Press 'S' to capture screenshot, 'Q' to quit\n")
 
         while True:
@@ -263,14 +307,15 @@ def main():
 
                 result = receive_screenshot(ser)
                 if result:
-                    buffer_data, width, height = result
+                    buffer_data, width, height, display_type = result
+                    type_str = "e-ink" if display_type == DISPLAY_TYPE_EINK else "OLED"
                     print(
-                        f"Received framebuffer: {width}x{height}, {len(buffer_data)} bytes"
+                        f"Received framebuffer: {width}x{height} {type_str}, {len(buffer_data)} bytes"
                     )
 
                     try:
                         image = buffer_to_image(
-                            buffer_data, width, height, scale=args.scale
+                            buffer_data, width, height, display_type, scale=args.scale
                         )
                         filename = generate_filename()
                         image.save(filename)

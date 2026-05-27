@@ -247,4 +247,12 @@ public:
   virtual void setDisplayRotation(uint8_t rot) { }  // 0-3, no-op for fixed-orientation displays
   virtual void setFullRefreshInterval(uint8_t n) { }  // e-ink: do full refresh every n partial refreshes (0=never)
   virtual void endFrame() = 0;
+
+#ifdef ENABLE_SCREENSHOT
+  // Screenshot support — return raw framebuffer and its size in bytes.
+  // 0=OLED (page-based, column-major), 1=e-ink (row-major, MSB-first, 1=white/0=black).
+  virtual const uint8_t* getBuffer() { return nullptr; }
+  virtual uint16_t getBufferSize() { return 0; }
+  virtual uint8_t getDisplayType() { return 0; }
+#endif
 };

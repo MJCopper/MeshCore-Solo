@@ -5,7 +5,15 @@
 
 #define ENABLE_GxEPD2_GFX 0
 
+// When ENABLE_SCREENSHOT is active, use the patched copy of GxEPD2_BW.h from
+// lib/GxEPD2-patch/src/ that exposes getBuffer()/getBufferSize().  The include
+// guard (_GxEPD2_BW_H_) then prevents the installed library version from
+// being compiled again.  Non-screenshot builds use the installed library as-is.
+#ifdef ENABLE_SCREENSHOT
+#include "../../../lib/GxEPD2-patch/src/GxEPD2_BW.h"
+#else
 #include <GxEPD2_BW.h>
+#endif
 #include <GxEPD2_3C.h>
 #include <GxEPD2_4C.h>
 #include <GxEPD2_7C.h>
@@ -68,6 +76,12 @@ public:
 #else
   GxEPDDisplay() : DisplayDriver(EINK_DISP_W, EINK_DISP_H),
     display(GxEPD2_150_BN(DISP_CS, DISP_DC, DISP_RST, DISP_BUSY)) {}
+#endif
+
+#ifdef ENABLE_SCREENSHOT
+  const uint8_t* getBuffer() override { return display.getBuffer(); }
+  uint16_t getBufferSize() override { return display.getBufferSize(); }
+  uint8_t getDisplayType() override { return 1; }  // 1 = e-ink
 #endif
 
   // Line height and approx. char width for each font size:
