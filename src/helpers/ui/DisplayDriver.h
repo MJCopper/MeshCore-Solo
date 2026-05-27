@@ -34,7 +34,6 @@ public:
   virtual int getLineHeight() const { return 8; }  // pixel rows per text line
   virtual void setLemonFont(bool) { }              // no-op; overridden by displays that support Lemon
   virtual bool isLemonFont() const { return false; }
-
   // Layout helpers — derived from font metrics and screen size.
   // Use these instead of hardcoded pixel values so layouts adapt to any display.
   int lineStep()             const { return getLineHeight() + 2; }         // row pitch: text + gap

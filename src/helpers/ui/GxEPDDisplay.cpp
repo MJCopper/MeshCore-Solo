@@ -196,7 +196,9 @@ void GxEPDDisplay::print(const char* str) {
     if ((uint8_t)*p == 0xDB) {
       int cx = display.getCursorX();
       int cy = display.getCursorY();
-      display.fillRect(cx, cy - 8 * sc, 5 * sc, 8 * sc, _curr_color);
+      // Default GFX font: cursor is top-left of cell (fontAscender=0), so cy=original_y.
+      // Draw block at cy (not cy-8*sc — that formula assumes Lemon's baseline offset).
+      display.fillRect(cx, cy, 5 * sc, 8 * sc, _curr_color);
       display.setCursor(cx + 6 * sc, cy);
     } else {
       char tmp[2] = {*p, 0};
