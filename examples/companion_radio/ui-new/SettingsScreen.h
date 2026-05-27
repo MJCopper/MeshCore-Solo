@@ -57,7 +57,7 @@ class SettingsScreen : public UIScreen {
     TIMEZONE,
     LOW_BAT,
     // Contacts section
-    SECTION_CONTACTS, DM_FILTER, ROOM_FILTER,
+    SECTION_CONTACTS, DM_FILTER, CH_FILTER, ROOM_FILTER,
     // Messages section
     SECTION_MESSAGES,
     MSG_SLOT_0, MSG_SLOT_1, MSG_SLOT_2, MSG_SLOT_3, MSG_SLOT_4,
@@ -533,6 +533,10 @@ class SettingsScreen : public UIScreen {
       display.print("DM");
       display.setCursor(display.valCol(), y);
       display.print((p && p->dm_show_all) ? "all" : "fav");
+    } else if (item == CH_FILTER) {
+      display.print("Channels");
+      display.setCursor(display.valCol(), y);
+      display.print((p && p->ch_fav_only) ? "fav" : "all");
     } else if (item == ROOM_FILTER) {
       display.print("Rooms");
       display.setCursor(display.valCol(), y);
@@ -780,6 +784,11 @@ public:
 #endif
     if (_selected == DM_FILTER && p && (left || right || enter)) {
       p->dm_show_all = p->dm_show_all ? 0 : 1;
+      _dirty = true;
+      return true;
+    }
+    if (_selected == CH_FILTER && p && (left || right || enter)) {
+      p->ch_fav_only = p->ch_fav_only ? 0 : 1;
       _dirty = true;
       return true;
     }

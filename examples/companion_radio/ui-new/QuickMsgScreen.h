@@ -47,6 +47,7 @@ class QuickMsgScreen : public UIScreen {
   char      _ctx_notif_item[22];
   char      _ctx_melody_item[20];
   char      _ctx_pin_item[28];   // "Pin to dial" or "Unpin (slot N)"
+  char      _ctx_ch_fav_item[12]; // "Fav" or "Unfav"
   char      _pin_slot_labels[NodePrefs::FAVOURITES_COUNT][22];  // per-slot picker labels
   bool      _pin_picker_active;  // true while the slot-picker submenu is open
   bool      _dm_direct_entry;    // entered DM_HIST via Favourites shortcut; CANCEL returns home
@@ -271,12 +272,14 @@ class QuickMsgScreen : public UIScreen {
   }
 
   void buildChannelList() {
+    NodePrefs* p = _task->getNodePrefs();
+    bool fav_only = (p && p->ch_fav_only);
     _num_channels = 0;
     for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
       ChannelDetails ch;
-      if (the_mesh.getChannel(i, ch) && ch.name[0] != '\0') {
-        _channel_indices[_num_channels++] = (uint8_t)i;
-      }
+      if (!the_mesh.getChannel(i, ch) || ch.name[0] == '\0') continue;
+      if (fav_only && !(p->ch_fav_bitmask & (1ULL << i))) continue;
+      _channel_indices[_num_channels++] = (uint8_t)i;
     }
   }
 
@@ -1083,10 +1086,19 @@ public:
             uint8_t nstate = chNotifState(ch_idx);
             setChNotifState(ch_idx, (nstate + 1) % 3);
             _ctx_dirty = true;
-          } else {
+          } else if (_ctx_menu.selectedIndex() == 2) {
             uint8_t slot = chNotifMelody(ch_idx);
             setChNotifMelody(ch_idx, (slot + 1) % 3);
             _ctx_dirty = true;
+          } else {
+            // Toggle favourite
+            NodePrefs* p2 = _task->getNodePrefs();
+            if (p2) {
+              p2->ch_fav_bitmask ^= (1ULL << ch_idx);
+              _ctx_dirty = true;
+              buildChannelList();  // refilter if ch_fav_only is active
+              if (_channel_sel >= _num_channels) _channel_sel = _num_channels > 0 ? _num_channels - 1 : 0;
+            }
           }
         }
         if (res != PopupMenu::NONE && _ctx_dirty) {
@@ -1124,10 +1136,14 @@ public:
         { static const char* ML[] = { "global", "M1", "M2" };
           snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s",
                    ML[chNotifMelody(ch_idx)]); }
-        _ctx_menu.begin("Channel options", 3);
+        { NodePrefs* p2 = _task->getNodePrefs();
+          bool is_fav = p2 && (p2->ch_fav_bitmask & (1ULL << ch_idx));
+          snprintf(_ctx_ch_fav_item, sizeof(_ctx_ch_fav_item), is_fav ? "Unfav" : "Fav"); }
+        _ctx_menu.begin("Channel options", 4);
         _ctx_menu.addItem("Mark all read");
         _ctx_menu.addItem(_ctx_notif_item);
         _ctx_menu.addItem(_ctx_melody_item);
+        _ctx_menu.addItem(_ctx_ch_fav_item);
         _ctx_dirty = false;
         return true;
       }

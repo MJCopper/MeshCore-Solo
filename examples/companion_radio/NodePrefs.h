@@ -105,11 +105,14 @@ struct NodePrefs {  // persisted to file
   uint8_t trail_min_delta_idx;  // indexes TrailStore::minDeltaMeters (5/10/25/100 m)
   uint8_t trail_units_idx;      // indexes TrailStore::unitLabel (km/h, mph, min/km, min/mi)
 
+  uint64_t ch_fav_bitmask;      // bit i = channel i is marked as favourite
+  uint8_t  ch_fav_only;         // 0=show all channels (default), 1=show favourites only
+
   // Tail sentinel written at the end of /new_prefs. Bump the low byte when
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0004;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0005;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
