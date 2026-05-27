@@ -549,11 +549,29 @@ public:
             label[0] = '\0';
             val[0] = '\0';
 
-            if (field == DASH_BATT) {
+            if (field == DASH_BATT_V) {
               strcpy(label, "Batt");
               uint16_t mv = _task->getBattMilliVolts();
               if (mv > 0) snprintf(val, sizeof(val), "%u.%02uV", mv/1000, (mv%1000)/10);
               else strcpy(val, "--");
+            } else if (field == DASH_BATT_PCT) {
+              strcpy(label, "Batt");
+              uint16_t mv = _task->getBattMilliVolts();
+              if (mv > 0) {
+                // Simple linear voltage to percentage calculation
+                #ifndef BATT_MIN_MILLIVOLTS
+                #define BATT_MIN_MILLIVOLTS 3000
+                #endif
+                #ifndef BATT_MAX_MILLIVOLTS
+                #define BATT_MAX_MILLIVOLTS 4200
+                #endif
+                int percent = ((mv - BATT_MIN_MILLIVOLTS) * 100) / (BATT_MAX_MILLIVOLTS - BATT_MIN_MILLIVOLTS);
+                if (percent < 0) percent = 0;
+                if (percent > 100) percent = 100;
+                snprintf(val, sizeof(val), "%d%%", percent);
+              } else {
+                strcpy(val, "--");
+              }
             } else if (field == DASH_GPS) {
               strcpy(label, "GPS");
 #if ENV_INCLUDE_GPS == 1
@@ -1424,9 +1442,25 @@ static void formatDashVal(uint8_t field, char* val, int val_len, uint16_t batt_m
   val[0] = '\0';
   switch (field) {
     case DASH_NONE: return;
-    case DASH_BATT:
+    case DASH_BATT_V:
       if (batt_mv > 0) snprintf(val, val_len, "%u.%02uV", batt_mv/1000, (batt_mv%1000)/10);
       else              strcpy(val, "--");
+      return;
+    case DASH_BATT_PCT:
+      if (batt_mv > 0) {
+        #ifndef BATT_MIN_MILLIVOLTS
+        #define BATT_MIN_MILLIVOLTS 3000
+        #endif
+        #ifndef BATT_MAX_MILLIVOLTS
+        #define BATT_MAX_MILLIVOLTS 4200
+        #endif
+        int percent = ((batt_mv - BATT_MIN_MILLIVOLTS) * 100) / (BATT_MAX_MILLIVOLTS - BATT_MIN_MILLIVOLTS);
+        if (percent < 0) percent = 0;
+        if (percent > 100) percent = 100;
+        snprintf(val, val_len, "%d%%", percent);
+      } else {
+        strcpy(val, "--");
+      }
       return;
     case DASH_NODES:
       snprintf(val, val_len, "%d nodes", the_mesh.getNumContacts());
