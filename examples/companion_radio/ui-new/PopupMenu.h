@@ -16,17 +16,18 @@ struct PopupMenu {
   int         _count;
   int         _sel;
   int         _scroll;
-  int         _visible;
+  int         _visible;   // caller hint (min visible items)
+  int         _cap;       // actual visible cap, updated each render()
   bool        active;
   const char* _title;
 
   enum Result { NONE, SELECTED, CANCELLED };
 
-  PopupMenu() : _count(0), _sel(0), _scroll(0), _visible(3), active(false), _title(nullptr) {}
+  PopupMenu() : _count(0), _sel(0), _scroll(0), _visible(3), _cap(3), active(false), _title(nullptr) {}
 
   void begin(const char* title, int visible = 3) {
     _count = 0; _sel = 0; _scroll = 0;
-    _visible = visible; active = true; _title = title;
+    _visible = visible; _cap = visible; active = true; _title = title;
   }
 
   void addItem(const char* item) {
@@ -34,7 +35,12 @@ struct PopupMenu {
   }
 
   int render(DisplayDriver& display) {
-    int vis = (_count < _visible) ? _count : _visible;
+    // On tall displays (portrait e-ink) show as many items as fit;
+    // on small displays fall back to the caller-specified _visible cap.
+    int max_by_height = (display.height() - PM_BY - 12) / PM_ITEM_H;
+    if (max_by_height < 1) max_by_height = 1;
+    _cap = (max_by_height > _visible) ? max_by_height : _visible;
+    int vis = (_count < _cap) ? _count : _cap;
     int bh  = 12 + vis * PM_ITEM_H;
 
     display.setColor(DisplayDriver::DARK);
@@ -71,14 +77,14 @@ struct PopupMenu {
     if (_count == 0) { active = false; return CANCELLED; }
     if (c == KEY_UP) {
       _sel = (_sel > 0) ? _sel - 1 : _count - 1;
-      if (_sel < _scroll)                                 _scroll = _sel;
-      else if (_sel == _count - 1 && _count > _visible)  _scroll = _count - _visible;
+      if (_sel < _scroll)                               _scroll = _sel;
+      else if (_sel == _count - 1 && _count > _cap)    _scroll = _count - _cap;
       return NONE;
     }
     if (c == KEY_DOWN) {
       _sel = (_sel < _count - 1) ? _sel + 1 : 0;
-      if (_sel >= _scroll + _visible)  _scroll = _sel - _visible + 1;
-      else if (_sel == 0)              _scroll = 0;
+      if (_sel >= _scroll + _cap)  _scroll = _sel - _cap + 1;
+      else if (_sel == 0)          _scroll = 0;
       return NONE;
     }
     if (c == KEY_ENTER)                           { active = false; return SELECTED;  }
