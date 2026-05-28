@@ -105,69 +105,95 @@ def send_command(ser, command, data=b""):
     return frame_len + 3
 
 
-def receive_screenshot(ser, timeout=5):
-    """Receive screenshot data (may be split across multiple frames).
+HEADER_SIZE = 11   # see firmware sendScreenshotResponse() for layout
 
-    Frame format: RESP_CODE_SCREENSHOT, width, height, chunk_idx,
-                  total_chunks, display_type, [chunk_data...]
-    """
-    start_time = time.time()
-    buffer_data = bytearray()
-    width = None
-    height = None
-    display_type = None
-    total_chunks = None
+
+def _u16le(buf, off):
+    return buf[off] | (buf[off + 1] << 8)
+
+
+def _expected_buffer_size(width, height, display_type):
+    """Bytes the firmware should send for given dims+type."""
+    if display_type == DISPLAY_TYPE_EINK:
+        # GxEPD2 buffer is in physical panel coordinates: row-major,
+        # stride = ceil(WIDTH_VISIBLE / 8) bytes, HEIGHT rows.
+        # WIDTH_VISIBLE = shorter visible dim regardless of rotation.
+        visible_short = min(width, height)
+        phys_stride   = (visible_short + 7) // 8
+        phys_height   = max(width, height)
+        return phys_stride * phys_height
+    # OLED: packed bits, no padding
+    return (width * height) // 8
+
+
+def receive_screenshot(ser, timeout=5):
+    """Receive a multi-chunk screenshot response. Returns (buf, w, h, type, rot) or None."""
+    start_time      = time.time()
+    buffer_data     = bytearray()
+    width           = None
+    height          = None
+    display_type    = None
+    disp_rotation   = 0
+    total_chunks    = None
     received_chunks = 0
 
     while time.time() - start_time < timeout:
         frame = read_frame(ser)
         if frame is None:
             continue
-
-        if len(frame) < 7:
-            print(f"Error: Frame too short: {len(frame)} bytes")
-            return None
+        if len(frame) < 1:
+            continue
 
         resp_code = frame[0]
 
-        if resp_code == RESP_CODE_SCREENSHOT:
-            w            = frame[1]
-            h            = frame[2]
-            chunk_idx    = frame[3]
-            num_chunks   = frame[4]
-            disp_type    = frame[5]
-            rotation     = frame[6]
-            chunk_data   = frame[7:]
-
-            if chunk_idx == 0:
-                width         = w
-                height        = h
-                display_type  = disp_type
-                disp_rotation = rotation
-                total_chunks  = num_chunks
-                buffer_data   = bytearray()
-                received_chunks = 0
-
-            if width is None or width != w or height != h:
-                print(f"Error: Inconsistent dimensions in chunk {chunk_idx}")
-                return None
-
-            if total_chunks is None or total_chunks != num_chunks:
-                print(f"Error: Inconsistent chunk count in chunk {chunk_idx}")
-                return None
-
-            buffer_data.extend(chunk_data)
-            received_chunks += 1
-
-            if received_chunks >= total_chunks:
-                return bytes(buffer_data), width, height, display_type, disp_rotation
-
-        elif resp_code == RESP_CODE_ERR:
-            print("Error: Device returned error")
+        if resp_code == RESP_CODE_ERR:
+            err = frame[1] if len(frame) > 1 else 0xFF
+            print(f"Error: Device returned error code 0x{err:02x}")
             return None
 
-        else:
+        if resp_code != RESP_CODE_SCREENSHOT:
             continue
+
+        if len(frame) < HEADER_SIZE:
+            print(f"Error: Screenshot frame too short: {len(frame)} bytes (need >= {HEADER_SIZE})")
+            return None
+
+        disp_type  = frame[1]
+        rotation   = frame[2]
+        w          = _u16le(frame, 3)
+        h          = _u16le(frame, 5)
+        chunk_idx  = _u16le(frame, 7)
+        num_chunks = _u16le(frame, 9)
+        chunk_data = frame[HEADER_SIZE:]
+
+        if chunk_idx == 0:
+            width           = w
+            height          = h
+            display_type    = disp_type
+            disp_rotation   = rotation
+            total_chunks    = num_chunks
+            buffer_data     = bytearray()
+            received_chunks = 0
+
+        if width is None:
+            print(f"Error: Missed chunk 0 (first chunk seen: {chunk_idx})")
+            return None
+        if width != w or height != h:
+            print(f"Error: Inconsistent dimensions in chunk {chunk_idx}")
+            return None
+        if total_chunks != num_chunks:
+            print(f"Error: Inconsistent chunk count in chunk {chunk_idx}")
+            return None
+
+        buffer_data.extend(chunk_data)
+        received_chunks += 1
+
+        if received_chunks >= total_chunks:
+            expected = _expected_buffer_size(width, height, display_type)
+            if len(buffer_data) != expected:
+                print(f"Error: Expected {expected} bytes, got {len(buffer_data)}")
+                return None
+            return bytes(buffer_data), width, height, display_type, disp_rotation
 
     print(
         f"Error: Timeout waiting for screenshot (received {received_chunks}/{total_chunks or '?'} chunks)"
