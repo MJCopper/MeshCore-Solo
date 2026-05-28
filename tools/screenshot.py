@@ -193,43 +193,51 @@ def oled_buffer_to_image(buffer, width, height):
 
 
 def eink_buffer_to_image(buffer, log_width, log_height):
-    """Decode GxEPD2 framebuffer for any panel with DISPLAY_ROTATION=1 (landscape).
+    """Decode GxEPD2 framebuffer for any panel/rotation.
 
-    The firmware now sends GxEPD2's own width()/height() in the header, which already
-    reflect WIDTH_VISIBLE (not the full physical WIDTH).  So log_width = HEIGHT and
-    log_height = WIDTH_VISIBLE for this rotation.
+    The firmware sends GxEPD2's own width()/height() in the header (using WIDTH_VISIBLE,
+    not the full physical WIDTH).  Rotation is inferred from the aspect ratio:
+      portrait  (log_height > log_width)  → rotation 0: direct mapping
+      landscape (log_width  > log_height) → rotation 1: phys_x = WIDTH_VISIBLE-1-ly
+      square    (log_width == log_height) → assumed rotation 1
 
-    Buffer layout (always in physical panel coordinates, regardless of rotation):
-      row-major, stride = ceil(phys_width/8) bytes, MSB-first
-      byte index = phys_x // 8 + phys_y * stride
-      bit        = 7 - phys_x % 8
-      value 1    = white (paper), 0 = black (ink)
+    Buffer layout (physical panel coordinates, rotation-independent):
+      row-major, stride bytes per row, MSB-first
+      byte_idx = phys_x // 8 + phys_y * stride
+      bit      = 7 - phys_x % 8
+      1 = white (paper), 0 = black (ink)
 
-    With setRotation(1), GxEPD2 maps logical (lx, ly) → physical:
-      phys_x = WIDTH_VISIBLE - 1 - ly  (= log_height - 1 - ly)
-      phys_y = lx
-
-    phys_stride is derived from buffer size so no panel-specific constants are needed:
-      phys_stride = buffer_size / phys_height = buffer_size / log_width
+    Physical HEIGHT = max(log_width, log_height) for any rotation on a non-square panel.
+    stride = buffer_size // HEIGHT  (no panel-specific constants needed).
     """
     if log_width == 0 or log_height == 0:
         return Image.new("RGB", (1, 1), (255, 255, 255))
 
-    phys_stride = len(buffer) // log_width      # bytes per physical row
-    vis_w       = log_height                    # WIDTH_VISIBLE — from header after firmware fix
+    # Physical panel HEIGHT is always the longer dimension.
+    phys_height = max(log_width, log_height)
+    phys_stride = len(buffer) // phys_height    # bytes per physical row (e.g. 128/8 = 16)
 
-    image = Image.new("RGB", (log_width, vis_w), (255, 255, 255))
+    image  = Image.new("RGB", (log_width, log_height), (255, 255, 255))
     pixels = image.load()
 
-    for ly in range(vis_w):
-        phys_x = vis_w - 1 - ly                 # WIDTH_VISIBLE - 1 - ly
+    portrait = log_height > log_width           # rotation=0 vs rotation=1
+
+    for ly in range(log_height):
         for lx in range(log_width):
-            phys_y   = lx
+            if portrait:
+                # rotation=0: logical (lx,ly) maps directly to physical (lx,ly)
+                phys_x = lx
+                phys_y = ly
+            else:
+                # rotation=1: logical (lx,ly) → physical (WIDTH_VISIBLE-1-ly, lx)
+                # WIDTH_VISIBLE = log_height (from screenshotHeight() in firmware)
+                phys_x = log_height - 1 - ly
+                phys_y = lx
+
             byte_idx = phys_x // 8 + phys_y * phys_stride
             bit      = 7 - phys_x % 8
             if byte_idx < len(buffer):
-                raw = (buffer[byte_idx] >> bit) & 1
-                # 1 = white (paper), 0 = black (ink)
+                raw   = (buffer[byte_idx] >> bit) & 1
                 color = (255, 255, 255) if raw else (0, 0, 0)
                 pixels[lx, ly] = color
 
