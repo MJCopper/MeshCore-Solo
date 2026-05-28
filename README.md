@@ -1,4 +1,4 @@
-# Plus for Seeed Wio Tracker L1 - community firmware
+# Seeed Wio Tracker L1 - MeshCore community firmware
 
 This branch extends the official MeshCore companion radio firmware for the **Seeed Wio Tracker L1**. Provides support for both the original OLED and the e-ink variant, with additional features and UI enhancements.
 
@@ -52,7 +52,7 @@ Two firmware builds are published with each release:
 Both variants are built from a single codebase and share the same feature set. The `dual` in the filename means a single binary supports both BLE and USB serial — there are no separate BLE/USB builds.
 
 >[!IMPORTANT]
-> BLE connections has priority over USB serial. When a BLE connection is active, the USB protocol is suspended. When connecting to the companion app via USB, ensure to disconnect from BLE first or disable BLE directly from the device to avoid confusion.
+> BLE connection has priority over USB serial. When a BLE connection is active, the USB protocol is suspended. When connecting to the companion app via USB, ensure to disconnect from BLE first or disable BLE directly from the device to avoid confusion.
 
 ### Flashing
 1. Download the appropriate `.uf2` file for your display variant from the [releases page](https://github.com/MarekZegare4/MeshCore/releases)
@@ -121,8 +121,9 @@ PLATFORMIO_BUILD_FLAGS="-D ENABLE_SCREENSHOT" pio run -e WioTrackerL1_companion_
 4. In the tool's interactive menu, press **S** to capture a screenshot
 5. The tool will save the screenshot as a PNG file in `tools/pngs/` with a timestamp-based filename
 
+<!-- 
 **How it works:**
 - The tool sends the `CMD_GET_SCREENSHOT` command (66) to the device
 - The device responds with `RESP_CODE_SCREENSHOT` (29) containing the framebuffer data
 - The framebuffer is transmitted in chunks (128×64 display = 1024 bytes, split across multiple frames)
-- The tool reassembles the chunks and converts them to a PNG image
+- The tool reassembles the chunks and converts them to a PNG image -->
