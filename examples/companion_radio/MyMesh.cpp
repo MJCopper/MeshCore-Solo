@@ -2075,7 +2075,7 @@ void MyMesh::handleScreenshotRequest() {
         writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
         return;
     }
-    
+
     DisplayDriver* display = ui_task->getDisplay();
     if (!display) {
         writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
@@ -2083,7 +2083,7 @@ void MyMesh::handleScreenshotRequest() {
     }
 
     const uint8_t* buffer = display->getBuffer();
-    uint16_t bufferSize   = display->getBufferSize();
+    uint16_t bufferSize = display->getBufferSize();
 
     if (buffer && bufferSize > 0) {
         sendScreenshotResponse(display, buffer, bufferSize);
@@ -2096,22 +2096,30 @@ void MyMesh::handleScreenshotRequest() {
 }
 
 void MyMesh::sendScreenshotResponse(DisplayDriver* display, const uint8_t* buffer, uint16_t bufferSize) {
-    // Frame format (5-byte header): RESP_CODE_SCREENSHOT, width, height,
-    //                                chunk_idx, total_chunks, [chunk_data...]
-    // width/height fit in uint8_t for all displays this firmware targets
-    // (SH1106 128×64, SSD1306 128×64); the framebuffer is page-based 1bpp
-    // column-major, byte_idx = page*width + col.
-    const int HEADER_SIZE = 5;
+    // Frame format (11-byte header, little-endian multi-byte fields):
+    //   [0]    resp_code = RESP_CODE_SCREENSHOT
+    //   [1]    display_type (0=OLED page-based, 1=e-ink row-major MSB-first 1=white)
+    //   [2]    rotation     (0-3, GxEPD2/Adafruit_GFX value; only meaningful for e-ink)
+    //   [3..4] width  (uint16 LE — GxEPD2-reported visible width)
+    //   [5..6] height (uint16 LE — GxEPD2-reported visible height)
+    //   [7..8] chunk_idx    (uint16 LE)
+    //   [9..10] total_chunks (uint16 LE)
+    //   [11..] chunk data
+    const int HEADER_SIZE = 11;
     const int MAX_DATA_PER_FRAME = MAX_FRAME_SIZE - HEADER_SIZE;
-    int totalChunks = (bufferSize + MAX_DATA_PER_FRAME - 1) / MAX_DATA_PER_FRAME;
+    const uint16_t width  = (uint16_t)display->screenshotWidth();
+    const uint16_t height = (uint16_t)display->screenshotHeight();
+    const uint16_t totalChunks = (bufferSize + MAX_DATA_PER_FRAME - 1) / MAX_DATA_PER_FRAME;
 
-    for (int chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+    for (uint16_t chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
         int i = 0;
         out_frame[i++] = RESP_CODE_SCREENSHOT;
-        out_frame[i++] = (uint8_t)display->width();
-        out_frame[i++] = (uint8_t)display->height();
-        out_frame[i++] = (uint8_t)chunkIdx;
-        out_frame[i++] = (uint8_t)totalChunks;
+        out_frame[i++] = display->getDisplayType();
+        out_frame[i++] = display->screenshotRotation();
+        out_frame[i++] = width  & 0xFF; out_frame[i++] = width  >> 8;
+        out_frame[i++] = height & 0xFF; out_frame[i++] = height >> 8;
+        out_frame[i++] = chunkIdx    & 0xFF; out_frame[i++] = chunkIdx    >> 8;
+        out_frame[i++] = totalChunks & 0xFF; out_frame[i++] = totalChunks >> 8;
 
         int chunkSize = min(MAX_DATA_PER_FRAME, (int)bufferSize - chunkIdx * MAX_DATA_PER_FRAME);
         memcpy(&out_frame[i], buffer + chunkIdx * MAX_DATA_PER_FRAME, chunkSize);

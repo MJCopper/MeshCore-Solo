@@ -249,10 +249,17 @@ public:
   virtual void endFrame() = 0;
 
 #ifdef ENABLE_SCREENSHOT
-  // Screenshot support — virtual so we never reinterpret_cast the concrete
-  // display type (RTTI is disabled). Drivers that can dump their framebuffer
-  // override these; default returns nullptr/0 so the caller fails cleanly.
-  virtual const uint8_t* getBuffer()     { return nullptr; }
-  virtual uint16_t       getBufferSize() { return 0; }
+  // Screenshot support — return raw framebuffer and its size in bytes.
+  // 0=OLED (page-based, column-major), 1=e-ink (row-major, MSB-first, 1=white/0=black).
+  virtual const uint8_t* getBuffer() { return nullptr; }
+  virtual uint16_t getBufferSize() { return 0; }
+  virtual uint8_t getDisplayType() { return 0; }
+  // Visible pixel dimensions to embed in the screenshot header.
+  // Override in e-ink drivers to return the GxEPD2-reported dimensions (which use
+  // WIDTH_VISIBLE instead of the full physical WIDTH used by DisplayDriver).
+  // OLED drivers: width()/height() already reflect the visible canvas, so no override needed.
+  virtual int screenshotWidth()    { return width(); }
+  virtual int screenshotHeight()   { return height(); }
+  virtual uint8_t screenshotRotation() { return 0; }   // 0-3, GxEPD2/GFX rotation value
 #endif
 };
