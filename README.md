@@ -1,13 +1,15 @@
-# Plus firmware for Seeed Wio Tracker L1
+# Plus for Seeed Wio Tracker L1 - community firmware
 
-This branch extends the official MeshCore companion radio firmware for the **Seeed Wio Tracker L1**.
+This branch extends the official MeshCore companion radio firmware for the **Seeed Wio Tracker L1**. Provides support for both the original OLED and the e-ink variant, with additional features and UI enhancements.
 
 Join the discussion on the offical MeshCore discord: https://discord.gg/sdhYArU2jr
 
 <img src="./img/radios.jpeg">
 
-[E-ink case](https://www.printables.com/model/1420534-seeed-wio-tracker-l1-e-ink-enclosure)
-[Oled case](https://www.printables.com/model/1380791-meshpack-seeed-l1-oled)
+**Enclosures**
+
+- [E-ink case](https://www.printables.com/model/1420534-seeed-wio-tracker-l1-e-ink-enclosure)
+- [Oled case](https://www.printables.com/model/1380791-meshpack-seeed-l1-oled)
 
 <!-- ### E-ink Display
 
@@ -22,7 +24,9 @@ The e-ink variant targets the Wio Tracker L1 fitted with a 2.13″ GxEPD2 panel 
 
 ## Feature highlights
 
-- Extended language support with native Unicode rendering and input (Lemon font) alongside the original ASCII mode (Default font with transliteration)
+- Extended language support with native Unicode rendering and input [Lemon font](https://github.com/cmvnd/fonts) alongside the original ASCII mode (Default font with transliteration)
+
+- Enabled sensor screens with support for all onboard sensors (temperature, humidity, pressure, luminosity, CO₂) and GPS data
 
 - [Messages Screen](./docs/plus_features/message_screen.md) — view and send messages, open message details, reply with quick messages or custom text, per-channel notification and melody overrides
 
@@ -47,6 +51,16 @@ Two firmware builds are published with each release:
 
 Both variants are built from a single codebase and share the same feature set. The `dual` in the filename means a single binary supports both BLE and USB serial — there are no separate BLE/USB builds.
 
+>[!IMPORTANT]
+> BLE connections has priority over USB serial. When a BLE connection is active, the USB protocol is suspended. When connecting to the companion app via USB, ensure to disconnect from BLE first or disable BLE directly from the device to avoid confusion.
+
+### Flashing
+1. Download the appropriate `.uf2` file for your display variant from the [releases page](https://github.com/MarekZegare4/MeshCore/releases)
+2. Press reset twice quickly to enter bootloader mode (solid amber LED) - the device should appear as a mass storage drive on your computer
+3. Copy the `.uf2` file to the drive to flash the firmware
+
+Updating to newer firmware versions usually does not require erasing flash unless the release notes explicitly state otherwise. To retain your settings and data, avoid performing a factory reset after flashing unless you need to start fresh or encounter problems.
+
 >[!WARNING]
 >When migrating from official/custom firmware, backup your data and **perform factory reset** to prevent conflicts with existing settings and data:
 >1. Open device settings in the companion app and download data backup
@@ -65,6 +79,9 @@ This fork tracks the upstream [MeshCore](https://github.com/ripplebiz/MeshCore) 
 ```sh
 git config merge.ours.driver true
 ```
+
+### Contributing
+Contributions are welcome! Fork the repository, make your changes, and submit a pull request. Please ensure your code adheres to the existing style and includes comments where necessary.
 
 #### Display Screenshot Tool
 
