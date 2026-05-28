@@ -119,6 +119,43 @@ static const int QUICK_MSGS_MAX = 10;
 #include "TrailScreen.h"
 #include "ToolsScreen.h"
 
+#ifndef BATT_MIN_MILLIVOLTS
+  #define BATT_MIN_MILLIVOLTS 3200
+#endif
+
+// LiPo discharge curve: voltage (mV) → raw capacity (%). Shared by the top-bar
+// battery indicator and the dashboard Batt% field so both report the same
+// number for the same voltage. low_mv (typically NodePrefs.low_batt_mv, the
+// user-configurable auto-shutdown threshold in Settings) is rescaled to 0%
+// so the bar empties at the cutoff the user actually cares about.
+static int battMvToPercent(int mv, int low_mv) {
+  static const struct { uint16_t mv; uint8_t pct; } CURVE[] = {
+    {3200,  0}, {3300,  3}, {3400,  8}, {3500, 15},
+    {3600, 25}, {3650, 33}, {3700, 45}, {3750, 58},
+    {3800, 68}, {3900, 77}, {4000, 86}, {4100, 93}, {4200, 100}
+  };
+  static const int CURVE_LEN = sizeof(CURVE) / sizeof(CURVE[0]);
+  auto curveAt = [&](int v) -> int {
+    if (v <= (int)CURVE[0].mv) return CURVE[0].pct;
+    if (v >= (int)CURVE[CURVE_LEN-1].mv) return CURVE[CURVE_LEN-1].pct;
+    for (int i = 1; i < CURVE_LEN; i++) {
+      if (v <= (int)CURVE[i].mv) {
+        int span_mv  = CURVE[i].mv  - CURVE[i-1].mv;
+        int span_pct = CURVE[i].pct - CURVE[i-1].pct;
+        return CURVE[i-1].pct + (v - (int)CURVE[i-1].mv) * span_pct / span_mv;
+      }
+    }
+    return 100;
+  };
+  if (low_mv <= 0) low_mv = BATT_MIN_MILLIVOLTS;
+  int raw_pct = curveAt(mv);
+  int low_pct = curveAt(low_mv);
+  int pct = (low_pct >= 100) ? 0 : (raw_pct - low_pct) * 100 / (100 - low_pct);
+  if (pct < 0)   pct = 0;
+  if (pct > 100) pct = 100;
+  return pct;
+}
+
 // ── HomeScreen ────────────────────────────────────────────────────────────────
 class HomeScreen : public UIScreen {
   enum HomePage {
@@ -288,39 +325,8 @@ class HomeScreen : public UIScreen {
   }
 
   int renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts) {
-#ifndef BATT_MIN_MILLIVOLTS
-  #define BATT_MIN_MILLIVOLTS 3200
-#endif
-    // LiPo discharge curve: voltage (mV) → raw capacity (%)
-    static const struct { uint16_t mv; uint8_t pct; } CURVE[] = {
-      {3200,  0}, {3300,  3}, {3400,  8}, {3500, 15},
-      {3600, 25}, {3650, 33}, {3700, 45}, {3750, 58},
-      {3800, 68}, {3900, 77}, {4000, 86}, {4100, 93}, {4200, 100}
-    };
-    static const int CURVE_LEN = sizeof(CURVE) / sizeof(CURVE[0]);
-
-    auto curveAt = [&](int mv) -> int {
-      if (mv <= (int)CURVE[0].mv) return CURVE[0].pct;
-      if (mv >= (int)CURVE[CURVE_LEN-1].mv) return CURVE[CURVE_LEN-1].pct;
-      for (int i = 1; i < CURVE_LEN; i++) {
-        if (mv <= (int)CURVE[i].mv) {
-          int span_mv  = CURVE[i].mv  - CURVE[i-1].mv;
-          int span_pct = CURVE[i].pct - CURVE[i-1].pct;
-          return CURVE[i-1].pct + (mv - (int)CURVE[i-1].mv) * span_pct / span_mv;
-        }
-      }
-      return 100;
-    };
-
-    int low_mv = (_node_prefs && _node_prefs->low_batt_mv > 0)
-                   ? (int)_node_prefs->low_batt_mv : BATT_MIN_MILLIVOLTS;
-    int raw_pct = curveAt((int)batteryMilliVolts);
-    int low_pct = curveAt(low_mv);
-    // rescale so low_mv = 0% and 4200mV = 100%
-    int pct = (low_pct >= 100) ? 0
-              : (raw_pct - low_pct) * 100 / (100 - low_pct);
-    if (pct < 0)   pct = 0;
-    if (pct > 100) pct = 100;
+    int low_mv = _node_prefs ? (int)_node_prefs->low_batt_mv : 0;
+    int pct = battMvToPercent((int)batteryMilliVolts, low_mv);
 
     uint8_t mode = (_node_prefs && _node_prefs->batt_display_mode < 3)
                      ? _node_prefs->batt_display_mode : 0;
@@ -557,21 +563,9 @@ public:
             } else if (field == DASH_BATT_PCT) {
               strcpy(label, "Batt");
               uint16_t mv = _task->getBattMilliVolts();
-              if (mv > 0) {
-                // Simple linear voltage to percentage calculation
-                #ifndef BATT_MIN_MILLIVOLTS
-                #define BATT_MIN_MILLIVOLTS 3000
-                #endif
-                #ifndef BATT_MAX_MILLIVOLTS
-                #define BATT_MAX_MILLIVOLTS 4200
-                #endif
-                int percent = ((mv - BATT_MIN_MILLIVOLTS) * 100) / (BATT_MAX_MILLIVOLTS - BATT_MIN_MILLIVOLTS);
-                if (percent < 0) percent = 0;
-                if (percent > 100) percent = 100;
-                snprintf(val, sizeof(val), "%d%%", percent);
-              } else {
-                strcpy(val, "--");
-              }
+              if (mv > 0) snprintf(val, sizeof(val), "%d%%",
+                                   battMvToPercent(mv, _node_prefs->low_batt_mv));
+              else        strcpy(val, "--");
             } else if (field == DASH_GPS) {
               strcpy(label, "GPS");
 #if ENV_INCLUDE_GPS == 1
@@ -1438,7 +1432,7 @@ bool UITask::isButtonPressed() const {
 }
 
 static void formatDashVal(uint8_t field, char* val, int val_len, uint16_t batt_mv,
-                          CayenneLPP* lpp = nullptr) {
+                          uint16_t low_batt_mv, CayenneLPP* lpp = nullptr) {
   val[0] = '\0';
   switch (field) {
     case DASH_NONE: return;
@@ -1447,20 +1441,8 @@ static void formatDashVal(uint8_t field, char* val, int val_len, uint16_t batt_m
       else              strcpy(val, "--");
       return;
     case DASH_BATT_PCT:
-      if (batt_mv > 0) {
-        #ifndef BATT_MIN_MILLIVOLTS
-        #define BATT_MIN_MILLIVOLTS 3000
-        #endif
-        #ifndef BATT_MAX_MILLIVOLTS
-        #define BATT_MAX_MILLIVOLTS 4200
-        #endif
-        int percent = ((batt_mv - BATT_MIN_MILLIVOLTS) * 100) / (BATT_MAX_MILLIVOLTS - BATT_MIN_MILLIVOLTS);
-        if (percent < 0) percent = 0;
-        if (percent > 100) percent = 100;
-        snprintf(val, val_len, "%d%%", percent);
-      } else {
-        strcpy(val, "--");
-      }
+      if (batt_mv > 0) snprintf(val, val_len, "%d%%", battMvToPercent(batt_mv, low_batt_mv));
+      else             strcpy(val, "--");
       return;
     case DASH_NODES:
       snprintf(val, val_len, "%d nodes", the_mesh.getNumContacts());
@@ -1704,8 +1686,8 @@ void UITask::loop() {
           if (isLPP(f0) || isLPP(f1)) {
             _dash_lpp.reset(); sensors.querySensors(0xFF, _dash_lpp); lpp_ptr = &_dash_lpp;
           }
-          formatDashVal(f0, v0, sizeof(v0), _batt_mv, lpp_ptr);
-          formatDashVal(f1, v1, sizeof(v1), _batt_mv, lpp_ptr);
+          formatDashVal(f0, v0, sizeof(v0), _batt_mv, _node_prefs->low_batt_mv, lpp_ptr);
+          formatDashVal(f1, v1, sizeof(v1), _batt_mv, _node_prefs->low_batt_mv, lpp_ptr);
           if (v0[0] || v1[0]) {
             int sv_y = date_y + lk_step;
             _display->setColor(DisplayDriver::LIGHT);
