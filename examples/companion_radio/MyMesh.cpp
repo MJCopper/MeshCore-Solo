@@ -2098,9 +2098,11 @@ void MyMesh::handleScreenshotRequest() {
 }
 
 void MyMesh::sendScreenshotResponse(DisplayDriver* display, const uint8_t* buffer, uint16_t bufferSize) {
-    // Frame format: RESP_CODE_SCREENSHOT, width, height, chunk_idx, total_chunks, display_type, [data]
+    // Frame format: RESP_CODE_SCREENSHOT, width, height, chunk_idx, total_chunks,
+    //               display_type, rotation, [data]
     // display_type: 0=OLED (page-based), 1=e-ink (row-major, MSB-first, 1=white/0=black)
-    const int HEADER_SIZE = 6;
+    // rotation: 0-3, Adafruit_GFX/GxEPD2 rotation value (only meaningful for e-ink)
+    const int HEADER_SIZE = 7;
     const int MAX_DATA_PER_FRAME = MAX_FRAME_SIZE - HEADER_SIZE;
     int totalChunks = (bufferSize + MAX_DATA_PER_FRAME - 1) / MAX_DATA_PER_FRAME;
 
@@ -2112,6 +2114,7 @@ void MyMesh::sendScreenshotResponse(DisplayDriver* display, const uint8_t* buffe
         out_frame[i++] = (uint8_t)chunkIdx;
         out_frame[i++] = (uint8_t)totalChunks;
         out_frame[i++] = display->getDisplayType();
+        out_frame[i++] = display->screenshotRotation();
 
         int chunkSize = min(MAX_DATA_PER_FRAME, (int)bufferSize - chunkIdx * MAX_DATA_PER_FRAME);
         memcpy(&out_frame[i], buffer + chunkIdx * MAX_DATA_PER_FRAME, chunkSize);

@@ -124,7 +124,7 @@ def receive_screenshot(ser, timeout=5):
         if frame is None:
             continue
 
-        if len(frame) < 6:
+        if len(frame) < 7:
             print(f"Error: Frame too short: {len(frame)} bytes")
             return None
 
@@ -136,12 +136,14 @@ def receive_screenshot(ser, timeout=5):
             chunk_idx    = frame[3]
             num_chunks   = frame[4]
             disp_type    = frame[5]
-            chunk_data   = frame[6:]
+            rotation     = frame[6]
+            chunk_data   = frame[7:]
 
             if chunk_idx == 0:
                 width         = w
                 height        = h
                 display_type  = disp_type
+                disp_rotation = rotation
                 total_chunks  = num_chunks
                 buffer_data   = bytearray()
                 received_chunks = 0
@@ -158,7 +160,7 @@ def receive_screenshot(ser, timeout=5):
             received_chunks += 1
 
             if received_chunks >= total_chunks:
-                return bytes(buffer_data), width, height, display_type
+                return bytes(buffer_data), width, height, display_type, disp_rotation
 
         elif resp_code == RESP_CODE_ERR:
             print("Error: Device returned error")
@@ -192,47 +194,60 @@ def oled_buffer_to_image(buffer, width, height):
     return image.convert("RGB")
 
 
-def eink_buffer_to_image(buffer, log_width, log_height):
-    """Decode GxEPD2 framebuffer for any panel/rotation.
+def eink_buffer_to_image(buffer, log_width, log_height, rotation):
+    """Decode GxEPD2 framebuffer for any panel and rotation (0-3).
 
-    The firmware sends GxEPD2's own width()/height() in the header (using WIDTH_VISIBLE,
-    not the full physical WIDTH).  Rotation is inferred from the aspect ratio:
-      portrait  (log_height > log_width)  → rotation 0: direct mapping
-      landscape (log_width  > log_height) → rotation 1: phys_x = WIDTH_VISIBLE-1-ly
-      square    (log_width == log_height) → assumed rotation 1
+    The firmware sends GxEPD2's own width()/height() in the header (uses WIDTH_VISIBLE,
+    not the full physical WIDTH) and the GxEPD2 rotation value.
 
-    Buffer layout (physical panel coordinates, rotation-independent):
-      row-major, stride bytes per row, MSB-first
+    Buffer layout (always in physical panel coordinates, rotation-independent):
+      row-major, stride = GxEPD2_Type::WIDTH / 8 bytes, MSB-first
       byte_idx = phys_x // 8 + phys_y * stride
       bit      = 7 - phys_x % 8
       1 = white (paper), 0 = black (ink)
 
-    Physical HEIGHT = max(log_width, log_height) for any rotation on a non-square panel.
+    Coordinate mapping from GxEPD2 drawPixel (WIDTH = WIDTH_VISIBLE from GFX init):
+      rot 0: phys_x = lx,           phys_y = ly
+      rot 1: phys_x = WIDTH-1-ly,   phys_y = lx          (WIDTH = log_height)
+      rot 2: phys_x = WIDTH-1-lx,   phys_y = HEIGHT-1-ly  (WIDTH = log_width, HEIGHT = log_height)
+      rot 3: phys_x = ly,           phys_y = HEIGHT-1-lx  (HEIGHT = log_width)
+
+    Physical HEIGHT (panel's longer dimension) = max(log_w, log_h) for any rotation.
     stride = buffer_size // HEIGHT  (no panel-specific constants needed).
     """
     if log_width == 0 or log_height == 0:
         return Image.new("RGB", (1, 1), (255, 255, 255))
 
-    # Physical panel HEIGHT is always the longer dimension.
+    # Physical HEIGHT is always the longer dimension (panel HEIGHT regardless of rotation).
     phys_height = max(log_width, log_height)
-    phys_stride = len(buffer) // phys_height    # bytes per physical row (e.g. 128/8 = 16)
+    phys_stride = len(buffer) // phys_height    # bytes per physical row (e.g. 16 for 128-wide panel)
+
+    # vis_w / vis_h are the GFX WIDTH / HEIGHT constants (from GxEPD2's Adafruit_GFX init).
+    # For odd rotations GFX swaps them, so we reverse-swap to get the physical sizes.
+    if rotation & 1:            # odd: GFX was initialized (WIDTH_VIS, HEIGHT) but swapped
+        vis_w = log_height      # = GFX WIDTH  = WIDTH_VISIBLE (e.g. 122)
+        vis_h = log_width       # = GFX HEIGHT = physical HEIGHT (e.g. 250)
+    else:                       # even: no swap
+        vis_w = log_width       # = GFX WIDTH  = WIDTH_VISIBLE
+        vis_h = log_height      # = GFX HEIGHT = physical HEIGHT
 
     image  = Image.new("RGB", (log_width, log_height), (255, 255, 255))
     pixels = image.load()
 
-    portrait = log_height > log_width           # rotation=0 vs rotation=1
-
     for ly in range(log_height):
         for lx in range(log_width):
-            if portrait:
-                # rotation=0: logical (lx,ly) maps directly to physical (lx,ly)
+            if rotation == 0:
                 phys_x = lx
                 phys_y = ly
-            else:
-                # rotation=1: logical (lx,ly) → physical (WIDTH_VISIBLE-1-ly, lx)
-                # WIDTH_VISIBLE = log_height (from screenshotHeight() in firmware)
-                phys_x = log_height - 1 - ly
+            elif rotation == 1:
+                phys_x = vis_w - 1 - ly   # = log_height - 1 - ly
                 phys_y = lx
+            elif rotation == 2:
+                phys_x = vis_w - 1 - lx   # = log_width  - 1 - lx
+                phys_y = vis_h - 1 - ly   # = log_height - 1 - ly
+            else:                          # rotation == 3
+                phys_x = ly
+                phys_y = vis_h - 1 - lx   # = log_width  - 1 - lx
 
             byte_idx = phys_x // 8 + phys_y * phys_stride
             bit      = 7 - phys_x % 8
@@ -244,10 +259,10 @@ def eink_buffer_to_image(buffer, log_width, log_height):
     return image
 
 
-def buffer_to_image(buffer, width, height, display_type, scale=1):
+def buffer_to_image(buffer, width, height, display_type, rotation=0, scale=1):
     """Convert framebuffer to PIL Image with a 3-pixel black frame."""
     if display_type == DISPLAY_TYPE_EINK:
-        image_rgb = eink_buffer_to_image(buffer, width, height)
+        image_rgb = eink_buffer_to_image(buffer, width, height, rotation)
     else:
         image_rgb = oled_buffer_to_image(buffer, width, height)
 
@@ -322,15 +337,16 @@ def main():
 
                 result = receive_screenshot(ser)
                 if result:
-                    buffer_data, width, height, display_type = result
+                    buffer_data, width, height, display_type, disp_rotation = result
                     type_str = "e-ink" if display_type == DISPLAY_TYPE_EINK else "OLED"
                     print(
-                        f"Received framebuffer: {width}x{height} {type_str}, {len(buffer_data)} bytes"
+                        f"Received framebuffer: {width}x{height} {type_str} rot={disp_rotation}, {len(buffer_data)} bytes"
                     )
 
                     try:
                         image = buffer_to_image(
-                            buffer_data, width, height, display_type, scale=args.scale
+                            buffer_data, width, height, display_type,
+                            rotation=disp_rotation, scale=args.scale
                         )
                         filename = generate_filename()
                         image.save(filename)

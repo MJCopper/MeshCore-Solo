@@ -258,7 +258,8 @@ public:
   // Override in e-ink drivers to return the GxEPD2-reported dimensions (which use
   // WIDTH_VISIBLE instead of the full physical WIDTH used by DisplayDriver).
   // OLED drivers: width()/height() already reflect the visible canvas, so no override needed.
-  virtual int screenshotWidth()  { return width(); }
-  virtual int screenshotHeight() { return height(); }
+  virtual int screenshotWidth()    { return width(); }
+  virtual int screenshotHeight()   { return height(); }
+  virtual uint8_t screenshotRotation() { return 0; }   // 0-3, GxEPD2/GFX rotation value
 #endif
 };
