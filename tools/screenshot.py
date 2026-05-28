@@ -260,26 +260,19 @@ def eink_buffer_to_image(buffer, log_width, log_height, rotation):
 
 
 def buffer_to_image(buffer, width, height, display_type, rotation=0, scale=1):
-    """Convert framebuffer to PIL Image with a 3-pixel black frame."""
+    """Convert framebuffer to PIL Image, optionally upscaled."""
     if display_type == DISPLAY_TYPE_EINK:
         image_rgb = eink_buffer_to_image(buffer, width, height, rotation)
     else:
         image_rgb = oled_buffer_to_image(buffer, width, height)
 
-    # Add 3-pixel black frame
-    FRAME_WIDTH = 3
-    fw = image_rgb.width  + FRAME_WIDTH * 2
-    fh = image_rgb.height + FRAME_WIDTH * 2
-    final_image = Image.new("RGB", (fw, fh), (0, 0, 0))
-    final_image.paste(image_rgb, (FRAME_WIDTH, FRAME_WIDTH))
-
     if scale > 1:
-        final_image = final_image.resize(
-            (final_image.width * scale, final_image.height * scale),
+        image_rgb = image_rgb.resize(
+            (image_rgb.width * scale, image_rgb.height * scale),
             Image.Resampling.NEAREST,
         )
 
-    return final_image
+    return image_rgb
 
 
 def generate_filename():
