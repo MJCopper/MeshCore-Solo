@@ -229,10 +229,10 @@ private:
       _act_map[_act_count++] = ACT_LOAD;          _action_menu.addItem("Load trail");
     }
     if (!_store->empty()) {
-      _act_map[_act_count++] = ACT_EXPORT;        _action_menu.addItem("Export GPX");
+      _act_map[_act_count++] = ACT_EXPORT;        _action_menu.addItem("Export GPX (live)");
     }
     if (saved) {
-      _act_map[_act_count++] = ACT_EXPORT_SAVED;  _action_menu.addItem("Export saved");
+      _act_map[_act_count++] = ACT_EXPORT_SAVED;  _action_menu.addItem("Export GPX (saved)");
     }
     if (!_store->empty()) {
       _act_map[_act_count++] = ACT_RESET;         _action_menu.addItem("Reset trail");
