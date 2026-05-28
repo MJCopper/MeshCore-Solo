@@ -7,8 +7,6 @@
 
 #ifdef DISPLAY_CLASS
 #include "helpers/ui/DisplayDriver.h"
-#include "helpers/ui/SH1106Display.h"
-#include "helpers/ui/SSD1306Display.h"
 #include "UITask.h"
 #endif
 
@@ -2083,29 +2081,13 @@ void MyMesh::handleScreenshotRequest() {
         writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
         return;
     }
-    
-    uint8_t* buffer = nullptr;
-    int bufferSize = 0;
-    
-    // Try SH1106Display first (used by Wio L1)
-    // Use C-style cast since RTTI is disabled (-fno-rtti)
-    SH1106Display* sh1106 = (SH1106Display*)display;
-    if (sh1106) {
-        buffer = sh1106->getBuffer();
-        bufferSize = (display->width() * display->height()) / 8;
-    } else {
-        // Fallback: try SSD1306Display
-        SSD1306Display* ssd1306 = (SSD1306Display*)display;
-        if (ssd1306) {
-            buffer = ssd1306->getBuffer();
-            bufferSize = (display->width() * display->height()) / 8;
-        }
-    }
-    
+
+    const uint8_t* buffer = display->getBuffer();
+    uint16_t bufferSize   = display->getBufferSize();
+
     if (buffer && bufferSize > 0) {
         sendScreenshotResponse(display, buffer, bufferSize);
     } else {
-        // No supported display type
         writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
     }
     #else
@@ -2113,26 +2095,28 @@ void MyMesh::handleScreenshotRequest() {
     #endif
 }
 
-void MyMesh::sendScreenshotResponse(DisplayDriver* display, uint8_t* buffer, int bufferSize) {
-    // MAX_FRAME_SIZE is 172 bytes, but we need to send 1026 bytes (3 header + 1024 buffer)
-    // We need to split into multiple frames
-    // Frame format: RESP_CODE_SCREENSHOT, width, height, chunk_index, total_chunks, [chunk_data...]
-    
-    const int MAX_DATA_PER_FRAME = MAX_FRAME_SIZE - 5; // 5 bytes header
+void MyMesh::sendScreenshotResponse(DisplayDriver* display, const uint8_t* buffer, uint16_t bufferSize) {
+    // Frame format (5-byte header): RESP_CODE_SCREENSHOT, width, height,
+    //                                chunk_idx, total_chunks, [chunk_data...]
+    // width/height fit in uint8_t for all displays this firmware targets
+    // (SH1106 128×64, SSD1306 128×64); the framebuffer is page-based 1bpp
+    // column-major, byte_idx = page*width + col.
+    const int HEADER_SIZE = 5;
+    const int MAX_DATA_PER_FRAME = MAX_FRAME_SIZE - HEADER_SIZE;
     int totalChunks = (bufferSize + MAX_DATA_PER_FRAME - 1) / MAX_DATA_PER_FRAME;
-    
+
     for (int chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
         int i = 0;
         out_frame[i++] = RESP_CODE_SCREENSHOT;
-        out_frame[i++] = display->width();
-        out_frame[i++] = display->height();
-        out_frame[i++] = chunkIdx;
-        out_frame[i++] = totalChunks;
-        
-        int chunkSize = min(MAX_DATA_PER_FRAME, bufferSize - chunkIdx * MAX_DATA_PER_FRAME);
+        out_frame[i++] = (uint8_t)display->width();
+        out_frame[i++] = (uint8_t)display->height();
+        out_frame[i++] = (uint8_t)chunkIdx;
+        out_frame[i++] = (uint8_t)totalChunks;
+
+        int chunkSize = min(MAX_DATA_PER_FRAME, (int)bufferSize - chunkIdx * MAX_DATA_PER_FRAME);
         memcpy(&out_frame[i], buffer + chunkIdx * MAX_DATA_PER_FRAME, chunkSize);
         i += chunkSize;
-        
+
         _serial->writeFrame(out_frame, i);
     }
 }

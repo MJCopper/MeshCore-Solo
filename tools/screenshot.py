@@ -113,54 +113,55 @@ def receive_screenshot(ser, timeout=5):
         frame = read_frame(ser)
         if frame is None:
             continue
-
-        if len(frame) < 5:
-            print(f"Error: Frame too short: {len(frame)} bytes")
-            return None
+        if len(frame) < 1:
+            continue
 
         resp_code = frame[0]
 
-        if resp_code == RESP_CODE_SCREENSHOT:
-            w = frame[1]
-            h = frame[2]
-            chunk_idx = frame[3]
-            num_chunks = frame[4]
-            chunk_data = frame[5:]
-
-            if chunk_idx == 0:
-                width = w
-                height = h
-                total_chunks = num_chunks
-                buffer_data = bytearray()
-                received_chunks = 0
-
-            if width is None or width != w or height != h:
-                print(f"Error: Inconsistent dimensions in chunk {chunk_idx}")
-                return None
-
-            if total_chunks is None or total_chunks != num_chunks:
-                print(f"Error: Inconsistent chunk count in chunk {chunk_idx}")
-                return None
-
-            buffer_data.extend(chunk_data)
-            received_chunks += 1
-
-            if received_chunks >= total_chunks:
-                expected_size = (width * height) // 8
-                if len(buffer_data) == expected_size:
-                    return bytes(buffer_data), width, height
-                else:
-                    print(
-                        f"Error: Expected {expected_size} bytes, got {len(buffer_data)}"
-                    )
-                    return None
-
-        elif resp_code == RESP_CODE_ERR:
-            print("Error: Device returned error")
+        if resp_code == RESP_CODE_ERR:
+            err = frame[1] if len(frame) > 1 else 0xFF
+            print(f"Error: Device returned error code 0x{err:02x}")
             return None
 
-        else:
+        if resp_code != RESP_CODE_SCREENSHOT:
             continue
+
+        if len(frame) < 5:
+            print(f"Error: Screenshot frame too short: {len(frame)} bytes (need >= 5)")
+            return None
+
+        w = frame[1]
+        h = frame[2]
+        chunk_idx = frame[3]
+        num_chunks = frame[4]
+        chunk_data = frame[5:]
+
+        if chunk_idx == 0:
+            width = w
+            height = h
+            total_chunks = num_chunks
+            buffer_data = bytearray()
+            received_chunks = 0
+
+        if width is None:
+            print(f"Error: Missed chunk 0 (first chunk seen: {chunk_idx})")
+            return None
+        if width != w or height != h:
+            print(f"Error: Inconsistent dimensions in chunk {chunk_idx}")
+            return None
+        if total_chunks != num_chunks:
+            print(f"Error: Inconsistent chunk count in chunk {chunk_idx}")
+            return None
+
+        buffer_data.extend(chunk_data)
+        received_chunks += 1
+
+        if received_chunks >= total_chunks:
+            expected_size = (width * height) // 8
+            if len(buffer_data) != expected_size:
+                print(f"Error: Expected {expected_size} bytes, got {len(buffer_data)}")
+                return None
+            return bytes(buffer_data), width, height
 
     print(
         f"Error: Timeout waiting for screenshot (received {received_chunks}/{total_chunks or '?'} chunks)"

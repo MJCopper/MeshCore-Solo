@@ -47,7 +47,7 @@ public:
   void endFrame() override;
   
 #ifdef ENABLE_SCREENSHOT
-  // Screenshot support
-  uint8_t* getBuffer() { return display.getBuffer(); }
+  const uint8_t* getBuffer()     override { return display.getBuffer(); }
+  uint16_t       getBufferSize() override { return (uint16_t)((width() * height()) / 8); }
 #endif
 };

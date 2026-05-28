@@ -229,7 +229,7 @@ private:
   bool isValidClientRepeatFreq(uint32_t f) const;
 #ifdef ENABLE_SCREENSHOT
   void handleScreenshotRequest();
-  void sendScreenshotResponse(DisplayDriver* display, uint8_t* buffer, int bufferSize);
+  void sendScreenshotResponse(DisplayDriver* display, const uint8_t* buffer, uint16_t bufferSize);
 #endif
 
   UITask* getUITask() { return (UITask*)_ui; }

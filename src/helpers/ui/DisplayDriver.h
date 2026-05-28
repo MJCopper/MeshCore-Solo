@@ -247,4 +247,12 @@ public:
   virtual void setDisplayRotation(uint8_t rot) { }  // 0-3, no-op for fixed-orientation displays
   virtual void setFullRefreshInterval(uint8_t n) { }  // e-ink: do full refresh every n partial refreshes (0=never)
   virtual void endFrame() = 0;
+
+#ifdef ENABLE_SCREENSHOT
+  // Screenshot support — virtual so we never reinterpret_cast the concrete
+  // display type (RTTI is disabled). Drivers that can dump their framebuffer
+  // override these; default returns nullptr/0 so the caller fails cleanly.
+  virtual const uint8_t* getBuffer()     { return nullptr; }
+  virtual uint16_t       getBufferSize() { return 0; }
+#endif
 };
