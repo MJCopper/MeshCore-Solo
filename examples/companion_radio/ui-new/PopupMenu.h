@@ -35,11 +35,12 @@ struct PopupMenu {
   }
 
   int render(DisplayDriver& display) {
-    // On tall displays (portrait e-ink) show as many items as fit;
-    // on small displays fall back to the caller-specified _visible cap.
+    // Hard ceiling: never show more items than physically fit on screen.
+    // On tall displays (portrait e-ink) this expands beyond _visible;
+    // on small displays (OLED 64px) it clamps below _visible.
     int max_by_height = (display.height() - PM_BY - 12) / PM_ITEM_H;
     if (max_by_height < 1) max_by_height = 1;
-    _cap = (max_by_height > _visible) ? max_by_height : _visible;
+    _cap = max_by_height;
     int vis = (_count < _cap) ? _count : _cap;
     int bh  = 12 + vis * PM_ITEM_H;
 

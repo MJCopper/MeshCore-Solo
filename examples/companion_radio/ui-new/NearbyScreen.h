@@ -516,21 +516,16 @@ public:
     // ── context menu ─────────────────────────────────────────────────────────
     if (_ctx_menu.active) {
       auto res = _ctx_menu.handleInput(c);
-      if (res == PopupMenu::SELECTED) {
-        if (_ctx_menu.selectedIndex() == 0)
-          enterDiscoverMode();
-        else
-          _task->gotoToolsScreen();
-      }
+      if (res == PopupMenu::SELECTED)
+        enterDiscoverMode();
       return true;
     }
 
     // ── list view ────────────────────────────────────────────────────────────
     if (c == KEY_CANCEL) { _task->gotoToolsScreen(); return true; }
     if (c == KEY_CONTEXT_MENU) {
-      _ctx_menu.begin("Options", 2);
+      _ctx_menu.begin("Options", 1);
       _ctx_menu.addItem("Discover nearby");
-      _ctx_menu.addItem("Back");
       return true;
     }
     if (c == KEY_UP && _sel > 0) {
