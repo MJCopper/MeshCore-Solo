@@ -1,11 +1,11 @@
 ## Messages Screen
-[Go back](../README.md)
+[Go back](../../../README.md)
 
 ### Overview
 
 | OLED | E-Ink |
 |:----:|:-----:|
-| ![](./mes_scr_1_oled.png) | |
+| ![](./mes_scr_1_oled.png) |![](./mes_scr_1_eink.png) |
 
 The Messages screen is split into three modes — **DMs**, **Channels**, and **Rooms** — selectable with UP/DOWN on the mode-select screen. Each mode shows the corresponding list of conversations with unread counters.
 
@@ -15,7 +15,7 @@ The Messages screen is split into three modes — **DMs**, **Channels**, and **R
 
 | OLED | E-Ink |
 |:----:|:-----:|
-| ![](./mes_scr_2_oled.png) | |
+| ![](./mes_scr_2_oled.png) |![](./mes_scr_2_eink.png) |
 
 Press **Enter** on a contact or channel to open its history, then press **Enter** again (or select an empty send row) to compose a message. Choose between:
 
@@ -43,7 +43,7 @@ Sensor placeholders appear automatically in the placeholder picker when the corr
 
 | OLED | E-Ink |
 |:----:|:-----:|
-| ![](./mes_scr_3_oled.png) | |
+| ![](./mes_scr_3_oled.png) |![](./mes_scr_3_eink.png)|
 
 Each entry in the history list shows the sender name and a compact age indicator (`3m`, `2h`, `>1d`) in the top-right corner.
 
@@ -55,14 +55,14 @@ Each entry in the history list shows the sender name and a compact age indicator
 
 | OLED | E-Ink |
 |:----:|:-----:|
-| ![](./mes_scr_4_oled.png) | |
+| ![](./mes_scr_4_oled.png) |![](./mes_scr_4_eink.png) |
 
 Navigate between messages with **LEFT** (newer) and **RIGHT** (older). Long messages scroll with **UP/DOWN**.
 
 If the message is a reply addressed to someone (`@[nick]`), a **To: nick** bar is shown below the sender name and the body is displayed without the address prefix.
 | OLED | E-Ink |
 |:----:|:-----:|
-| ![](./mes_scr_5_oled.png) | |
+| ![](./mes_scr_5_oled.png) |![](./mes_scr_5_eink.png) |
 **Hold Enter** in fullscreen opens the Reply option.
 
 ---
@@ -74,7 +74,7 @@ If the message is a reply addressed to someone (`@[nick]`), a **To: nick** bar i
 **Hold Enter** on a contact entry opens a context menu:
 | OLED | E-Ink |
 |:----:|:-----:|
-| ![](./mes_scr_6_oled.png) | |
+| ![](./mes_scr_6_oled.png) | ![](./mes_scr_6_eink.png) |
 
 | Item | Action |
 |------|--------|
@@ -91,7 +91,7 @@ When **Pin to dial** is selected, a slot picker opens (Slot 1–6 showing curren
 
 | OLED | E-Ink |
 |:----:|:-----:|
-| ![](./mes_scr_7_oled.png) | |
+| ![](./mes_scr_7_oled.png) | ![](./mes_scr_7_eink.png) |
 
 **Hold Enter** on a channel entry opens a context menu:
 
