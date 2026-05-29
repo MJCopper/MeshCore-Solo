@@ -39,6 +39,7 @@ If a pinned contact has been removed from the contacts list, the tile shows `(go
 
 1. Contacts marked as favourites in the upstream app (starred contacts) — listed first
 2. Recent DM contacts — listed after
+3. All remaining chat contacts — fallback when the first two tiers are empty (e.g. fresh install before any DMs)
 
 Select a contact to pin it to that slot.
 

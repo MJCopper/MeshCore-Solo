@@ -40,7 +40,7 @@ Up to three data fields are shown below the date separator. Each field displays 
 | Humidity    | Hum   | % from onboard sensor                                                     |
 | Pressure    | Pres  | hPa from onboard sensor                                                   |
 | GPS         | GPS   | `lat lon` decimal degrees, or `no fix`                                    |
-| Altitude    | Alt   | metres from GPS                                                           |
+| Altitude    | Alt   | metres from onboard sensor (GPS or barometric)                            |
 | Luminosity  | Lux   | lux from onboard sensor                                                   |
 | CO₂         | CO2   | ppm from onboard sensor                                                   |
 | Contacts    | Nodes | Total contacts in the mesh                                                |

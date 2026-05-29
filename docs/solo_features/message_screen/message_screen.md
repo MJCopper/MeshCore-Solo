@@ -61,9 +61,11 @@ Each entry in the history list shows the sender name and a compact age indicator
 Navigate between messages with **LEFT** (newer) and **RIGHT** (older). Long messages scroll with **UP/DOWN**.
 
 If the message is a reply addressed to someone (`@[nick]`), a **To: nick** bar is shown below the sender name and the body is displayed without the address prefix.
-| OLED | E-Ink |
-|:----:|:-----:|
-| ![](./mes_scr_5_oled.png) |![](./mes_scr_5_eink.png) |
+
+|           OLED            |           E-Ink           |
+| :-----------------------: | :-----------------------: |
+| ![](./mes_scr_5_oled.png) | ![](./mes_scr_5_eink.png) |
+
 **Hold Enter** in fullscreen opens the Reply option.
 
 ---
@@ -71,8 +73,9 @@ If the message is a reply addressed to someone (`@[nick]`), a **To: nick** bar i
 ### Context menu — contact list
 
 **Hold Enter** on a contact entry opens a context menu:
-| OLED | E-Ink |
-|:----:|:-----:|
+
+|           OLED            |           E-Ink           |
+| :-----------------------: | :-----------------------: |
 | ![](./mes_scr_6_oled.png) | ![](./mes_scr_6_eink.png) |
 
 | Item                         | Action                                                                         |
