@@ -1,10 +1,11 @@
 ## Favourites Dial
+
 [Go back](../../../README.md)
 
 ### Overview
 
-| OLED | E-Ink |
-|:----:|:-----:|
+|            OLED            |           E-Ink            |
+| :------------------------: | :------------------------: |
 | ![](./fav_dial_1_oled.png) | ![](./fav_dial_1_eink.png) |
 
 A dedicated home page showing a grid of up to 6 pinned contacts for quick access. The layout adapts to the display orientation:
@@ -26,10 +27,6 @@ Navigate tiles with **UP / DOWN / LEFT / RIGHT**. Pressing a directional key at 
 
 ### Unread badge
 
-| OLED | E-Ink |
-|:----:|:-----:|
-| ![](./fav_dial_2_oled.png) | ![](./fav_dial_2_eink.png) |
-
 Filled tiles show an unread message count in the top-right corner when there are unread DMs from that contact. The contact name is ellipsized to make room for the badge.
 
 If a pinned contact has been removed from the contacts list, the tile shows `(gone)` until the slot is reassigned.
@@ -39,6 +36,7 @@ If a pinned contact has been removed from the contacts list, the tile shows `(go
 ### Pinning a contact
 
 **From the Favourites Dial** — press **Enter** on an empty tile (`+`). A picker opens showing:
+
 1. Contacts marked as favourites in the upstream app (starred contacts) — listed first
 2. Recent DM contacts — listed after
 

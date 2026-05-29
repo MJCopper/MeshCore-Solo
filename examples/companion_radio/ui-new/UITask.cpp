@@ -78,7 +78,7 @@ public:
     display.setTextSize(1);
     display.drawTextCentered(display.width()/2, date_y, FIRMWARE_BUILD_DATE);
 
-#ifdef FIRMWARE_PLUS_BUILD
+#ifdef FIRMWARE_SOLO_BUILD
     int plus_y = date_y + step;
     display.fillRect(0, plus_y - 1, display.width(), lh + 2);
     display.setColor(DisplayDriver::DARK);

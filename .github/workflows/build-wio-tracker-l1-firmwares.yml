@@ -24,10 +24,16 @@ jobs:
       - name: Setup Build Environment
         uses: ./.github/actions/setup-build-environment
 
+      - name: Extract Version from Git Tag
+        run: echo "GIT_TAG_VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+
       - name: Build Dual OLED Firmware
         env:
           FIRMWARE_VERSION: ${{ env.GIT_TAG_VERSION }}
         run: /usr/bin/env bash build.sh build-firmware WioTrackerL1_companion_dual
+
+      - name: Rename OLED firmware
+        run: mv out/*.uf2 "out/solo-${{ env.GIT_TAG_VERSION }}-oled.uf2" 2>/dev/null || true
 
       - name: Upload OLED Firmware
         uses: actions/upload-artifact@v4
@@ -45,10 +51,16 @@ jobs:
       - name: Setup Build Environment
         uses: ./.github/actions/setup-build-environment
 
+      - name: Extract Version from Git Tag
+        run: echo "GIT_TAG_VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+
       - name: Build Dual E-ink Firmware
         env:
           FIRMWARE_VERSION: ${{ env.GIT_TAG_VERSION }}
         run: /usr/bin/env bash build.sh build-firmware WioTrackerL1Eink_companion_dual
+
+      - name: Rename E-ink firmware
+        run: mv out/*.uf2 "out/solo-${{ env.GIT_TAG_VERSION }}-eink.uf2" 2>/dev/null || true
 
       - name: Upload E-ink Firmware
         uses: actions/upload-artifact@v4
@@ -80,7 +92,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Wio Tracker L1 Firmware ${{ env.GIT_TAG_VERSION }}
+          name: Solo ${{ env.GIT_TAG_VERSION }}
           body: ""
           draft: true
           files: out/*.uf2
