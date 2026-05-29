@@ -216,8 +216,23 @@ class HomeScreen : public UIScreen {
         }
       }
     }
+    // 3) Fallback: all remaining chat contacts not already in the list.
     if (_pin_count == 0) {
-      _task->showAlert("No fav contacts", 1000);
+      for (int idx = 0; _pin_count < PIN_PICKER_MAX; idx++) {
+        ContactInfo c;
+        if (!the_mesh.getContactByIdx(idx, c)) break;
+        if (c.type != ADV_TYPE_CHAT) continue;
+        bool dup = false;
+        for (int j = 0; j < _pin_count; j++)
+          if (memcmp(_pin_keys[j], c.id.pub_key, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) { dup = true; break; }
+        if (dup) continue;
+        memcpy(_pin_keys[_pin_count], c.id.pub_key, NodePrefs::FAVOURITE_PREFIX_LEN);
+        DisplayDriver::translateUTF8Static(_pin_labels[_pin_count], c.name, sizeof(_pin_labels[_pin_count]));
+        _pin_count++;
+      }
+    }
+    if (_pin_count == 0) {
+      _task->showAlert("No contacts", 1000);
       _pin_target_slot = -1;
       return;
     }
