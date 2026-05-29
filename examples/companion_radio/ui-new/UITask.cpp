@@ -1344,7 +1344,9 @@ void UITask::msgRead(int msgcount) {
   _msgcount = msgcount;
   if (msgcount == 0) {
     _room_unread = 0;
-    memset(_dm_unread_table, 0, sizeof(_dm_unread_table));
+    // Do NOT clear _dm_unread_table here — it tracks per-contact UI badges
+    // independently of the offline queue. Badges are cleared only when the
+    // user opens the DM (clearDMUnread) or explicitly marks all read.
     ((QuickMsgScreen*)quick_msg)->clearAllChannelUnread();
   }
 }
