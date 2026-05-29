@@ -518,6 +518,7 @@ void DataStore::loadChannels(DataStoreHost* host) {
     if (file) {
       bool full = false;
       uint8_t channel_idx = 0;
+      uint8_t skipped = 0;
       while (!full) {
         ChannelDetails ch;
         uint8_t unused[4];
@@ -528,6 +529,23 @@ void DataStore::loadChannels(DataStoreHost* host) {
 
         if (!success) break; // EOF
 
+        // Sanity check: an all-zero secret means the entry is uninitialised
+        // or the file format was corrupted by a previous firmware (different
+        // layout). Loading such a channel makes findChannelIdx() match the
+        // wrong slot for incoming messages — drop it. The companion app can
+        // re-sync the channel afterwards.
+        bool secret_empty = true;
+        for (int b = 0; b < 32; b++) {
+          if (ch.channel.secret[b] != 0) { secret_empty = false; break; }
+        }
+        if (secret_empty) {
+          skipped++;
+          continue;
+        }
+        // Defensive: ensure name is null-terminated so callers can treat it
+        // as a C string regardless of how the file was written.
+        ch.name[31] = '\0';
+
         if (host->onChannelLoaded(channel_idx, ch)) {
           channel_idx++;
         } else {
@@ -535,6 +553,10 @@ void DataStore::loadChannels(DataStoreHost* host) {
         }
       }
       file.close();
+      if (skipped > 0) {
+        MESH_DEBUG_PRINTLN("loadChannels: skipped %u corrupted/empty channel entr%s",
+                           (unsigned)skipped, skipped == 1 ? "y" : "ies");
+      }
     }
 }
 
