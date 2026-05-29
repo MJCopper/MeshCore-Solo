@@ -15,9 +15,9 @@ class UITask;
 #define FIRMWARE_BUILD_DATE "12 May 2026"
 #endif
 
-// Versioning: vX.Y = upstream base, plus.N = fork revision
+// Versioning: vX.Y = upstream base, solo.N = fork revision
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.15-plus.1"
+#define FIRMWARE_VERSION "v1.15-solo.1"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)

@@ -37,7 +37,7 @@ class SplashScreen : public UIScreen {
   UITask* _task;
   unsigned long dismiss_after;
   char _version_info[12];
-  char _plus_ver[12];
+  char _solo_ver[12];
 
 public:
   SplashScreen(UITask* task) : _task(task) {
@@ -45,13 +45,13 @@ public:
     strncpy(_version_info, MESHCORE_VERSION, sizeof(_version_info) - 1);
     _version_info[sizeof(_version_info) - 1] = '\0';
 
-    // Plus firmware version: strip commit hash suffix (v1.11-abcdef -> v1.11)
+    // Solo firmware version: strip commit hash suffix (v1.15-solo.1-abcdef -> v1.15)
     const char *ver = FIRMWARE_VERSION;
     const char *dash = strchr(ver, '-');
     int plen = dash ? (int)(dash - ver) : (int)strlen(ver);
-    if (plen >= (int)sizeof(_plus_ver)) plen = sizeof(_plus_ver) - 1;
-    memcpy(_plus_ver, ver, plen);
-    _plus_ver[plen] = '\0';
+    if (plen >= (int)sizeof(_solo_ver)) plen = sizeof(_solo_ver) - 1;
+    memcpy(_solo_ver, ver, plen);
+    _solo_ver[plen] = '\0';
 
     dismiss_after = millis() + BOOT_SCREEN_MILLIS;
   }
@@ -78,16 +78,16 @@ public:
     display.setTextSize(1);
     display.drawTextCentered(display.width()/2, date_y, FIRMWARE_BUILD_DATE);
 
-#ifdef FIRMWARE_PLUS_BUILD
-    int plus_y = date_y + step;
-    display.fillRect(0, plus_y - 1, display.width(), lh + 2);
+#ifdef FIRMWARE_SOLO_BUILD
+    int solo_y = date_y + step;
+    display.fillRect(0, solo_y - 1, display.width(), lh + 2);
     display.setColor(DisplayDriver::DARK);
-    char plus_label[24];
-    if (_plus_ver[0])
-      snprintf(plus_label, sizeof(plus_label), "Plus %s for Wio", _plus_ver);
+    char solo_label[24];
+    if (_solo_ver[0])
+      snprintf(solo_label, sizeof(solo_label), "Solo %s for Wio", _solo_ver);
     else
-      snprintf(plus_label, sizeof(plus_label), "Plus for Wio");
-    display.drawTextCentered(display.width()/2, plus_y, plus_label);
+      snprintf(solo_label, sizeof(solo_label), "Solo for Wio");
+    display.drawTextCentered(display.width()/2, solo_y, solo_label);
     display.setColor(DisplayDriver::LIGHT);
 #endif
 
@@ -216,8 +216,23 @@ class HomeScreen : public UIScreen {
         }
       }
     }
+    // 3) Fallback: all remaining chat contacts not already in the list.
     if (_pin_count == 0) {
-      _task->showAlert("No fav contacts", 1000);
+      for (int idx = 0; _pin_count < PIN_PICKER_MAX; idx++) {
+        ContactInfo c;
+        if (!the_mesh.getContactByIdx(idx, c)) break;
+        if (c.type != ADV_TYPE_CHAT) continue;
+        bool dup = false;
+        for (int j = 0; j < _pin_count; j++)
+          if (memcmp(_pin_keys[j], c.id.pub_key, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) { dup = true; break; }
+        if (dup) continue;
+        memcpy(_pin_keys[_pin_count], c.id.pub_key, NodePrefs::FAVOURITE_PREFIX_LEN);
+        DisplayDriver::translateUTF8Static(_pin_labels[_pin_count], c.name, sizeof(_pin_labels[_pin_count]));
+        _pin_count++;
+      }
+    }
+    if (_pin_count == 0) {
+      _task->showAlert("No contacts", 1000);
       _pin_target_slot = -1;
       return;
     }
