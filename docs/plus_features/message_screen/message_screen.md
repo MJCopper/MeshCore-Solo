@@ -27,7 +27,7 @@ The keyboard supports placeholders that insert live data at send time:
 | Placeholder | Value | Availability |
 |-------------|-------|--------------|
 | `{time}` | current time (HH:MM) | always |
-| `{loc}` | GPS coordinates | always (empty if no fix) |
+| `{loc}` | GPS coordinates | always ("no GPS" if no fix) |
 | `{temp}` | temperature | sensor connected |
 | `{hum}` | humidity | sensor connected |
 | `{pres}` | barometric pressure | sensor connected |
@@ -60,18 +60,21 @@ Each entry in the history list shows the sender name and a compact age indicator
 Navigate between messages with **LEFT** (newer) and **RIGHT** (older). Long messages scroll with **UP/DOWN**.
 
 If the message is a reply addressed to someone (`@[nick]`), a **To: nick** bar is shown below the sender name and the body is displayed without the address prefix.
-
+| OLED | E-Ink |
+|:----:|:-----:|
+| ![](./mes_scr_5_oled.png) | |
 **Hold Enter** in fullscreen opens the Reply option.
 
 ---
 
 ### Context menu — contact list
 
-| OLED | E-Ink |
-|:----:|:-----:|
-| ![](./mes_scr_5_oled.png) | |
+
 
 **Hold Enter** on a contact entry opens a context menu:
+| OLED | E-Ink |
+|:----:|:-----:|
+| ![](./mes_scr_6_oled.png) | |
 
 | Item | Action |
 |------|--------|
@@ -88,7 +91,7 @@ When **Pin to dial** is selected, a slot picker opens (Slot 1–6 showing curren
 
 | OLED | E-Ink |
 |:----:|:-----:|
-| ![](./mes_scr_6_oled.png) | |
+| ![](./mes_scr_7_oled.png) | |
 
 **Hold Enter** on a channel entry opens a context menu:
 
