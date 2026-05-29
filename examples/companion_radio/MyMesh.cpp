@@ -799,6 +799,79 @@ int MyMesh::getDiscoverResults(DiscoverResult dest[], int max_count) {
   return n;
 }
 
+// ── Ping/Trace functionality ─────────────────────────────────────────────────
+
+uint32_t MyMesh::sendPing(const uint8_t* dest_pubkey, uint8_t hash_width) {
+  if (hash_width == 0 || hash_width > 2) return 0;
+
+  // Generate random tag and auth code
+  uint32_t tag, auth;
+  getRNG()->random((uint8_t*)&tag, 4);
+  getRNG()->random((uint8_t*)&auth, 4);
+
+  // Find a free slot in ping results
+  int slot = -1;
+  for (int i = 0; i < PING_RESULT_MAX; i++) {
+    if (!_ping_results[i].received && _ping_results[i].tag == 0) {
+      slot = i;
+      break;
+    }
+  }
+  if (slot < 0) {
+    return 0;
+  }
+
+  // Initialize ping result tracking
+  PingResult& result = _ping_results[slot];
+  result.tag = tag;
+  result.auth_code = auth;
+  result.snr_out_x4 = 0;
+  result.snr_back_x4 = 0;
+  result.rtt_ms = 0;
+  result.received = false;
+  result.sent_ms = millis();
+
+  // Create path hash from destination public key
+  uint8_t path_len = hash_width;
+  uint8_t path[MAX_PATH_SIZE];
+  memcpy(path, dest_pubkey, path_len);
+
+  // Create and send trace packet
+  auto pkt = createTrace(tag, auth, hash_width - 1); // flags = hash_width - 1
+  if (pkt) {
+    sendDirect(pkt, path, path_len);
+    return tag;
+  }
+
+  // Failed to create packet
+  memset(&result, 0, sizeof(result));
+  return 0;
+}
+
+void MyMesh::setPingCallback(PingCallback cb, void* arg) {
+  _ping_callback = cb;
+  _ping_callback_arg = arg;
+}
+
+void MyMesh::clearPingResult(uint32_t tag) {
+  if (tag == 0) return;
+  for (int i = 0; i < PING_RESULT_MAX; i++) {
+    if (_ping_results[i].tag == tag) {
+      memset(&_ping_results[i], 0, sizeof(_ping_results[i]));
+      return;
+    }
+  }
+}
+
+MyMesh::PingResult* MyMesh::getPingResult(uint32_t tag) {
+  for (int i = 0; i < PING_RESULT_MAX; i++) {
+    if (_ping_results[i].tag == tag) {
+      return &_ping_results[i];
+    }
+  }
+  return NULL;
+}
+
 void MyMesh::onControlDataRecv(mesh::Packet *packet) {
   // If we have an active standalone discover, check if this is a matching response.
   // Tag matching provides isolation — no isBLEConnected check needed.
@@ -879,6 +952,49 @@ void MyMesh::onRawDataRecv(mesh::Packet *packet) {
 void MyMesh::onTraceRecv(mesh::Packet *packet, uint32_t tag, uint32_t auth_code, uint8_t flags,
                          const uint8_t *path_snrs, const uint8_t *path_hashes, uint8_t path_len) {
   uint8_t path_sz = flags & 0x03;  // NEW v1.11+
+  
+  // Check if this is a response to our local ping
+  for (int i = 0; i < PING_RESULT_MAX; i++) {
+    if (_ping_results[i].tag == tag && _ping_results[i].auth_code == auth_code && !_ping_results[i].received) {
+      PingResult& result = _ping_results[i];
+      
+      // Extract SNR values
+      // path_snrs contains signed SNR values in dB×4 for each hop (in order).
+      // The last value is the SNR at the destination hearing our request (snr_out).
+      // The final SNR from packet is the SNR at us hearing the response (snr_back).
+      uint8_t snr_count = path_len >> path_sz;
+      
+      if (snr_count > 0) {
+        // Keep the encoded quarter-dB value; the UI converts it back to dB.
+        result.snr_out_x4 = (int16_t)(int8_t)path_snrs[0];
+      } else {
+        result.snr_out_x4 = 0;
+      }
+      
+      // SNR back is from the final SNR in the packet (SNR at us receiving response).
+      result.snr_back_x4 = (int16_t)(packet->getSNR() * 4);
+      
+      // Calculate RTT
+      unsigned long now = millis();
+      if (now >= result.sent_ms) {
+        result.rtt_ms = now - result.sent_ms;
+      } else {
+        result.rtt_ms = 0xFFFFFFFF; // Overflow
+      }
+      
+      result.received = true;
+      
+      // Notify callback if set
+      if (_ping_callback) {
+        _ping_callback(tag, result.snr_out_x4, result.snr_back_x4, result.rtt_ms);
+      }
+      // The UI copies the result out of the callback, so reuse the slot immediately.
+      memset(&result, 0, sizeof(result));
+      break;
+    }
+  }
+
+  // Forward to serial app regardless (for compatibility)
   if (12 + path_len + (path_len >> path_sz) + 1 > sizeof(out_frame)) {
     MESH_DEBUG_PRINTLN("onTraceRecv(), path_len is too long: %d", (uint32_t)path_len);
     return;
@@ -937,6 +1053,11 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _discover_count = 0;
   _pending_node_discover_tag = 0;
   _pending_node_discover_until = 0;
+
+  // Ping state
+  _ping_callback = NULL;
+  _ping_callback_arg = NULL;
+  memset(_ping_results, 0, sizeof(_ping_results));
 
   // defaults
   memset(&_prefs, 0, sizeof(_prefs));
@@ -2070,7 +2191,7 @@ void MyMesh::handleCmdFrame(size_t len) {
 #ifdef ENABLE_SCREENSHOT
 void MyMesh::handleScreenshotRequest() {
     #ifdef DISPLAY_CLASS
-    UITask* ui_task = getUITask();
+    UITask* ui_task = static_cast<UITask*>(getUITask());
     if (!ui_task || !ui_task->hasDisplay()) {
         writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
         return;

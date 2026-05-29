@@ -80,6 +80,14 @@ class UITask : public AbstractUITask {
   TrailStore _trail;
   uint32_t _next_trail_sample_ms = 0;
 
+  // Ping state
+  bool _ping_active = false;
+  uint32_t _ping_tag = 0;
+  unsigned long _ping_sent_ms = 0;
+  int16_t _ping_snr_out_x4 = 0;
+  int16_t _ping_snr_back_x4 = 0;
+  uint32_t _ping_rtt_ms = 0;
+
   void userLedHandler();
 
   // Button action handlers
@@ -148,6 +156,17 @@ public:
   void clearAllDMUnread() { memset(_dm_unread_table, 0, sizeof(_dm_unread_table)); }
   bool hasDisplay() const { return _display != NULL; }
   DisplayDriver* getDisplay() const { return _display; }
+
+  // Ping helpers
+  bool startPing(const uint8_t* pub_key);
+  bool isPingActive() const { return _ping_active; }
+  void getPingResult(int16_t& snr_out_x4, int16_t& snr_back_x4, uint32_t& rtt_ms) const {
+    snr_out_x4 = _ping_snr_out_x4;
+    snr_back_x4 = _ping_snr_back_x4;
+    rtt_ms = _ping_rtt_ms;
+  }
+  void clearPing();
+  void handlePingResult(uint32_t tag, int16_t snr_out_x4, int16_t snr_back_x4, uint32_t rtt_ms);
 
   // Favourites dial helpers. Slot index 0..FAVOURITES_COUNT-1.
   int findFavouriteSlot(const uint8_t* pub_key) const {

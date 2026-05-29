@@ -1113,6 +1113,14 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   ui_started_at = millis();
   _alert_expiry = 0;
   _batt_mv = AbstractUITask::getBattMilliVolts();  // seed EMA with first reading
+  
+  // Initialize ping state
+  _ping_active = false;
+  _ping_tag = 0;
+  _ping_sent_ms = 0;
+  _ping_snr_out_x4 = 0;
+  _ping_snr_back_x4 = 0;
+  _ping_rtt_ms = 0;
 
   splash = new SplashScreen(this);
   home = new HomeScreen(this, &rtc_clock, sensors, node_prefs);
@@ -1169,6 +1177,58 @@ void UITask::gotoTrailScreen() {
 void UITask::gotoAutoAdvertScreen() {
   ((AutoAdvertScreen*)auto_advert_screen)->enter();
   setCurrScreen(auto_advert_screen);
+}
+
+// Public method to handle ping result callback
+void UITask::handlePingResult(uint32_t tag, int16_t snr_out_x4, int16_t snr_back_x4, uint32_t rtt_ms) {
+  if (_ping_active && _ping_tag == tag) {
+    _ping_snr_out_x4 = snr_out_x4;
+    _ping_snr_back_x4 = snr_back_x4;
+    _ping_rtt_ms = rtt_ms;
+    // Release the in-flight slot immediately; the UI keeps the result values.
+    clearPing();
+  }
+}
+
+// Static ping callback (for MyMesh)
+static void onPingResult(uint32_t tag, int16_t snr_out_x4, int16_t snr_back_x4, uint32_t rtt_ms) {
+  AbstractUITask* ui = the_mesh.getUITask();
+  if (ui) {
+    UITask* task = static_cast<UITask*>(ui);
+    task->handlePingResult(tag, snr_out_x4, snr_back_x4, rtt_ms);
+  }
+}
+
+void UITask::clearPing() {
+  if (_ping_tag != 0) {
+    the_mesh.clearPingResult(_ping_tag);
+  }
+  _ping_active = false;
+  _ping_tag = 0;
+}
+
+bool UITask::startPing(const uint8_t* pub_key) {
+  if (_ping_active || !pub_key) return false;
+  if (_node_prefs && _node_prefs->path_hash_mode > 1) {
+    showAlert("Ping not supported with 3-byte path hashes", 3000);
+    return false;
+  }
+
+  _ping_active = true;
+  _ping_tag = 0;
+  _ping_sent_ms = millis();
+  _ping_snr_out_x4 = 0;
+  _ping_snr_back_x4 = 0;
+  _ping_rtt_ms = 0;
+
+  // Always install the callback before sending so the response cannot race it.
+  the_mesh.setPingCallback(onPingResult, NULL);
+  _ping_tag = the_mesh.sendPing(pub_key, _node_prefs ? _node_prefs->path_hash_mode + 1 : 1);
+  if (_ping_tag == 0) {
+    clearPing();
+    return false;
+  }
+  return true;
 }
 
 void UITask::playMelody(const char* melody) {
@@ -1849,13 +1909,11 @@ char UITask::handleLongPress(char c) {
 }
 
 char UITask::handleDoubleClick(char c) {
-  MESH_DEBUG_PRINTLN("UITask: double click triggered");
   checkDisplayOn(c);
   return c;
 }
 
 char UITask::handleTripleClick(char c) {
-  MESH_DEBUG_PRINTLN("UITask: triple click triggered");
   checkDisplayOn(c);
   toggleBuzzer();
   return 0;

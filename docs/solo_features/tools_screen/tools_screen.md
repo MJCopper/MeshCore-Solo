@@ -31,7 +31,15 @@ Browse nodes that have recently advertised on the mesh. Filter by category with 
 
 Select a node to see its coordinates, distance, bearing with cardinal direction, type, and last-heard time.
 
-**Hold Enter** → context menu → **Discover nearby** to send a live `NODE_DISCOVER_REQ` ping.
+From the list view, **Hold Enter** opens the context menu, where **Discover nearby** sends a live `NODE_DISCOVER_REQ` scan.
+
+From either node detail view, **Hold Enter** opens the Ping popup:
+
+|           OLED            |
+| :-----------------------: |
+| ![](./tls_scr_2_ping_oled.png) |
+
+Use **Enter** on the popup’s `Ping` row to send a direct mesh ping to that node. The popup then shows the RTT and SNR values on the next lines, and can be used again immediately for another ping.
 
 > [!TIP]
 > Combined with **Auto-Advert** on the other device, Nearby Nodes becomes a passive location tracker — as long as the tracked device periodically broadcasts its GPS position, you can see its current distance and bearing without any manual interaction on either end.
@@ -51,6 +59,7 @@ Results show as 2-line cards: node name + type, then RSSI / SNR / remote SNR.
 - **UP/DOWN** — navigate results
 - **Enter** — open full-screen detail (public key, signal data, contact status)
 - **Hold Enter** — rescan
+- **Hold Enter** in full-screen detail — open the Ping popup for the selected node
 - **Cancel / Back** — return to nearby list
 
 ---
