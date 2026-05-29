@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Screenshot tool for Wio L1 Tracker Pro with SH1106 display.
+Screenshot tool for Wio L1 Tracker Pro (OLED SH1106 and e-ink GxEPD2).
 Connects via USB serial using mesh companion protocol, captures framebuffer, saves as PNG.
 
 Usage:
@@ -26,14 +26,19 @@ FRAME_START_IN = 0x3E  # '>' - used when receiving FROM device
 CMD_GET_SCREENSHOT = 66
 RESP_CODE_SCREENSHOT = 29
 RESP_CODE_ERR = 1
-DISPLAY_WIDTH = 128
-DISPLAY_HEIGHT = 64
-BUFFER_SIZE = (DISPLAY_WIDTH * DISPLAY_HEIGHT) // 8  # 1024 bytes
+
+# display_type values (byte [5] in response frame)
+DISPLAY_TYPE_OLED = 0   # page-based, column-major (SH1106/SSD1306)
+DISPLAY_TYPE_EINK = 1   # row-major, MSB-first, 1=white/0=black (GxEPD2)
+
+# No panel-specific constants needed — the firmware now sends GxEPD2's own reported
+# dimensions (which use WIDTH_VISIBLE, not the full physical WIDTH), so the header
+# already carries the correct visible height and width for any panel/rotation.
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Capture screenshots from Wio L1 Tracker Pro with SH1106 display"
+        description="Capture screenshots from Wio L1 Tracker Pro (OLED or e-ink)"
     )
     parser.add_argument(
         "--port", "-p", help="Serial port to use (default: auto-detect)"
@@ -100,67 +105,95 @@ def send_command(ser, command, data=b""):
     return frame_len + 3
 
 
+HEADER_SIZE = 11   # see firmware sendScreenshotResponse() for layout
+
+
+def _u16le(buf, off):
+    return buf[off] | (buf[off + 1] << 8)
+
+
+def _expected_buffer_size(width, height, display_type):
+    """Bytes the firmware should send for given dims+type."""
+    if display_type == DISPLAY_TYPE_EINK:
+        # GxEPD2 buffer is in physical panel coordinates: row-major,
+        # stride = ceil(WIDTH_VISIBLE / 8) bytes, HEIGHT rows.
+        # WIDTH_VISIBLE = shorter visible dim regardless of rotation.
+        visible_short = min(width, height)
+        phys_stride   = (visible_short + 7) // 8
+        phys_height   = max(width, height)
+        return phys_stride * phys_height
+    # OLED: packed bits, no padding
+    return (width * height) // 8
+
+
 def receive_screenshot(ser, timeout=5):
-    """Receive screenshot data (may be split across multiple frames)"""
-    start_time = time.time()
-    buffer_data = bytearray()
-    width = None
-    height = None
-    total_chunks = None
+    """Receive a multi-chunk screenshot response. Returns (buf, w, h, type, rot) or None."""
+    start_time      = time.time()
+    buffer_data     = bytearray()
+    width           = None
+    height          = None
+    display_type    = None
+    disp_rotation   = 0
+    total_chunks    = None
     received_chunks = 0
 
     while time.time() - start_time < timeout:
         frame = read_frame(ser)
         if frame is None:
             continue
-
-        if len(frame) < 5:
-            print(f"Error: Frame too short: {len(frame)} bytes")
-            return None
+        if len(frame) < 1:
+            continue
 
         resp_code = frame[0]
 
-        if resp_code == RESP_CODE_SCREENSHOT:
-            w = frame[1]
-            h = frame[2]
-            chunk_idx = frame[3]
-            num_chunks = frame[4]
-            chunk_data = frame[5:]
-
-            if chunk_idx == 0:
-                width = w
-                height = h
-                total_chunks = num_chunks
-                buffer_data = bytearray()
-                received_chunks = 0
-
-            if width is None or width != w or height != h:
-                print(f"Error: Inconsistent dimensions in chunk {chunk_idx}")
-                return None
-
-            if total_chunks is None or total_chunks != num_chunks:
-                print(f"Error: Inconsistent chunk count in chunk {chunk_idx}")
-                return None
-
-            buffer_data.extend(chunk_data)
-            received_chunks += 1
-
-            if received_chunks >= total_chunks:
-                expected_size = (width * height) // 8
-                if len(buffer_data) == expected_size:
-                    return bytes(buffer_data), width, height
-                else:
-                    print(
-                        f"Error: Expected {expected_size} bytes, got {len(buffer_data)}"
-                    )
-                    return None
-
-        elif resp_code == RESP_CODE_ERR:
-            print("Error: Device returned error")
+        if resp_code == RESP_CODE_ERR:
+            err = frame[1] if len(frame) > 1 else 0xFF
+            print(f"Error: Device returned error code 0x{err:02x}")
             return None
 
-        else:
+        if resp_code != RESP_CODE_SCREENSHOT:
             continue
+
+        if len(frame) < HEADER_SIZE:
+            print(f"Error: Screenshot frame too short: {len(frame)} bytes (need >= {HEADER_SIZE})")
+            return None
+
+        disp_type  = frame[1]
+        rotation   = frame[2]
+        w          = _u16le(frame, 3)
+        h          = _u16le(frame, 5)
+        chunk_idx  = _u16le(frame, 7)
+        num_chunks = _u16le(frame, 9)
+        chunk_data = frame[HEADER_SIZE:]
+
+        if chunk_idx == 0:
+            width           = w
+            height          = h
+            display_type    = disp_type
+            disp_rotation   = rotation
+            total_chunks    = num_chunks
+            buffer_data     = bytearray()
+            received_chunks = 0
+
+        if width is None:
+            print(f"Error: Missed chunk 0 (first chunk seen: {chunk_idx})")
+            return None
+        if width != w or height != h:
+            print(f"Error: Inconsistent dimensions in chunk {chunk_idx}")
+            return None
+        if total_chunks != num_chunks:
+            print(f"Error: Inconsistent chunk count in chunk {chunk_idx}")
+            return None
+
+        buffer_data.extend(chunk_data)
+        received_chunks += 1
+
+        if received_chunks >= total_chunks:
+            expected = _expected_buffer_size(width, height, display_type)
+            if len(buffer_data) != expected:
+                print(f"Error: Expected {expected} bytes, got {len(buffer_data)}")
+                return None
+            return bytes(buffer_data), width, height, display_type, disp_rotation
 
     print(
         f"Error: Timeout waiting for screenshot (received {received_chunks}/{total_chunks or '?'} chunks)"
@@ -168,13 +201,13 @@ def receive_screenshot(ser, timeout=5):
     return None
 
 
-def buffer_to_image(buffer, width, height, scale=1):
-    """Convert SH1106/SH1106 framebuffer to PIL Image with white text on black background and black frame"""
+def oled_buffer_to_image(buffer, width, height):
+    """Decode SH1106/SSD1306 framebuffer (page-based, column-major).
+    Each byte covers 8 vertical pixels; bit 0 = top pixel of the byte.
+    """
     image = Image.new("1", (width, height), 0)
     pixels = image.load()
-
     bytes_per_page = width
-
     for page in range(0, height, 8):
         page_start = (page // 8) * bytes_per_page
         for col in range(width):
@@ -183,29 +216,89 @@ def buffer_to_image(buffer, width, height, scale=1):
                 byte_val = buffer[byte_idx]
                 for bit in range(8):
                     if page + bit < height:
-                        pixel_value = 1 if (byte_val & (1 << bit)) else 0
-                        pixels[col, page + bit] = pixel_value
+                        pixels[col, page + bit] = 1 if (byte_val & (1 << bit)) else 0
+    return image.convert("RGB")
 
-    # Convert to RGB: white text on black background (no inversion)
-    image_rgb = image.convert("RGB")
 
-    # Add 3-pixel black frame around the image
-    FRAME_WIDTH = 3
-    new_width = width + FRAME_WIDTH * 2
-    new_height = height + FRAME_WIDTH * 2
-    final_image = Image.new("RGB", (new_width, new_height), (0, 0, 0))
+def eink_buffer_to_image(buffer, log_width, log_height, rotation):
+    """Decode GxEPD2 framebuffer for any panel and rotation (0-3).
 
-    # Paste the display content in the center
-    final_image.paste(image_rgb, (FRAME_WIDTH, FRAME_WIDTH))
+    The firmware sends GxEPD2's own width()/height() in the header (uses WIDTH_VISIBLE,
+    not the full physical WIDTH) and the GxEPD2 rotation value.
 
-    # Upscale if requested
+    Buffer layout (always in physical panel coordinates, rotation-independent):
+      row-major, stride = GxEPD2_Type::WIDTH / 8 bytes, MSB-first
+      byte_idx = phys_x // 8 + phys_y * stride
+      bit      = 7 - phys_x % 8
+      1 = white (paper), 0 = black (ink)
+
+    Coordinate mapping from GxEPD2 drawPixel (WIDTH = WIDTH_VISIBLE from GFX init):
+      rot 0: phys_x = lx,           phys_y = ly
+      rot 1: phys_x = WIDTH-1-ly,   phys_y = lx          (WIDTH = log_height)
+      rot 2: phys_x = WIDTH-1-lx,   phys_y = HEIGHT-1-ly  (WIDTH = log_width, HEIGHT = log_height)
+      rot 3: phys_x = ly,           phys_y = HEIGHT-1-lx  (HEIGHT = log_width)
+
+    Physical HEIGHT (panel's longer dimension) = max(log_w, log_h) for any rotation.
+    stride = buffer_size // HEIGHT  (no panel-specific constants needed).
+    """
+    if log_width == 0 or log_height == 0:
+        return Image.new("RGB", (1, 1), (255, 255, 255))
+
+    # Physical HEIGHT is always the longer dimension (panel HEIGHT regardless of rotation).
+    phys_height = max(log_width, log_height)
+    phys_stride = len(buffer) // phys_height    # bytes per physical row (e.g. 16 for 128-wide panel)
+
+    # vis_w / vis_h are the GFX WIDTH / HEIGHT constants (from GxEPD2's Adafruit_GFX init).
+    # For odd rotations GFX swaps them, so we reverse-swap to get the physical sizes.
+    if rotation & 1:            # odd: GFX was initialized (WIDTH_VIS, HEIGHT) but swapped
+        vis_w = log_height      # = GFX WIDTH  = WIDTH_VISIBLE (e.g. 122)
+        vis_h = log_width       # = GFX HEIGHT = physical HEIGHT (e.g. 250)
+    else:                       # even: no swap
+        vis_w = log_width       # = GFX WIDTH  = WIDTH_VISIBLE
+        vis_h = log_height      # = GFX HEIGHT = physical HEIGHT
+
+    image  = Image.new("RGB", (log_width, log_height), (255, 255, 255))
+    pixels = image.load()
+
+    for ly in range(log_height):
+        for lx in range(log_width):
+            if rotation == 0:
+                phys_x = lx
+                phys_y = ly
+            elif rotation == 1:
+                phys_x = vis_w - 1 - ly   # = log_height - 1 - ly
+                phys_y = lx
+            elif rotation == 2:
+                phys_x = vis_w - 1 - lx   # = log_width  - 1 - lx
+                phys_y = vis_h - 1 - ly   # = log_height - 1 - ly
+            else:                          # rotation == 3
+                phys_x = ly
+                phys_y = vis_h - 1 - lx   # = log_width  - 1 - lx
+
+            byte_idx = phys_x // 8 + phys_y * phys_stride
+            bit      = 7 - phys_x % 8
+            if byte_idx < len(buffer):
+                raw   = (buffer[byte_idx] >> bit) & 1
+                color = (255, 255, 255) if raw else (0, 0, 0)
+                pixels[lx, ly] = color
+
+    return image
+
+
+def buffer_to_image(buffer, width, height, display_type, rotation=0, scale=1):
+    """Convert framebuffer to PIL Image, optionally upscaled."""
+    if display_type == DISPLAY_TYPE_EINK:
+        image_rgb = eink_buffer_to_image(buffer, width, height, rotation)
+    else:
+        image_rgb = oled_buffer_to_image(buffer, width, height)
+
     if scale > 1:
-        final_image = final_image.resize(
-            (final_image.width * scale, final_image.height * scale),
+        image_rgb = image_rgb.resize(
+            (image_rgb.width * scale, image_rgb.height * scale),
             Image.Resampling.NEAREST,
         )
 
-    return final_image
+    return image_rgb
 
 
 def generate_filename():
@@ -240,7 +333,7 @@ def main():
         sys.exit(1)
 
     try:
-        print("Screenshot Tool for Wio L1 Tracker Pro")
+        print("Screenshot Tool for Wio L1 Tracker Pro (OLED + e-ink)")
         print("Press 'S' to capture screenshot, 'Q' to quit\n")
 
         while True:
@@ -263,14 +356,16 @@ def main():
 
                 result = receive_screenshot(ser)
                 if result:
-                    buffer_data, width, height = result
+                    buffer_data, width, height, display_type, disp_rotation = result
+                    type_str = "e-ink" if display_type == DISPLAY_TYPE_EINK else "OLED"
                     print(
-                        f"Received framebuffer: {width}x{height}, {len(buffer_data)} bytes"
+                        f"Received framebuffer: {width}x{height} {type_str} rot={disp_rotation}, {len(buffer_data)} bytes"
                     )
 
                     try:
                         image = buffer_to_image(
-                            buffer_data, width, height, scale=args.scale
+                            buffer_data, width, height, display_type,
+                            rotation=disp_rotation, scale=args.scale
                         )
                         filename = generate_filename()
                         image.save(filename)

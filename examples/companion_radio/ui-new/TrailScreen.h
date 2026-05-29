@@ -80,6 +80,7 @@ public:
           int dir = (c == KEY_RIGHT || c == KEY_NEXT) ? 1 : -1;
           if (_act_map[idx] == ACT_MIN_DIST && p) { cycleMinDelta(p, dir); _cfg_dirty = true; refreshActionLabels(); return true; }
           if (_act_map[idx] == ACT_UNITS    && p) { cycleUnits(p, dir);    _cfg_dirty = true; refreshActionLabels(); return true; }
+          if (_act_map[idx] == ACT_GRID)          { _map_grid = !_map_grid;                    refreshActionLabels(); return true; }
         }
         return true;  // swallow on action rows
       }
@@ -229,10 +230,10 @@ private:
       _act_map[_act_count++] = ACT_LOAD;          _action_menu.addItem("Load trail");
     }
     if (!_store->empty()) {
-      _act_map[_act_count++] = ACT_EXPORT;        _action_menu.addItem("Export GPX");
+      _act_map[_act_count++] = ACT_EXPORT;        _action_menu.addItem("Export (live)");
     }
     if (saved) {
-      _act_map[_act_count++] = ACT_EXPORT_SAVED;  _action_menu.addItem("Export saved");
+      _act_map[_act_count++] = ACT_EXPORT_SAVED;  _action_menu.addItem("Export (saved)");
     }
     if (!_store->empty()) {
       _act_map[_act_count++] = ACT_RESET;         _action_menu.addItem("Reset trail");

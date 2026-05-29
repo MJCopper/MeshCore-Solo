@@ -6,8 +6,10 @@ class RingtoneEditorScreen : public UIScreen {
   UITask*    _task;
   NodePrefs* _prefs;
 
-  static const int MAX_NOTES    = 32;
-  static const int MENU_VISIBLE = 5;
+  static const int MAX_NOTES = 32;
+
+  // Menu item indices
+  enum MenuIdx { MI_PLAY=0, MI_SWITCH, MI_DURATION, MI_BPM, MI_INSERT, MI_DELETE, MI_SAVE, MI_DISCARD, MI_COUNT };
 
   int _visible_notes = 7;  // updated in render(); used by clampScroll()
 
@@ -22,16 +24,12 @@ class RingtoneEditorScreen : public UIScreen {
   int     _slot;   // 0=melody1, 1=melody2
   int     _cursor;
   int     _scroll;
-  bool    _menu_open;
-  int     _menu_sel;
-  int     _menu_scroll;
+  PopupMenu _menu;
   char    _play_buf[220];  // persistent RTTTL buffer — library holds a pointer into it
-
-  enum MenuOpt {
-    M_PLAY_STOP, M_SWITCH, M_DURATION, M_BPM_UP, M_BPM_DOWN,
-    M_INSERT, M_DELETE, M_SAVE, M_DISCARD, M_COUNT
-  };
-  static const char* MENU_LABELS[M_COUNT];
+  char    _menu_play_label[8];
+  char    _menu_slot_label[16];
+  char    _menu_dur_label[16];
+  char    _menu_bpm_label[10];
 
   static uint8_t notePitch(uint8_t b)  { return b & 0x07; }
   static uint8_t noteOctave(uint8_t b) { return ((b >> 3) & 0x03) + 4; }
@@ -68,11 +66,26 @@ public:
     uint8_t rlen = _prefs ? (s2 ? _prefs->ringtone2_len : _prefs->ringtone_len) : 0;
     _len     = (rlen <= (uint8_t)MAX_NOTES) ? rlen : 0;
     if (_prefs) memcpy(_notes, s2 ? _prefs->ringtone2_notes : _prefs->ringtone_notes, sizeof(_notes));
-    _cursor     = 0;
-    _scroll     = 0;
-    _menu_open  = false;
-    _menu_sel   = 0;
-    _menu_scroll = 0;
+    _cursor  = 0;
+    _scroll  = 0;
+    _menu.active = false;
+  }
+
+  void openMenu() {
+    snprintf(_menu_play_label, sizeof(_menu_play_label), "%s", _task->isMelodyPlaying() ? "Stop" : "Play");
+    snprintf(_menu_slot_label, sizeof(_menu_slot_label), "Melody %d", (_slot == 0) ? 2 : 1);
+    uint8_t di = (_cursor < _len) ? noteDurIdx(_notes[_cursor]) : 0;
+    snprintf(_menu_dur_label, sizeof(_menu_dur_label), "Duration: %s", DUR_LABELS[di]);
+    snprintf(_menu_bpm_label, sizeof(_menu_bpm_label), "BPM: %u", BPM_OPTS[_bpm_idx]);
+    _menu.begin("Options", 5);
+    _menu.addItem(_menu_play_label);
+    _menu.addItem(_menu_slot_label);
+    _menu.addItem(_menu_dur_label);
+    _menu.addItem(_menu_bpm_label);
+    _menu.addItem("Insert");
+    _menu.addItem("Delete");
+    _menu.addItem("Save & Exit");
+    _menu.addItem("Discard");
   }
 
   int render(DisplayDriver& display) override {
@@ -144,34 +157,7 @@ public:
     display.setCursor(0, bottom_y);
     display.print("ENT:oct MENU:opts");
 
-    if (_menu_open) {
-      const int menu_ih = display.lineStep();
-      const int mw = 100, mh = MENU_VISIBLE * menu_ih + 4;
-      int mx = (display.width()  - mw) / 2;
-      int my = (display.height() - mh) / 2;
-      display.setColor(DisplayDriver::DARK);
-      display.fillRect(mx, my, mw, mh);
-      display.setColor(DisplayDriver::LIGHT);
-      display.drawRect(mx, my, mw, mh);
-      for (int i = 0; i < MENU_VISIBLE; i++) {
-        int item = _menu_scroll + i;
-        if (item >= M_COUNT) break;
-        int iy = my + 2 + i * menu_ih;
-        bool sel = (item == _menu_sel);
-        display.drawSelectionRow(mx + 1, iy - 1, mw - 2, menu_ih, sel);
-        display.setCursor(mx + 4, iy);
-        if (item == M_PLAY_STOP)
-          display.print(_task->isMelodyPlaying() ? "Stop" : "Play");
-        else if (item == M_SWITCH)
-          display.print(_slot == 0 ? "Edit Melody 2" : "Edit Melody 1");
-        else
-          display.print(MENU_LABELS[item]);
-        display.setColor(DisplayDriver::LIGHT);
-      }
-      int cw = display.getCharWidth();
-      if (_menu_scroll > 0) { display.setCursor(mx + mw - cw - 1, my + 2); display.print("^"); }
-      if (_menu_scroll + MENU_VISIBLE < M_COUNT) { display.setCursor(mx + mw - cw - 1, my + mh - menu_ih); display.print("v"); }
-    }
+    if (_menu.active) _menu.render(display);
 
     return 200;
   }
@@ -185,90 +171,84 @@ public:
     bool menu_key = (c == KEY_CONTEXT_MENU);
     bool cancel   = (c == KEY_CANCEL);
 
-    if (_menu_open) {
-      if (cancel) { _menu_open = false; return true; }
-      if (up && _menu_sel > 0) {
-        _menu_sel--;
-        if (_menu_sel < _menu_scroll) _menu_scroll = _menu_sel;
+    if (_menu.active) {
+      // LEFT/RIGHT cycle Duration and BPM in-place, menu stays open.
+      if (left || right) {
+        int sel = _menu.selectedIndex();
+        if (sel == MI_DURATION && _cursor < _len) {
+          uint8_t p  = notePitch(_notes[_cursor]);
+          uint8_t o  = noteOctave(_notes[_cursor]);
+          uint8_t di = noteDurIdx(_notes[_cursor]);
+          di = right ? (di + 1) & 0x03 : (di + 3) & 0x03;
+          _notes[_cursor] = packNote(p, o, di);
+          snprintf(_menu_dur_label, sizeof(_menu_dur_label), "Duration: %s", DUR_LABELS[di]);
+        } else if (sel == MI_BPM) {
+          if (right && _bpm_idx < 4) _bpm_idx++;
+          else if (left  && _bpm_idx > 0) _bpm_idx--;
+          snprintf(_menu_bpm_label, sizeof(_menu_bpm_label), "BPM: %u", BPM_OPTS[_bpm_idx]);
+        }
         return true;
       }
-      if (down && _menu_sel < M_COUNT - 1) {
-        _menu_sel++;
-        if (_menu_sel >= _menu_scroll + MENU_VISIBLE) _menu_scroll = _menu_sel - MENU_VISIBLE + 1;
-        return true;
-      }
-      if (!enter) return true;
-
-      _menu_open = false;
-      switch ((MenuOpt)_menu_sel) {
-        case M_PLAY_STOP:
-          if (_task->isMelodyPlaying()) {
+      auto res = _menu.handleInput(c);
+      if (res == PopupMenu::SELECTED) {
+        switch ((MenuIdx)_menu.selectedIndex()) {
+          case MI_PLAY:
+            if (_task->isMelodyPlaying()) { _task->stopMelody(); }
+            else if (_len > 0) { buildRTTTL(); _task->playMelody(_play_buf); }
+            break;
+          case MI_SWITCH:
             _task->stopMelody();
-          } else if (_len > 0) {
-            buildRTTTL();
-            _task->playMelody(_play_buf);
-          }
-          break;
-        case M_SWITCH:
-          _task->stopMelody();
-          this->enter(1 - _slot);
-          break;
-        case M_DURATION:
-          if (_cursor < _len) {
-            uint8_t p  = notePitch(_notes[_cursor]);
-            uint8_t o  = noteOctave(_notes[_cursor]);
-            uint8_t di = (noteDurIdx(_notes[_cursor]) + 1) & 0x03;
-            _notes[_cursor] = packNote(p, o, di);
-          }
-          break;
-        case M_BPM_UP:   if (_bpm_idx < 4) _bpm_idx++; break;
-        case M_BPM_DOWN: if (_bpm_idx > 0) _bpm_idx--; break;
-        case M_INSERT:
-          if (_len < MAX_NOTES) {
-            int ins = (_cursor < _len) ? _cursor + 1 : _cursor;
-            for (int i = _len; i > ins; i--) _notes[i] = _notes[i - 1];
-            _notes[ins] = packNote(1, 5, 1);
-            _len++;
-            _cursor = ins;
-            clampScroll();
-          }
-          break;
-        case M_DELETE:
-          if (_len > 0 && _cursor < _len) {
-            for (int i = _cursor; i < _len - 1; i++) _notes[i] = _notes[i + 1];
-            _len--;
-            if (_cursor >= _len && _len > 0) _cursor = _len - 1;
-            else if (_len == 0) _cursor = 0;
-            clampScroll();
-          }
-          break;
-        case M_SAVE:
-          if (_prefs) {
-            if (_slot == 1) {
-              _prefs->ringtone2_bpm_idx = _bpm_idx;
-              _prefs->ringtone2_len     = _len;
-              memcpy(_prefs->ringtone2_notes, _notes, sizeof(_notes));
-            } else {
-              _prefs->ringtone_bpm_idx = _bpm_idx;
-              _prefs->ringtone_len     = _len;
-              memcpy(_prefs->ringtone_notes, _notes, sizeof(_notes));
+            this->enter(1 - _slot);
+            break;
+          case MI_DURATION: break;  // already handled by LEFT/RIGHT
+          case MI_BPM:      break;  // already handled by LEFT/RIGHT
+          case MI_INSERT:
+            if (_len < MAX_NOTES) {
+              int ins = (_cursor < _len) ? _cursor + 1 : _cursor;
+              for (int i = _len; i > ins; i--) _notes[i] = _notes[i - 1];
+              _notes[ins] = packNote(1, 5, 1);
+              _len++;
+              _cursor = ins;
+              clampScroll();
             }
-            the_mesh.savePrefs();
-          }
-          _task->stopMelody();
-          _task->gotoToolsScreen();
-          break;
-        case M_DISCARD:
-          _task->stopMelody();
-          _task->gotoToolsScreen();
-          break;
-        default: break;
+            break;
+          case MI_DELETE:
+            if (_len > 0 && _cursor < _len) {
+              for (int i = _cursor; i < _len - 1; i++) _notes[i] = _notes[i + 1];
+              _len--;
+              if (_cursor >= _len && _len > 0) _cursor = _len - 1;
+              else if (_len == 0) _cursor = 0;
+              clampScroll();
+            }
+            break;
+          case MI_SAVE:
+            if (_prefs) {
+              if (_slot == 1) {
+                _prefs->ringtone2_bpm_idx = _bpm_idx;
+                _prefs->ringtone2_len     = _len;
+                memcpy(_prefs->ringtone2_notes, _notes, sizeof(_notes));
+              } else {
+                _prefs->ringtone_bpm_idx = _bpm_idx;
+                _prefs->ringtone_len     = _len;
+                memcpy(_prefs->ringtone_notes, _notes, sizeof(_notes));
+              }
+              the_mesh.savePrefs();
+            }
+            _task->stopMelody();
+            _task->gotoToolsScreen();
+            break;
+          case MI_DISCARD:
+            _task->stopMelody();
+            _task->gotoToolsScreen();
+            break;
+          default: break;
+        }
       }
       return true;
     }
 
     if (cancel)   { _task->stopMelody(); _task->gotoToolsScreen(); return true; }
-    if (menu_key) { _menu_open = true; _menu_sel = 0; _menu_scroll = 0; return true; }
+    if (menu_key) { openMenu(); return true; }
 
     if (left && _cursor > 0) { _cursor--; clampScroll(); return true; }
     if (right) {
@@ -316,6 +296,3 @@ const uint16_t RingtoneEditorScreen::BPM_OPTS[5]   = { 60, 90, 120, 150, 180 };
 const uint8_t  RingtoneEditorScreen::DUR_VALS[4]    = { 4, 8, 16, 32 };
 const char*    RingtoneEditorScreen::DUR_LABELS[4]  = { "1/4", "1/8", "1/16", "1/32" };
 const char     RingtoneEditorScreen::PITCH_NAMES[8] = { 'p', 'c', 'd', 'e', 'f', 'g', 'a', 'b' };
-const char*    RingtoneEditorScreen::MENU_LABELS[RingtoneEditorScreen::M_COUNT] = {
-  "Play/Stop", "Switch Melody", "Duration", "BPM+", "BPM-", "Insert", "Delete", "Save & Exit", "Discard"
-};

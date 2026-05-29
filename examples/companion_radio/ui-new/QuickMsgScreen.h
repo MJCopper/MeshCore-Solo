@@ -1021,6 +1021,33 @@ public:
     } else if (_phase == CONTACT_PICK) {
       // Context menu consumes all input while open
       if (_ctx_menu.active) {
+        // LEFT/RIGHT cycle Notif/Melody in-place (menu stays open).
+        if (!_pin_picker_active && _num_contacts > 0) {
+          bool left  = (c == KEY_LEFT || c == KEY_PREV);
+          bool right = (c == KEY_RIGHT || c == KEY_NEXT);
+          if (left || right) {
+            static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
+            static const char* ML[]           = { "global", "M1", "M2" };
+            ContactInfo ci;
+            if (the_mesh.getContactByIdx(_sorted[_contact_sel], ci)) {
+              int sel = _ctx_menu.selectedIndex();
+              if (sel == 1) {
+                uint8_t v = dmNotifState(ci.id.pub_key);
+                v = right ? (v + 1) % 3 : (v + 2) % 3;
+                setDmNotifState(ci.id.pub_key, v);
+                snprintf(_ctx_notif_item, sizeof(_ctx_notif_item), "Notif: %s", NOTIF_LABELS[v]);
+                _ctx_dirty = true;
+              } else if (sel == 2) {
+                uint8_t v = dmMelodySlot(ci.id.pub_key);
+                v = right ? (v + 1) % 3 : (v + 2) % 3;
+                setDmMelody(ci.id.pub_key, v);
+                snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s", ML[v]);
+                _ctx_dirty = true;
+              }
+            }
+            return true;
+          }
+        }
         auto res = _ctx_menu.handleInput(c);
         if (_pin_picker_active) {
           // Slot picker sub-menu: index 0..FAVOURITES_COUNT-1 maps directly to slot.
@@ -1041,17 +1068,10 @@ public:
         if (res == PopupMenu::SELECTED && _num_contacts > 0) {
           ContactInfo ci;
           if (the_mesh.getContactByIdx(_sorted[_contact_sel], ci)) {
-            if (_ctx_menu.selectedIndex() == 0) {
+            int sel = _ctx_menu.selectedIndex();
+            if (sel == 0) {
               _task->clearDMUnread(ci.id.pub_key);
-            } else if (_ctx_menu.selectedIndex() == 1) {
-              uint8_t nstate = dmNotifState(ci.id.pub_key);
-              setDmNotifState(ci.id.pub_key, (nstate + 1) % 3);
-              _ctx_dirty = true;
-            } else if (_ctx_menu.selectedIndex() == 2) {
-              uint8_t slot = dmMelodySlot(ci.id.pub_key);
-              setDmMelody(ci.id.pub_key, (slot + 1) % 3);
-              _ctx_dirty = true;
-            } else if (_ctx_menu.selectedIndex() == 3) {
+            } else if (sel == 3) {
               // Pin / Unpin
               int pinned_slot = _task->findFavouriteSlot(ci.id.pub_key);
               if (pinned_slot >= 0) {
@@ -1061,12 +1081,10 @@ public:
                 snprintf(alert, sizeof(alert), "Unpinned (slot %d)", pinned_slot + 1);
                 _task->showAlert(alert, 800);
               } else {
-                // Open slot picker. Each label shows "Slot N: <name>" or "Slot N: empty".
                 for (int s = 0; s < NodePrefs::FAVOURITES_COUNT; s++) {
                   if (_task->isFavouriteSlotEmpty(s)) {
                     snprintf(_pin_slot_labels[s], sizeof(_pin_slot_labels[s]), "Slot %d: empty", s + 1);
                   } else {
-                    // Resolve current occupant name by walking contacts.
                     char nm[16] = "?";
                     NodePrefs* p = _task->getNodePrefs();
                     if (p) {
@@ -1088,6 +1106,7 @@ public:
                 _pin_picker_active = true;
               }
             }
+            // sel == 1 (Notif) and sel == 2 (Melody): already cycled via LEFT/RIGHT; ENTER just closes.
           }
         }
         if (res != PopupMenu::NONE && _ctx_dirty) {
@@ -1140,29 +1159,49 @@ public:
     } else if (_phase == CHANNEL_PICK) {
       // Context menu consumes all input while open
       if (_ctx_menu.active) {
+        // LEFT/RIGHT cycle Notif/Melody/Fav in-place (menu stays open).
+        if (_num_channels > 0) {
+          bool left  = (c == KEY_LEFT || c == KEY_PREV);
+          bool right = (c == KEY_RIGHT || c == KEY_NEXT);
+          if (left || right) {
+            static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
+            static const char* ML[]           = { "global", "M1", "M2" };
+            uint8_t ch_idx = _channel_indices[_channel_sel];
+            int sel = _ctx_menu.selectedIndex();
+            if (sel == 1) {
+              uint8_t v = chNotifState(ch_idx);
+              v = right ? (v + 1) % 3 : (v + 2) % 3;
+              setChNotifState(ch_idx, v);
+              snprintf(_ctx_notif_item, sizeof(_ctx_notif_item), "Notif: %s", NOTIF_LABELS[v]);
+              _ctx_dirty = true;
+            } else if (sel == 2) {
+              uint8_t v = chNotifMelody(ch_idx);
+              v = right ? (v + 1) % 3 : (v + 2) % 3;
+              setChNotifMelody(ch_idx, v);
+              snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s", ML[v]);
+              _ctx_dirty = true;
+            } else if (sel == 3) {
+              NodePrefs* p2 = _task->getNodePrefs();
+              if (p2) {
+                p2->ch_fav_bitmask ^= (1ULL << ch_idx);
+                bool is_fav = (p2->ch_fav_bitmask & (1ULL << ch_idx));
+                snprintf(_ctx_ch_fav_item, sizeof(_ctx_ch_fav_item), is_fav ? "Fav: yes" : "Fav: no");
+                _ctx_dirty = true;
+                buildChannelList();
+                if (_channel_sel >= _num_channels) _channel_sel = _num_channels > 0 ? _num_channels - 1 : 0;
+              }
+            }
+            return true;
+          }
+        }
         auto res = _ctx_menu.handleInput(c);
         if (res == PopupMenu::SELECTED && _num_channels > 0) {
           uint8_t ch_idx = _channel_indices[_channel_sel];
-          if (_ctx_menu.selectedIndex() == 0) {
+          int sel = _ctx_menu.selectedIndex();
+          if (sel == 0) {
             _ch_unread[ch_idx] = 0;
-          } else if (_ctx_menu.selectedIndex() == 1) {
-            uint8_t nstate = chNotifState(ch_idx);
-            setChNotifState(ch_idx, (nstate + 1) % 3);
-            _ctx_dirty = true;
-          } else if (_ctx_menu.selectedIndex() == 2) {
-            uint8_t slot = chNotifMelody(ch_idx);
-            setChNotifMelody(ch_idx, (slot + 1) % 3);
-            _ctx_dirty = true;
-          } else {
-            // Toggle favourite
-            NodePrefs* p2 = _task->getNodePrefs();
-            if (p2) {
-              p2->ch_fav_bitmask ^= (1ULL << ch_idx);
-              _ctx_dirty = true;
-              buildChannelList();  // refilter if ch_fav_only is active
-              if (_channel_sel >= _num_channels) _channel_sel = _num_channels > 0 ? _num_channels - 1 : 0;
-            }
           }
+          // sel 1/2/3 already handled by LEFT/RIGHT; ENTER just closes.
         }
         if (res != PopupMenu::NONE && _ctx_dirty) {
           the_mesh.savePrefs(); _ctx_dirty = false;
