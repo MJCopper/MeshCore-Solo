@@ -203,7 +203,7 @@ class NearbyScreen : public UIScreen {
 
   void openPingMenu() {
     _ping_menu.begin("Ping", 4);
-    _ping_menu.addItem("Ping");
+    _ping_menu.addItem("Send");
     _ping_menu.addItem(_ping_time_str);
     _ping_menu.addItem(_ping_snr_out_str);
     _ping_menu.addItem(_ping_snr_back_str);
@@ -224,7 +224,7 @@ class NearbyScreen : public UIScreen {
 
   void startPingForKey(const uint8_t* pub_key) {
     resetPingLines();
-    snprintf(_ping_time_str, sizeof(_ping_time_str), "Ping: ...");
+    snprintf(_ping_time_str, sizeof(_ping_time_str), "RTT: ...");
     if (_task && _task->startPing(pub_key)) {
       _pinging = true;
       _ping_started_ms = millis();
@@ -242,9 +242,9 @@ class NearbyScreen : public UIScreen {
 
     if (_pinging && (snr_out != 0 || snr_back != 0 || rtt != 0)) {
       if (rtt > 0 && rtt < 10000) {
-        snprintf(_ping_time_str, sizeof(_ping_time_str), "Ping: %lumS", rtt);
+        snprintf(_ping_time_str, sizeof(_ping_time_str), "RTT: %lums", rtt);
       } else {
-        snprintf(_ping_time_str, sizeof(_ping_time_str), "Ping: timeout");
+        snprintf(_ping_time_str, sizeof(_ping_time_str), "RTT: timeout");
       }
       if (snr_out != 0) {
         snprintf(_ping_snr_out_str, sizeof(_ping_snr_out_str), "SNR out: %.1f", snr_out / 4.0f);
@@ -254,7 +254,7 @@ class NearbyScreen : public UIScreen {
       }
       _pinging = false;
     } else if (_pinging && millis() - _ping_started_ms >= PING_TIMEOUT_MS) {
-      snprintf(_ping_time_str, sizeof(_ping_time_str), "Ping: timeout");
+      snprintf(_ping_time_str, sizeof(_ping_time_str), "RTT: timeout");
       _ping_snr_out_str[0] = '\0';
       _ping_snr_back_str[0] = '\0';
       _pinging = false;
@@ -270,6 +270,11 @@ class NearbyScreen : public UIScreen {
       }
       return false;
     }
+
+    // Rows 1-3 are read-only result fields (RTT, SNR out, SNR back) — swallow
+    // UP/DOWN so the highlight stays on the "Ping" action and the user can't
+    // ENTER on a result row by accident.
+    if (c == KEY_UP || c == KEY_DOWN) return true;
 
     auto res = _ping_menu.handleInput(c);
     if (res == PopupMenu::SELECTED) {
