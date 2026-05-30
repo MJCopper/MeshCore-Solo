@@ -413,6 +413,7 @@ Fix status after this pass:
 - ✅ M4 — `renderDiscoverDetail` skips pub-key line on very narrow displays
 - ✅ L1 — SNR shown with 0.25 dB precision everywhere
 - ✅ L4 — fallback `"?"` sender no longer memsets through `strncpy`
+- ✅ Trail map grid silent loss — when a very elongated trail makes `lat_n` or `lon_n` exceed 40, the renderer now bumps the step up instead of dropping the grid entirely. Comment fixed to match the `/ 3.0f` divisor ("~3 intervals", not 4). [`TrailScreen.h:505-565`](examples/companion_radio/ui-new/TrailScreen.h#L505-L565)
 - ❌ M1 — re-checked, not a bug (`default_scope_name[31]`)
 - 📋 H1 + H2 — still open; need coordinated fix in upstream `BaseChatMesh` (`findChannelIdx` should iterate `num_channels`, not `MAX_GROUP_CHANNELS`; `saveChannels` should stop at the first uninitialised slot) or a local override
 - 📋 H3 — left as known limitation pending UX call

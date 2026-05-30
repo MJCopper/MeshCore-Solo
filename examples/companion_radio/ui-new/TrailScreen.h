@@ -519,7 +519,7 @@ private:
     };
     static const int N_STEPS = (int)(sizeof(STEPS)/sizeof(STEPS[0]));
 
-    // Pick largest step ≤ target_m (gives ~4 intervals across shorter dim).
+    // Pick largest step ≤ target_m (gives ~3 intervals across shorter dim).
     int sel = 0;
     for (int si = N_STEPS - 1; si >= 0; si--) {
       if ((float)STEPS[si] <= target_m) { sel = si; break; }
@@ -534,23 +534,36 @@ private:
     float shorter_px = (float)(area_w < area_h ? area_w : area_h);
     while (sel > 0 && (float)STEPS[sel] / M_PER_1E6 * scale > shorter_px / 2.0f)
       sel--;
-    uint32_t grid_m = STEPS[sel];
-
-    float gs_lat = (float)grid_m / M_PER_1E6;
-    float gs_lon = (float)grid_m / (M_PER_1E6 * lon_scale_geo);
 
     float vis_lat_max = (float)max_lat + (float)(off_y - area_y) / scale;
     float vis_lat_min = (float)max_lat - (float)(area_y + area_h - off_y) / scale;
     float vis_lon_min = (float)min_lon - (float)(off_x - area_x) / (lon_scale_geo * scale);
     float vis_lon_max = (float)min_lon + (float)(area_x + area_w - off_x) / (lon_scale_geo * scale);
 
+    // Final guard: a very elongated trail (lat_span ≪ lon_span or vice-versa)
+    // shares a single isotropic scale, so the visible window in the *short*
+    // direction can span many grid_m. Bump the step up until the resulting
+    // line count fits the static buffers (40×40 = ~1600 intersections, plenty
+    // for any sane display).
+    static const int MAX_GRID_LINES = 40;
+    uint32_t grid_m = STEPS[sel];
+    float gs_lat = (float)grid_m / M_PER_1E6;
+    float gs_lon = (float)grid_m / (M_PER_1E6 * lon_scale_geo);
+    int lat_n = (int)((vis_lat_max - vis_lat_min) / gs_lat) + 2;
+    int lon_n = (int)((vis_lon_max - vis_lon_min) / gs_lon) + 2;
+    while ((lat_n > MAX_GRID_LINES || lon_n > MAX_GRID_LINES) && sel < N_STEPS - 1) {
+      sel++;
+      grid_m = STEPS[sel];
+      gs_lat = (float)grid_m / M_PER_1E6;
+      gs_lon = (float)grid_m / (M_PER_1E6 * lon_scale_geo);
+      lat_n  = (int)((vis_lat_max - vis_lat_min) / gs_lat) + 2;
+      lon_n  = (int)((vis_lon_max - vis_lon_min) / gs_lon) + 2;
+    }
+    if (lat_n > MAX_GRID_LINES || lon_n > MAX_GRID_LINES) return;  // huge step still won't fit — give up
+
     // Anchor to display edges so lines always start at the border and space inward.
     float first_lat = vis_lat_min;
     float first_lon = vis_lon_min;
-
-    int lat_n = (int)((vis_lat_max - first_lat) / gs_lat) + 2;
-    int lon_n = (int)((vis_lon_max - first_lon) / gs_lon) + 2;
-    if (lat_n > 40 || lon_n > 40) return;
 
     int x_max = area_x + area_w - 1;
     int y_max = area_y + area_h - 1;
