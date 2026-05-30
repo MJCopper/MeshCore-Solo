@@ -337,37 +337,29 @@ The reset is now gated on `sentinel == 0xC0DE0003` so newer mismatches (e.g. 0xC
 
 ## Medium
 
-### 📋 `CMD_SET_DEFAULT_FLOOD_SCOPE` off-by-one
+### ❌ `CMD_SET_DEFAULT_FLOOD_SCOPE` off-by-one — not a bug
 
-[`MyMesh.cpp:2127-2128`](examples/companion_radio/MyMesh.cpp#L2127-L2128)
+[`MyMesh.cpp:2143`](examples/companion_radio/MyMesh.cpp#L2143)
 
-```cpp
-if (n > 0 && n < 31) {   // default_scope_name is 32 B → should allow n <= 31
-```
+Re-checked: `default_scope_name` is declared `char[31]` (not 32), so `n < 31` correctly admits the maximum 30-character string + NUL. The audit entry was a misread.
 
-Rejects a valid 31-character scope name.
+### ✅ `strlen` on `cmd_frame` without null-termination — replaced with `strnlen`
 
-### 📋 `strlen` on `cmd_frame` without null-termination guarantee
+[`MyMesh.cpp:2140-2147`](examples/companion_radio/MyMesh.cpp#L2140-L2147)
 
-[`MyMesh.cpp:2127`](examples/companion_radio/MyMesh.cpp#L2127)
-
-`strlen((char *) &cmd_frame[1])` will read past frame end if the app sends no `\0` in the first 31 bytes. Bounded by frame buffer size (172+) so practically safe but fragile.
+The 31-byte name slot in `CMD_SET_DEFAULT_FLOOD_SCOPE` doesn't have to be NUL-terminated by the sender. Switched to `strnlen(…, 31)` so the search can't run past the field into the 16-byte key (or beyond the frame).
 
 ### 📋 `PopupMenu._cap` updated only in `render()`
 
 [`PopupMenu.h:37-44, 77-90`](examples/companion_radio/ui-new/PopupMenu.h#L37-L90)
 
-The first `handleInput()` after `begin()` uses `_cap = _visible` (caller hint), not the real screen capacity. Render always precedes input in practice, but the invariant is fragile.
+Left as-is: the framework always renders before forwarding input, so the fragile invariant doesn't fire in practice. Worth a refactor only if the call order ever changes.
 
-### 📋 `renderDiscoverDetail` potential negative length in `strncpy`
+### ✅ `renderDiscoverDetail` guarded against narrow displays
 
-[`NearbyScreen.h:331-334`](examples/companion_radio/ui-new/NearbyScreen.h#L331-L334)
+[`NearbyScreen.h:325-348`](examples/companion_radio/ui-new/NearbyScreen.h#L325-L348)
 
-```cpp
-strncpy(b64_line, b64, max_chars - 3);  // UB if max_chars < 3
-```
-
-Requires `display.width() < ~28` (very narrow), but no guard.
+Pub-key line is now skipped entirely when `max_chars < 4` instead of feeding a negative length to `strncpy`.
 
 ### 📋 `expandMsg` GPS validity test treats (0, 0) as invalid
 
@@ -377,15 +369,15 @@ Requires `display.width() < ~28` (very narrow), but no guard.
 sensors.node_lat != 0.0 || sensors.node_lon != 0.0  // proxy for "valid GPS"
 ```
 
-Point (0, 0) is a legitimate location (Gulf of Guinea). Corner case but a logic error.
+Point (0, 0) is a legitimate location (Gulf of Guinea). Corner case but a logic error. Left for a future pass with a proper GPS-validity bool.
 
 ## Low
 
-### 📋 SNR division by 4 loses precision
+### ✅ SNR division by 4 — now uses `%.1f`
 
-[`NearbyScreen.h:348, 350`](examples/companion_radio/ui-new/NearbyScreen.h#L348-L350)
+[`NearbyScreen.h:355-357, 487`](examples/companion_radio/ui-new/NearbyScreen.h#L355-L487)
 
-`(int)(r.snr_x4 / 4)` truncates the 0.25 dB component. Should be `r.snr_x4 / 4.0f` with `%.1f`.
+Detail view (`SNR: %.1f dB`, `Rem: %.1f dB`) and discover list cards (`SNR:%.1f`) both keep the 0.25 dB resolution. Stays consistent with the ping popup, which already used `%.1f`.
 
 ### 📋 Trail `_count` cast to `uint16_t`
 
@@ -399,11 +391,11 @@ Safe today (CAPACITY=512 fits), fragile if CAPACITY grows past 65535.
 
 Trigger word near the end of a >199-character message will not match.
 
-### 📋 `strncpy("?", buf, sizeof(buf))` — 1 B source into 22 B dest
+### ✅ `strncpy("?", buf, sizeof(buf))` replaced with `strcpy`
 
 [`QuickMsgScreen.h:785, 858`](examples/companion_radio/ui-new/QuickMsgScreen.h#L785)
 
-Functional but copies 22 bytes for a 1-character string. Should be `strcpy(buf, "?")`.
+Two fallback "?" sender names now use a plain `strcpy` so we don't memset 21 unused bytes for a one-character string.
 
 ### 📋 Title truncation in MSG_PICK reply mode
 
@@ -417,7 +409,11 @@ Fix status after this pass:
 
 - ✅ C1 + C2 — `findChannelIdx == -1` guarded at both channel-recv paths; `addChannelMsg` defends against bogus index
 - ✅ H4 — `trail_units_idx` reset scoped to the 0xC0DE0003 jump
+- ✅ M2 — `strnlen` instead of `strlen` on default scope name
+- ✅ M4 — `renderDiscoverDetail` skips pub-key line on very narrow displays
+- ✅ L1 — SNR shown with 0.25 dB precision everywhere
+- ✅ L4 — fallback `"?"` sender no longer memsets through `strncpy`
+- ❌ M1 — re-checked, not a bug (`default_scope_name[31]`)
 - 📋 H1 + H2 — still open; need coordinated fix in upstream `BaseChatMesh` (`findChannelIdx` should iterate `num_channels`, not `MAX_GROUP_CHANNELS`; `saveChannels` should stop at the first uninitialised slot) or a local override
 - 📋 H3 — left as known limitation pending UX call
-
-Medium/Low items can ride along with other refactors in the affected files.
+- 📋 M3, M5, L2, L3, L6 — minor or stylistic; left in backlog

@@ -2139,7 +2139,10 @@ void MyMesh::handleCmdFrame(size_t len) {
     writeOKFrame();
   } else if (cmd_frame[0] == CMD_SET_DEFAULT_FLOOD_SCOPE && len >= 1) {
     if (len >= 1+31+16) {
-      int n = strlen((char *) &cmd_frame[1]);
+      // strnlen, not strlen: the name field is always 31 bytes in the frame
+      // even if the actual name is shorter, so we must bound the search to
+      // avoid reading into the key (or past the frame) when no NUL is present.
+      int n = (int)strnlen((char *) &cmd_frame[1], 31);
       if (n > 0 && n < 31) {
         strcpy(_prefs.default_scope_name, (char *) &cmd_frame[1]);
         memcpy(_prefs.default_scope_key, &cmd_frame[1+31], 16);

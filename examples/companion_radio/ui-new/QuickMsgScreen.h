@@ -784,7 +784,7 @@ public:
             strncpy(fsender, ftext, nl); fsender[nl] = '\0';
             strncpy(fmsg, fsep + 2, sizeof(fmsg) - 1); fmsg[sizeof(fmsg)-1] = '\0';
           } else {
-            strncpy(fsender, "?", sizeof(fsender));
+            strcpy(fsender, "?");
             strncpy(fmsg, ftext, sizeof(fmsg) - 1); fmsg[sizeof(fmsg)-1] = '\0';
           }
           int ret = _fs.render(display, fsender, fmsg,
@@ -857,7 +857,7 @@ public:
           strncpy(msg_part, sep + 2, sizeof(msg_part) - 1);
           msg_part[sizeof(msg_part) - 1] = '\0';
         } else {
-          strncpy(sender, "?", sizeof(sender));
+          strcpy(sender, "?");
           strncpy(msg_part, text, sizeof(msg_part) - 1);
           msg_part[sizeof(msg_part) - 1] = '\0';
         }

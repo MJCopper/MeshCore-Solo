@@ -328,7 +328,12 @@ class NearbyScreen : public UIScreen {
       int max_chars = (display.width() - 4) / display.getCharWidth();
       int b64_len   = strlen(b64);
       char b64_line[48];
-      if (b64_len > max_chars) {
+      // Need at least 4 chars (one char + "..." ellipsis) to display anything
+      // meaningful; on a very narrow display skip the pubkey line entirely
+      // rather than risk a negative strncpy length.
+      if (max_chars < 4) {
+        b64_line[0] = '\0';
+      } else if (b64_len > max_chars) {
         strncpy(b64_line, b64, max_chars - 3);
         b64_line[max_chars - 3] = '\0';
         strcat(b64_line, "...");
@@ -336,8 +341,10 @@ class NearbyScreen : public UIScreen {
         strncpy(b64_line, b64, sizeof(b64_line) - 1);
         b64_line[sizeof(b64_line) - 1] = '\0';
       }
-      display.setCursor(2, hdr);
-      display.print(b64_line);
+      if (b64_line[0]) {
+        display.setCursor(2, hdr);
+        display.print(b64_line);
+      }
     }
 
     int step = display.lineStep();
@@ -345,9 +352,9 @@ class NearbyScreen : public UIScreen {
     char buf[32];
     snprintf(buf, sizeof(buf), "RSSI: %d dBm", (int)r.rssi);
     display.setCursor(2, hdr + step);     display.print(buf);
-    snprintf(buf, sizeof(buf), "SNR:  %d dB", (int)(r.snr_x4 / 4));
+    snprintf(buf, sizeof(buf), "SNR:  %.1f dB", r.snr_x4 / 4.0f);
     display.setCursor(2, hdr + step * 2); display.print(buf);
-    snprintf(buf, sizeof(buf), "Rem:  %d dB", (int)(r.remote_snr_x4 / 4));
+    snprintf(buf, sizeof(buf), "Rem:  %.1f dB", r.remote_snr_x4 / 4.0f);
     display.setCursor(2, hdr + step * 3); display.print(buf);
     display.setCursor(2, hdr + step * 4);
     display.print(r.is_known ? "Status: known" : "Status: new");
@@ -477,7 +484,7 @@ class NearbyScreen : public UIScreen {
         // body: RSSI + SNR
         display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
         char sig[24];
-        snprintf(sig, sizeof(sig), "RSSI:%d SNR:%d", (int)r.rssi, (int)(r.snr_x4 / 4));
+        snprintf(sig, sizeof(sig), "RSSI:%d SNR:%.1f", (int)r.rssi, r.snr_x4 / 4.0f);
         display.drawTextEllipsized(3, y + lh + 2, display.width() - 6, sig);
       }
 
