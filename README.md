@@ -57,7 +57,7 @@ Both variants are built from a single codebase and share the same feature set. T
 
 ### Flashing
 
-1. Download the appropriate `.uf2` file for your display variant from the [releases page](https://github.com/MarekZegare4/MeshCore/releases)
+1. Download the appropriate `.uf2` file for your display variant from the [releases page](https://github.com/MarekZegare4/MeshCore-Solo/releases)
 2. Press reset twice quickly to enter bootloader mode (solid amber LED) - the device should appear as a mass storage drive on your computer
 3. Copy the `.uf2` file to the drive to flash the firmware
 
