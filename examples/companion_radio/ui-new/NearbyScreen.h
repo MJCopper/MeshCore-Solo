@@ -38,6 +38,15 @@ class NearbyScreen : public UIScreen {
   static const unsigned long DETAIL_REFRESH_MS = 10000UL;
 
   PopupMenu _ctx_menu;
+  PopupMenu _ping_menu;
+  char _ping_time_str[24];    // For storing ping RTT result
+  char _ping_snr_out_str[24]; // For storing ping SNR out result
+  char _ping_snr_back_str[24];// For storing ping SNR back result
+
+  // ── ping state ─────────────────────────────────────────────────────────────
+  bool _pinging;
+  unsigned long _ping_started_ms;
+  static const unsigned long PING_TIMEOUT_MS = 3000UL;
 
   // ── discover sub-screen state ────────────────────────────────────────────────
   bool          _discover_mode;
@@ -186,6 +195,204 @@ class NearbyScreen : public UIScreen {
     the_mesh.sendNodeDiscoverReq();
   }
 
+  void resetPingLines() {
+    _ping_time_str[0] = '\0';
+    _ping_snr_out_str[0] = '\0';
+    _ping_snr_back_str[0] = '\0';
+  }
+
+  void openPingMenu() {
+    _ping_menu.begin("Ping", 4);
+    _ping_menu.addItem("Ping");
+    _ping_menu.addItem(_ping_time_str);
+    _ping_menu.addItem(_ping_snr_out_str);
+    _ping_menu.addItem(_ping_snr_back_str);
+  }
+
+  bool renderPingMenuIfActive(DisplayDriver& display) {
+    if (!_ping_menu.active) return false;
+    _ping_menu.render(display);
+    return true;
+  }
+
+  void closePingMenu(bool clear_task = true) {
+    _ping_menu.active = false;
+    _pinging = false;
+    if (clear_task && _task) _task->clearPing();
+    resetPingLines();
+  }
+
+  void startPingForKey(const uint8_t* pub_key) {
+    resetPingLines();
+    snprintf(_ping_time_str, sizeof(_ping_time_str), "Ping: ...");
+    if (_task && _task->startPing(pub_key)) {
+      _pinging = true;
+      _ping_started_ms = millis();
+    } else {
+      _ping_time_str[0] = '\0';
+    }
+  }
+
+  void updatePingMenuState() {
+    if (!_ping_menu.active || !_task || (!_pinging && !_task->isPingActive())) return;
+
+    int16_t snr_out = 0, snr_back = 0;
+    uint32_t rtt = 0;
+    _task->getPingResult(snr_out, snr_back, rtt);
+
+    if (_pinging && (snr_out != 0 || snr_back != 0 || rtt != 0)) {
+      if (rtt > 0 && rtt < 10000) {
+        snprintf(_ping_time_str, sizeof(_ping_time_str), "Ping: %lumS", rtt);
+      } else {
+        snprintf(_ping_time_str, sizeof(_ping_time_str), "Ping: timeout");
+      }
+      if (snr_out != 0) {
+        snprintf(_ping_snr_out_str, sizeof(_ping_snr_out_str), "SNR out: %.1f", snr_out / 4.0f);
+      }
+      if (snr_back != 0) {
+        snprintf(_ping_snr_back_str, sizeof(_ping_snr_back_str), "SNR back: %.1f", snr_back / 4.0f);
+      }
+      _pinging = false;
+    } else if (_pinging && millis() - _ping_started_ms >= PING_TIMEOUT_MS) {
+      snprintf(_ping_time_str, sizeof(_ping_time_str), "Ping: timeout");
+      _ping_snr_out_str[0] = '\0';
+      _ping_snr_back_str[0] = '\0';
+      _pinging = false;
+      if (_task) _task->clearPing();
+    }
+  }
+
+  bool handlePingMenuInput(char c, const uint8_t* pub_key, bool allow_enter_to_open = false) {
+    if (!_ping_menu.active) {
+      if (c == KEY_CONTEXT_MENU || (allow_enter_to_open && c == KEY_ENTER)) {
+        openPingMenu();
+        return true;
+      }
+      return false;
+    }
+
+    auto res = _ping_menu.handleInput(c);
+    if (res == PopupMenu::SELECTED) {
+      if (!_pinging && pub_key) {
+        startPingForKey(pub_key);
+      }
+      // Keep the popup open so Ping stays available after completion.
+      _ping_menu.active = true;
+    } else if (res == PopupMenu::CANCELLED) {
+      closePingMenu();
+    }
+    return true;
+  }
+
+  bool selectedStoredPubKey(uint8_t* out_pub_key) const {
+    ContactInfo ci;
+    if (_task && _sel < _count && _entries[_sel].contact_idx >= 0 &&
+        the_mesh.getContactByIdx(_entries[_sel].contact_idx, ci)) {
+      memcpy(out_pub_key, ci.id.pub_key, PUB_KEY_SIZE);
+      return true;
+    }
+    return false;
+  }
+
+  const uint8_t* selectedDiscoverPubKey() const {
+    return (_dsel < _dresult_count) ? _dresults[_dsel].pub_key : nullptr;
+  }
+
+  bool renderDiscoverDetail(DisplayDriver& display) {
+    const DiscoverResult& r = _dresults[_dsel];
+    const int hdr = display.headerH();
+    const char* fullType = (r.type == ADV_TYPE_REPEATER) ? "Repeater" :
+                           (r.type == ADV_TYPE_SENSOR)   ? "Sensor"   :
+                           (r.type == ADV_TYPE_ROOM)     ? "Room"     : "Node";
+
+    char label[32];
+    if (r.name[0]) { strncpy(label, r.name, 31); label[31] = '\0'; }
+    else           { snprintf(label, sizeof(label), "[%s]", fullType); }
+    char filtered[32];
+    display.translateUTF8ToBlocks(filtered, label, sizeof(filtered));
+    display.setColor(DisplayDriver::LIGHT);
+    display.fillRect(0, 0, display.width(), hdr - 1);
+    display.setColor(DisplayDriver::DARK);
+    display.drawTextEllipsized(2, 1, display.width() - 4, filtered);
+    display.setColor(DisplayDriver::LIGHT);
+    display.fillRect(0, hdr - 1, display.width(), 1);
+
+    char b64[48];
+    pubKeyToBase64(r.pub_key, b64, sizeof(b64));
+    {
+      int max_chars = (display.width() - 4) / display.getCharWidth();
+      int b64_len   = strlen(b64);
+      char b64_line[48];
+      if (b64_len > max_chars) {
+        strncpy(b64_line, b64, max_chars - 3);
+        b64_line[max_chars - 3] = '\0';
+        strcat(b64_line, "...");
+      } else {
+        strncpy(b64_line, b64, sizeof(b64_line) - 1);
+        b64_line[sizeof(b64_line) - 1] = '\0';
+      }
+      display.setCursor(2, hdr);
+      display.print(b64_line);
+    }
+
+    int step = display.lineStep();
+    if (step * 5 > display.height() - hdr) step = (display.height() - hdr) / 5;
+    char buf[32];
+    snprintf(buf, sizeof(buf), "RSSI: %d dBm", (int)r.rssi);
+    display.setCursor(2, hdr + step);     display.print(buf);
+    snprintf(buf, sizeof(buf), "SNR:  %d dB", (int)(r.snr_x4 / 4));
+    display.setCursor(2, hdr + step * 2); display.print(buf);
+    snprintf(buf, sizeof(buf), "Rem:  %d dB", (int)(r.remote_snr_x4 / 4));
+    display.setCursor(2, hdr + step * 3); display.print(buf);
+    display.setCursor(2, hdr + step * 4);
+    display.print(r.is_known ? "Status: known" : "Status: new");
+
+    updatePingMenuState();
+    if (renderPingMenuIfActive(display)) return true;
+    return true;
+  }
+
+  bool renderStoredDetail(DisplayDriver& display) {
+    const Entry& e = _entries[_sel];
+    const int hdr  = display.headerH();
+
+    display.setColor(DisplayDriver::LIGHT);
+    display.fillRect(0, 0, display.width(), hdr - 1);
+    display.setColor(DisplayDriver::DARK);
+    char filtered[32];
+    display.translateUTF8ToBlocks(filtered, e.name, sizeof(filtered));
+    display.drawTextEllipsized(2, 1, display.width() - 4, filtered);
+    display.setColor(DisplayDriver::LIGHT);
+
+    int step = display.lineStep();
+    if (step * 5 > display.height() - hdr) step = (display.height() - hdr) / 5;
+    char buf[32];
+    snprintf(buf, sizeof(buf), "Lat: %.5f", e.lat_e6 / 1e6);
+    display.setCursor(2, hdr); display.print(buf);
+    snprintf(buf, sizeof(buf), "Lon: %.5f", e.lon_e6 / 1e6);
+    display.setCursor(2, hdr + step); display.print(buf);
+
+    if (e.dist_km >= 0.0f) {
+      char dist[12];
+      fmtDist(dist, sizeof(dist), e.dist_km);
+      int az = bearingDeg(_own_lat, _own_lon, e.lat_e6, e.lon_e6);
+      snprintf(buf, sizeof(buf), "Dist: %s %s", dist, bearingCardinal(az));
+    } else {
+      snprintf(buf, sizeof(buf), "Dist: no GPS");
+    }
+    display.setCursor(2, hdr + step * 2); display.print(buf);
+    snprintf(buf, sizeof(buf), "Type: %s", typeName(e.type));
+    display.setCursor(2, hdr + step * 3); display.print(buf);
+    char age[16];
+    fmtAge(age, sizeof(age), e.lastmod);
+    snprintf(buf, sizeof(buf), "Seen: %s", age);
+    display.drawTextEllipsized(2, hdr + step * 4, display.width() - 4, buf);
+
+    updatePingMenuState();
+    if (renderPingMenuIfActive(display)) return true;
+    return true;
+  }
+
   int renderDiscover(DisplayDriver& display) {
     int lh      = display.getLineHeight();
     int hdr     = display.headerH();
@@ -196,61 +403,8 @@ class NearbyScreen : public UIScreen {
     if (_d_visible < 1) _d_visible = 1;
 
     if (_ddetail) {
-      // ── full-screen detail for selected node ──────────────────────────────
-      const DiscoverResult& r = _dresults[_dsel];
-      const char* fullType = (r.type == ADV_TYPE_REPEATER) ? "Repeater" :
-                             (r.type == ADV_TYPE_SENSOR)   ? "Sensor"   :
-                             (r.type == ADV_TYPE_ROOM)     ? "Room"     : "Node";
-
-      // title bar: node name inverted
-      char label[32];
-      if (r.name[0]) { strncpy(label, r.name, 31); label[31] = '\0'; }
-      else           { snprintf(label, sizeof(label), "[%s]", fullType); }
-      char filtered[32];
-      display.translateUTF8ToBlocks(filtered, label, sizeof(filtered));
-      display.setColor(DisplayDriver::LIGHT);
-      display.fillRect(0, 0, display.width(), hdr - 1);
-      display.setColor(DisplayDriver::DARK);
-      display.drawTextEllipsized(2, 1, display.width() - 4, filtered);
-      display.setColor(DisplayDriver::LIGHT);
-      display.fillRect(0, hdr - 1, display.width(), 1);
-
-      // public key as base64 — truncate to one line via charWidth
-      char b64[48];
-      pubKeyToBase64(r.pub_key, b64, sizeof(b64));
-      {
-        int max_chars = (display.width() - 4) / display.getCharWidth();
-        int b64_len   = strlen(b64);
-        char b64_line[48];
-        if (b64_len > max_chars) {
-          strncpy(b64_line, b64, max_chars - 3);
-          b64_line[max_chars - 3] = '\0';
-          strcat(b64_line, "...");
-        } else {
-          strncpy(b64_line, b64, sizeof(b64_line) - 1);
-          b64_line[sizeof(b64_line) - 1] = '\0';
-        }
-        display.setCursor(2, hdr);
-        display.print(b64_line);
-      }
-
-      // distribute 4 remaining lines below b64 — compact step, shrink only if needed
-      int step = display.lineStep();
-      if (step * 5 > display.height() - hdr) step = (display.height() - hdr) / 5;
-      char buf[32];
-      snprintf(buf, sizeof(buf), "RSSI: %d dBm", (int)r.rssi);
-      display.setCursor(2, hdr + step);     display.print(buf);
-
-      snprintf(buf, sizeof(buf), "SNR:  %d dB", (int)(r.snr_x4 / 4));
-      display.setCursor(2, hdr + step * 2); display.print(buf);
-
-      snprintf(buf, sizeof(buf), "Rem:  %d dB", (int)(r.remote_snr_x4 / 4));
-      display.setCursor(2, hdr + step * 3); display.print(buf);
-
-      display.setCursor(2, hdr + step * 4);
-      display.print(r.is_known ? "Status: known" : "Status: new");
-
-      return 5000;
+      renderDiscoverDetail(display);
+      return _ping_menu.active ? 50 : 5000;
     }
 
     // ── list view ─────────────────────────────────────────────────────────────
@@ -330,16 +484,26 @@ class NearbyScreen : public UIScreen {
         { display.setCursor(display.width() - cw, d_start_y + (_d_visible - 1) * d_item_h); display.print("v"); }
     }
 
+    updatePingMenuState();
+
+    // Show ping popup menu if active
+    if (_ping_menu.active) {
+      _ping_menu.render(display);
+      return 50;
+    }
+
     return _discovering ? 200 : 2000;
   }
 
   bool handleInputDiscover(char c) {
     if (_ddetail) {
-      if (c == KEY_CANCEL) { _ddetail = false; return true; }
-      if (c == KEY_CONTEXT_MENU || c == KEY_ENTER) {
-        enterDiscoverMode();  // re-scan; clears _ddetail
-        return true;
+      if (c == KEY_CANCEL) { 
+        _ddetail = false; 
+        closePingMenu();
+        return true; 
       }
+
+      if (handlePingMenuInput(c, selectedDiscoverPubKey())) return true;
       return true;
     }
     if (c == KEY_CANCEL) {
@@ -374,7 +538,12 @@ public:
       _own_lat(0), _own_lon(0), _own_gps(false), _filter(0),
       _detail_refresh_ms(0),
       _discover_mode(false), _discovering(false), _discover_started_ms(0),
-      _dresult_count(0), _dscroll(0), _dsel(0), _ddetail(false) {}
+      _dresult_count(0), _dscroll(0), _dsel(0), _ddetail(false),
+      _pinging(false), _ping_started_ms(0) {
+    _ping_time_str[0] = '\0';
+    _ping_snr_out_str[0] = '\0';
+    _ping_snr_back_str[0] = '\0';
+  }
 
   void enter() {
     _sel = _scroll = 0;
@@ -384,6 +553,12 @@ public:
     _ddetail = false;
     _dsel    = 0;
     _ctx_menu.active = false;
+    _ping_menu.active = false;
+    _pinging = false;
+    _ping_time_str[0] = '\0';
+    _ping_snr_out_str[0] = '\0';
+    _ping_snr_back_str[0] = '\0';
+    _task->clearPing();
     refresh();
   }
 
@@ -409,46 +584,8 @@ public:
 
     // ── detail view ──────────────────────────────────────────────────────────
     if (_detail && _sel < _count) {
-      const Entry& e = _entries[_sel];
-      int hdr  = display.headerH();
-
-      display.setColor(DisplayDriver::LIGHT);
-      display.fillRect(0, 0, display.width(), hdr - 1);
-      display.setColor(DisplayDriver::DARK);
-      char filtered[32];
-      display.translateUTF8ToBlocks(filtered, e.name, sizeof(filtered));
-      display.drawTextEllipsized(2, 1, display.width() - 4, filtered);
-      display.setColor(DisplayDriver::LIGHT);
-
-      // 5 lines: lat, lon, dist+bearing, type, seen — compact step, shrink only if needed
-      int step = display.lineStep();
-      if (step * 5 > display.height() - hdr) step = (display.height() - hdr) / 5;
-      char buf[32];
-      snprintf(buf, sizeof(buf), "Lat: %.5f", e.lat_e6 / 1e6);
-      display.setCursor(2, hdr); display.print(buf);
-
-      snprintf(buf, sizeof(buf), "Lon: %.5f", e.lon_e6 / 1e6);
-      display.setCursor(2, hdr + step); display.print(buf);
-
-      if (e.dist_km >= 0.0f) {
-        char dist[12];
-        fmtDist(dist, sizeof(dist), e.dist_km);
-        int az = bearingDeg(_own_lat, _own_lon, e.lat_e6, e.lon_e6);
-        snprintf(buf, sizeof(buf), "Dist: %s %s", dist, bearingCardinal(az));
-      } else {
-        snprintf(buf, sizeof(buf), "Dist: no GPS");
-      }
-      display.setCursor(2, hdr + step * 2); display.print(buf);
-
-      snprintf(buf, sizeof(buf), "Type: %s", typeName(e.type));
-      display.setCursor(2, hdr + step * 3); display.print(buf);
-
-      char age[16];
-      fmtAge(age, sizeof(age), e.lastmod);
-      snprintf(buf, sizeof(buf), "Seen: %s", age);
-      display.setCursor(2, hdr + step * 4); display.print(buf);
-
-      return 2000;
+      renderStoredDetail(display);
+      return _ping_menu.active ? 50 : 2000;
     }
 
     // ── list view ────────────────────────────────────────────────────────────
@@ -509,7 +646,14 @@ public:
 
     // ── detail view ─────────────────────────────────────────────────────────
     if (_detail) {
-      if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) { _detail = false; return true; }
+      if (c == KEY_CANCEL) { 
+        _detail = false; 
+        closePingMenu();
+        return true; 
+      }
+
+      uint8_t pub_key[PUB_KEY_SIZE];
+      if (selectedStoredPubKey(pub_key) && handlePingMenuInput(c, pub_key)) return true;
       return true;
     }
 

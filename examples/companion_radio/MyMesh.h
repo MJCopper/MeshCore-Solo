@@ -122,6 +122,27 @@ public:
   int  getRecentlyHeard(AdvertPath dest[], int max_num);
   int  getDiscoverResults(DiscoverResult dest[], int max_count);
 
+  // Ping/Trace functionality
+  #define PING_RESULT_MAX 4
+  typedef void (*PingCallback)(uint32_t tag, int16_t snr_out_x4, int16_t snr_back_x4, uint32_t rtt_ms);
+  
+  struct PingResult {
+    uint32_t tag;
+    uint32_t auth_code;
+    int16_t snr_out_x4;    // SNR out (to first hop) × 4
+    int16_t snr_back_x4;   // SNR back (from last hop to us) × 4
+    uint32_t rtt_ms;       // Round-trip time in milliseconds
+    bool received;
+    unsigned long sent_ms;
+  };
+  
+  uint32_t sendPing(const uint8_t* dest_pubkey, uint8_t hash_width = 1);
+  void setPingCallback(PingCallback cb, void* arg);
+  void clearPingResult(uint32_t tag);
+  PingResult* getPingResult(uint32_t tag);
+  PingCallback getPingCallback() const { return _ping_callback; }
+  AbstractUITask* getUITask() const { return _ui; }
+
 protected:
   float getAirtimeBudgetFactor() const override;
   int getInterferenceThreshold() const override;
@@ -232,8 +253,6 @@ private:
   void sendScreenshotResponse(DisplayDriver* display, const uint8_t* buffer, uint16_t bufferSize);
 #endif
 
-  UITask* getUITask() { return (UITask*)_ui; }
-
   // helpers, short-cuts
   void saveChannels() { _store->saveChannels(this); }
   void saveContacts() { _store->saveContacts(this); }
@@ -293,6 +312,11 @@ private:
   int             _discover_count;
   uint32_t        _pending_node_discover_tag;
   unsigned long   _pending_node_discover_until;
+
+  // ── Ping/Trace state ──────────────────────────────────────────────────────
+  PingResult _ping_results[PING_RESULT_MAX];
+  PingCallback _ping_callback;
+  void* _ping_callback_arg;
 };
 
 extern MyMesh the_mesh;
