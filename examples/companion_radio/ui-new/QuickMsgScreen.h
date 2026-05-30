@@ -412,6 +412,10 @@ public:
   }
 
   void addChannelMsg(uint8_t ch_idx, const char* text) {
+    // Guard against bogus channel indices (e.g. findChannelIdx() returned -1
+    // and was cast to uint8_t → 255). Storing such an entry would burn a ring
+    // slot for a message that no visible channel can ever surface.
+    if (ch_idx >= MAX_GROUP_CHANNELS) return;
     int pos;
     if (_hist_count < CH_HIST_MAX) {
       pos = (_hist_head + _hist_count) % CH_HIST_MAX;
@@ -425,10 +429,8 @@ public:
     strncpy(_hist[pos].text, text, sizeof(_hist[pos].text) - 1);
     _hist[pos].text[sizeof(_hist[pos].text) - 1] = '\0';
 
-    if (ch_idx < MAX_GROUP_CHANNELS) {
-      bool viewing = (_phase == CHANNEL_HIST && _sel_channel_idx == (int)ch_idx);
-      if (!viewing && _ch_unread[ch_idx] < 99) _ch_unread[ch_idx]++;
-    }
+    bool viewing = (_phase == CHANNEL_HIST && _sel_channel_idx == (int)ch_idx);
+    if (!viewing && _ch_unread[ch_idx] < 99) _ch_unread[ch_idx]++;
   }
 
   void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text) {

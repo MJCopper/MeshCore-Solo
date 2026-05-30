@@ -333,9 +333,13 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
       _prefs.home_pages_mask |= NodePrefs::HP_FAVOURITES;
     }
     // 0xC0DE0003 → 0xC0DE0004: trail_units_idx added after trail_min_delta_idx.
-    // Saves from 0xC0DE0003 have the sentinel bytes where trail_units_idx sits,
-    // so rd() picks up 0x03 (low byte of the old sentinel) — reset to default 0.
-    _prefs.trail_units_idx = 0;
+    // On a 0xC0DE0003 file the sentinel bytes sit where trail_units_idx is now,
+    // so rd() picks up 0x03 (low byte of the old sentinel) — reset just that
+    // case to default 0. Newer mismatches (e.g. 0xC0DE0004 → 0xC0DE0005) had
+    // the field saved correctly and must not be clobbered.
+    if (sentinel == 0xC0DE0003) {
+      _prefs.trail_units_idx = 0;
+    }
   }
 
   file.close();

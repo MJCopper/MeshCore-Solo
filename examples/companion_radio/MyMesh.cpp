@@ -558,7 +558,17 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
     out_frame[i++] = RESP_CODE_CHANNEL_MSG_RECV;
   }
 
-  uint8_t channel_idx = findChannelIdx(channel);
+  // findChannelIdx() returns -1 for an unknown secret (e.g. a packet that
+  // routed to us through a stale hash collision, or a stored channel slot
+  // whose secret was corrupted). Casting -1 to uint8_t would give 255, and
+  // every downstream path (offline queue, UI hist, bot reply) would then
+  // operate on a bogus channel index. Drop the message instead.
+  int idx = findChannelIdx(channel);
+  if (idx < 0) {
+    MESH_DEBUG_PRINTLN("onChannelMessageRecv: unknown channel secret — dropping message");
+    return;
+  }
+  uint8_t channel_idx = (uint8_t)idx;
   out_frame[i++] = channel_idx;
   uint8_t path_len = out_frame[i++] = pkt->isRouteFlood() ? pkt->path_len : 0xFF;
 
@@ -606,7 +616,12 @@ void MyMesh::onChannelDataRecv(const mesh::GroupChannel &channel, mesh::Packet *
   out_frame[i++] = 0; // reserved1
   out_frame[i++] = 0; // reserved2
 
-  uint8_t channel_idx = findChannelIdx(channel);
+  int didx = findChannelIdx(channel);
+  if (didx < 0) {
+    MESH_DEBUG_PRINTLN("onChannelDataRecv: unknown channel secret — dropping packet");
+    return;
+  }
+  uint8_t channel_idx = (uint8_t)didx;
   out_frame[i++] = channel_idx;
   out_frame[i++] = pkt->isRouteFlood() ? pkt->path_len : 0xFF;
   out_frame[i++] = (uint8_t)(data_type & 0xFF);

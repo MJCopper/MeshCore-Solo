@@ -264,3 +264,160 @@ Wio Tracker L1 doesn't have a haptic motor. N/A.
 3. **GPS breadcrumb** — largest of the three; introduces a new flash file and a Tools sub-screen with multiple views
 
 After #3, re-prioritise the backlog with the user.
+
+---
+
+# Code audit — known bugs / hardening backlog
+
+Pass through wio-unified after commit `321d769e`. Grouped by severity. Listed but **not yet fixed**.
+
+## Critical
+
+### ✅ `onChannelMessageRecv` / `onChannelDataRecv` — guard for `findChannelIdx == -1`
+
+[`MyMesh.cpp:561-602`](examples/companion_radio/MyMesh.cpp#L561-L602), [`MyMesh.cpp:619-625`](examples/companion_radio/MyMesh.cpp#L619-L625)
+
+Both group-channel receive paths now check the result of `findChannelIdx()` before continuing:
+
+```cpp
+int idx = findChannelIdx(channel);
+if (idx < 0) {
+  MESH_DEBUG_PRINTLN("...: unknown channel secret — dropping message");
+  return;
+}
+uint8_t channel_idx = (uint8_t)idx;
+```
+
+Unknown-secret packets no longer pollute the offline queue, UI history or trigger the bot with a bogus `idx=255`.
+
+### ✅ `addChannelMsg` guards against bogus index
+
+[`QuickMsgScreen.h:414-433`](examples/companion_radio/ui-new/QuickMsgScreen.h#L414-L433)
+
+Defensive `if (ch_idx >= MAX_GROUP_CHANNELS) return;` at function entry — prevents ring-buffer pollution in case any future caller forgets the upstream guard. With C1 fixed this should never trigger, but the cost is zero.
+
+## High
+
+### 📋 `findChannelIdx` scans all-zero secret in uninitialised slots
+
+[`BaseChatMesh.cpp:892-897`](src/helpers/BaseChatMesh.cpp#L892-L897)
+
+```cpp
+for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {  // full range, not num_channels
+  if (memcmp(ch.secret, channels[i].channel.secret, 32) == 0) return i;
+}
+```
+
+If `ch.secret` is all-zero (uninitialised or corrupted) and an unused slot is also all-zero, the function returns that unused slot as a "match". Upstream code — needs upstream fix or local override.
+
+### 📋 `saveChannels` writes all 40 slots to `/channels2`
+
+[`DataStore.cpp:563-580`](examples/companion_radio/DataStore.cpp#L563-L580) + [`BaseChatMesh.cpp:871-877`](src/helpers/BaseChatMesh.cpp#L871-L877)
+
+`saveChannels` calls `getChannelForSave(idx, ch)` in a loop; `BaseChatMesh::getChannel(idx)` returns `true` for any `idx < MAX_GROUP_CHANNELS` (including uninitialised slots). Result: file is always ~2.7 KB (40 × 68 B). The `loadChannels` sanity check (skip empty secret) papers over the symptom but the root cause is in save.
+
+### 📋 `msgRead(0)` wipes the whole DM unread table
+
+[`UITask.cpp:1403-1410`](examples/companion_radio/ui-new/UITask.cpp#L1403-L1410)
+
+```cpp
+if (msgcount == 0) {
+    memset(_dm_unread_table, 0, sizeof(_dm_unread_table));
+    ((QuickMsgScreen*)quick_msg)->clearAllChannelUnread();
+}
+```
+
+When the companion app reads the last message from the offline queue, all on-device badges disappear. Previously discussed and a fix was reverted as "intended sync behaviour" — keep as known limitation; document or restrict to "Favourites Dial badges only".
+
+### ✅ `loadPrefsInt` scopes `trail_units_idx` reset to the 0xC0DE0003 jump
+
+[`DataStore.cpp:326-343`](examples/companion_radio/DataStore.cpp#L326-L343)
+
+The reset is now gated on `sentinel == 0xC0DE0003` so newer mismatches (e.g. 0xC0DE0004 → 0xC0DE0005, which both saved the field correctly) no longer clobber the user's choice.
+
+## Medium
+
+### 📋 `CMD_SET_DEFAULT_FLOOD_SCOPE` off-by-one
+
+[`MyMesh.cpp:2127-2128`](examples/companion_radio/MyMesh.cpp#L2127-L2128)
+
+```cpp
+if (n > 0 && n < 31) {   // default_scope_name is 32 B → should allow n <= 31
+```
+
+Rejects a valid 31-character scope name.
+
+### 📋 `strlen` on `cmd_frame` without null-termination guarantee
+
+[`MyMesh.cpp:2127`](examples/companion_radio/MyMesh.cpp#L2127)
+
+`strlen((char *) &cmd_frame[1])` will read past frame end if the app sends no `\0` in the first 31 bytes. Bounded by frame buffer size (172+) so practically safe but fragile.
+
+### 📋 `PopupMenu._cap` updated only in `render()`
+
+[`PopupMenu.h:37-44, 77-90`](examples/companion_radio/ui-new/PopupMenu.h#L37-L90)
+
+The first `handleInput()` after `begin()` uses `_cap = _visible` (caller hint), not the real screen capacity. Render always precedes input in practice, but the invariant is fragile.
+
+### 📋 `renderDiscoverDetail` potential negative length in `strncpy`
+
+[`NearbyScreen.h:331-334`](examples/companion_radio/ui-new/NearbyScreen.h#L331-L334)
+
+```cpp
+strncpy(b64_line, b64, max_chars - 3);  // UB if max_chars < 3
+```
+
+Requires `display.width() < ~28` (very narrow), but no guard.
+
+### 📋 `expandMsg` GPS validity test treats (0, 0) as invalid
+
+[`MyMeshBot.h:23, 60`](examples/companion_radio/MyMeshBot.h#L23)
+
+```cpp
+sensors.node_lat != 0.0 || sensors.node_lon != 0.0  // proxy for "valid GPS"
+```
+
+Point (0, 0) is a legitimate location (Gulf of Guinea). Corner case but a logic error.
+
+## Low
+
+### 📋 SNR division by 4 loses precision
+
+[`NearbyScreen.h:348, 350`](examples/companion_radio/ui-new/NearbyScreen.h#L348-L350)
+
+`(int)(r.snr_x4 / 4)` truncates the 0.25 dB component. Should be `r.snr_x4 / 4.0f` with `%.1f`.
+
+### 📋 Trail `_count` cast to `uint16_t`
+
+[`Trail.h:176`](examples/companion_radio/Trail.h#L176)
+
+Safe today (CAPACITY=512 fits), fragile if CAPACITY grows past 65535.
+
+### 📋 Bot `strstr` on truncated 199-char buffer
+
+[`MyMeshBot.h:14-17`](examples/companion_radio/MyMeshBot.h#L14-L17)
+
+Trigger word near the end of a >199-character message will not match.
+
+### 📋 `strncpy("?", buf, sizeof(buf))` — 1 B source into 22 B dest
+
+[`QuickMsgScreen.h:785, 858`](examples/companion_radio/ui-new/QuickMsgScreen.h#L785)
+
+Functional but copies 22 bytes for a 1-character string. Should be `strcpy(buf, "?")`.
+
+### 📋 Title truncation in MSG_PICK reply mode
+
+[`QuickMsgScreen.h:937`](examples/companion_radio/ui-new/QuickMsgScreen.h#L937)
+
+`char title[24]` for `"RE:" + nick[32]` truncates long nicks silently.
+
+## Priority for merge
+
+Fix status after this pass:
+
+- ✅ C1 + C2 — `findChannelIdx == -1` guarded at both channel-recv paths; `addChannelMsg` defends against bogus index
+- ✅ H4 — `trail_units_idx` reset scoped to the 0xC0DE0003 jump
+- 📋 H1 + H2 — still open; need coordinated fix in upstream `BaseChatMesh` (`findChannelIdx` should iterate `num_channels`, not `MAX_GROUP_CHANNELS`; `saveChannels` should stop at the first uninitialised slot) or a local override
+- 📋 H3 — left as known limitation pending UX call
+
+Medium/Low items can ride along with other refactors in the affected files.
