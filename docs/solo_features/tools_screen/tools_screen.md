@@ -35,9 +35,9 @@ From the list view, **Hold Enter** opens the context menu, where **Discover near
 
 From either node detail view, **Hold Enter** opens the Ping popup:
 
-|           OLED            |
-| :-----------------------: |
-| ![](./tls_scr_2_ping_oled.png) |
+|              OLED              |             E-Ink              |
+| :----------------------------: | :----------------------------: |
+| ![](./tls_scr_2_ping_oled.png) | ![](./tls_scr_2_ping_eink.png) |
 
 Use **Enter** on the popup’s `Ping` row to send a direct mesh ping to that node. The popup then shows the RTT and SNR values on the next lines, and can be used again immediately for another ping.
 
