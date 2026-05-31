@@ -100,13 +100,20 @@ Cycle views with **LEFT / RIGHT**:
 
 ### Downloading GPX
 
-1. Connect the device via USB cable
-2. Open a serial terminal at **115200 baud**:
-   - **macOS/Linux** — `cat /dev/tty.usbmodem* > track.gpx` (stop with Ctrl-C after dump completes)
-   - **Windows** — PuTTY (Serial, 115200) or Arduino IDE Serial Monitor (no line ending)
-3. On the device: **Tools › Trail** → **Hold Enter** → **Export (live)** or **Export (saved)**
-4. The device streams a GPX 1.1 XML document. Save the output from `<?xml` to `</gpx>` as a `.gpx` file
-5. Import into OsmAnd, Garmin BaseCamp, GPX Studio, Google Earth, etc.
+**Recommended — `tools/trail_export.py`** (auto-detects the port, captures from `<?xml` to `</gpx>`, writes a timestamped file under `tools/gpx/`):
+
+```sh
+uv run tools/trail_export.py
+```
+
+Then on the device: **Tools › Trail** → **Hold Enter** → **Export (live)** or **Export (saved)**.
+
+**Manual fallback** — open a serial terminal at **115200 baud** and capture the stream by hand:
+
+- **macOS/Linux** — `cat /dev/tty.usbmodem* > track.gpx` (stop with Ctrl-C after the dump finishes)
+- **Windows** — PuTTY (Serial, 115200) or Arduino IDE Serial Monitor with no line ending; copy the text from `<?xml` to `</gpx>` into a `.gpx` file
+
+Either way, the resulting file imports into OsmAnd, Garmin BaseCamp, GPX Studio, Google Earth, etc.
 
 > [!NOTE]
 > If the companion app is connected via **BLE**, the export is safe — BLE and USB operate independently. If connected via **USB**, disconnect the app before exporting.

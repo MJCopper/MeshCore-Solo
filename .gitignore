@@ -19,3 +19,4 @@ venv/
 platformio.local.ini
 CODE_REVIEW.md
 tools/pngs/
+tools/gpx/
