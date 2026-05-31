@@ -36,7 +36,11 @@ class QuickMsgScreen : public UIScreen {
   FullscreenMsgView _fs;
   int  _unread_at_entry;    // _ch_unread value when entering CHANNEL_HIST
   int  _viewing_max_seen;  // highest _hist_sel reached in current session
-  static const int CH_HIST_MAX = 32;
+  // Shared ring for all channels combined. Sized to comfortably exceed
+  // typical inter-visit accumulation; addChannelMsg() decrements the
+  // matching _ch_unread when an entry is evicted so the badge can't claim
+  // unread messages that no longer exist in the ring.
+  static const int CH_HIST_MAX = 96;
 
   // KEYBOARD
   KeyboardWidget _kb;
@@ -422,6 +426,12 @@ public:
       _hist_count++;
     } else {
       pos = _hist_head;
+      // Evicting the oldest entry — drop its share of the unread counter so
+      // the badge can't claim a message the ring no longer holds.
+      uint8_t evicted = _hist[pos].ch_idx;
+      if (evicted < MAX_GROUP_CHANNELS && _ch_unread[evicted] > 0) {
+        _ch_unread[evicted]--;
+      }
       _hist_head = (_hist_head + 1) % CH_HIST_MAX;
     }
     _hist[pos].ch_idx = ch_idx;
