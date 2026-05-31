@@ -136,6 +136,25 @@ Options:
 
 ---
 
+## GPX Trail Export
+
+Capture the GPS trail as a GPX 1.1 file by streaming it over USB serial.
+
+```sh
+uv run tools/trail_export.py
+```
+
+Run the script, then on the device: **Tools › Trail › Hold Enter ›**
+
+- **Export (live)** — current RAM trail
+- **Export (saved)** — `/trail` file from flash
+
+The script auto-detects the port, waits for the `<?xml` start, captures bytes until `</gpx>`, and writes the file to `tools/gpx/trail_<timestamp>.gpx`.
+
+> If the companion app is connected over BLE the export is safe (USB receive is ignored). If the app is on USB, disconnect it first — the raw GPX stream will otherwise disrupt the app's frame protocol.
+
+---
+
 ## Development
 
 This fork tracks the upstream [MeshCore](https://github.com/ripplebiz/MeshCore) repository. To prevent upstream changes from overwriting this README during merges, `README.md` is protected via `.gitattributes`. After cloning, run once:
