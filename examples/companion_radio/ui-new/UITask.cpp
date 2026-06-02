@@ -156,6 +156,64 @@ static int battMvToPercent(int mv, int low_mv) {
   return pct;
 }
 
+// Render the time starting at top_y; returns the y just below the time block
+// so the caller can flow the date / dashboard rows beneath it.
+//
+// On a tall portrait panel (e-ink in portrait — height > width) HH and MM are
+// stacked on two lines in the huge built-in font (size 4, ~56 px tall) so the
+// digits fill the narrow width. On wide panels (OLED, landscape e-ink) the
+// classic single-line "HH:MM" at size 2 is kept.
+static int drawClockTime(DisplayDriver& d, int top_y, const struct tm* ti,
+                         bool h12, bool show_sec) {
+  const bool tall = d.height() > d.width();   // true only on portrait e-ink
+
+  if (tall) {
+    int hh = ti->tm_hour;
+    const char* ap = nullptr;
+    if (h12) { ap = (hh < 12) ? "AM" : "PM"; hh %= 12; if (hh == 0) hh = 12; }
+    const int cx = d.width() / 2;
+    char hbuf[4], mbuf[4];
+    snprintf(hbuf, sizeof(hbuf), "%02d", hh);
+    snprintf(mbuf, sizeof(mbuf), "%02d", ti->tm_min);
+
+    int y = top_y;
+    d.setTextSize(4);
+    const int lhb = d.getLineHeight();
+    // The built-in GFX font advances 6 px per char but the glyph is only 5 px
+    // wide, so getTextWidth() over-reports by one trailing blank column and
+    // drawTextCentered() would bias the digits ~half a column to the left.
+    // Centre on the visible width (minus that trailing column) instead.
+    const int trail = d.getCharWidth() / 6;   // one built-in column at this size
+    auto drawBig = [&](const char* s, int yy) {
+      int w = (int)d.getTextWidth(s) - trail;
+      d.setCursor(cx - w / 2, yy);
+      d.print(s);
+    };
+    drawBig(hbuf, y);  y += lhb + 2;
+    drawBig(mbuf, y);  y += lhb + 2;
+    if (ap) { d.setTextSize(2); d.drawTextCentered(cx, y, ap); y += d.getLineHeight() + 1; }
+    d.setTextSize(1);
+    return y;
+  }
+
+  // Wide layout: single inline line at size 2.
+  char buf[16];
+  d.setTextSize(2);
+  const int lh2 = d.getLineHeight();
+  if (h12) {
+    int hh = ti->tm_hour % 12; if (hh == 0) hh = 12;
+    const char* ap = (ti->tm_hour < 12) ? "AM" : "PM";
+    if (show_sec) snprintf(buf, sizeof(buf), "%d:%02d:%02d%s", hh, ti->tm_min, ti->tm_sec, ap);
+    else          snprintf(buf, sizeof(buf), "%d:%02d %s", hh, ti->tm_min, ap);
+  } else {
+    if (show_sec) snprintf(buf, sizeof(buf), "%02d:%02d:%02d", ti->tm_hour, ti->tm_min, ti->tm_sec);
+    else          snprintf(buf, sizeof(buf), "%02d:%02d", ti->tm_hour, ti->tm_min);
+  }
+  d.drawTextCentered(d.width() / 2, top_y, buf);
+  d.setTextSize(1);
+  return top_y + lh2 + 2;
+}
+
 // ── HomeScreen ────────────────────────────────────────────────────────────────
 class HomeScreen : public UIScreen {
   enum HomePage {
@@ -532,26 +590,14 @@ public:
 
         char buf[24];
         display.setColor(DisplayDriver::LIGHT);
-        display.setTextSize(2);
         bool show_sec = !Features::IS_EINK && (!_node_prefs || !_node_prefs->clock_hide_seconds);
         bool h12 = _node_prefs && _node_prefs->clock_12h;
-        if (h12) {
-          int h = ti->tm_hour % 12; if (h == 0) h = 12;
-          const char* ap = ti->tm_hour < 12 ? "AM" : "PM";
-          if (show_sec) snprintf(buf, sizeof(buf),"%d:%02d:%02d%s", h, ti->tm_min, ti->tm_sec, ap);
-          else          snprintf(buf, sizeof(buf),"%d:%02d %s", h, ti->tm_min, ap);
-        } else {
-          if (show_sec) snprintf(buf, sizeof(buf),"%02d:%02d:%02d", ti->tm_hour, ti->tm_min, ti->tm_sec);
-          else          snprintf(buf, sizeof(buf),"%02d:%02d", ti->tm_hour, ti->tm_min);
-        }
-        int lh2 = display.getLineHeight();  // sz2 height: 16 (OLED) or 32 (landscape)
-        display.drawTextCentered(display.width() / 2, 0, buf);
+        int date_y = drawClockTime(display, 0, ti, h12, show_sec);
 
         display.setTextSize(1);
         static const char* wd[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
         static const char* mo[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
         snprintf(buf, sizeof(buf),"%s %d %s %d", wd[ti->tm_wday], ti->tm_mday, mo[ti->tm_mon], 1900 + ti->tm_year);
-        int date_y = lh2 + 2;
         display.drawTextCentered(display.width() / 2, date_y, buf);
 
         int sep_y  = date_y + lh + 1;
@@ -1733,21 +1779,13 @@ void UITask::loop() {
         time_t t = (time_t)unix_ts;
         struct tm* ti = gmtime(&t);
         char buf[12];
-        _display->setTextSize(2);
-        const int lh2   = _display->getLineHeight();  // sz2 line height
         const int clk_y = 2;
-        if (_node_prefs && _node_prefs->clock_12h) {
-          int h = ti->tm_hour % 12; if (h == 0) h = 12;
-          snprintf(buf, sizeof(buf),"%d:%02d %s", h, ti->tm_min, ti->tm_hour < 12 ? "AM" : "PM");
-        } else {
-          snprintf(buf, sizeof(buf),"%02d:%02d", ti->tm_hour, ti->tm_min);
-        }
-        _display->drawTextCentered(_display->width() / 2, clk_y, buf);
+        bool h12 = _node_prefs && _node_prefs->clock_12h;
+        int date_y = drawClockTime(*_display, clk_y, ti, h12, /*show_sec*/false);
         _display->setTextSize(1);
         static const char* wd[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
         static const char* mo[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
         snprintf(buf, sizeof(buf),"%s %d %s", wd[ti->tm_wday], ti->tm_mday, mo[ti->tm_mon]);
-        int date_y = clk_y + lh2 + 2;
         _display->drawTextCentered(_display->width() / 2, date_y, buf);
 
         // Two sensor values side by side (dashboard_fields[0] and [1])

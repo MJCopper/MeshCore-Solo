@@ -93,16 +93,21 @@ public:
   //   1 = FreeSans9pt      (lineH=16, charW≈9)
   //   2 = FreeSansBold12pt (lineH=20, charW≈12)
   //   3 = FreeSans18pt     (lineH=28, charW≈17)
+  // Built-in font scale used for size 4 (huge clock digits): 6×8 cell × 7 = 42×56.
+  static const int BIG_TEXT_SCALE = 7;
   // Size 1 scales with orientation (portrait 1×, landscape 2×); size 2 is always 12×16;
-  // size 3 is FreeSans18pt (~17×28). Landscape = width >= height.
+  // size 3 is FreeSans18pt (~17×28); size 4 is the built-in font at 7× (~42×56),
+  // used only for the stacked HH/MM clock on portrait e-ink. Landscape = width >= height.
   int getCharWidth() const override {
     int sc = scale();
+    if (_text_sz == 4) return 6 * BIG_TEXT_SCALE;
     if (_text_sz == 3) return 17;
     if (_text_sz == 2) return 12 * sc;
     return (_use_lemon ? 5 : 6) * sc;
   }
   int getLineHeight() const override {
     int sc = scale();
+    if (_text_sz == 4) return 8 * BIG_TEXT_SCALE;
     if (_text_sz == 3) return 28;
     if (_text_sz == 2) return 16 * sc;
     return (_use_lemon ? 10 : 8) * sc;

@@ -141,6 +141,12 @@ void GxEPDDisplay::setTextSize(int sz) {
   // Size 3 always uses FreeSans18pt for large headings.
   int sc = scale();
   switch (sz) {
+    case 4:
+      // Huge clock digits: built-in font scaled up. Cursor stays top-left
+      // (fontAscender returns 0 for the built-in font), so layout maths is plain.
+      display.setFont(NULL);
+      display.setTextSize(BIG_TEXT_SCALE);
+      break;
     case 3:
       display.setFont(&FreeSans18pt7b);
       display.setTextSize(1);
