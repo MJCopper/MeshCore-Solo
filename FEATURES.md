@@ -153,11 +153,146 @@ Edge cases:
 
 ## Backlog (not yet prioritised)
 
-### Compass to contact
+### Waypoints — mark a spot, navigate back ⭐ (next candidate)
 
-Select contact in Nearby → Enter → fullscreen compass. Arrow points to last-known position of contact relative to my GPS heading (need accel/mag or compute heading from movement). Distance below. Updates every 1 s.
+Turns Solo from a comms device into a basic GPS navigator. Mark the current
+position with a short label, then later get bearing + distance back to it —
+ideal for off-grid use (car, camp, trailhead, water source).
 
-Joystick: Enter from Nearby toggles, Back exits. Heading-from-GPS requires moving; for stationary use, would need magnetometer that the L1 board does or doesn't have — check.
+**Storage** — dedicated flash file `/waypoints` (separate from prefs, like
+`/trail`). Fixed table, no schema-sentinel impact:
+
+```
+struct Waypoint {
+  int32_t  lat_1e6, lon_1e6;   // saved fix
+  uint32_t ts;                 // when marked (RTC)
+  char     label[12];          // short name, NUL-terminated ("CAR", "CAMP", "H2O"…)
+};
+static const int WAYPOINT_MAX = 16;   // 16 × 24 B = 384 B file
+```
+
+**Marking** — from the GPS or Trail screen: Hold Enter → "Mark here".
+- Requires a GPS fix; otherwise alert "No GPS fix".
+- Opens the existing `KeyboardWidget` to type the label (≤11 chars). Empty
+  input auto-labels `WP<n>`.
+- Saves the current fix + label, appends to the file.
+
+**Visible on the trail Map** — waypoints render on the existing Map view as a
+distinct marker (e.g. a hollow diamond or a small flag) so they show in
+context with the recorded track:
+- Fold waypoint coords into the map's bounding box so off-track waypoints
+  stay in frame. Today `renderMap()` derives the box from
+  `TrailStore::boundingBox()`; extend it to also span the waypoint table
+  (and handle the "waypoints but empty trail" case — map still renders).
+- Generalise the `project()` lambda to take raw (lat, lon) instead of a
+  `TrailPoint&` so the same projection draws both track points and waypoints.
+- Marker shows the label's first character beside it when there's room
+  (122 px is tight with many waypoints); the full label lives in the list /
+  nav view.
+
+**Trail workflow integration** — waypoints live *inside* the Trail screen, not
+a separate Tools entry, because marking points of interest happens while you
+are recording:
+- **Mark**: Trail → Hold Enter → "Mark here" (new action-menu row). Opens the
+  keyboard for the label, saves the current fix. Works whether or not tracking
+  is active — a waypoint is independent of trail recording state.
+- **Manage / navigate**: Trail → Hold Enter → "Waypoints" → a PopupMenu list
+  of saved waypoints (label + distance). Selecting one:
+    - Enter → fullscreen nav (see below).
+    - Hold Enter → Rename / Delete (later: **Share over mesh**).
+- Waypoints persist across trail Reset / reboot (separate `/waypoints` file),
+  unlike the RAM trail ring.
+
+**Navigation view — two bearings, no compass needed**
+
+The L1 has no magnetometer, so we can't show "you are facing X". Instead the
+nav view shows two *absolute* bearings and lets the user do the comparison —
+robust against GPS jitter, no relative-turn maths:
+
+```
+   CAMP            ← waypoint label
+   1.4 km          ← distance to target
+   To:  145° SE    ← absolute bearing target-from-me (haversine/bearingDeg)
+   Hdg: 090° E     ← my course over ground, derived from recent GPS movement
+```
+
+Reading it: target is at 145°, I'm travelling at 90° → I need to bear right.
+When standing still (course undefined) the Hdg line shows `--` instead of a
+stale value.
+
+**Course over ground (COG)** — a small `TrailStore` helper:
+`bool currentCourse(int& deg)` walks back from the newest fix until the
+cumulative distance from it exceeds a threshold (~10–15 m so GPS noise
+doesn't dominate) and returns the bearing from that older fix to the newest.
+Returns false (→ `--`) when there isn't enough recent movement. Refreshed ~1 s.
+`bearingDeg` / `bearingCardinal` are currently private statics in NearbyScreen;
+lift them into a shared header (or TrailStore) so both screens use them.
+
+This COG value can later back a standalone "heading" trail view if wanted, but
+the two-bearing nav view already covers the practical need.
+
+**Shared nav view — also navigate to a node** ⭐
+
+The nav view's target is just `(lat, lon, label)` — it doesn't care whether
+that came from a waypoint, the trail start (Backtrack), or a node's
+last-known advert position. Make it a small reusable component
+(`NavView` / `drawNavTo(display, target_lat, target_lon, label)`) and wire it
+in from **Nearby Nodes** too: node detail → "Navigate" → same To/Hdg/distance
+screen, retargeting the selected node. This folds the backlog "Compass to
+contact" idea into one screen and means Nearby stops being a static snapshot —
+you can actually walk toward a person.
+
+Node target is the contact's `gps_lat/gps_lon` from its last advert (already
+read in NearbyScreen). It's a *last-known* fix, not live, so the label could
+show the advert age (e.g. `Alice (5m)`); pair it with Auto-Advert on the other
+device for a moving target.
+
+**COG source must be decoupled from trail recording.** Deriving the heading
+from `TrailStore` only works while a trail is actively being recorded — but
+node/waypoint navigation shouldn't require the user to start trail logging.
+Fix: a tiny independent COG ring in UITask (≈4 fixes), maintained on every GPS
+poll regardless of trail state. The trail ring stays a separate concern, so
+the Hdg line is available everywhere (waypoints, nodes, backtrack).
+
+The COG ring is **time-sampled with guards**, not raw displacement-gated:
+push every GPS fix at the normal poll cadence (~1 s) into a short rolling
+window (a few seconds of fixes), and compute the heading as the bearing
+across the window (oldest→newest), optionally low-pass smoothed. Time-based
+sampling gives a steadier, averaged course than bearing between just two
+points, and tracks slow movement without lagging.
+
+Two guards keep it honest:
+- **Gross-error rejection** — drop a fix before it enters the window if it
+  implies an impossible jump (implied speed over a sane cap, e.g. > ~50 m/s
+  between consecutive fixes), or if the provider exposes a usable
+  validity/HDOP signal. One bad fix shouldn't swing the heading.
+- **Minimum displacement over the window** — only emit a heading once the
+  total movement across the window exceeds a small threshold (a few m). Below
+  that the user is effectively stationary: hold the last good heading, and
+  show `--` until the window has cleared the threshold at least once. This
+  is what stops a standing user from getting a spinning bearing.
+
+Threshold(s) can be fixed constants to start; expose in Settings later if it
+proves worth tuning.
+
+Open question: whether the nav view should also be reachable as a 4th Map
+overlay state (cycle a "highlighted" waypoint with LEFT/RIGHT on the Map) or
+stay list-driven only. Start list-driven; add map cycling later if wanted.
+
+### Backtrack — navigate home along the recorded trail
+
+Pairs with Waypoints but needs zero new storage: read the live `TrailStore`
+ring and show bearing + distance back to the trail start (or the nearest
+recorded point). "Get me back to where I started." A Trail action-menu entry
+"Navigate to start" opens the same fullscreen nav view as Waypoints.
+
+### Compass to contact — folded into the Waypoints nav view
+
+Superseded by the shared nav view described under **Waypoints** above:
+navigate to a node = open that nav view with the contact's last-advert
+`gps_lat/gps_lon` as the target. No separate compass screen needed; the
+"two absolute bearings (To / Hdg)" approach replaces the relative-heading
+arrow this entry originally assumed. Kept here only as a cross-reference.
 
 ### SOS broadcast
 
