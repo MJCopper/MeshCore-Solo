@@ -1,5 +1,6 @@
 #pragma once
 #include <math.h>
+#include "../GeoUtils.h"
 
 #ifndef M_PI
   #define M_PI 3.14159265358979323846
@@ -78,31 +79,12 @@ class NearbyScreen : public UIScreen {
     out[j] = '\0';
   }
 
-  static float haversineKm(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2) {
-    static const float DEG2RAD = (float)M_PI / 180.0f;
-    float la1 = lat1 * (1e-6f * DEG2RAD);
-    float la2 = lat2 * (1e-6f * DEG2RAD);
-    float dla = (lat2 - lat1) * (1e-6f * DEG2RAD);
-    float dlo = (lon2 - lon1) * (1e-6f * DEG2RAD);
-    float a   = sinf(dla/2)*sinf(dla/2) + cosf(la1)*cosf(la2)*sinf(dlo/2)*sinf(dlo/2);
-    return 6371.0f * 2.0f * asinf(sqrtf(a));
-  }
-
-  static int bearingDeg(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2) {
-    static const float DEG2RAD = (float)M_PI / 180.0f;
-    float la1 = lat1 * (1e-6f * DEG2RAD);
-    float la2 = lat2 * (1e-6f * DEG2RAD);
-    float dlo = (lon2 - lon1) * (1e-6f * DEG2RAD);
-    float b   = atan2f(sinf(dlo)*cosf(la2),
-                       cosf(la1)*sinf(la2) - sinf(la1)*cosf(la2)*cosf(dlo)) * (180.0f / (float)M_PI);
-    if (b < 0.0f) b += 360.0f;
-    return (int)(b + 0.5f) % 360;
-  }
-
-  static const char* bearingCardinal(int deg) {
-    static const char* dirs[] = { "N","NE","E","SE","S","SW","W","NW" };
-    return dirs[((deg + 22) % 360) / 45];
-  }
+  // Geographic helpers live in GeoUtils.h (geo::) — shared with Waypoints /
+  // trail course-over-ground. Thin forwarders keep the existing call sites.
+  static float haversineKm(int32_t a, int32_t b, int32_t c, int32_t d) { return geo::haversineKm(a, b, c, d); }
+  static int   bearingDeg(int32_t a, int32_t b, int32_t c, int32_t d)   { return geo::bearingDeg(a, b, c, d); }
+  static const char* bearingCardinal(int deg) { return geo::bearingCardinal(deg); }
+  static void  fmtDist(char* buf, int n, float km) { geo::fmtDist(buf, n, km); }
 
   static void fmtAge(char* buf, int n, uint32_t lastmod) {
     uint32_t now = rtc_clock.getCurrentTime();
@@ -112,12 +94,6 @@ class NearbyScreen : public UIScreen {
     else if (age < 3600)   snprintf(buf, n, "%um ago",  age / 60);
     else if (age < 86400)  snprintf(buf, n, "%uh ago",  age / 3600);
     else                   snprintf(buf, n, ">1d ago");
-  }
-
-  static void fmtDist(char* buf, int n, float km) {
-    if      (km < 1.0f)   snprintf(buf, n, "%dm",   (int)(km * 1000 + 0.5f));
-    else if (km < 100.0f) snprintf(buf, n, "%.1fkm", km);
-    else                  snprintf(buf, n, "%dkm",  (int)(km + 0.5f));
   }
 
   static const char* typeName(uint8_t t) {
