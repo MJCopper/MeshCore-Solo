@@ -1,6 +1,7 @@
 #pragma once
 #include <math.h>
 #include "../GeoUtils.h"
+#include "NavView.h"
 
 #ifndef M_PI
   #define M_PI 3.14159265358979323846
@@ -31,6 +32,7 @@ class NearbyScreen : public UIScreen {
   int     _sel;
   int     _scroll;
   bool    _detail;
+  bool    _nav = false;     // full-screen navigate-to-node view (over detail)
   int32_t _own_lat, _own_lon;
   bool    _own_gps;
   uint8_t _filter;
@@ -536,6 +538,7 @@ public:
   void enter() {
     _sel = _scroll = 0;
     _detail = false;
+    _nav = false;
     _filter = 0;
     _discover_mode = false;
     _ddetail = false;
@@ -568,6 +571,15 @@ public:
       }
       if (!found) _detail = false;
       _detail_refresh_ms = millis();
+    }
+
+    // ── navigate-to-node view ────────────────────────────────────────────────
+    if (_nav && _sel < _count) {
+      const Entry& e = _entries[_sel];
+      int cog; bool cogv = _task->currentCourse(cog);
+      navview::draw(display, _own_gps, _own_lat, _own_lon,
+                    e.lat_e6, e.lon_e6, e.name, cogv, cog);
+      return 1000;
     }
 
     // ── detail view ──────────────────────────────────────────────────────────
@@ -632,16 +644,30 @@ public:
     // ── discover sub-screen ──────────────────────────────────────────────────
     if (_discover_mode) return handleInputDiscover(c);
 
+    // ── navigate-to-node view — any nav key returns to detail ─────────────────
+    if (_nav) {
+      if (c == KEY_CANCEL || c == KEY_LEFT || c == KEY_PREV ||
+          c == KEY_RIGHT  || c == KEY_NEXT) { _nav = false; }
+      return true;
+    }
+
     // ── detail view ─────────────────────────────────────────────────────────
     if (_detail) {
-      if (c == KEY_CANCEL) { 
-        _detail = false; 
+      if (c == KEY_CANCEL) {
+        _detail = false;
         closePingMenu();
-        return true; 
+        return true;
       }
 
       uint8_t pub_key[PUB_KEY_SIZE];
       if (selectedStoredPubKey(pub_key) && handlePingMenuInput(c, pub_key)) return true;
+
+      // Enter (ping menu closed) → navigate to this node's last-known position.
+      if (c == KEY_ENTER && _sel < _count) {
+        const Entry& e = _entries[_sel];
+        if (e.lat_e6 != 0 || e.lon_e6 != 0) _nav = true;
+        else _task->showAlert("No node GPS", 1000);
+      }
       return true;
     }
 
