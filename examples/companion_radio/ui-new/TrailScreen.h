@@ -6,6 +6,8 @@
 // Included by UITask.cpp after Trail store + ToolsScreen.
 
 #include "../Trail.h"
+#include "../GeoUtils.h"
+#include "NavView.h"
 #include <math.h>
 
 class TrailScreen : public UIScreen {
@@ -19,14 +21,26 @@ class TrailScreen : public UIScreen {
   bool    _cfg_dirty      = false;
   bool    _map_grid       = true;   // show scale grid in map view (Enter to toggle)
 
+  // Waypoint sub-screens layered over the trail views. WP_OFF = normal trail.
+  enum WpMode { WP_OFF, WP_LIST, WP_NAV };
+  uint8_t   _wp_mode  = WP_OFF;
+  int       _wp_sel   = 0;
+  int       _wp_scroll = 0;
+  PopupMenu _wp_ctx;                 // Rename / Delete on a selected waypoint
+  KeyboardWidget _wp_kb;             // label entry (mark new / rename)
+  bool      _kb_active = false;
+  int       _kb_rename_idx = -1;     // -1 = marking new, ≥0 = renaming that index
+  int32_t   _mark_lat = 0, _mark_lon = 0;   // pending new-mark position
+  uint32_t  _mark_ts  = 0;
+
   // Action popup (Hold Enter / KEY_CONTEXT_MENU). Carries both settings rows
   // (Min dist, Units — cycled with LEFT/RIGHT while focused) and actions
   // (Start/Stop tracking, Reset). PopupMenu stores label pointers verbatim, so
   // the labels live in member buffers that get refreshed in openActionMenu()
   // and after every LEFT/RIGHT cycle.
-  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED };
+  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS };
   PopupMenu _action_menu;
-  uint8_t   _act_map[12];  // 9 used today; pad so adding an action doesn't OOB
+  uint8_t   _act_map[14];  // 11 used today; pad so adding an action doesn't OOB
   uint8_t   _act_count = 0;
   char      _act_min_dist_label[24];
   char      _act_units_label[24];
@@ -44,11 +58,25 @@ public:
     _list_scroll    = 0;
     _cfg_dirty      = false;
     _action_menu.active = false;
+    _wp_mode = WP_OFF;
+    _wp_ctx.active = false;
+    _kb_active = false;
   }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
+
+    // Label keyboard (mark / rename) owns the whole screen while open.
+    if (_kb_active) return _wp_kb.render(display);
+
+    // Waypoint sub-screens replace the trail views.
+    if (_wp_mode == WP_NAV)  { renderWpNav(display);  return 1000; }
+    if (_wp_mode == WP_LIST) {
+      renderWpList(display);
+      if (_wp_ctx.active) _wp_ctx.render(display);
+      return 1000;
+    }
 
     // Title carries the view counter so the bottom hint row can be reclaimed
     // for content.
@@ -69,6 +97,59 @@ public:
   }
 
   bool handleInput(char c) override {
+    // Label keyboard (mark new / rename) takes all input first.
+    if (_kb_active) {
+      auto r = _wp_kb.handleInput(c);
+      if (r == KeyboardWidget::DONE)        { commitLabel(_wp_kb.buf); _kb_active = false; }
+      else if (r == KeyboardWidget::CANCELLED) { _kb_active = false; }
+      return true;
+    }
+
+    // Waypoint Rename/Delete popup.
+    if (_wp_ctx.active) {
+      auto res = _wp_ctx.handleInput(c);
+      if (res == PopupMenu::SELECTED) {
+        int sel = _wp_ctx.selectedIndex();
+        if (sel == 0) {                                  // Rename
+          if (_wp_sel < _task->waypoints().count()) {
+            _kb_rename_idx = _wp_sel;
+            _wp_kb.begin(_task->waypoints().at(_wp_sel).label);
+            _kb_active = true;
+          }
+        } else {                                          // Delete
+          _task->waypoints().remove(_wp_sel);
+          _task->saveWaypoints();
+          if (_wp_sel >= _task->waypoints().count())
+            _wp_sel = _task->waypoints().count() - 1;
+          if (_wp_sel < 0) _wp_sel = 0;
+        }
+      }
+      return true;
+    }
+
+    // Waypoint navigation view — any nav key returns to the list.
+    if (_wp_mode == WP_NAV) {
+      if (c == KEY_CANCEL || c == KEY_LEFT || c == KEY_PREV ||
+          c == KEY_RIGHT  || c == KEY_NEXT) { _wp_mode = WP_LIST; }
+      return true;
+    }
+
+    // Waypoint list.
+    if (_wp_mode == WP_LIST) {
+      int n = _task->waypoints().count();
+      if (c == KEY_CANCEL) { _wp_mode = WP_OFF; return true; }
+      if (c == KEY_UP   && _wp_sel > 0)     { _wp_sel--; if (_wp_sel < _wp_scroll) _wp_scroll = _wp_sel; return true; }
+      if (c == KEY_DOWN && _wp_sel < n - 1) { _wp_sel++; return true; }
+      if (c == KEY_ENTER && n > 0)          { _wp_mode = WP_NAV; return true; }
+      if (c == KEY_CONTEXT_MENU && n > 0) {
+        _wp_ctx.begin("Waypoint", 2);
+        _wp_ctx.addItem("Rename");
+        _wp_ctx.addItem("Delete");
+        return true;
+      }
+      return true;
+    }
+
     // Action popup overrides everything else.
     if (_action_menu.active) {
       // LEFT/RIGHT on settings rows cycles the value in-place and refreshes
@@ -96,6 +177,8 @@ public:
           else if (act == ACT_GRID)         { _map_grid = !_map_grid; }
           else if (act == ACT_EXPORT)       { handleExport(); }
           else if (act == ACT_EXPORT_SAVED) { handleExportSaved(); }
+          else if (act == ACT_MARK)         { handleMarkHere(); }
+          else if (act == ACT_WAYPOINTS)    { _wp_mode = WP_LIST; _wp_sel = 0; _wp_scroll = 0; }
           else /* MIN_DIST / UNITS */       { reopenAt(sel); return true; }  // re-open keeping focus
         }
         if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
@@ -222,6 +305,11 @@ private:
     _act_map[_act_count++] = ACT_UNITS;    _action_menu.addItem(_act_units_label);
     _act_map[_act_count++] = ACT_GRID;     _action_menu.addItem(_act_grid_label);
     _act_map[_act_count++] = ACT_TOGGLE;   _action_menu.addItem(_act_toggle_label);
+    // Waypoints: mark the current spot, and browse/navigate saved ones.
+    _act_map[_act_count++] = ACT_MARK;     _action_menu.addItem("Mark here");
+    if (_task->waypoints().count() > 0) {
+      _act_map[_act_count++] = ACT_WAYPOINTS; _action_menu.addItem("Waypoints");
+    }
     if (!_store->empty()) {
       _act_map[_act_count++] = ACT_SAVE;   _action_menu.addItem("Save trail");
     }
@@ -247,6 +335,101 @@ private:
     bool ok = (bool)f;
     if (f) f.close();
     return ok;
+  }
+
+  // ── Waypoints ──────────────────────────────────────────────────────────────
+  static bool ownPos(int32_t& lat, int32_t& lon) {
+#if ENV_INCLUDE_GPS == 1
+    LocationProvider* loc = sensors.getLocationProvider();
+    if (loc && loc->isValid()) {
+      lat = (int32_t)loc->getLatitude();
+      lon = (int32_t)loc->getLongitude();
+      return true;
+    }
+#endif
+    return false;
+  }
+
+  void handleMarkHere() {
+    int32_t lat, lon;
+    if (!ownPos(lat, lon))            { _task->showAlert("No GPS fix", 1000); return; }
+    if (_task->waypoints().full())    { _task->showAlert("Waypoints full", 1000); return; }
+    _mark_lat = lat; _mark_lon = lon; _mark_ts = (uint32_t)rtc_clock.getCurrentTime();
+    _kb_rename_idx = -1;
+    _wp_kb.begin("");
+    _kb_active = true;
+  }
+
+  void commitLabel(const char* buf) {
+    if (_kb_rename_idx >= 0) {
+      _task->waypoints().rename(_kb_rename_idx, buf);
+      _task->saveWaypoints();
+      _kb_rename_idx = -1;
+      return;
+    }
+    char auto_lbl[WAYPOINT_LABEL_LEN];
+    if (!buf || !buf[0]) {
+      snprintf(auto_lbl, sizeof(auto_lbl), "WP%d", _task->waypoints().count() + 1);
+      buf = auto_lbl;
+    }
+    if (_task->waypoints().add(_mark_lat, _mark_lon, _mark_ts, buf)) {
+      _task->saveWaypoints();
+      _task->showAlert("Waypoint saved", 800);
+    } else {
+      _task->showAlert("Waypoints full", 1000);
+    }
+  }
+
+  void renderWpList(DisplayDriver& display) {
+    display.setColor(DisplayDriver::LIGHT);
+    display.drawTextCentered(display.width() / 2, 0, "WAYPOINTS");
+    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+
+    WaypointStore& wp = _task->waypoints();
+    int n = wp.count();
+    if (n == 0) {
+      display.drawTextCentered(display.width() / 2, display.height() / 2, "No waypoints");
+      return;
+    }
+    const int top  = display.listStart();
+    const int step = display.lineStep();
+    const int cw   = display.getCharWidth();
+    int vis = display.listVisible();
+    if (vis < 1) vis = 1;
+    if (_wp_sel < _wp_scroll)            _wp_scroll = _wp_sel;
+    if (_wp_sel >= _wp_scroll + vis)     _wp_scroll = _wp_sel - vis + 1;
+
+    int32_t mylat, mylon; bool have = ownPos(mylat, mylon);
+
+    for (int i = 0; i < vis && (_wp_scroll + i) < n; i++) {
+      int idx = _wp_scroll + i;
+      const Waypoint& w = wp.at(idx);
+      int y = top + i * step;
+      bool sel = (idx == _wp_sel);
+      display.drawSelectionRow(0, y - 1, display.width(), step - 1, sel);
+      display.setCursor(0, y); display.print(sel ? ">" : " ");
+
+      char dist[12] = ""; int bw = 0;
+      if (have) {
+        geo::fmtDist(dist, sizeof(dist), geo::haversineKm(mylat, mylon, w.lat_1e6, w.lon_1e6));
+        bw = display.getTextWidth(dist) + 2;
+      }
+      char nm[WAYPOINT_LABEL_LEN];
+      display.translateUTF8ToBlocks(nm, w.label[0] ? w.label : "(unnamed)", sizeof(nm));
+      display.drawTextEllipsized(cw + 2, y, display.width() - cw - 2 - bw, nm);
+      if (dist[0]) { display.setCursor(display.width() - bw + 1, y); display.print(dist); }
+      display.setColor(DisplayDriver::LIGHT);
+    }
+  }
+
+  void renderWpNav(DisplayDriver& display) {
+    WaypointStore& wp = _task->waypoints();
+    if (_wp_sel >= wp.count()) { _wp_mode = WP_LIST; return; }
+    const Waypoint& w = wp.at(_wp_sel);
+    int32_t mylat, mylon; bool have = ownPos(mylat, mylon);
+    int cog; bool cogv = _task->currentCourse(cog);
+    navview::draw(display, have, mylat, mylon, w.lat_1e6, w.lon_1e6,
+                  w.label[0] ? w.label : "(unnamed)", cogv, cog);
   }
 
   // After Enter on a settings row, the popup auto-closes per PopupMenu's
