@@ -1921,7 +1921,8 @@ void UITask::loop() {
     _next_trail_sample_ms = millis() + (uint32_t)TrailStore::SAMPLING_SECS * 1000UL;
     LocationProvider* loc = _sensors ? _sensors->getLocationProvider() : nullptr;
     if (loc && loc->isValid()) {
-      uint16_t md = TrailStore::minDeltaMeters(_node_prefs->trail_min_delta_idx);
+      uint16_t md = TrailStore::minDeltaMeters(_node_prefs->trail_min_delta_idx,
+                                                _node_prefs->units_imperial);
       _trail.addPoint((int32_t)loc->getLatitude(),
                       (int32_t)loc->getLongitude(),
                       (uint32_t)rtc_clock.getCurrentTime(), md);

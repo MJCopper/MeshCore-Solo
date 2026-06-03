@@ -102,7 +102,7 @@ struct NodePrefs {  // persisted to file
   // GPS trail cadence. Logging on/off is a runtime state (Tools › Trail),
   // not a persisted preference.
   uint8_t trail_interval_idx;   // reserved — sampling cadence is now fixed at TrailStore::SAMPLING_SECS
-  uint8_t trail_min_delta_idx;  // indexes TrailStore::minDeltaMeters (5/10/25/100 m)
+  uint8_t trail_min_delta_idx;  // min-distance gate level (0=finest..3); metres or feet per units_imperial
   uint8_t trail_units_idx;      // legacy: old combined speed/pace+unit index (km/h, mph, min/km, min/mi)
 
   uint64_t ch_fav_bitmask;      // bit i = channel i is marked as favourite

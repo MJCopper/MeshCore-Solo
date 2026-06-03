@@ -288,7 +288,8 @@ private:
   void refreshActionLabels() {
     NodePrefs* p = _task->getNodePrefs();
     snprintf(_act_min_dist_label, sizeof(_act_min_dist_label),
-              "Min dist: %s", TrailStore::minDeltaLabel(p ? p->trail_min_delta_idx : 0));
+              "Min dist: %s", TrailStore::minDeltaLabel(p ? p->trail_min_delta_idx : 0,
+                                                        p && p->units_imperial));
     // Unit system (km/mi) is the global Settings choice; here we only toggle
     // what the Summary readout shows — speed or pace.
     snprintf(_act_units_label, sizeof(_act_units_label),
@@ -775,26 +776,45 @@ private:
     float shorter_m = (float)(area_w < area_h ? area_w : area_h) / ppm;
     float target_m  = shorter_m / 3.0f;
 
-    static const uint32_t STEPS[] = {
+    // Round scale steps with matching labels. The grid geometry works in metres,
+    // so imperial steps are stored as their metre equivalents but labelled with
+    // their exact round ft/mi value. Both tables are parallel (step ↔ label).
+    static const float METRIC_STEPS[] = {
       1, 2, 5, 10, 20, 50, 100, 200, 500,
       1000, 2000, 5000, 10000, 20000, 50000, 100000
     };
-    static const int N_STEPS = (int)(sizeof(STEPS)/sizeof(STEPS[0]));
+    static const char* METRIC_LABELS[] = {
+      "1m", "2m", "5m", "10m", "20m", "50m", "100m", "200m", "500m",
+      "1km", "2km", "5km", "10km", "20km", "50km", "100km"
+    };
+    static const float IMPERIAL_STEPS[] = {  // 10..2000 ft, then 1..100 mi (metres)
+      3.048f, 7.62f, 15.24f, 30.48f, 76.2f, 152.4f, 304.8f, 609.6f,
+      1609.344f, 3218.69f, 8046.72f, 16093.44f, 32186.88f, 80467.2f, 160934.4f
+    };
+    static const char* IMPERIAL_LABELS[] = {
+      "10ft", "25ft", "50ft", "100ft", "250ft", "500ft", "1000ft", "2000ft",
+      "1mi", "2mi", "5mi", "10mi", "20mi", "50mi", "100mi"
+    };
+    const bool imp = useImperial();
+    const float* STEPS        = imp ? IMPERIAL_STEPS  : METRIC_STEPS;
+    const char* const* LABELS = imp ? IMPERIAL_LABELS : METRIC_LABELS;
+    const int N_STEPS = imp ? (int)(sizeof(IMPERIAL_STEPS)/sizeof(IMPERIAL_STEPS[0]))
+                            : (int)(sizeof(METRIC_STEPS)/sizeof(METRIC_STEPS[0]));
 
     // Pick largest step ≤ target_m (gives ~3 intervals across shorter dim).
     int sel = 0;
     for (int si = N_STEPS - 1; si >= 0; si--) {
-      if ((float)STEPS[si] <= target_m) { sel = si; break; }
+      if (STEPS[si] <= target_m) { sel = si; break; }
     }
     // Bump up until pixel spacing between intersections is at least MIN_GRID_PX.
     // This keeps OLED grids sparse even when target_m selects a fine step.
     static const float MIN_GRID_PX = 22.0f;
-    while (sel < N_STEPS - 1 && (float)STEPS[sel] / M_PER_1E6 * scale < MIN_GRID_PX)
+    while (sel < N_STEPS - 1 && STEPS[sel] / M_PER_1E6 * scale < MIN_GRID_PX)
       sel++;
     // Clamp back down: ensure at least 2 intervals (3 visible lines) across
     // the shorter dimension. MIN_GRID_PX must not leave only 1 interval.
     float shorter_px = (float)(area_w < area_h ? area_w : area_h);
-    while (sel > 0 && (float)STEPS[sel] / M_PER_1E6 * scale > shorter_px / 2.0f)
+    while (sel > 0 && STEPS[sel] / M_PER_1E6 * scale > shorter_px / 2.0f)
       sel--;
 
     float vis_lat_max = (float)max_lat + (float)(off_y - area_y) / scale;
@@ -808,16 +828,16 @@ private:
     // line count fits the static buffers (40×40 = ~1600 intersections, plenty
     // for any sane display).
     static const int MAX_GRID_LINES = 40;
-    uint32_t grid_m = STEPS[sel];
-    float gs_lat = (float)grid_m / M_PER_1E6;
-    float gs_lon = (float)grid_m / (M_PER_1E6 * lon_scale_geo);
+    float grid_m = STEPS[sel];
+    float gs_lat = grid_m / M_PER_1E6;
+    float gs_lon = grid_m / (M_PER_1E6 * lon_scale_geo);
     int lat_n = (int)((vis_lat_max - vis_lat_min) / gs_lat) + 2;
     int lon_n = (int)((vis_lon_max - vis_lon_min) / gs_lon) + 2;
     while ((lat_n > MAX_GRID_LINES || lon_n > MAX_GRID_LINES) && sel < N_STEPS - 1) {
       sel++;
       grid_m = STEPS[sel];
-      gs_lat = (float)grid_m / M_PER_1E6;
-      gs_lon = (float)grid_m / (M_PER_1E6 * lon_scale_geo);
+      gs_lat = grid_m / M_PER_1E6;
+      gs_lon = grid_m / (M_PER_1E6 * lon_scale_geo);
       lat_n  = (int)((vis_lat_max - vis_lat_min) / gs_lat) + 2;
       lon_n  = (int)((vis_lon_max - vis_lon_min) / gs_lon) + 2;
     }
@@ -835,18 +855,9 @@ private:
         display.fillRect(x, y, 1, 1);
     };
 
-    // Grid spacing stays metric (the STEPS are round metres); the label is
-    // converted to the user's unit so the scale bar matches the rest of the UI.
+    // Label is the exact round step value for the selected unit system.
     char lbl[12];
-    if (useImperial()) {
-      float ft = grid_m * 3.28084f;
-      if (ft < 5280.0f) snprintf(lbl, sizeof(lbl), "%uft", (unsigned)(ft + 0.5f));
-      else              snprintf(lbl, sizeof(lbl), "%umi", (unsigned)(grid_m / 1609.344f + 0.5f));
-    } else if (grid_m < 1000) {
-      snprintf(lbl, sizeof(lbl), "%um",  (unsigned)grid_m);
-    } else {
-      snprintf(lbl, sizeof(lbl), "%ukm", (unsigned)(grid_m / 1000));
-    }
+    snprintf(lbl, sizeof(lbl), "%s", LABELS[sel]);
     int lh  = display.getLineHeight();
     int cw  = display.getCharWidth();
 

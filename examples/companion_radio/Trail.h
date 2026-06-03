@@ -31,14 +31,20 @@ public:
 
   // Min-delta (metres) gates samples too close to the previous one.
   // Default 5 m: keeps walking jitter out, dense enough for a visible trail.
+  // The index is a unit-agnostic "level" (0=finest … 3=coarsest); the actual
+  // gate distance and its label follow the global metric/imperial preference.
   static const uint8_t MIN_DELTA_COUNT = 4;
-  static uint16_t minDeltaMeters(uint8_t idx) {
-    static const uint16_t OPTS[MIN_DELTA_COUNT] = { 5, 10, 25, 100 };
-    return OPTS[idx < MIN_DELTA_COUNT ? idx : 0];
+  static uint16_t minDeltaMeters(uint8_t idx, bool imperial) {
+    static const uint16_t MET[MIN_DELTA_COUNT] = { 5, 10, 25, 100 };
+    static const uint16_t IMP[MIN_DELTA_COUNT] = { 5, 9, 23, 91 };  // ≈ 15/30/75/300 ft
+    if (idx >= MIN_DELTA_COUNT) idx = 0;
+    return imperial ? IMP[idx] : MET[idx];
   }
-  static const char* minDeltaLabel(uint8_t idx) {
-    static const char* L[MIN_DELTA_COUNT] = { "5 m", "10 m", "25 m", "100 m" };
-    return L[idx < MIN_DELTA_COUNT ? idx : 0];
+  static const char* minDeltaLabel(uint8_t idx, bool imperial) {
+    static const char* MET[MIN_DELTA_COUNT] = { "5 m", "10 m", "25 m", "100 m" };
+    static const char* IMP[MIN_DELTA_COUNT] = { "15 ft", "30 ft", "75 ft", "300 ft" };
+    if (idx >= MIN_DELTA_COUNT) idx = 0;
+    return imperial ? IMP[idx] : MET[idx];
   }
 
   // Speed / pace display units. UNITS_KMH / UNITS_MPH show speed; UNITS_PACE_KM
