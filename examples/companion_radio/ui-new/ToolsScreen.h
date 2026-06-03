@@ -5,6 +5,7 @@
 class ToolsScreen : public UIScreen {
   UITask* _task;
   int _sel;
+  int _scroll = 0;
 
   static const int ITEM_COUNT = 6;
   static const char* ITEMS[ITEM_COUNT];
@@ -21,17 +22,28 @@ public:
     int item_h  = display.lineStep();
     int start_y = display.listStart();
     int cw      = display.getCharWidth();
+    int vis     = display.listVisible(item_h);
+    if (vis < 1) vis = 1;
 
-    for (int i = 0; i < ITEM_COUNT; i++) {
+    // Keep the selection in view (short OLED panel can't show all 6 items).
+    if (_sel < _scroll)            _scroll = _sel;
+    if (_sel >= _scroll + vis)     _scroll = _sel - vis + 1;
+
+    for (int i = 0; i < vis && (_scroll + i) < ITEM_COUNT; i++) {
+      int idx = _scroll + i;
       int y   = start_y + i * item_h;
-      bool sel = (i == _sel);
+      bool sel = (idx == _sel);
       display.drawSelectionRow(0, y - 1, display.width(), item_h, sel);
       display.setCursor(0, y);
       display.print(sel ? ">" : " ");
       display.setCursor(cw + 2, y);
-      display.print(ITEMS[i]);
+      display.print(ITEMS[idx]);
     }
     display.setColor(DisplayDriver::LIGHT);
+    if (_scroll > 0)
+      { display.setCursor(display.width() - cw, start_y); display.print("^"); }
+    if (_scroll + vis < ITEM_COUNT)
+      { display.setCursor(display.width() - cw, start_y + (vis - 1) * item_h); display.print("v"); }
     return 500;
   }
 
