@@ -113,7 +113,7 @@ public:
         if (sel == 0) {                                  // Rename
           if (_wp_sel < _task->waypoints().count()) {
             _kb_rename_idx = _wp_sel;
-            _wp_kb.begin(_task->waypoints().at(_wp_sel).label);
+            _wp_kb.begin(_task->waypoints().at(_wp_sel).label, WAYPOINT_LABEL_LEN - 1);
             _kb_active = true;
           }
         } else {                                          // Delete
@@ -356,7 +356,7 @@ private:
     if (_task->waypoints().full())    { _task->showAlert("Waypoints full", 1000); return; }
     _mark_lat = lat; _mark_lon = lon; _mark_ts = (uint32_t)rtc_clock.getCurrentTime();
     _kb_rename_idx = -1;
-    _wp_kb.begin("");
+    _wp_kb.begin("", WAYPOINT_LABEL_LEN - 1);
     _kb_active = true;
   }
 

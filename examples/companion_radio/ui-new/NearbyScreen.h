@@ -569,7 +569,7 @@ public:
           if (_entries[i].contact_idx == saved_contact_idx) { _sel = i; found = true; break; }
         }
       }
-      if (!found) _detail = false;
+      if (!found) { _detail = false; _nav = false; }  // contact gone — drop both views
       _detail_refresh_ms = millis();
     }
 
