@@ -1160,6 +1160,15 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   ui_started_at = millis();
   _alert_expiry = 0;
   _batt_mv = AbstractUITask::getBattMilliVolts();  // seed EMA with first reading
+
+  // Load persisted waypoints (table survives reboots, unlike the RAM trail).
+  {
+    DataStore* ds = the_mesh.getDataStore();
+    if (ds) {
+      File f = ds->openRead("/waypoints");
+      if (f) { _waypoints.readFrom(f); f.close(); }
+    }
+  }
   
   // Initialize ping state
   _ping_active = false;
@@ -1960,6 +1969,15 @@ bool UITask::currentCourse(int& deg_out) const {
       geo::bearingDeg(oldest.lat, oldest.lon, newest.lat, newest.lon);
   deg_out = _cog_deg;
   return true;
+}
+
+void UITask::saveWaypoints() {
+  DataStore* ds = the_mesh.getDataStore();
+  if (!ds) return;
+  File f = ds->openWrite("/waypoints");
+  if (!f) return;
+  _waypoints.writeTo(f);
+  f.close();
 }
 
 char UITask::checkDisplayOn(char c) {

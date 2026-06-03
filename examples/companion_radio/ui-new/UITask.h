@@ -23,6 +23,7 @@
 #include "../AbstractUITask.h"
 #include "../NodePrefs.h"
 #include "../Trail.h"
+#include "../Waypoint.h"
 
 class UITask : public AbstractUITask {
   DisplayDriver* _display;
@@ -78,6 +79,7 @@ class UITask : public AbstractUITask {
   UIScreen* curr;
   CayenneLPP _dash_lpp;
   TrailStore _trail;
+  WaypointStore _waypoints;
   uint32_t _next_trail_sample_ms = 0;
 
   // Course-over-ground ring — a heading source independent of trail recording.
@@ -143,6 +145,8 @@ public:
   void gotoAutoAdvertScreen();
   void gotoTrailScreen();
   TrailStore& trail() { return _trail; }
+  WaypointStore& waypoints() { return _waypoints; }
+  void saveWaypoints();   // persist the table to /waypoints
   // Current course over ground in degrees (0..359), or false if not enough
   // recent movement to derive a stable heading. Independent of trail logging.
   bool currentCourse(int& deg_out) const;
