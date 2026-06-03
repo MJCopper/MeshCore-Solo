@@ -614,7 +614,11 @@ private:
     const int top    = display.listStart();
     const int bottom = display.height() - 2;
 
-    if (_store->empty()) {
+    WaypointStore& wp = _task->waypoints();
+    const int nwp     = wp.count();
+    const bool have_trail = !_store->empty();
+
+    if (!have_trail && nwp == 0) {
       display.drawTextCentered(display.width() / 2, (top + bottom) / 2, "No trail yet");
       return;
     }
@@ -625,11 +629,27 @@ private:
     const int area_h = bottom - top - 2;
     if (area_w < 6 || area_h < 6) return;
 
-    int32_t min_lat, min_lon, max_lat, max_lon;
-    _store->boundingBox(min_lat, min_lon, max_lat, max_lon);
+    // Bounding box spans the trail AND every waypoint, so off-track waypoints
+    // stay in frame.
+    int32_t min_lat = 0, min_lon = 0, max_lat = 0, max_lon = 0;
+    bool init = false;
+    if (have_trail) { _store->boundingBox(min_lat, min_lon, max_lat, max_lon); init = true; }
+    for (int i = 0; i < nwp; i++) {
+      const Waypoint& w = wp.at(i);
+      if (!init) { min_lat = max_lat = w.lat_1e6; min_lon = max_lon = w.lon_1e6; init = true; }
+      else {
+        if (w.lat_1e6 < min_lat) min_lat = w.lat_1e6;
+        if (w.lat_1e6 > max_lat) max_lat = w.lat_1e6;
+        if (w.lon_1e6 < min_lon) min_lon = w.lon_1e6;
+        if (w.lon_1e6 > max_lon) max_lon = w.lon_1e6;
+      }
+    }
 
-    if (_store->count() == 1 || (min_lat == max_lat && min_lon == max_lon)) {
-      drawCurrentMarker(display, area_x + area_w / 2, area_y + area_h / 2);
+    // Degenerate: everything at one coordinate — just centre the markers.
+    if (min_lat == max_lat && min_lon == max_lon) {
+      int ccx = area_x + area_w / 2, ccy = area_y + area_h / 2;
+      if (have_trail) drawCurrentMarker(display, ccx, ccy);
+      if (nwp > 0)    drawWaypointMarker(display, ccx, ccy);
       return;
     }
 
@@ -649,38 +669,52 @@ private:
     int off_x  = area_x + (area_w - used_w) / 2;
     int off_y  = area_y + (area_h - used_h) / 2;
 
+    auto projectLL = [&](int32_t lat, int32_t lon, int& px, int& py) {
+      px = off_x + (int)((float)(lon - min_lon) * lon_scale_geo * scale);
+      py = off_y + (int)((float)(max_lat - lat) * scale);
+    };
     auto project = [&](const TrailPoint& p, int& px, int& py) {
-      float dx = (float)(p.lon_1e6 - min_lon) * lon_scale_geo * scale;
-      float dy = (float)(max_lat - p.lat_1e6) * scale;
-      px = off_x + (int)dx;
-      py = off_y + (int)dy;
+      projectLL(p.lat_1e6, p.lon_1e6, px, py);
     };
 
     if (_map_grid)
       renderGrid(display, area_x, area_y, area_w, area_h,
                  min_lat, max_lat, min_lon, lon_scale_geo, scale, off_x, off_y);
 
-    int x0, y0;
-    project(_store->at(0), x0, y0);
-    display.fillRect(x0, y0, 1, 1);
-    for (int i = 1; i < _store->count(); i++) {
-      int x1, y1;
-      project(_store->at(i), x1, y1);
-      if (_store->at(i).flags & TRAIL_FLAG_SEG_START) {
-        drawFilledDot(display, x0, y0);
-        drawOpenDot(display, x1, y1);
-      } else {
-        drawLine(display, x0, y0, x1, y1);
+    if (have_trail) {
+      int x0, y0;
+      project(_store->at(0), x0, y0);
+      display.fillRect(x0, y0, 1, 1);
+      for (int i = 1; i < _store->count(); i++) {
+        int x1, y1;
+        project(_store->at(i), x1, y1);
+        if (_store->at(i).flags & TRAIL_FLAG_SEG_START) {
+          drawFilledDot(display, x0, y0);
+          drawOpenDot(display, x1, y1);
+        } else {
+          drawLine(display, x0, y0, x1, y1);
+        }
+        x0 = x1;
+        y0 = y1;
       }
-      x0 = x1;
-      y0 = y1;
+      int sx, sy, ex, ey;
+      project(_store->first(), sx, sy);
+      project(_store->last(),  ex, ey);
+      drawStartMarker(display, sx, sy);
+      drawCurrentMarker(display, ex, ey);
     }
 
-    int sx, sy, ex, ey;
-    project(_store->first(), sx, sy);
-    project(_store->last(),  ex, ey);
-    drawStartMarker(display, sx, sy);
-    drawCurrentMarker(display, ex, ey);
+    // Waypoints on top, with the label's first character beside the marker.
+    for (int i = 0; i < nwp; i++) {
+      const Waypoint& w = wp.at(i);
+      int wx, wy; projectLL(w.lat_1e6, w.lon_1e6, wx, wy);
+      drawWaypointMarker(display, wx, wy);
+      if (w.label[0] && wx + 3 + display.getCharWidth() <= area_x + area_w) {
+        char s[2] = { w.label[0], 0 };
+        display.setCursor(wx + 3, wy - 3);
+        display.print(s);
+      }
+    }
 
     drawNorthArrow(display, area_x + area_w - 4, area_y + display.getLineHeight() + 1);
   }
@@ -813,6 +847,15 @@ private:
 
   static void drawFilledDot(DisplayDriver& d, int cx, int cy) {
     d.fillRect(cx - 1, cy - 1, 3, 3);
+  }
+  // Hollow diamond — distinct from the trail's dots (○●), start (+) and
+  // current (✕) markers.
+  static void drawWaypointMarker(DisplayDriver& d, int cx, int cy) {
+    d.fillRect(cx,     cy - 2, 1, 1);
+    d.fillRect(cx - 1, cy - 1, 1, 1); d.fillRect(cx + 1, cy - 1, 1, 1);
+    d.fillRect(cx - 2, cy,     1, 1); d.fillRect(cx + 2, cy,     1, 1);
+    d.fillRect(cx - 1, cy + 1, 1, 1); d.fillRect(cx + 1, cy + 1, 1, 1);
+    d.fillRect(cx,     cy + 2, 1, 1);
   }
   static void drawOpenDot(DisplayDriver& d, int cx, int cy) {
     d.fillRect(cx - 1, cy - 1, 3, 1);
