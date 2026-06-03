@@ -77,7 +77,7 @@ Cycle views with **LEFT / RIGHT**:
 | View        | Content                                                                                                                                                             |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Summary** | Distance, elapsed time, avg speed or pace, point count, tracking status                                                                                             |
-| **Map**     | Auto-fit dot-and-line plot with cos(lat) aspect correction; segment breaks marked; north arrow; scale grid (toggle with **LEFT/RIGHT** on the Grid row in the menu) |
+| **Map**     | Auto-fit dot-and-line plot with cos(lat) aspect correction; segment breaks marked; north arrow; scale grid (toggle with **LEFT/RIGHT** on the Grid row in the menu). Your **current GPS position** and all **waypoints** are always drawn — even with no trail recording — so the map is useful standalone |
 | **List**    | Per-point rows showing local time (HH:MM) and delta distance from the previous point; segment-start rows show `start`; scroll with **UP/DOWN**                      |
 
 |           OLED            |           E-Ink           |
@@ -109,7 +109,7 @@ A waypoint is a saved spot — your car, camp, a water source — that you can n
 
 **Dropping a waypoint** — **Hold Enter → Mark here**. This captures the current GPS fix and opens the on-screen keyboard for a short label (up to 11 characters — e.g. `CAR`, `CAMP`, `H2O`). Leaving it blank auto-names it `WP1`, `WP2`, … Marking works whether or not the trail is being recorded; it needs a GPS fix (otherwise it reports *No GPS fix*).
 
-**On the map** — saved waypoints show on the Trail Map view as a hollow diamond with the label's first two characters beside it (enough to tell nearby waypoints apart). The map's bounding box always includes them, so off-track waypoints stay in frame; the map even renders waypoints when no trail is recorded.
+**On the map** — saved waypoints show on the Trail Map view as a hollow diamond with the label's first two characters beside it (enough to tell nearby waypoints apart). The map's bounding box always includes them, so off-track waypoints stay in frame. Waypoints and your current GPS position are drawn continuously — even with no trail recording in progress — so the Map view doubles as a live "you + your marks" view, not just a recorded-track plot.
 
 **Navigating** — **Hold Enter → Waypoints** opens the list (each row shows the label and live distance). The list always begins with a synthetic **Trail start** row whenever a trail exists, so you can backtrack to where you began without having marked it. Select a row and press **Enter** to open the navigation view:
 
