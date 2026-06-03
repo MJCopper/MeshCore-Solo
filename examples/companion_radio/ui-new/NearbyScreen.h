@@ -83,11 +83,7 @@ class NearbyScreen : public UIScreen {
   }
 
   // Geographic helpers live in GeoUtils.h (geo::) — shared with Waypoints /
-  // trail course-over-ground. Thin forwarders keep the existing call sites.
-  static float haversineKm(int32_t a, int32_t b, int32_t c, int32_t d) { return geo::haversineKm(a, b, c, d); }
-  static int   bearingDeg(int32_t a, int32_t b, int32_t c, int32_t d)   { return geo::bearingDeg(a, b, c, d); }
-  static const char* bearingCardinal(int deg) { return geo::bearingCardinal(deg); }
-  static void  fmtDist(char* buf, int n, float km) { geo::fmtDist(buf, n, km); }
+  // trail course-over-ground. Call sites use geo:: directly.
 
   static void fmtAge(char* buf, int n, uint32_t lastmod) {
     uint32_t now = rtc_clock.getCurrentTime();
@@ -128,7 +124,7 @@ class NearbyScreen : public UIScreen {
       e.lon_e6  = ci.gps_lon;
       bool remote_gps = (ci.gps_lat != 0 || ci.gps_lon != 0);
       e.dist_km = (_own_gps && remote_gps)
-                    ? haversineKm(_own_lat, _own_lon, ci.gps_lat, ci.gps_lon)
+                    ? geo::haversineKm(_own_lat, _own_lon, ci.gps_lat, ci.gps_lon)
                     : -1.0f;
       e.type        = ci.type;
       e.contact_idx = i;
@@ -370,9 +366,9 @@ class NearbyScreen : public UIScreen {
 
     if (e.dist_km >= 0.0f) {
       char dist[12];
-      fmtDist(dist, sizeof(dist), e.dist_km);
-      int az = bearingDeg(_own_lat, _own_lon, e.lat_e6, e.lon_e6);
-      snprintf(buf, sizeof(buf), "Dist: %s %s", dist, bearingCardinal(az));
+      geo::fmtDist(dist, sizeof(dist), e.dist_km);
+      int az = geo::bearingDeg(_own_lat, _own_lon, e.lat_e6, e.lon_e6);
+      snprintf(buf, sizeof(buf), "Dist: %s %s", dist, geo::bearingCardinal(az));
     } else {
       snprintf(buf, sizeof(buf), "Dist: no GPS");
     }
@@ -626,7 +622,7 @@ public:
 
         display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
         char dist[10];
-        if (e.dist_km >= 0.0f) fmtDist(dist, sizeof(dist), e.dist_km);
+        if (e.dist_km >= 0.0f) geo::fmtDist(dist, sizeof(dist), e.dist_km);
         else                   strncpy(dist, "?GPS", sizeof(dist));
         display.setCursor(dist_col, y);
         display.print(dist);
