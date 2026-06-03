@@ -73,6 +73,7 @@ Lists all available home screen pages. For each entry:
 | ----------- | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Timezone    | −12 h … +14 h                                       | UTC offset in whole hours                                                              |
 | Low battery | off / 3.0 V / 3.1 V / 3.2 V / 3.3 V / 3.4 V / 3.5 V | Auto-shutdown threshold; also sets the 0 % anchor for the battery percentage indicator |
+| Units       | Metric / Imperial                                   | Global unit system for every distance/speed shown in Tools (Nearby Nodes, Trail, navigate-to-point). Metric: m / km, km/h, min/km. Imperial: ft / mi, mph, min/mi |
 
 ---
 

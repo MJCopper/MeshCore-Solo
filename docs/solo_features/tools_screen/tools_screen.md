@@ -89,7 +89,7 @@ Cycle views with **LEFT / RIGHT**:
 | Item                  | Interaction         | Action                                              |
 | --------------------- | ------------------- | --------------------------------------------------- |
 | Min dist              | LEFT/RIGHT          | Filter gate: 5 m / 10 m / 25 m / 100 m              |
-| Units                 | LEFT/RIGHT          | Speed/pace: km/h / mph / min/km / min/mi            |
+| Readout               | LEFT/RIGHT or Enter | Summary shows Speed or Pace (in the global unit system) |
 | Grid                  | LEFT/RIGHT or Enter | Toggle scale grid on the map                        |
 | Mark here             | Enter               | Drop a waypoint at the current GPS fix (see below)  |
 | Waypoints             | Enter               | Open the waypoint list / navigation                 |
