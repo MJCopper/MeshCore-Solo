@@ -317,6 +317,12 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.trail_units_idx,     sizeof(_prefs.trail_units_idx));
   rd(&_prefs.ch_fav_bitmask,      sizeof(_prefs.ch_fav_bitmask));
   rd(&_prefs.ch_fav_only,         sizeof(_prefs.ch_fav_only));
+  rd(&_prefs.units_imperial,      sizeof(_prefs.units_imperial));
+  rd(&_prefs.trail_show_pace,     sizeof(_prefs.trail_show_pace));
+  // Both are booleans: an older file leaves stray bytes here (the old tail
+  // sentinel gets partly consumed), so clamp anything other than 0/1 to 0.
+  if (_prefs.units_imperial  > 1) _prefs.units_imperial  = 0;
+  if (_prefs.trail_show_pace > 1) _prefs.trail_show_pace = 0;
 
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
@@ -340,6 +346,9 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     if (sentinel == 0xC0DE0003) {
       _prefs.trail_units_idx = 0;
     }
+    // 0xC0DE0005 → 0xC0DE0006: units_imperial + trail_show_pace replaced the
+    // combined trail_units_idx. The new bytes overlap the old tail sentinel and
+    // are already clamped to 0 above, so upgraders default to metric + speed.
   }
 
   file.close();
@@ -428,6 +437,8 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.trail_units_idx,     sizeof(_prefs.trail_units_idx));
     file.write((uint8_t *)&_prefs.ch_fav_bitmask,      sizeof(_prefs.ch_fav_bitmask));
     file.write((uint8_t *)&_prefs.ch_fav_only,         sizeof(_prefs.ch_fav_only));
+    file.write((uint8_t *)&_prefs.units_imperial,      sizeof(_prefs.units_imperial));
+    file.write((uint8_t *)&_prefs.trail_show_pace,     sizeof(_prefs.trail_show_pace));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL.
     uint32_t sentinel = NodePrefs::SCHEMA_SENTINEL;

@@ -56,6 +56,7 @@ class SettingsScreen : public UIScreen {
     SECTION_SYSTEM,
     TIMEZONE,
     LOW_BAT,
+    UNITS,
     // Contacts section
     SECTION_CONTACTS, DM_FILTER, CH_FILTER, ROOM_FILTER,
     // Messages section
@@ -486,6 +487,10 @@ class SettingsScreen : public UIScreen {
       display.print("LowBat");
       display.setCursor(display.valCol(), y);
       display.print(LOW_BAT_LABELS[lowBatIndex()]);
+    } else if (item == UNITS) {
+      display.print("Units");
+      display.setCursor(display.valCol(), y);
+      display.print((p && p->units_imperial) ? "Imperial" : "Metric");
     } else if (item == BATT_DISPLAY) {
       display.print("BattDisp");
       display.setCursor(display.valCol(), y);
@@ -731,6 +736,11 @@ public:
       if (right) idx = (idx + 1) % LOW_BAT_COUNT;
       if (left)  idx = (idx + LOW_BAT_COUNT - 1) % LOW_BAT_COUNT;
       if (left || right) { p->low_batt_mv = LOW_BAT_OPTS[idx]; _dirty = true; return true; }
+    }
+    if (_selected == UNITS && p && (left || right || enter)) {
+      p->units_imperial ^= 1;
+      _dirty = true;
+      return true;
     }
     if (_selected == BATT_DISPLAY && p) {
       int idx = p->batt_display_mode < BATT_DISPLAY_COUNT ? p->batt_display_mode : 0;

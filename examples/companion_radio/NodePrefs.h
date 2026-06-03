@@ -103,16 +103,23 @@ struct NodePrefs {  // persisted to file
   // not a persisted preference.
   uint8_t trail_interval_idx;   // reserved — sampling cadence is now fixed at TrailStore::SAMPLING_SECS
   uint8_t trail_min_delta_idx;  // indexes TrailStore::minDeltaMeters (5/10/25/100 m)
-  uint8_t trail_units_idx;      // indexes TrailStore::unitLabel (km/h, mph, min/km, min/mi)
+  uint8_t trail_units_idx;      // legacy: old combined speed/pace+unit index (km/h, mph, min/km, min/mi)
 
   uint64_t ch_fav_bitmask;      // bit i = channel i is marked as favourite
   uint8_t  ch_fav_only;         // 0=show all channels (default), 1=show favourites only
+
+  // Global measurement system for every distance/speed shown in the UI
+  // (Nearby, Trail, navigate-to-point). 0=metric (default), 1=imperial.
+  uint8_t  units_imperial;
+  // Trail Summary readout: 0=speed (km/h or mph), 1=pace (min/km or min/mi).
+  // The km-vs-mi choice now comes from units_imperial, so this is just the mode.
+  uint8_t  trail_show_pace;
 
   // Tail sentinel written at the end of /new_prefs. Bump the low byte when
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0005;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0006;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage

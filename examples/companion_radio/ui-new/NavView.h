@@ -18,7 +18,8 @@ inline void draw(DisplayDriver& d,
                  bool own_valid, int32_t own_lat, int32_t own_lon,
                  int32_t tgt_lat, int32_t tgt_lon,
                  const char* label,
-                 bool cog_valid, int cog_deg) {
+                 bool cog_valid, int cog_deg,
+                 bool imperial) {
   const int cx  = d.width() / 2;
   const int hdr = d.headerH();
 
@@ -40,7 +41,7 @@ inline void draw(DisplayDriver& d,
   int   to_deg = geo::bearingDeg(own_lat, own_lon, tgt_lat, tgt_lon);
   float dist_km = geo::haversineKm(own_lat, own_lon, tgt_lat, tgt_lon);
   char dist[12];
-  geo::fmtDist(dist, sizeof(dist), dist_km);
+  geo::fmtDist(dist, sizeof(dist), dist_km, imperial);
 
   const int step = d.lineStep();
   int y = hdr + 2;

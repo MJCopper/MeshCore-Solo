@@ -289,8 +289,10 @@ private:
     NodePrefs* p = _task->getNodePrefs();
     snprintf(_act_min_dist_label, sizeof(_act_min_dist_label),
               "Min dist: %s", TrailStore::minDeltaLabel(p ? p->trail_min_delta_idx : 0));
+    // Unit system (km/mi) is the global Settings choice; here we only toggle
+    // what the Summary readout shows — speed or pace.
     snprintf(_act_units_label, sizeof(_act_units_label),
-              "Units: %s",    TrailStore::unitLabel(p    ? p->trail_units_idx     : 0));
+              "Readout: %s",  (p && p->trail_show_pace) ? "Pace" : "Speed");
     snprintf(_act_grid_label,   sizeof(_act_grid_label),
               "Grid: %s",      _map_grid ? "ON" : "OFF");
     snprintf(_act_toggle_label, sizeof(_act_toggle_label),
@@ -353,6 +355,12 @@ private:
 
   bool ownPos(int32_t& lat, int32_t& lon) const { return _task->currentLocation(lat, lon); }
 
+  // Global metric/imperial preference for distance display.
+  bool useImperial() const {
+    NodePrefs* p = _task->getNodePrefs();
+    return p && p->units_imperial;
+  }
+
   void handleMarkHere() {
     int32_t lat, lon;
     if (!ownPos(lat, lon))            { _task->showAlert("No GPS fix", 1000); return; }
@@ -414,7 +422,7 @@ private:
 
       char dist[12] = ""; int bw = 0;
       if (have) {
-        geo::fmtDist(dist, sizeof(dist), geo::haversineKm(mylat, mylon, tlat, tlon));
+        geo::fmtDist(dist, sizeof(dist), geo::haversineKm(mylat, mylon, tlat, tlon), useImperial());
         bw = display.getTextWidth(dist) + 2;
       }
       char nm[24];
@@ -430,7 +438,7 @@ private:
     if (!rowTarget(_wp_sel, tlat, tlon, label)) { _wp_mode = WP_LIST; return; }
     int32_t mylat, mylon; bool have = ownPos(mylat, mylon);
     int cog; bool cogv = _task->currentCourse(cog);
-    navview::draw(display, have, mylat, mylon, tlat, tlon, label, cogv, cog);
+    navview::draw(display, have, mylat, mylon, tlat, tlon, label, cogv, cog, useImperial());
   }
 
   // Resolve a combined-list row to a nav target. Row 0 is the trail start when
@@ -467,40 +475,32 @@ private:
                     : (idx + TrailStore::MIN_DELTA_COUNT - 1) % TrailStore::MIN_DELTA_COUNT;
     p->trail_min_delta_idx = idx;
   }
-  void cycleUnits(NodePrefs* p, int dir) {
-    uint8_t idx = p->trail_units_idx;
-    if (idx >= TrailStore::UNITS_COUNT) idx = 0;
-    idx = (dir > 0) ? (idx + 1) % TrailStore::UNITS_COUNT
-                    : (idx + TrailStore::UNITS_COUNT - 1) % TrailStore::UNITS_COUNT;
-    p->trail_units_idx = idx;
-  }
+  // The trail "Readout" row toggles speed vs pace; the metric/imperial unit
+  // comes from the global Settings preference, so this is a plain on/off flip.
+  void cycleUnits(NodePrefs* p, int /*dir*/) { p->trail_show_pace ^= 1; }
 
-  // Render the average speed (or pace) in the user-selected units.
+  // Render the average speed (or pace) in the globally-selected unit system.
   void formatAvgPaceOrSpeed(char* buf, size_t n, NodePrefs* p) const {
-    uint8_t u = p ? p->trail_units_idx : 0;
-    if (u >= TrailStore::UNITS_COUNT) u = 0;
-    uint16_t kmh = _store->avgSpeedKmh();
-    if (u == TrailStore::UNITS_KMH) {
-      snprintf(buf, n, "Avg: %u km/h", (unsigned)kmh);
-    } else if (u == TrailStore::UNITS_MPH) {
-      unsigned mph = (unsigned)((float)kmh * 0.621371f + 0.5f);
-      snprintf(buf, n, "Avg: %u mph", mph);
-    } else {
-      uint32_t d_m  = _store->totalDistanceMeters();
-      uint32_t es_s = _store->elapsedSeconds();
-      const char* unit = (u == TrailStore::UNITS_PACE_KM) ? "/km" : "/mi";
-      if (d_m == 0 || es_s == 0) {
-        snprintf(buf, n, "Pace: --:-- %s", unit);
-      } else {
-        float dist_unit = (u == TrailStore::UNITS_PACE_KM) ? (d_m / 1000.0f)
-                                                            : (d_m / 1609.344f);
-        if (dist_unit <= 0) { snprintf(buf, n, "Pace: --:-- %s", unit); return; }
-        float pace_min = (es_s / 60.0f) / dist_unit;
-        unsigned pm = (unsigned)pace_min;
-        unsigned ps = (unsigned)((pace_min - pm) * 60.0f);
-        snprintf(buf, n, "Pace: %u:%02u %s", pm, ps, unit);
-      }
+    bool imperial = p && p->units_imperial;
+    bool pace     = p && p->trail_show_pace;
+    uint16_t kmh  = _store->avgSpeedKmh();
+    if (!pace) {
+      if (imperial) snprintf(buf, n, "Avg: %u mph", (unsigned)((float)kmh * 0.621371f + 0.5f));
+      else          snprintf(buf, n, "Avg: %u km/h", (unsigned)kmh);
+      return;
     }
+    uint32_t d_m  = _store->totalDistanceMeters();
+    uint32_t es_s = _store->elapsedSeconds();
+    const char* unit = imperial ? "/mi" : "/km";
+    float dist_unit  = imperial ? (d_m / 1609.344f) : (d_m / 1000.0f);
+    if (d_m == 0 || es_s == 0 || dist_unit <= 0) {
+      snprintf(buf, n, "Pace: --:-- %s", unit);
+      return;
+    }
+    float pace_min = (es_s / 60.0f) / dist_unit;
+    unsigned pm = (unsigned)pace_min;
+    unsigned ps = (unsigned)((pace_min - pm) * 60.0f);
+    snprintf(buf, n, "Pace: %u:%02u %s", pm, ps, unit);
   }
 
   void summaryItem(int i, char* buf, size_t n) const {
@@ -518,9 +518,9 @@ private:
         break;
       case 2: {
         uint32_t d = _store->totalDistanceMeters();
-        if (d < 1000) snprintf(buf, n, "Dist: %lu m", (unsigned long)d);
-        else          snprintf(buf, n, "Dist: %lu.%02lu km",
-                                (unsigned long)(d / 1000), (unsigned long)((d % 1000) / 10));
+        char ds[12];
+        geo::fmtDist(ds, sizeof(ds), d / 1000.0f, useImperial());
+        snprintf(buf, n, "Dist: %s", ds);
         break;
       }
       case 3: {
@@ -608,8 +608,9 @@ private:
         const TrailPoint& prev = _store->at(idx - 1);
         float d = TrailStore::haversineMeters(prev.lat_1e6, prev.lon_1e6,
                                                 pt.lat_1e6,    pt.lon_1e6);
-        if (d < 1000.0f) snprintf(dist, sizeof(dist), "+%d m", (int)d);
-        else             snprintf(dist, sizeof(dist), "+%.1f km", d / 1000.0f);
+        char ds[10];
+        geo::fmtDist(ds, sizeof(ds), d / 1000.0f, useImperial());
+        snprintf(dist, sizeof(dist), "+%s", ds);
       }
 
       char row[28];
@@ -834,9 +835,18 @@ private:
         display.fillRect(x, y, 1, 1);
     };
 
+    // Grid spacing stays metric (the STEPS are round metres); the label is
+    // converted to the user's unit so the scale bar matches the rest of the UI.
     char lbl[12];
-    if (grid_m < 1000) snprintf(lbl, sizeof(lbl), "%um",  (unsigned)grid_m);
-    else               snprintf(lbl, sizeof(lbl), "%ukm", (unsigned)(grid_m / 1000));
+    if (useImperial()) {
+      float ft = grid_m * 3.28084f;
+      if (ft < 5280.0f) snprintf(lbl, sizeof(lbl), "%uft", (unsigned)(ft + 0.5f));
+      else              snprintf(lbl, sizeof(lbl), "%umi", (unsigned)(grid_m / 1609.344f + 0.5f));
+    } else if (grid_m < 1000) {
+      snprintf(lbl, sizeof(lbl), "%um",  (unsigned)grid_m);
+    } else {
+      snprintf(lbl, sizeof(lbl), "%ukm", (unsigned)(grid_m / 1000));
+    }
     int lh  = display.getLineHeight();
     int cw  = display.getCharWidth();
 

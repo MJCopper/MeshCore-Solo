@@ -42,11 +42,20 @@ static inline const char* bearingCardinal(int deg) {
   return dirs[((deg + 22) % 360) / 45];
 }
 
-// Human distance string: "850m" / "2.3km" / "140km".
-static inline void fmtDist(char* buf, int n, float km) {
-  if      (km < 1.0f)   snprintf(buf, n, "%dm",   (int)(km * 1000 + 0.5f));
-  else if (km < 100.0f) snprintf(buf, n, "%.1fkm", km);
-  else                  snprintf(buf, n, "%dkm",  (int)(km + 0.5f));
+// Human distance string. Metric: "850m" / "2.3km" / "140km". Imperial:
+// "850ft" / "2.3mi" / "140mi" (feet below ~1000 ft, then miles).
+static inline void fmtDist(char* buf, int n, float km, bool imperial) {
+  if (imperial) {
+    float ft = km * 3280.84f;
+    if (ft < 1000.0f) { snprintf(buf, n, "%dft", (int)(ft + 0.5f)); return; }
+    float mi = km * 0.621371f;
+    if (mi < 100.0f)  snprintf(buf, n, "%.1fmi", mi);
+    else              snprintf(buf, n, "%dmi",  (int)(mi + 0.5f));
+  } else {
+    if      (km < 1.0f)   snprintf(buf, n, "%dm",   (int)(km * 1000 + 0.5f));
+    else if (km < 100.0f) snprintf(buf, n, "%.1fkm", km);
+    else                  snprintf(buf, n, "%dkm",  (int)(km + 0.5f));
+  }
 }
 
 }  // namespace geo

@@ -85,6 +85,12 @@ class NearbyScreen : public UIScreen {
   // Geographic helpers live in GeoUtils.h (geo::) — shared with Waypoints /
   // trail course-over-ground. Call sites use geo:: directly.
 
+  // Global metric/imperial preference for distance display.
+  bool useImperial() const {
+    NodePrefs* p = _task ? _task->getNodePrefs() : nullptr;
+    return p && p->units_imperial;
+  }
+
   static void fmtAge(char* buf, int n, uint32_t lastmod) {
     uint32_t now = rtc_clock.getCurrentTime();
     if (now < lastmod || lastmod == 0) { snprintf(buf, n, "unknown"); return; }
@@ -366,7 +372,7 @@ class NearbyScreen : public UIScreen {
 
     if (e.dist_km >= 0.0f) {
       char dist[12];
-      geo::fmtDist(dist, sizeof(dist), e.dist_km);
+      geo::fmtDist(dist, sizeof(dist), e.dist_km, useImperial());
       int az = geo::bearingDeg(_own_lat, _own_lon, e.lat_e6, e.lon_e6);
       snprintf(buf, sizeof(buf), "Dist: %s %s", dist, geo::bearingCardinal(az));
     } else {
@@ -582,7 +588,7 @@ public:
       const Entry& e = _entries[_sel];
       int cog; bool cogv = _task->currentCourse(cog);
       navview::draw(display, _own_gps, _own_lat, _own_lon,
-                    e.lat_e6, e.lon_e6, e.name, cogv, cog);
+                    e.lat_e6, e.lon_e6, e.name, cogv, cog, useImperial());
       return 1000;
     }
 
@@ -622,7 +628,7 @@ public:
 
         display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
         char dist[10];
-        if (e.dist_km >= 0.0f) geo::fmtDist(dist, sizeof(dist), e.dist_km);
+        if (e.dist_km >= 0.0f) geo::fmtDist(dist, sizeof(dist), e.dist_km, useImperial());
         else                   strncpy(dist, "?GPS", sizeof(dist));
         display.setCursor(dist_col, y);
         display.print(dist);
