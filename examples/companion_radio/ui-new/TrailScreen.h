@@ -38,9 +38,9 @@ class TrailScreen : public UIScreen {
   // (Start/Stop tracking, Reset). PopupMenu stores label pointers verbatim, so
   // the labels live in member buffers that get refreshed in openActionMenu()
   // and after every LEFT/RIGHT cycle.
-  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS };
+  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS, ACT_WP_CLEAR };
   PopupMenu _action_menu;
-  uint8_t   _act_map[14];  // 11 used today; pad so adding an action doesn't OOB
+  uint8_t   _act_map[14];  // 12 used today; pad so adding an action doesn't OOB
   uint8_t   _act_count = 0;
   char      _act_min_dist_label[24];
   char      _act_units_label[24];
@@ -183,6 +183,8 @@ public:
           else if (act == ACT_EXPORT_SAVED) { handleExportSaved(); }
           else if (act == ACT_MARK)         { handleMarkHere(); }
           else if (act == ACT_WAYPOINTS)    { _wp_mode = WP_LIST; _wp_sel = 0; _wp_scroll = 0; }
+          else if (act == ACT_WP_CLEAR)     { _task->waypoints().clear(); _task->saveWaypoints();
+                                              _task->showAlert("Waypoints cleared", 800); }
           else /* MIN_DIST / UNITS */       { reopenAt(sel); return true; }  // re-open keeping focus
         }
         if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
@@ -315,6 +317,9 @@ private:
     // OR a trail to backtrack to (the list always includes a "Trail start" row).
     if (_task->waypoints().count() > 0 || !_store->empty()) {
       _act_map[_act_count++] = ACT_WAYPOINTS; _action_menu.addItem("Waypoints");
+    }
+    if (_task->waypoints().count() > 0) {
+      _act_map[_act_count++] = ACT_WP_CLEAR;  _action_menu.addItem("Clear waypoints");
     }
     if (!_store->empty()) {
       _act_map[_act_count++] = ACT_SAVE;   _action_menu.addItem("Save trail");
