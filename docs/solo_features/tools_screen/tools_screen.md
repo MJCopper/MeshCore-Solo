@@ -91,12 +91,38 @@ Cycle views with **LEFT / RIGHT**:
 | Min dist              | LEFT/RIGHT          | Filter gate: 5 m / 10 m / 25 m / 100 m              |
 | Units                 | LEFT/RIGHT          | Speed/pace: km/h / mph / min/km / min/mi            |
 | Grid                  | LEFT/RIGHT or Enter | Toggle scale grid on the map                        |
+| Mark here             | Enter               | Drop a waypoint at the current GPS fix (see below)  |
+| Waypoints             | Enter               | Open the waypoint list / navigation                 |
 | Start / Stop tracking | Enter               | Begin or end a recording session                    |
 | Save trail            | Enter               | Write RAM ring to flash (`/trail`)                  |
 | Load trail            | Enter               | Restore flash trail into RAM                        |
 | Export (live)         | Enter               | Stream live RAM trail as GPX 1.1 over USB Serial    |
 | Export (saved)        | Enter               | Stream saved flash trail as GPX 1.1 over USB Serial |
+| Clear waypoints       | Enter               | Delete all saved waypoints (trail untouched)        |
 | Reset trail           | Enter               | Clear RAM ring and elapsed time                     |
+
+(Mark here / Waypoints / Clear waypoints appear only when applicable — e.g. with a GPS fix, or once at least one waypoint or trail point exists.)
+
+### Waypoints
+
+A waypoint is a saved spot — your car, camp, a water source — that you can navigate back to later. Waypoints are **independent of the trail**: they live in their own flash file (`/waypoints`), survive a reboot, and are **not** cleared by *Reset trail*. Up to 16 can be stored.
+
+**Dropping a waypoint** — **Hold Enter → Mark here**. This captures the current GPS fix and opens the on-screen keyboard for a short label (up to 11 characters — e.g. `CAR`, `CAMP`, `H2O`). Leaving it blank auto-names it `WP1`, `WP2`, … Marking works whether or not the trail is being recorded; it needs a GPS fix (otherwise it reports *No GPS fix*).
+
+**On the map** — saved waypoints show on the Trail Map view as a hollow diamond with the label's first character beside it. The map's bounding box always includes them, so off-track waypoints stay in frame; the map even renders waypoints when no trail is recorded.
+
+**Navigating** — **Hold Enter → Waypoints** opens the list (each row shows the label and live distance). The list always begins with a synthetic **Trail start** row whenever a trail exists, so you can backtrack to where you began without having marked it. Select a row and press **Enter** to open the navigation view:
+
+```
+   CAMP            ← target label
+   1.4 km          ← distance to target
+   To:  145° SE    ← absolute bearing to the target
+   Hdg: 090° E     ← your current course over ground (-- when stationary)
+```
+
+There is no magnetometer, so the screen shows two *absolute* bearings and you compare them: target at 145°, travelling at 90° → bear right. The **Hdg** line is derived from GPS movement (see Compass) and reads `--` until you move.
+
+**Managing** — **Hold Enter** on a waypoint row offers **Rename** / **Delete** (the *Trail start* row is navigate-only). **Hold Enter → Clear waypoints** on the Trail screen wipes them all at once.
 
 ### Downloading GPX
 
@@ -123,6 +149,14 @@ Either way, the resulting file imports into OsmAnd, Garmin BaseCamp, GPX Studio,
 ## Auto-Advert
 
 Periodically broadcasts a 0-hop advert with your GPS position. Configurable interval: off / 30 s / 1 min / 2 min / 5 min / 10 min / 30 min / 1 h. A blinking **A** appears in the status bar while active.
+
+---
+
+## Compass
+
+A heads-up GPS compass. The L1 has no magnetometer, so the heading is the **course over ground** — derived from how your GPS position moves over the last few seconds. The direction you are travelling is the fixed index at the **top** of the ring, and the compass card (the North needle plus the N/E/S/W letters) rotates underneath it as you turn. A large numeric readout below shows your course in degrees and cardinal (e.g. `145° SE`).
+
+Because the heading comes from movement, it only updates while you are actually moving: standing still shows *move to set heading* (and navigation's **Hdg** line reads `--`). Gross GPS jumps are rejected so a single bad fix can't swing the needle. The heading source runs whenever there's a GPS fix — recording a trail is **not** required.
 
 ---
 
