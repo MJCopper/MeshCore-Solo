@@ -80,6 +80,18 @@ class UITask : public AbstractUITask {
   TrailStore _trail;
   uint32_t _next_trail_sample_ms = 0;
 
+  // Course-over-ground ring — a heading source independent of trail recording.
+  // Filled from the same periodic GPS poll regardless of _trail.isActive().
+  // Heading = bearing across the window (oldest→newest) once the cumulative
+  // movement clears COG_MIN_MOVE_M; gross GPS jumps are rejected on insert.
+  static const int COG_RING = 5;
+  struct CogFix { int32_t lat, lon; uint32_t ms; };
+  CogFix   _cog[COG_RING];
+  uint8_t  _cog_head = 0, _cog_count = 0;
+  int      _cog_deg = -1;            // last good heading, -1 = none yet
+  uint32_t _next_cog_sample_ms = 0;
+  void pushCogFix(int32_t lat, int32_t lon);
+
   // Ping state
   bool _ping_active = false;
   uint32_t _ping_tag = 0;
@@ -131,6 +143,9 @@ public:
   void gotoAutoAdvertScreen();
   void gotoTrailScreen();
   TrailStore& trail() { return _trail; }
+  // Current course over ground in degrees (0..359), or false if not enough
+  // recent movement to derive a stable heading. Independent of trail logging.
+  bool currentCourse(int& deg_out) const;
   void playMelody(const char* melody);
   void stopMelody();
   bool isMelodyPlaying();

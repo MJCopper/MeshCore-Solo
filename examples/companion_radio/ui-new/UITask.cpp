@@ -3,6 +3,7 @@
 #include "../MyMesh.h"
 #include "../MsgExpand.h"
 #include "../Features.h"
+#include "../GeoUtils.h"
 #include "target.h"
 #ifdef WIFI_SSID
   #include <WiFi.h>
@@ -1910,6 +1911,55 @@ void UITask::loop() {
                       (uint32_t)rtc_clock.getCurrentTime(), md);
     }
   }
+
+  // Course-over-ground sampling — every ~1 s regardless of trail state, so the
+  // heading is available to navigation even when not recording a trail.
+  if ((int32_t)(millis() - _next_cog_sample_ms) >= 0) {
+    _next_cog_sample_ms = millis() + 1000UL;
+    LocationProvider* loc = _sensors ? _sensors->getLocationProvider() : nullptr;
+    if (loc && loc->isValid()) {
+      pushCogFix((int32_t)loc->getLatitude(), (int32_t)loc->getLongitude());
+    }
+  }
+}
+
+// Insert a GPS fix into the course-over-ground ring, rejecting gross outliers
+// (a jump implying an impossible speed) so one bad fix can't swing the heading.
+void UITask::pushCogFix(int32_t lat, int32_t lon) {
+  uint32_t now = millis();
+  if (_cog_count > 0) {
+    const CogFix& prev = _cog[(_cog_head + _cog_count - 1) % COG_RING];
+    uint32_t dt = now - prev.ms;
+    if (dt > 0) {
+      float dist_m = geo::haversineKm(prev.lat, prev.lon, lat, lon) * 1000.0f;
+      float speed  = dist_m / (dt / 1000.0f);   // m/s
+      if (speed > 50.0f) return;                 // > 180 km/h between fixes → reject
+    }
+  }
+  int pos;
+  if (_cog_count < COG_RING) { pos = (_cog_head + _cog_count) % COG_RING; _cog_count++; }
+  else { pos = _cog_head; _cog_head = (_cog_head + 1) % COG_RING; }
+  _cog[pos].lat = lat; _cog[pos].lon = lon; _cog[pos].ms = now;
+}
+
+bool UITask::currentCourse(int& deg_out) const {
+  static const float COG_MIN_MOVE_M = 6.0f;   // window must span ≥ this to be a real heading
+  if (_cog_count < 2) {
+    if (_cog_deg >= 0) { deg_out = _cog_deg; return true; }  // hold last good
+    return false;
+  }
+  const CogFix& oldest = _cog[_cog_head];
+  const CogFix& newest = _cog[(_cog_head + _cog_count - 1) % COG_RING];
+  float span_m = geo::haversineKm(oldest.lat, oldest.lon, newest.lat, newest.lon) * 1000.0f;
+  if (span_m < COG_MIN_MOVE_M) {
+    if (_cog_deg >= 0) { deg_out = _cog_deg; return true; }  // standing still → hold last
+    return false;
+  }
+  // Cache as last-good (mutable-free: recompute is cheap, but keep _cog_deg fresh).
+  const_cast<UITask*>(this)->_cog_deg =
+      geo::bearingDeg(oldest.lat, oldest.lon, newest.lat, newest.lon);
+  deg_out = _cog_deg;
+  return true;
 }
 
 char UITask::checkDisplayOn(char c) {
