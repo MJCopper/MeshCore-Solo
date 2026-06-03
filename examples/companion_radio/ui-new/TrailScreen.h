@@ -7,6 +7,7 @@
 
 #include "../Trail.h"
 #include "../GeoUtils.h"
+#include "GfxUtils.h"
 #include "NavView.h"
 #include <math.h>
 
@@ -733,7 +734,7 @@ private:
           drawFilledDot(display, x0, y0);
           drawOpenDot(display, x1, y1);
         } else {
-          drawLine(display, x0, y0, x1, y1);
+          gfx::drawLine(display, x0, y0, x1, y1);
         }
         x0 = x1;
         y0 = y1;
@@ -880,19 +881,6 @@ private:
 
     display.setCursor(area_x, area_y + area_h - lh);
     display.print(lbl);
-  }
-
-  static void drawLine(DisplayDriver& d, int x0, int y0, int x1, int y1) {
-    int dx =  abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-    int err = dx + dy;
-    while (true) {
-      d.fillRect(x0, y0, 1, 1);
-      if (x0 == x1 && y0 == y1) break;
-      int e2 = err * 2;
-      if (e2 >= dy) { err += dy; x0 += sx; }
-      if (e2 <= dx) { err += dx; y0 += sy; }
-    }
   }
 
   static void drawFilledDot(DisplayDriver& d, int cx, int cy) {

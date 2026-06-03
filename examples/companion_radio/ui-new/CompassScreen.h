@@ -8,39 +8,13 @@
 // being recorded.
 
 #include "../GeoUtils.h"
+#include "GfxUtils.h"
 #include <math.h>
 
 class CompassScreen : public UIScreen {
   UITask* _task;
 
   bool gpsValid() const { int32_t lat, lon; return _task->currentLocation(lat, lon); }
-
-  // Midpoint circle (DisplayDriver has no circle primitive).
-  static void drawCircle(DisplayDriver& d, int cx, int cy, int r) {
-    int x = r, y = 0, err = 1 - r;
-    while (x >= y) {
-      d.fillRect(cx + x, cy + y, 1, 1); d.fillRect(cx + y, cy + x, 1, 1);
-      d.fillRect(cx - y, cy + x, 1, 1); d.fillRect(cx - x, cy + y, 1, 1);
-      d.fillRect(cx - x, cy - y, 1, 1); d.fillRect(cx - y, cy - x, 1, 1);
-      d.fillRect(cx + y, cy - x, 1, 1); d.fillRect(cx + x, cy - y, 1, 1);
-      y++;
-      if (err < 0) err += 2 * y + 1;
-      else { x--; err += 2 * (y - x) + 1; }
-    }
-  }
-
-  static void drawLine(DisplayDriver& d, int x0, int y0, int x1, int y1) {
-    int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-    int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-    int err = dx + dy;
-    while (true) {
-      d.fillRect(x0, y0, 1, 1);
-      if (x0 == x1 && y0 == y1) break;
-      int e2 = err * 2;
-      if (e2 >= dy) { err += dy; x0 += sx; }
-      if (e2 <= dx) { err += dx; y0 += sy; }
-    }
-  }
 
 public:
   CompassScreen(UITask* task) : _task(task) {}
@@ -74,7 +48,7 @@ public:
     int cog;
     bool have = _task->currentCourse(cog);
 
-    drawCircle(display, cx, cy, r);   // compass ring
+    gfx::drawCircle(display, cx, cy, r);   // compass ring
 
     // Fixed forward index at the top: the direction you are travelling is
     // always "up". The compass card (North) rotates underneath it.
@@ -98,11 +72,11 @@ public:
 
     // North needle from centre.
     int nx, ny; cardPos(0, r - 2, nx, ny);
-    drawLine(display, cx, cy, nx, ny);
+    gfx::drawLine(display, cx, cy, nx, ny);
     float nrad = (0 - cog) * (float)M_PI / 180.0f;
     for (int da = -25; da <= 25; da += 50) {
       float a = nrad + (float)M_PI + da * (float)M_PI / 180.0f;
-      drawLine(display, nx, ny, nx + (int)(sinf(a) * 4), ny - (int)(cosf(a) * 4));
+      gfx::drawLine(display, nx, ny, nx + (int)(sinf(a) * 4), ny - (int)(cosf(a) * 4));
     }
 
     // Cardinal letters around the rim (N at the needle tip).
