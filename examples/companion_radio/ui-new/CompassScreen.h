@@ -22,6 +22,20 @@ class CompassScreen : public UIScreen {
 #endif
   }
 
+  // Midpoint circle (DisplayDriver has no circle primitive).
+  static void drawCircle(DisplayDriver& d, int cx, int cy, int r) {
+    int x = r, y = 0, err = 1 - r;
+    while (x >= y) {
+      d.fillRect(cx + x, cy + y, 1, 1); d.fillRect(cx + y, cy + x, 1, 1);
+      d.fillRect(cx - y, cy + x, 1, 1); d.fillRect(cx - x, cy + y, 1, 1);
+      d.fillRect(cx - x, cy - y, 1, 1); d.fillRect(cx - y, cy - x, 1, 1);
+      d.fillRect(cx + y, cy - x, 1, 1); d.fillRect(cx + x, cy - y, 1, 1);
+      y++;
+      if (err < 0) err += 2 * y + 1;
+      else { x--; err += 2 * (y - x) + 1; }
+    }
+  }
+
   static void drawLine(DisplayDriver& d, int x0, int y0, int x1, int y1) {
     int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
     int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
@@ -67,7 +81,7 @@ public:
     int cog;
     bool have = _task->currentCourse(cog);
 
-    display.drawRect(cx - r, cy - r, 2 * r + 1, 2 * r + 1);   // ring stand-in
+    drawCircle(display, cx, cy, r);   // compass ring
 
     // Fixed forward index at the top: the direction you are travelling is
     // always "up". The compass card (North) rotates underneath it.
