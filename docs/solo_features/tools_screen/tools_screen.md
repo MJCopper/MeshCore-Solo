@@ -88,7 +88,7 @@ Cycle views with **LEFT / RIGHT**:
 
 | Item                  | Interaction         | Action                                              |
 | --------------------- | ------------------- | --------------------------------------------------- |
-| Min dist              | LEFT/RIGHT          | Filter gate: 5 m / 10 m / 25 m / 100 m              |
+| Min dist              | LEFT/RIGHT          | Sample gate, 4 levels — metric: 5/10/25/100 m, imperial: 15/30/75/300 ft |
 | Readout               | LEFT/RIGHT or Enter | Summary shows Speed or Pace (in the global unit system) |
 | Grid                  | LEFT/RIGHT or Enter | Toggle scale grid on the map                        |
 | Mark here             | Enter               | Drop a waypoint at the current GPS fix (see below)  |
