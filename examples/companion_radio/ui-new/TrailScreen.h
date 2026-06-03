@@ -691,7 +691,15 @@ private:
     // Degenerate: everything at one coordinate — just centre the markers.
     if (min_lat == max_lat && min_lon == max_lon) {
       int ccx = area_x + area_w / 2, ccy = area_y + area_h / 2;
-      if (nwp > 0)               drawWaypointMarker(display, ccx, ccy);
+      if (nwp > 0) {
+        drawWaypointMarker(display, ccx, ccy);
+        const char* lbl = wp.at(0).label;        // single coincident spot — label it
+        if (lbl[0] && ccx + 4 + display.getCharWidth() <= area_x + area_w) {
+          char s[2] = { lbl[0], 0 };
+          display.setCursor(ccx + 4, ccy - 3);
+          display.print(s);
+        }
+      }
       if (have_gps || have_trail) drawCurrentMarker(display, ccx, ccy);
       return;
     }
