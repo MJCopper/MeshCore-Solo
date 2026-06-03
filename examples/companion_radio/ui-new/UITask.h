@@ -76,6 +76,7 @@ class UITask : public AbstractUITask {
   UIScreen* dashboard_config;
   UIScreen* auto_advert_screen;
   UIScreen* trail_screen;
+  UIScreen* compass_screen;
   UIScreen* curr;
   CayenneLPP _dash_lpp;
   TrailStore _trail;
@@ -144,6 +145,7 @@ public:
   void gotoDashboardConfig();
   void gotoAutoAdvertScreen();
   void gotoTrailScreen();
+  void gotoCompassScreen();
   TrailStore& trail() { return _trail; }
   WaypointStore& waypoints() { return _waypoints; }
   void saveWaypoints();   // persist the table to /waypoints
