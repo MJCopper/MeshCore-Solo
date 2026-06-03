@@ -67,9 +67,12 @@ public:
     int cog;
     bool have = _task->currentCourse(cog);
 
-    // Compass ring ticks: N/E/S/W as short marks; N drawn as a filled wedge top.
-    display.drawRect(cx - r, cy - r, 2 * r + 1, 2 * r + 1);   // bounding box stands in for a ring
-    display.drawTextCentered(cx, cy - r - 1, "N");
+    display.drawRect(cx - r, cy - r, 2 * r + 1, 2 * r + 1);   // ring stand-in
+
+    // Fixed forward index at the top: the direction you are travelling is
+    // always "up". The compass card (North) rotates underneath it.
+    display.fillRect(cx - 1, cy - r - 2, 3, 1);
+    display.fillRect(cx,     cy - r - 1, 1, 2);
 
     if (!have) {
       display.drawTextCentered(cx, cy - display.getLineHeight() / 2, "move to");
@@ -77,20 +80,34 @@ public:
       return 1000;
     }
 
-    // Arrow from centre toward the course (0° = up = north, clockwise).
-    float rad = cog * (float)M_PI / 180.0f;
-    int ex = cx + (int)(sinf(rad) * (r - 2));
-    int ey = cy - (int)(cosf(rad) * (r - 2));
-    drawLine(display, cx, cy, ex, ey);
-    // Small arrowhead: two short lines back from the tip at ±150°.
+    // Heads-up compass: with "up" = course, an absolute bearing B sits at
+    // screen angle (B - cog). Draw the rotating card — a North needle plus the
+    // other three cardinals as letters around the ring.
+    auto cardPos = [&](int bearing, int rad_px, int& px, int& py) {
+      float a = (bearing - cog) * (float)M_PI / 180.0f;
+      px = cx + (int)(sinf(a) * rad_px);
+      py = cy - (int)(cosf(a) * rad_px);
+    };
+
+    // North needle from centre.
+    int nx, ny; cardPos(0, r - 2, nx, ny);
+    drawLine(display, cx, cy, nx, ny);
+    float nrad = (0 - cog) * (float)M_PI / 180.0f;
     for (int da = -25; da <= 25; da += 50) {
-      float a = rad + (float)M_PI + da * (float)M_PI / 180.0f;
-      int hx = ex + (int)(sinf(a) * 4);
-      int hy = ey - (int)(cosf(a) * 4);
-      drawLine(display, ex, ey, hx, hy);
+      float a = nrad + (float)M_PI + da * (float)M_PI / 180.0f;
+      drawLine(display, nx, ny, nx + (int)(sinf(a) * 4), ny - (int)(cosf(a) * 4));
     }
 
-    // Numeric readout below the ring.
+    // Cardinal letters around the rim (N at the needle tip).
+    const int cw = display.getCharWidth(), ch = display.getLineHeight();
+    struct { int b; const char* s; } card[4] = { {0,"N"},{90,"E"},{180,"S"},{270,"W"} };
+    for (int i = 0; i < 4; i++) {
+      int lx, ly; cardPos(card[i].b, r - 2, lx, ly);
+      display.setCursor(lx - cw / 2, ly - ch / 2);
+      display.print(card[i].s);
+    }
+
+    // Numeric readout below the ring — the absolute course you're travelling.
     char buf[16];
     snprintf(buf, sizeof(buf), "%d %s", cog, geo::bearingCardinal(cog));
     display.setTextSize(2);

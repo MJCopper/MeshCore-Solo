@@ -105,23 +105,26 @@ public:
       return true;
     }
 
-    // Waypoint Rename/Delete popup.
+    // Waypoint Rename/Delete popup. Operates on the saved-waypoint index
+    // (the synthetic Trail-start row, if any, is never editable).
     if (_wp_ctx.active) {
       auto res = _wp_ctx.handleInput(c);
       if (res == PopupMenu::SELECTED) {
         int sel = _wp_ctx.selectedIndex();
+        int wi  = wpIndex();
         if (sel == 0) {                                  // Rename
-          if (_wp_sel < _task->waypoints().count()) {
-            _kb_rename_idx = _wp_sel;
-            _wp_kb.begin(_task->waypoints().at(_wp_sel).label, WAYPOINT_LABEL_LEN - 1);
+          if (wi >= 0 && wi < _task->waypoints().count()) {
+            _kb_rename_idx = wi;
+            _wp_kb.begin(_task->waypoints().at(wi).label, WAYPOINT_LABEL_LEN - 1);
             _kb_active = true;
           }
         } else {                                          // Delete
-          _task->waypoints().remove(_wp_sel);
-          _task->saveWaypoints();
-          if (_wp_sel >= _task->waypoints().count())
-            _wp_sel = _task->waypoints().count() - 1;
-          if (_wp_sel < 0) _wp_sel = 0;
+          if (wi >= 0 && wi < _task->waypoints().count()) {
+            _task->waypoints().remove(wi);
+            _task->saveWaypoints();
+            if (_wp_sel >= wpListCount()) _wp_sel = wpListCount() - 1;
+            if (_wp_sel < 0) _wp_sel = 0;
+          }
         }
       }
       return true;
@@ -134,14 +137,15 @@ public:
       return true;
     }
 
-    // Waypoint list.
+    // Waypoint list (row 0 is the synthetic "Trail start" when a trail exists).
     if (_wp_mode == WP_LIST) {
-      int n = _task->waypoints().count();
+      int n = wpListCount();
       if (c == KEY_CANCEL) { _wp_mode = WP_OFF; return true; }
       if (c == KEY_UP   && _wp_sel > 0)     { _wp_sel--; if (_wp_sel < _wp_scroll) _wp_scroll = _wp_sel; return true; }
       if (c == KEY_DOWN && _wp_sel < n - 1) { _wp_sel++; return true; }
       if (c == KEY_ENTER && n > 0)          { _wp_mode = WP_NAV; return true; }
-      if (c == KEY_CONTEXT_MENU && n > 0) {
+      // Rename/Delete apply to saved waypoints only — not the Trail-start row.
+      if (c == KEY_CONTEXT_MENU && !selIsStart() && wpIndex() < _task->waypoints().count()) {
         _wp_ctx.begin("Waypoint", 2);
         _wp_ctx.addItem("Rename");
         _wp_ctx.addItem("Delete");
@@ -307,7 +311,9 @@ private:
     _act_map[_act_count++] = ACT_TOGGLE;   _action_menu.addItem(_act_toggle_label);
     // Waypoints: mark the current spot, and browse/navigate saved ones.
     _act_map[_act_count++] = ACT_MARK;     _action_menu.addItem("Mark here");
-    if (_task->waypoints().count() > 0) {
+    // "Waypoints" opens the nav list — useful when there are saved waypoints
+    // OR a trail to backtrack to (the list always includes a "Trail start" row).
+    if (_task->waypoints().count() > 0 || !_store->empty()) {
       _act_map[_act_count++] = ACT_WAYPOINTS; _action_menu.addItem("Waypoints");
     }
     if (!_store->empty()) {
@@ -338,6 +344,14 @@ private:
   }
 
   // ── Waypoints ──────────────────────────────────────────────────────────────
+  // The nav list shows a synthetic "Trail start" row (index 0) whenever a trail
+  // exists, followed by the saved waypoints. These helpers map the combined
+  // row index (_wp_sel) onto that layout.
+  bool hasStart() const { return !_store->empty(); }
+  int  wpListCount() const { return (hasStart() ? 1 : 0) + _task->waypoints().count(); }
+  bool selIsStart() const { return hasStart() && _wp_sel == 0; }
+  int  wpIndex() const { return _wp_sel - (hasStart() ? 1 : 0); }  // index into WaypointStore
+
   static bool ownPos(int32_t& lat, int32_t& lon) {
 #if ENV_INCLUDE_GPS == 1
     LocationProvider* loc = sensors.getLocationProvider();
@@ -385,8 +399,7 @@ private:
     display.drawTextCentered(display.width() / 2, 0, "WAYPOINTS");
     display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
-    WaypointStore& wp = _task->waypoints();
-    int n = wp.count();
+    int n = wpListCount();
     if (n == 0) {
       display.drawTextCentered(display.width() / 2, display.height() / 2, "No waypoints");
       return;
@@ -402,20 +415,21 @@ private:
     int32_t mylat, mylon; bool have = ownPos(mylat, mylon);
 
     for (int i = 0; i < vis && (_wp_scroll + i) < n; i++) {
-      int idx = _wp_scroll + i;
-      const Waypoint& w = wp.at(idx);
+      int row = _wp_scroll + i;
+      int32_t tlat, tlon; const char* label;
+      if (!rowTarget(row, tlat, tlon, label)) continue;
       int y = top + i * step;
-      bool sel = (idx == _wp_sel);
+      bool sel = (row == _wp_sel);
       display.drawSelectionRow(0, y - 1, display.width(), step - 1, sel);
       display.setCursor(0, y); display.print(sel ? ">" : " ");
 
       char dist[12] = ""; int bw = 0;
       if (have) {
-        geo::fmtDist(dist, sizeof(dist), geo::haversineKm(mylat, mylon, w.lat_1e6, w.lon_1e6));
+        geo::fmtDist(dist, sizeof(dist), geo::haversineKm(mylat, mylon, tlat, tlon));
         bw = display.getTextWidth(dist) + 2;
       }
-      char nm[WAYPOINT_LABEL_LEN];
-      display.translateUTF8ToBlocks(nm, w.label[0] ? w.label : "(unnamed)", sizeof(nm));
+      char nm[24];
+      display.translateUTF8ToBlocks(nm, label, sizeof(nm));
       display.drawTextEllipsized(cw + 2, y, display.width() - cw - 2 - bw, nm);
       if (dist[0]) { display.setCursor(display.width() - bw + 1, y); display.print(dist); }
       display.setColor(DisplayDriver::LIGHT);
@@ -423,13 +437,30 @@ private:
   }
 
   void renderWpNav(DisplayDriver& display) {
-    WaypointStore& wp = _task->waypoints();
-    if (_wp_sel >= wp.count()) { _wp_mode = WP_LIST; return; }
-    const Waypoint& w = wp.at(_wp_sel);
+    int32_t tlat, tlon; const char* label;
+    if (!rowTarget(_wp_sel, tlat, tlon, label)) { _wp_mode = WP_LIST; return; }
     int32_t mylat, mylon; bool have = ownPos(mylat, mylon);
     int cog; bool cogv = _task->currentCourse(cog);
-    navview::draw(display, have, mylat, mylon, w.lat_1e6, w.lon_1e6,
-                  w.label[0] ? w.label : "(unnamed)", cogv, cog);
+    navview::draw(display, have, mylat, mylon, tlat, tlon, label, cogv, cog);
+  }
+
+  // Resolve a combined-list row to a nav target. Row 0 is the trail start when
+  // a trail exists; the rest are saved waypoints.
+  bool rowTarget(int row, int32_t& lat, int32_t& lon, const char*& label) {
+    if (hasStart() && row == 0) {
+      const TrailPoint& s = _store->first();
+      lat = s.lat_1e6; lon = s.lon_1e6; label = "Trail start";
+      return true;
+    }
+    int wi = row - (hasStart() ? 1 : 0);
+    WaypointStore& wp = _task->waypoints();
+    if (wi >= 0 && wi < wp.count()) {
+      const Waypoint& w = wp.at(wi);
+      lat = w.lat_1e6; lon = w.lon_1e6;
+      label = w.label[0] ? w.label : "(unnamed)";
+      return true;
+    }
+    return false;
   }
 
   // After Enter on a settings row, the popup auto-closes per PopupMenu's
