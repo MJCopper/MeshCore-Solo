@@ -41,6 +41,7 @@ class NearbyScreen : public UIScreen {
   static const unsigned long DETAIL_REFRESH_MS = 10000UL;
 
   PopupMenu _ctx_menu;
+  PopupMenu _opts;            // detail-view Options: Navigate / Ping
   PopupMenu _ping_menu;
   char _ping_time_str[24];    // For storing ping RTT result
   char _ping_snr_out_str[24]; // For storing ping SNR out result
@@ -179,13 +180,23 @@ class NearbyScreen : public UIScreen {
     _ping_snr_back_str[0] = '\0';
   }
 
-  void openPingMenu() {
+  // Number of rows the ping menu should currently show: "Send" plus only the
+  // result lines that are populated (avoids blank scrollable rows).
+  int pingRowCount() const {
+    return 1 + (_ping_time_str[0] ? 1 : 0)
+             + (_ping_snr_out_str[0] ? 1 : 0)
+             + (_ping_snr_back_str[0] ? 1 : 0);
+  }
+
+  void rebuildPingMenu() {
     _ping_menu.begin("Ping", 4);
     _ping_menu.addItem("Send");
-    _ping_menu.addItem(_ping_time_str);
-    _ping_menu.addItem(_ping_snr_out_str);
-    _ping_menu.addItem(_ping_snr_back_str);
+    if (_ping_time_str[0])     _ping_menu.addItem(_ping_time_str);
+    if (_ping_snr_out_str[0])  _ping_menu.addItem(_ping_snr_out_str);
+    if (_ping_snr_back_str[0])  _ping_menu.addItem(_ping_snr_back_str);
   }
+
+  void openPingMenu() { rebuildPingMenu(); }
 
   bool renderPingMenuIfActive(DisplayDriver& display) {
     if (!_ping_menu.active) return false;
@@ -217,6 +228,7 @@ class NearbyScreen : public UIScreen {
     int16_t snr_out = 0, snr_back = 0;
     uint32_t rtt = 0;
     _task->getPingResult(snr_out, snr_back, rtt);
+    int before = pingRowCount();
 
     if (_pinging && (snr_out != 0 || snr_back != 0 || rtt != 0)) {
       if (rtt > 0 && rtt < 10000) {
@@ -238,6 +250,9 @@ class NearbyScreen : public UIScreen {
       _pinging = false;
       if (_task) _task->clearPing();
     }
+    // Grow the menu in place as result lines populate, so they never show as
+    // blank rows beforehand.
+    if (pingRowCount() != before) rebuildPingMenu();
   }
 
   bool handlePingMenuInput(char c, const uint8_t* pub_key, bool allow_enter_to_open = false) {
@@ -379,6 +394,7 @@ class NearbyScreen : public UIScreen {
     display.drawTextEllipsized(2, hdr + step * 4, display.width() - 4, buf);
 
     updatePingMenuState();
+    if (_opts.active) { _opts.render(display); return true; }
     if (renderPingMenuIfActive(display)) return true;
     return true;
   }
@@ -544,6 +560,7 @@ public:
     _ddetail = false;
     _dsel    = 0;
     _ctx_menu.active = false;
+    _opts.active = false;
     _ping_menu.active = false;
     _pinging = false;
     _ping_time_str[0] = '\0';
@@ -653,20 +670,38 @@ public:
 
     // ── detail view ─────────────────────────────────────────────────────────
     if (_detail) {
-      if (c == KEY_CANCEL) {
-        _detail = false;
-        closePingMenu();
+      // Options popup (Hold Enter) — Navigate / Ping.
+      if (_opts.active) {
+        auto res = _opts.handleInput(c);
+        if (res == PopupMenu::SELECTED) {
+          if (_opts.selectedIndex() == 0) {            // Navigate
+            if (_sel < _count) {
+              const Entry& e = _entries[_sel];
+              if (e.lat_e6 != 0 || e.lon_e6 != 0) _nav = true;
+              else _task->showAlert("No node GPS", 1000);
+            }
+          } else {                                      // Ping
+            uint8_t pk[PUB_KEY_SIZE];
+            openPingMenu();
+            if (selectedStoredPubKey(pk)) startPingForKey(pk);
+          }
+        }
         return true;
       }
 
-      uint8_t pub_key[PUB_KEY_SIZE];
-      if (selectedStoredPubKey(pub_key) && handlePingMenuInput(c, pub_key)) return true;
+      // Ping popup (opened from Options) consumes input while active.
+      if (_ping_menu.active) {
+        uint8_t pk[PUB_KEY_SIZE]; selectedStoredPubKey(pk);
+        handlePingMenuInput(c, pk);
+        return true;
+      }
 
-      // Enter (ping menu closed) → navigate to this node's last-known position.
-      if (c == KEY_ENTER && _sel < _count) {
-        const Entry& e = _entries[_sel];
-        if (e.lat_e6 != 0 || e.lon_e6 != 0) _nav = true;
-        else _task->showAlert("No node GPS", 1000);
+      if (c == KEY_CANCEL) { _detail = false; closePingMenu(); return true; }
+      if (c == KEY_CONTEXT_MENU) {
+        _opts.begin("Options", 2);
+        _opts.addItem("Navigate");
+        _opts.addItem("Ping");
+        return true;
       }
       return true;
     }
