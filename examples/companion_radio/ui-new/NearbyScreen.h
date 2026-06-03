@@ -218,8 +218,9 @@ class NearbyScreen : public UIScreen {
       _pinging = true;
       _ping_started_ms = millis();
     } else {
-      _ping_time_str[0] = '\0';
+      snprintf(_ping_time_str, sizeof(_ping_time_str), "RTT: send fail");
     }
+    if (_ping_menu.active) rebuildPingMenu();   // surface "RTT: ..." immediately
   }
 
   void updatePingMenuState() {
@@ -228,7 +229,6 @@ class NearbyScreen : public UIScreen {
     int16_t snr_out = 0, snr_back = 0;
     uint32_t rtt = 0;
     _task->getPingResult(snr_out, snr_back, rtt);
-    int before = pingRowCount();
 
     if (_pinging && (snr_out != 0 || snr_back != 0 || rtt != 0)) {
       if (rtt > 0 && rtt < 10000) {
@@ -250,9 +250,9 @@ class NearbyScreen : public UIScreen {
       _pinging = false;
       if (_task) _task->clearPing();
     }
-    // Grow the menu in place as result lines populate, so they never show as
-    // blank rows beforehand.
-    if (pingRowCount() != before) rebuildPingMenu();
+    // Keep the menu in sync with the populated result lines (grows as the
+    // reply arrives; never shows blank rows).
+    if (pingRowCount() != _ping_menu._count) rebuildPingMenu();
   }
 
   bool handlePingMenuInput(char c, const uint8_t* pub_key, bool allow_enter_to_open = false) {
