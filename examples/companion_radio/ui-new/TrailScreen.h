@@ -654,8 +654,13 @@ private:
     const int nwp     = wp.count();
     const bool have_trail = !_store->empty();
 
-    if (!have_trail && nwp == 0) {
-      display.drawTextCentered(display.width() / 2, (top + bottom) / 2, "No trail yet");
+    // Live GPS position — lets the map double as a "you + waypoints" view even
+    // when no trail is being recorded.
+    int32_t my_lat, my_lon;
+    const bool have_gps = ownPos(my_lat, my_lon);
+
+    if (!have_trail && nwp == 0 && !have_gps) {
+      display.drawTextCentered(display.width() / 2, (top + bottom) / 2, "No GPS / no trail");
       return;
     }
 
@@ -665,27 +670,29 @@ private:
     const int area_h = bottom - top - 2;
     if (area_w < 6 || area_h < 6) return;
 
-    // Bounding box spans the trail AND every waypoint, so off-track waypoints
-    // stay in frame.
+    // Bounding box spans the trail, every waypoint, and the live position, so
+    // everything of interest stays in frame.
     int32_t min_lat = 0, min_lon = 0, max_lat = 0, max_lon = 0;
     bool init = false;
-    if (have_trail) { _store->boundingBox(min_lat, min_lon, max_lat, max_lon); init = true; }
-    for (int i = 0; i < nwp; i++) {
-      const Waypoint& w = wp.at(i);
-      if (!init) { min_lat = max_lat = w.lat_1e6; min_lon = max_lon = w.lon_1e6; init = true; }
+    auto fold = [&](int32_t lat, int32_t lon) {
+      if (!init) { min_lat = max_lat = lat; min_lon = max_lon = lon; init = true; }
       else {
-        if (w.lat_1e6 < min_lat) min_lat = w.lat_1e6;
-        if (w.lat_1e6 > max_lat) max_lat = w.lat_1e6;
-        if (w.lon_1e6 < min_lon) min_lon = w.lon_1e6;
-        if (w.lon_1e6 > max_lon) max_lon = w.lon_1e6;
+        if (lat < min_lat) min_lat = lat;  if (lat > max_lat) max_lat = lat;
+        if (lon < min_lon) min_lon = lon;  if (lon > max_lon) max_lon = lon;
       }
+    };
+    if (have_trail) {
+      int32_t a, b, c, d; _store->boundingBox(a, b, c, d);
+      fold(a, b); fold(c, d);
     }
+    for (int i = 0; i < nwp; i++) fold(wp.at(i).lat_1e6, wp.at(i).lon_1e6);
+    if (have_gps) fold(my_lat, my_lon);
 
     // Degenerate: everything at one coordinate — just centre the markers.
     if (min_lat == max_lat && min_lon == max_lon) {
       int ccx = area_x + area_w / 2, ccy = area_y + area_h / 2;
-      if (have_trail) drawCurrentMarker(display, ccx, ccy);
-      if (nwp > 0)    drawWaypointMarker(display, ccx, ccy);
+      if (nwp > 0)               drawWaypointMarker(display, ccx, ccy);
+      if (have_gps || have_trail) drawCurrentMarker(display, ccx, ccy);
       return;
     }
 
@@ -733,14 +740,12 @@ private:
         x0 = x1;
         y0 = y1;
       }
-      int sx, sy, ex, ey;
+      int sx, sy;
       project(_store->first(), sx, sy);
-      project(_store->last(),  ex, ey);
       drawStartMarker(display, sx, sy);
-      drawCurrentMarker(display, ex, ey);
     }
 
-    // Waypoints on top, with the label's first character beside the marker.
+    // Waypoints, with the label's first character beside the marker.
     for (int i = 0; i < nwp; i++) {
       const Waypoint& w = wp.at(i);
       int wx, wy; projectLL(w.lat_1e6, w.lon_1e6, wx, wy);
@@ -750,6 +755,16 @@ private:
         display.setCursor(wx + 3, wy - 3);
         display.print(s);
       }
+    }
+
+    // Current position marker on top — live GPS if we have a fix, otherwise the
+    // last recorded trail point.
+    if (have_gps) {
+      int mx, my; projectLL(my_lat, my_lon, mx, my);
+      drawCurrentMarker(display, mx, my);
+    } else if (have_trail) {
+      int ex, ey; project(_store->last(), ex, ey);
+      drawCurrentMarker(display, ex, ey);
     }
 
     drawNorthArrow(display, area_x + area_w - 4, area_y + display.getLineHeight() + 1);
