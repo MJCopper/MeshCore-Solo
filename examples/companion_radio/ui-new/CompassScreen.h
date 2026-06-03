@@ -13,14 +13,7 @@
 class CompassScreen : public UIScreen {
   UITask* _task;
 
-  static bool gpsValid() {
-#if ENV_INCLUDE_GPS == 1
-    LocationProvider* loc = sensors.getLocationProvider();
-    return loc && loc->isValid();
-#else
-    return false;
-#endif
-  }
+  bool gpsValid() const { int32_t lat, lon; return _task->currentLocation(lat, lon); }
 
   // Midpoint circle (DisplayDriver has no circle primitive).
   static void drawCircle(DisplayDriver& d, int cx, int cy, int r) {

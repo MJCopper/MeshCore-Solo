@@ -357,17 +357,7 @@ private:
   bool selIsStart() const { return hasStart() && _wp_sel == 0; }
   int  wpIndex() const { return _wp_sel - (hasStart() ? 1 : 0); }  // index into WaypointStore
 
-  static bool ownPos(int32_t& lat, int32_t& lon) {
-#if ENV_INCLUDE_GPS == 1
-    LocationProvider* loc = sensors.getLocationProvider();
-    if (loc && loc->isValid()) {
-      lat = (int32_t)loc->getLatitude();
-      lon = (int32_t)loc->getLongitude();
-      return true;
-    }
-#endif
-    return false;
-  }
+  bool ownPos(int32_t& lat, int32_t& lon) const { return _task->currentLocation(lat, lon); }
 
   void handleMarkHere() {
     int32_t lat, lon;

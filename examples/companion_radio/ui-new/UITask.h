@@ -152,6 +152,10 @@ public:
   // Current course over ground in degrees (0..359), or false if not enough
   // recent movement to derive a stable heading. Independent of trail logging.
   bool currentCourse(int& deg_out) const;
+  // Current GPS position (1e6-scaled degrees), false when there's no usable
+  // fix. Single source of truth for "where am I", shared by the nav / compass
+  // / map screens so the LocationProvider lookup isn't duplicated per screen.
+  bool currentLocation(int32_t& lat, int32_t& lon) const;
   void playMelody(const char* melody);
   void stopMelody();
   bool isMelodyPlaying();

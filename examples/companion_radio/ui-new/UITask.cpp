@@ -1942,11 +1942,17 @@ void UITask::loop() {
 // Insert a GPS fix into the course-over-ground ring, rejecting gross outliers
 // (a jump implying an impossible speed) so one bad fix can't swing the heading.
 void UITask::pushCogFix(int32_t lat, int32_t lon) {
+  static const uint32_t COG_MAX_GAP_MS = 15000;  // GPS gap longer than this → window is stale
   uint32_t now = millis();
   if (_cog_count > 0) {
     const CogFix& prev = _cog[(_cog_head + _cog_count - 1) % COG_RING];
     uint32_t dt = now - prev.ms;
-    if (dt > 0) {
+    if (dt > COG_MAX_GAP_MS) {
+      // GPS was lost for a while: the old fixes are far in the past, so a
+      // window spanning them would imply a bogus "teleport" heading. Restart
+      // the ring from this fix (the last-good _cog_deg is kept for display).
+      _cog_head = 0; _cog_count = 0;
+    } else if (dt > 0) {
       float dist_m = geo::haversineKm(prev.lat, prev.lon, lat, lon) * 1000.0f;
       float speed  = dist_m / (dt / 1000.0f);   // m/s
       if (speed > 50.0f) return;                 // > 180 km/h between fixes → reject
@@ -1976,6 +1982,16 @@ bool UITask::currentCourse(int& deg_out) const {
       geo::bearingDeg(oldest.lat, oldest.lon, newest.lat, newest.lon);
   deg_out = _cog_deg;
   return true;
+}
+
+bool UITask::currentLocation(int32_t& lat, int32_t& lon) const {
+  LocationProvider* loc = _sensors ? _sensors->getLocationProvider() : nullptr;
+  if (loc && loc->isValid()) {
+    lat = (int32_t)loc->getLatitude();
+    lon = (int32_t)loc->getLongitude();
+    return true;
+  }
+  return false;
 }
 
 void UITask::saveWaypoints() {

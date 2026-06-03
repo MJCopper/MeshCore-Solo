@@ -111,17 +111,8 @@ class NearbyScreen : public UIScreen {
 
   void refresh() {
     _count = 0;
-    _own_gps = false;
     _own_lat = _own_lon = 0;
-
-#if ENV_INCLUDE_GPS == 1
-    LocationProvider* loc = sensors.getLocationProvider();
-    if (loc && loc->isValid()) {
-      _own_lat = loc->getLatitude();
-      _own_lon = loc->getLongitude();
-      _own_gps = true;
-    }
-#endif
+    _own_gps = _task->currentLocation(_own_lat, _own_lon);
 
     int nc = the_mesh.getNumContacts();
     for (int i = 0; i < nc && _count < MAX_NEARBY; i++) {
