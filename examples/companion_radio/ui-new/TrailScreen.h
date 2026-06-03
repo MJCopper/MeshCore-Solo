@@ -218,15 +218,8 @@ public:
     return false;
   }
 
-  // True when the global SensorManager has a usable GPS fix.
-  static bool gpsHasFix() {
-#if ENV_INCLUDE_GPS == 1
-    LocationProvider* loc = sensors.getLocationProvider();
-    return loc && loc->isValid();
-#else
-    return false;
-#endif
-  }
+  // True when there's a usable GPS fix (same source as ownPos).
+  bool gpsHasFix() const { int32_t lat, lon; return ownPos(lat, lon); }
 
 private:
   void handleToggle() {
