@@ -694,8 +694,8 @@ private:
       if (nwp > 0) {
         drawWaypointMarker(display, ccx, ccy);
         const char* lbl = wp.at(0).label;        // single coincident spot — label it
-        if (lbl[0] && ccx + 4 + display.getCharWidth() <= area_x + area_w) {
-          char s[2] = { lbl[0], 0 };
+        char s[3] = { lbl[0], lbl[0] ? lbl[1] : (char)0, 0 };
+        if (s[0] && ccx + 4 + (int)display.getTextWidth(s) <= area_x + area_w) {
           display.setCursor(ccx + 4, ccy - 3);
           display.print(s);
         }
@@ -753,14 +753,15 @@ private:
       drawStartMarker(display, sx, sy);
     }
 
-    // Waypoints, with the label's first character beside the marker.
+    // Waypoints, with the first two label characters beside the marker so
+    // nearby waypoints can be told apart.
     for (int i = 0; i < nwp; i++) {
       const Waypoint& w = wp.at(i);
       int wx, wy; projectLL(w.lat_1e6, w.lon_1e6, wx, wy);
       drawWaypointMarker(display, wx, wy);
-      if (w.label[0] && wx + 3 + display.getCharWidth() <= area_x + area_w) {
-        char s[2] = { w.label[0], 0 };
-        display.setCursor(wx + 3, wy - 3);
+      char s[3] = { w.label[0], w.label[0] ? w.label[1] : (char)0, 0 };
+      if (s[0] && wx + 4 + (int)display.getTextWidth(s) <= area_x + area_w) {
+        display.setCursor(wx + 4, wy - 3);
         display.print(s);
       }
     }

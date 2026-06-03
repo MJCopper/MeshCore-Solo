@@ -109,7 +109,7 @@ A waypoint is a saved spot — your car, camp, a water source — that you can n
 
 **Dropping a waypoint** — **Hold Enter → Mark here**. This captures the current GPS fix and opens the on-screen keyboard for a short label (up to 11 characters — e.g. `CAR`, `CAMP`, `H2O`). Leaving it blank auto-names it `WP1`, `WP2`, … Marking works whether or not the trail is being recorded; it needs a GPS fix (otherwise it reports *No GPS fix*).
 
-**On the map** — saved waypoints show on the Trail Map view as a hollow diamond with the label's first character beside it. The map's bounding box always includes them, so off-track waypoints stay in frame; the map even renders waypoints when no trail is recorded.
+**On the map** — saved waypoints show on the Trail Map view as a hollow diamond with the label's first two characters beside it (enough to tell nearby waypoints apart). The map's bounding box always includes them, so off-track waypoints stay in frame; the map even renders waypoints when no trail is recorded.
 
 **Navigating** — **Hold Enter → Waypoints** opens the list (each row shows the label and live distance). The list always begins with a synthetic **Trail start** row whenever a trail exists, so you can backtrack to where you began without having marked it. Select a row and press **Enter** to open the navigation view:
 
