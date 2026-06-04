@@ -92,7 +92,7 @@ Cycle views with **LEFT / RIGHT**:
 | Readout               | LEFT/RIGHT or Enter | Summary shows Speed or Pace (in the global unit system) |
 | Grid                  | LEFT/RIGHT or Enter | Toggle scale grid on the map                        |
 | Mark here             | Enter               | Drop a waypoint at the current GPS fix (see below)  |
-| Add by coords         | Enter               | Add a waypoint by typing `lat,lon` — no GPS fix needed |
+| Add by coords         | Enter               | Add a waypoint from a lat/lon/label form — no GPS fix needed |
 | Waypoints             | Enter               | Open the waypoint list / navigation                 |
 | Start / Stop tracking | Enter               | Begin or end a recording session                    |
 | Save trail            | Enter               | Write RAM ring to flash (`/trail`)                  |
@@ -110,7 +110,11 @@ A waypoint is a saved spot — your car, camp, a water source — that you can n
 
 **Dropping a waypoint** — **Hold Enter → Mark here**. This captures the current GPS fix and opens the on-screen keyboard for a short label (up to 11 characters — e.g. `CAR`, `CAMP`, `H2O`). Leaving it blank auto-names it `WP1`, `WP2`, … Marking works whether or not the trail is being recorded; it needs a GPS fix (otherwise it reports *No GPS fix*).
 
-**Adding by coordinates** — **Hold Enter → Add by coords** lets you create a waypoint without being there: type `lat,lon` in decimal degrees (e.g. `37.42123,-122.08456`), then a label. No GPS fix is required — handy for entering a meeting point or a spot read off a map. Invalid input reports *Bad coordinates*.
+**Adding by coordinates** — **Hold Enter → Add by coords** lets you create a waypoint without being there — no GPS fix required (handy for a meeting point or a spot read off a map). It opens a small form with three editable rows plus **Save**:
+
+- **Lat** / **Lon** — **Enter** opens the keyboard to type the value in decimal degrees (magnitude only; the keyboard has no minus sign), and **LEFT/RIGHT** toggles the hemisphere — N/S for latitude, E/W for longitude.
+- **Label** — **Enter** to type a name (blank → auto `WP<n>`).
+- **Save** — validates the range and stores the waypoint. Missing or out-of-range values report a brief error.
 
 **On the map** — saved waypoints show on the Trail Map view as a hollow diamond with the label's first two characters beside it (enough to tell nearby waypoints apart). Waypoints and your current GPS position are drawn continuously — even with no trail recording in progress — so the Map view doubles as a live "you + your marks" view, not just a recorded-track plot. With **no trail**, the view auto-fits to your waypoints and position. **While a trail exists**, the view frames the recorded route instead, and any waypoint that falls outside it is clamped to the nearest map edge — a distant mark can't blow up the scale and squash the trail.
 

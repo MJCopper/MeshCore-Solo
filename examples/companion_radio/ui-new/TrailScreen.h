@@ -23,17 +23,25 @@ class TrailScreen : public UIScreen {
   bool    _map_grid       = true;   // show scale grid in map view (Enter to toggle)
 
   // Waypoint sub-screens layered over the trail views. WP_OFF = normal trail.
-  enum WpMode { WP_OFF, WP_LIST, WP_NAV };
+  enum WpMode { WP_OFF, WP_LIST, WP_NAV, WP_ADD };
   uint8_t   _wp_mode  = WP_OFF;
   int       _wp_sel   = 0;
   int       _wp_scroll = 0;
   PopupMenu _wp_ctx;                 // Rename / Delete on a selected waypoint
   KeyboardWidget _wp_kb;             // label entry (mark new / rename)
   bool      _kb_active = false;
-  bool      _kb_coords = false;      // keyboard is entering "lat,lon" (then asks for a label)
   int       _kb_rename_idx = -1;     // -1 = marking new, ≥0 = renaming that index
   int32_t   _mark_lat = 0, _mark_lon = 0;   // pending new-mark position
   uint32_t  _mark_ts  = 0;
+
+  // WP_ADD form — type a waypoint by coordinates. The keyboard has no comma or
+  // minus, so lat/lon are entered as magnitude + a hemisphere toggle (LEFT/RIGHT).
+  char      _add_lat[12] = "", _add_lon[12] = "";   // magnitude strings
+  char      _add_label[WAYPOINT_LABEL_LEN] = "";
+  bool      _add_lat_neg = false;    // true = S
+  bool      _add_lon_neg = false;    // true = W
+  int       _add_sel  = 0;           // 0=Lat 1=Lon 2=Label 3=Save
+  int       _kb_field = -1;          // which WP_ADD field the keyboard edits (-1 = label/rename)
 
   // Action popup (Hold Enter / KEY_CONTEXT_MENU). Carries both settings rows
   // (Min dist, Units — cycled with LEFT/RIGHT while focused) and actions
@@ -63,7 +71,7 @@ public:
     _wp_mode = WP_OFF;
     _wp_ctx.active = false;
     _kb_active = false;
-    _kb_coords = false;
+    _kb_field = -1;
   }
 
   int render(DisplayDriver& display) override {
@@ -74,6 +82,7 @@ public:
     if (_kb_active) return _wp_kb.render(display);
 
     // Waypoint sub-screens replace the trail views.
+    if (_wp_mode == WP_ADD)  { renderAddForm(display); return 1000; }
     if (_wp_mode == WP_NAV)  { renderWpNav(display);  return 1000; }
     if (_wp_mode == WP_LIST) {
       renderWpList(display);
@@ -104,10 +113,11 @@ public:
     if (_kb_active) {
       auto r = _wp_kb.handleInput(c);
       if (r == KeyboardWidget::DONE) {
-        if (_kb_coords) commitCoords(_wp_kb.buf);              // parse → then ask for a label
-        else            { commitLabel(_wp_kb.buf); _kb_active = false; }
+        if (_kb_field >= 0) applyAddField(_wp_kb.buf);         // WP_ADD field edit
+        else                commitLabel(_wp_kb.buf);           // mark / rename label
+        _kb_active = false; _kb_field = -1;
       } else if (r == KeyboardWidget::CANCELLED) {
-        _kb_active = false; _kb_coords = false;
+        _kb_active = false; _kb_field = -1;
       }
       return true;
     }
@@ -142,6 +152,26 @@ public:
             _task->shareToMessage(text);   // hands off to the Messages screen
           }
         }
+      }
+      return true;
+    }
+
+    // WP_ADD form: type lat/lon (magnitude) + hemisphere toggle + label.
+    if (_wp_mode == WP_ADD) {
+      if (c == KEY_CANCEL) { _wp_mode = WP_OFF; return true; }
+      if (c == KEY_UP   && _add_sel > 0) { _add_sel--; return true; }
+      if (c == KEY_DOWN && _add_sel < 3) { _add_sel++; return true; }
+      if (c == KEY_LEFT || c == KEY_RIGHT) {
+        if      (_add_sel == 0) _add_lat_neg = !_add_lat_neg;   // N <-> S
+        else if (_add_sel == 1) _add_lon_neg = !_add_lon_neg;   // E <-> W
+        return true;
+      }
+      if (c == KEY_ENTER) {
+        if      (_add_sel == 0) { _kb_field = 0; _wp_kb.begin(_add_lat, 11); _kb_active = true; }
+        else if (_add_sel == 1) { _kb_field = 1; _wp_kb.begin(_add_lon, 11); _kb_active = true; }
+        else if (_add_sel == 2) { _kb_field = 2; _wp_kb.begin(_add_label, WAYPOINT_LABEL_LEN - 1); _kb_active = true; }
+        else                    { commitAddForm(); }
+        return true;
       }
       return true;
     }
@@ -390,29 +420,68 @@ private:
     _kb_active = true;
   }
 
-  // Add a waypoint by typing "lat,lon" (no GPS fix needed). Opens the keyboard
-  // for coordinates; on a valid parse it falls through to the label keyboard.
+  // Add a waypoint by coordinates (no GPS fix needed). Opens the WP_ADD form.
   void handleAddByCoords() {
     if (_task->waypoints().full()) { _task->showAlert("Waypoints full", 1000); return; }
-    _kb_coords = true;
-    _kb_rename_idx = -1;
-    _wp_kb.begin("", 30);              // "-12.345678,-123.456789" fits in 30
-    _kb_active = true;
+    _add_lat[0] = _add_lon[0] = _add_label[0] = '\0';
+    _add_lat_neg = _add_lon_neg = false;
+    _add_sel = 0;
+    _wp_mode = WP_ADD;
   }
 
-  // Parse the typed coordinates; on success store the fix and switch the
-  // keyboard to label entry (reusing the Mark-here commit path).
-  void commitCoords(const char* buf) {
-    int32_t lat, lon;
-    if (!geo::parseLatLon(buf, lat, lon)) {
-      _task->showAlert("Bad coordinates", 1200);
-      _kb_active = false; _kb_coords = false;
-      return;
+  // Store the just-typed value into the focused WP_ADD field.
+  void applyAddField(const char* buf) {
+    char* dst = (_kb_field == 0) ? _add_lat
+              : (_kb_field == 1) ? _add_lon : _add_label;
+    int   cap = (_kb_field == 2) ? WAYPOINT_LABEL_LEN : (int)sizeof(_add_lat);
+    strncpy(dst, buf, cap - 1);
+    dst[cap - 1] = '\0';
+  }
+
+  // Validate the form and save the waypoint.
+  void commitAddForm() {
+    if (!_add_lat[0] || !_add_lon[0]) { _task->showAlert("Lat/Lon needed", 1200); return; }
+    double la = atof(_add_lat), lo = atof(_add_lon);
+    if (_add_lat_neg) la = -la;
+    if (_add_lon_neg) lo = -lo;
+    if (la < -90.0 || la > 90.0 || lo < -180.0 || lo > 180.0) {
+      _task->showAlert("Out of range", 1200); return;
     }
-    _mark_lat = lat; _mark_lon = lon; _mark_ts = (uint32_t)rtc_clock.getCurrentTime();
-    _kb_coords = false;
-    _kb_rename_idx = -1;
-    _wp_kb.begin("", WAYPOINT_LABEL_LEN - 1);   // now name it (empty → auto WP<n>)
+    if (_task->waypoints().full()) { _task->showAlert("Waypoints full", 1000); return; }
+    int32_t lat = (int32_t)(la * 1e6 + (la < 0 ? -0.5 : 0.5));
+    int32_t lon = (int32_t)(lo * 1e6 + (lo < 0 ? -0.5 : 0.5));
+    char label[WAYPOINT_LABEL_LEN];
+    if (_add_label[0]) { strncpy(label, _add_label, sizeof(label) - 1); label[sizeof(label) - 1] = '\0'; }
+    else               snprintf(label, sizeof(label), "WP%d", _task->waypoints().count() + 1);
+    if (_task->waypoints().add(lat, lon, (uint32_t)rtc_clock.getCurrentTime(), label)) {
+      _task->saveWaypoints();
+      _task->showAlert("Waypoint saved", 800);
+      _wp_mode = WP_OFF;
+    } else {
+      _task->showAlert("Waypoints full", 1000);
+    }
+  }
+
+  void renderAddForm(DisplayDriver& display) {
+    display.setColor(DisplayDriver::LIGHT);
+    display.drawTextCentered(display.width() / 2, 0, "ADD WAYPOINT");
+    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+    const int top  = display.listStart();
+    const int step = display.lineStep();
+    const int cw   = display.getCharWidth();
+    for (int i = 0; i < 4; i++) {
+      int y = top + i * step;
+      bool sel = (i == _add_sel);
+      display.drawSelectionRow(0, y - 1, display.width(), step - 1, sel);
+      display.setCursor(0, y); display.print(sel ? ">" : " ");
+      char row[28];
+      if      (i == 0) snprintf(row, sizeof(row), "Lat: %c %s", _add_lat_neg ? 'S' : 'N', _add_lat[0] ? _add_lat : "--");
+      else if (i == 1) snprintf(row, sizeof(row), "Lon: %c %s", _add_lon_neg ? 'W' : 'E', _add_lon[0] ? _add_lon : "--");
+      else if (i == 2) snprintf(row, sizeof(row), "Label: %s",  _add_label[0] ? _add_label : "(auto)");
+      else             snprintf(row, sizeof(row), "[Save]");
+      display.setCursor(cw + 2, y); display.print(row);
+      display.setColor(DisplayDriver::LIGHT);
+    }
   }
 
   void commitLabel(const char* buf) {
