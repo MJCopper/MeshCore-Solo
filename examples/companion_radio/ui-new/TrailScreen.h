@@ -677,11 +677,15 @@ private:
         if (lon < min_lon) min_lon = lon;  if (lon > max_lon) max_lon = lon;
       }
     };
+    // With a trail, frame the recorded route (and live position) and let far
+    // waypoints clamp to the map edge — they must not blow up the scale. Only
+    // when there's no trail do waypoints define the view.
     if (have_trail) {
       int32_t a, b, c, d; _store->boundingBox(a, b, c, d);
       fold(a, b); fold(c, d);
+    } else {
+      for (int i = 0; i < nwp; i++) fold(wp.at(i).lat_1e6, wp.at(i).lon_1e6);
     }
-    for (int i = 0; i < nwp; i++) fold(wp.at(i).lat_1e6, wp.at(i).lon_1e6);
     if (have_gps) fold(my_lat, my_lon);
 
     // Degenerate: everything at one coordinate — just centre the markers.
@@ -747,10 +751,14 @@ private:
     }
 
     // Waypoints, with the first two label characters beside the marker so
-    // nearby waypoints can be told apart.
+    // nearby waypoints can be told apart. A waypoint that falls outside the
+    // (trail-framed) view is clamped to the nearest edge instead of being lost.
+    const int wp_x_max = area_x + area_w - 1, wp_y_max = area_y + area_h - 1;
     for (int i = 0; i < nwp; i++) {
       const Waypoint& w = wp.at(i);
       int wx, wy; projectLL(w.lat_1e6, w.lon_1e6, wx, wy);
+      if (wx < area_x) wx = area_x;  else if (wx > wp_x_max) wx = wp_x_max;
+      if (wy < area_y) wy = area_y;  else if (wy > wp_y_max) wy = wp_y_max;
       drawWaypointMarker(display, wx, wy);
       char s[3] = { w.label[0], w.label[0] ? w.label[1] : (char)0, 0 };
       drawWaypointLabel(display, s, wx, wy, area_x, area_y, area_w, area_h);
