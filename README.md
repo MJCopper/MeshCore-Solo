@@ -2,6 +2,8 @@
 
 This branch extends the official MeshCore companion radio firmware for the **Seeed Wio Tracker L1**. Provides support for both the original OLED and the e-ink variant, with additional features and UI enhancements.
 
+It turns the L1 into a capable off-grid **handheld navigator** — waypoints, a GPS compass, and navigate-to-anything (a saved point, a mesh node, or a location a contact texts you) — on top of a polished, multi-language messaging UI. No extra hardware required.
+
 Join the discussion on the official MeshCore Discord: https://discord.gg/sdhYArU2jr
 
 Solo firmware thread: https://discord.com/channels/1495203904898728149/1505294337884553447
@@ -21,7 +23,16 @@ Solo firmware thread: https://discord.com/channels/1495203904898728149/150529433
 
 - Enabled sensor screens with support for all onboard sensors (temperature, humidity, pressure, luminosity, CO₂) and GPS data
 
-- [Messages Screen](./docs/solo_features/message_screen/message_screen.md) — view and send messages, open message details, reply with quick messages or custom text, per-channel notification and melody overrides
+- **GPS navigation** — a full navigation suite that needs no extra hardware (details in the [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) docs):
+
+  - **Waypoints** — mark a spot (car, camp, water…) with a short label, see it on the trail map, and get live bearing + distance back to it; the list always offers a one-tap backtrack to where your trail started
+  - **GPS compass** — heading derived from course-over-ground (no magnetometer needed), shown as a clear scrolling heading tape with a large degrees + cardinal readout
+  - **Navigate to anything** — a saved waypoint, a node straight from Nearby Nodes, or a location someone shares with you in a message
+  - **Share & save locations** — send a waypoint to a contact or channel; on the other end, navigate to or save any shared location with one menu
+  - **GPS trail** — background route recording with an auto-fit map (waypoints + live position), summary stats, and [GPX export](#gpx-trail-export)
+  - **Metric or imperial** — one global Units setting drives every distance and speed across the UI
+
+- [Messages Screen](./docs/solo_features/message_screen/message_screen.md) — view and send messages, open message details, reply with quick messages or custom text, navigate to / save locations shared in a message, per-channel notification and melody overrides
 
 - [Favourites Dial](./docs/solo_features/favourites_dial/favourites_dial.md) — pin up to six contacts for quick access from the home screen
 
@@ -31,7 +42,7 @@ Solo firmware thread: https://discord.com/channels/1495203904898728149/150529433
 
 - [Screen Lock](./docs/solo_features/screen_lock/screen_lock.md) — lock the device to prevent accidental keypresses, with a lock screen showing time and sensor data
 
-- [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) — GPS trail recording and export, nearby nodes, ringtone editor, auto-reply bot, auto-advert
+- [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) — GPS trail & waypoints, compass, nearby nodes (with ping & navigate), ringtone editor, auto-reply bot, auto-advert
 
 ### E-ink Display
 
@@ -82,12 +93,12 @@ Updating to newer firmware versions usually does not require erasing flash unles
 
 | Document                                                                   | Description                                                           |
 | -------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| [Messages Screen](./docs/solo_features/message_screen/message_screen.md)   | Sending messages, context menus, reply, Notif/Melody overrides        |
+| [Messages Screen](./docs/solo_features/message_screen/message_screen.md)   | Sending messages, context menus, reply, navigate to / save shared locations, Notif/Melody overrides |
 | [Favourites Dial](./docs/solo_features/favourites_dial/favourites_dial.md) | Pinned contacts grid, unread badges, pin/unpin                        |
 | [Clock Screen](./docs/solo_features/clock_screen/clock_screen.md)          | Clock page, date, configurable data fields                            |
 | [Settings Screen](./docs/solo_features/settings_screen/settings_screen.md) | All settings sections with values and interactions                    |
 | [Screen Lock](./docs/solo_features/screen_lock/screen_lock.md)             | Lock/unlock sequence, lock screen, auto-lock                          |
-| [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md)          | GPS trail, nearby nodes, ringtone editor, auto-reply bot, auto-advert |
+| [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md)          | GPS trail & waypoints, compass, navigation, nearby nodes, ringtone editor, auto-reply bot, auto-advert |
 
 ### Upstream MeshCore
 
