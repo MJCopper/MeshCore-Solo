@@ -72,6 +72,12 @@ class QuickMsgScreen : public UIScreen {
   int32_t   _nav_lat = 0, _nav_lon = 0;
   char      _nav_label[24] = "";
 
+  // Share-compose mode: launched from elsewhere (e.g. a waypoint) with a
+  // prepared message; the user picks a recipient and the text lands prefilled
+  // in the keyboard to confirm/edit before sending.
+  bool      _share_mode = false;
+  char      _share_text[160] = "";
+
   struct ChHistEntry { uint8_t ch_idx; char text[140]; uint32_t timestamp; };
   ChHistEntry _hist[CH_HIST_MAX];
   int _hist_head, _hist_count;
@@ -133,6 +139,14 @@ class QuickMsgScreen : public UIScreen {
     _reply_mode = true;
     setupMsgPick();
     _phase = MSG_PICK;
+  }
+
+  // Recipient chosen while sharing — open the keyboard with the prepared text.
+  void beginShareCompose(bool channel) {
+    _sending_to_channel = channel;
+    _reply_mode = false;
+    _kb.begin(_share_text);
+    _phase = KEYBOARD;
   }
 
   // Build the fullscreen-message options popup: Reply (if allowed) plus
@@ -274,6 +288,7 @@ class QuickMsgScreen : public UIScreen {
 
   void afterSend(bool ok, const char* msg) {
     _reply_mode = false;
+    _share_mode = false;
     if (ok && _sending_to_channel) {
       _hist_sel = 0;
       _hist_scroll = 0;
@@ -557,6 +572,7 @@ public:
     _ctx_menu.active = false;
     _ctx_dirty = false;
     _nav_active = false;
+    _share_mode = false;
     _pin_picker_active = false;
     _dm_direct_entry = false;
     _unread_at_entry = 0;
@@ -593,6 +609,17 @@ public:
   // Caller must have already reset() the screen. Marks the entry so KEY_CANCEL
   // from DM_HIST returns to the home screen instead of falling back through
   // CONTACT_PICK → MODE_SELECT.
+  // Enter the screen pre-loaded to share `text` (e.g. a "[WAY]lat,lon label"
+  // waypoint). The user picks Direct/Channel then a recipient; selecting one
+  // jumps straight to the keyboard prefilled with the text (see beginShareCompose).
+  void startShare(const char* text) {
+    reset();
+    _share_mode = true;
+    strncpy(_share_text, text, sizeof(_share_text) - 1);
+    _share_text[sizeof(_share_text) - 1] = '\0';
+    _phase = MODE_SELECT;
+  }
+
   void enterDM(const ContactInfo& ci) {
     _sel_contact = ci;
     _task->clearDMUnread(ci.id.pub_key);
@@ -1225,6 +1252,7 @@ public:
           _dm_hist_scroll = 0;
           _dm_fs.active = false;
           _phase = DM_HIST;
+          if (_share_mode) beginShareCompose(false);
         }
         return true;
       }
@@ -1321,6 +1349,7 @@ public:
         _viewing_max_seen = _hist_sel >= 0 ? _hist_sel : 0;
         _phase = CHANNEL_HIST;
         updateChannelUnread();
+        if (_share_mode) beginShareCompose(true);
         return true;
       }
       if (c == KEY_CONTEXT_MENU && _num_channels > 0) {
@@ -1506,7 +1535,8 @@ public:
     } else if (_phase == KEYBOARD) {
       auto res = _kb.handleInput(c);
       if (res == KeyboardWidget::CANCELLED) {
-        _phase = MSG_PICK;
+        if (_share_mode) { _share_mode = false; _task->gotoHomeScreen(); }
+        else             { _phase = MSG_PICK; }
       } else if (res == KeyboardWidget::DONE) {
         int prefix_len = _reply_mode ? (int)strlen(_reply_prefix) : 0;
         if (_kb.len > prefix_len) {

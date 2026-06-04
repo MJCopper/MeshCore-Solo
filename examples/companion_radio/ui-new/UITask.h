@@ -137,6 +137,7 @@ public:
   void gotoSettingsScreen();
   void gotoQuickMsgScreen();
   void openContactDM(const ContactInfo& ci);
+  void shareToMessage(const char* text);   // open Messages pre-loaded to share `text`
   int  getRecentDMContacts(uint8_t out[][NodePrefs::FAVOURITE_PREFIX_LEN], int max) const;
   void gotoToolsScreen();
   void gotoRingtoneEditor(int slot = 0);

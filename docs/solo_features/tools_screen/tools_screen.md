@@ -122,7 +122,9 @@ A waypoint is a saved spot — your car, camp, a water source — that you can n
 
 There is no magnetometer, so the screen shows two *absolute* bearings and you compare them: target at 145°, travelling at 90° → bear right. The **Hdg** line is derived from GPS movement (see Compass) and reads `--` until you move.
 
-**Managing** — **Hold Enter** on a waypoint row offers **Rename** / **Delete** (the *Trail start* row is navigate-only). **Hold Enter → Clear waypoints** on the Trail screen wipes them all at once.
+**Managing** — **Hold Enter** on a waypoint row offers **Rename** / **Delete** / **Send** (the *Trail start* row is navigate-only). **Hold Enter → Clear waypoints** on the Trail screen wipes them all at once.
+
+**Sharing** — **Send** hands the waypoint to the Messages screen: pick a contact or channel, and the message is pre-filled as `[WAY]<lat>,<lon> <label>` (e.g. `[WAY]37.42123,-122.08456 CAR`) for you to confirm or edit before sending. On the receiving device, opening that message and **Hold Enter → Navigate / Save waypoint** turns it back into a navigable point (see *Messages › Fullscreen message view*). The format is plain text, so it stays readable on other firmware and the phone app.
 
 ### Downloading GPX
 

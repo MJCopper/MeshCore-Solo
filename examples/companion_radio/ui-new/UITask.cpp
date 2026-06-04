@@ -1325,6 +1325,11 @@ void UITask::openContactDM(const ContactInfo& ci) {
   setCurrScreen(quick_msg);
 }
 
+void UITask::shareToMessage(const char* text) {
+  ((QuickMsgScreen*)quick_msg)->startShare(text);
+  setCurrScreen(quick_msg);
+}
+
 int UITask::getRecentDMContacts(uint8_t out[][NodePrefs::FAVOURITE_PREFIX_LEN], int max) const {
   return ((QuickMsgScreen*)quick_msg)->getRecentDMContacts(out, max);
 }

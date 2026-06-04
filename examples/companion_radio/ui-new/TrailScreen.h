@@ -119,12 +119,21 @@ public:
             _wp_kb.begin(_task->waypoints().at(wi).label, WAYPOINT_LABEL_LEN - 1);
             _kb_active = true;
           }
-        } else {                                          // Delete
+        } else if (sel == 1) {                            // Delete
           if (wi >= 0 && wi < _task->waypoints().count()) {
             _task->waypoints().remove(wi);
             _task->saveWaypoints();
             if (_wp_sel >= wpListCount()) _wp_sel = wpListCount() - 1;
             if (_wp_sel < 0) _wp_sel = 0;
+          }
+        } else {                                           // Send (share in a message)
+          if (wi >= 0 && wi < _task->waypoints().count()) {
+            const Waypoint& w = _task->waypoints().at(wi);
+            double lat = w.lat_1e6 / 1000000.0, lon = w.lon_1e6 / 1000000.0;
+            char text[80];
+            if (w.label[0]) snprintf(text, sizeof(text), WAYPOINT_MSG_TAG "%.5f,%.5f %s", lat, lon, w.label);
+            else            snprintf(text, sizeof(text), WAYPOINT_MSG_TAG "%.5f,%.5f", lat, lon);
+            _task->shareToMessage(text);   // hands off to the Messages screen
           }
         }
       }
@@ -147,9 +156,10 @@ public:
       if (c == KEY_ENTER && n > 0)          { _wp_mode = WP_NAV; return true; }
       // Rename/Delete apply to saved waypoints only — not the Trail-start row.
       if (c == KEY_CONTEXT_MENU && !selIsStart() && wpIndex() < _task->waypoints().count()) {
-        _wp_ctx.begin("Waypoint", 2);
+        _wp_ctx.begin("Waypoint", 3);
         _wp_ctx.addItem("Rename");
         _wp_ctx.addItem("Delete");
+        _wp_ctx.addItem("Send");
         return true;
       }
       return true;
