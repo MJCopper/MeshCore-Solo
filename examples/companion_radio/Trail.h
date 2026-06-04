@@ -226,14 +226,62 @@ public:
   // through the same formatting code.
 
   template <typename S>
-  static size_t gpxHeader(S& out, const char* name) {
+  static size_t gpxHeader(S& out) {
     size_t n = 0;
     n += out.print(F("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"));
     n += out.print(F("<gpx version=\"1.1\" creator=\"MeshCore\" "
                       "xmlns=\"http://www.topografix.com/GPX/1/1\">\n"));
+    return n;
+  }
+
+  template <typename S>
+  static size_t gpxTrackOpen(S& out, const char* name) {
+    size_t n = 0;
     n += out.print(F("<trk><name>"));
     n += out.print(name);
     n += out.print(F("</name>\n"));
+    return n;
+  }
+
+  // Emit saved waypoints as <wpt> elements. In GPX 1.1 these must precede the
+  // <trk>. Duck-typed over any store exposing count()/at(i) whose entries have
+  // lat_1e6 / lon_1e6 / ts / label, so Trail.h stays decoupled from Waypoint.h.
+  template <typename S, typename WP>
+  static size_t gpxWaypoints(S& out, WP& store) {
+    size_t n = 0;
+    for (int i = 0; i < store.count(); i++) {
+      const auto& w = store.at(i);
+      // XML-escape the user label (&, <, > only).
+      char esc[64]; int e = 0;
+      for (const char* p = w.label; *p && e < (int)sizeof(esc) - 6; p++) {
+        if      (*p == '&') { memcpy(esc + e, "&amp;", 5); e += 5; }
+        else if (*p == '<') { memcpy(esc + e, "&lt;",  4); e += 4; }
+        else if (*p == '>') { memcpy(esc + e, "&gt;",  4); e += 4; }
+        else                  esc[e++] = *p;
+      }
+      esc[e] = '\0';
+      char buf[160];
+      int len = snprintf(buf, sizeof(buf),
+        "<wpt lat=\"%.6f\" lon=\"%.6f\"><name>%s</name>",
+        w.lat_1e6 / 1.0e6, w.lon_1e6 / 1.0e6, esc);
+      if (len > 0) {
+        if ((size_t)len > sizeof(buf)) len = sizeof(buf);
+        n += out.write((const uint8_t*)buf, (size_t)len);
+      }
+      if (w.ts > 1000000000UL) {                 // append <time> when the RTC was set
+        time_t t = (time_t)w.ts;
+        struct tm* gt = ::gmtime(&t);
+        if (gt) {
+          len = snprintf(buf, sizeof(buf),
+            "<time>%04d-%02d-%02dT%02d:%02d:%02dZ</time>",
+            gt->tm_year + 1900, gt->tm_mon + 1, gt->tm_mday,
+            gt->tm_hour, gt->tm_min, gt->tm_sec);
+          if (len > 0) { if ((size_t)len > sizeof(buf)) len = sizeof(buf);
+                         n += out.write((const uint8_t*)buf, (size_t)len); }
+        }
+      }
+      n += out.print(F("</wpt>\n"));
+    }
     return n;
   }
 
@@ -271,10 +319,12 @@ public:
     return n;
   }
 
-  // Dump the live RAM ring as GPX. Returns bytes written.
-  template <typename S>
-  size_t exportGpx(S& out, const char* trk_name = "MeshCore Trail") {
-    size_t total = gpxHeader(out, trk_name);
+  // Dump the live RAM ring as GPX (with saved waypoints). Returns bytes written.
+  template <typename S, typename WP>
+  size_t exportGpx(S& out, WP& wpts, const char* trk_name = "MeshCore Trail") {
+    size_t total = gpxHeader(out);
+    total += gpxWaypoints(out, wpts);
+    total += gpxTrackOpen(out, trk_name);
     bool in_segment = false;
     for (int i = 0; i < _count; i++) {
       total += gpxPoint(out, at(i), i == 0, in_segment);
@@ -285,8 +335,8 @@ public:
 
   // Stream a saved trail straight from the open file as GPX without
   // touching the live RAM ring. Returns 0 on format mismatch.
-  template <typename F, typename S>
-  static size_t exportGpxFromFile(F& file, S& out, const char* trk_name = "MeshCore Trail") {
+  template <typename F, typename S, typename WP>
+  static size_t exportGpxFromFile(F& file, S& out, WP& wpts, const char* trk_name = "MeshCore Trail") {
     uint32_t magic = 0;
     if (file.read((uint8_t*)&magic, sizeof(magic)) != (int)sizeof(magic)) return 0;
     if (magic != SAVE_MAGIC) return 0;
@@ -299,7 +349,9 @@ public:
     file.read((uint8_t*)&accum, sizeof(accum));
     if (ver != SAVE_VERSION || cnt > CAPACITY) return 0;
 
-    size_t total = gpxHeader(out, trk_name);
+    size_t total = gpxHeader(out);
+    total += gpxWaypoints(out, wpts);
+    total += gpxTrackOpen(out, trk_name);
     bool in_segment = false;
     for (uint16_t i = 0; i < cnt; i++) {
       TrailPoint p;

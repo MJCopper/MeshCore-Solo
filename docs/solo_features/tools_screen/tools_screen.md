@@ -147,7 +147,7 @@ Then on the device: **Tools › Trail** → **Hold Enter** → **Export (live)**
 - **macOS/Linux** — `cat /dev/tty.usbmodem* > track.gpx` (stop with Ctrl-C after the dump finishes)
 - **Windows** — PuTTY (Serial, 115200) or Arduino IDE Serial Monitor with no line ending; copy the text from `<?xml` to `</gpx>` into a `.gpx` file
 
-Either way, the resulting file imports into OsmAnd, Garmin BaseCamp, GPX Studio, Google Earth, etc.
+Saved **waypoints are included** in the export as GPX `<wpt>` elements (with their label as `<name>`), alongside the track — so they show as pins in OsmAnd, Garmin BaseCamp, GPX Studio, Google Earth, etc. Either way, the resulting file imports into all of those.
 
 > [!NOTE]
 > If the companion app is connected via **BLE**, the export is safe — BLE and USB operate independently. If connected via **USB**, disconnect the app before exporting.

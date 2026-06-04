@@ -306,7 +306,7 @@ private:
   }
   void handleExport() {
     if (!Serial) { _task->showAlert("Connect USB first", 1200); return; }
-    size_t n = _store->exportGpx(Serial);
+    size_t n = _store->exportGpx(Serial, _task->waypoints());
     showExportAlert(n);
   }
 
@@ -316,7 +316,7 @@ private:
     if (!ds) { _task->showAlert("FS unavailable", 800); return; }
     File f = ds->openRead(TRAIL_FILE);
     if (!f) { _task->showAlert("No saved trail", 800); return; }
-    size_t n = TrailStore::exportGpxFromFile(f, Serial);
+    size_t n = TrailStore::exportGpxFromFile(f, Serial, _task->waypoints());
     f.close();
     if (n == 0) { _task->showAlert("Bad saved file", 1000); return; }
     showExportAlert(n);
