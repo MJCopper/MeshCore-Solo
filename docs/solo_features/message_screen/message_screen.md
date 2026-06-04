@@ -48,7 +48,7 @@ Sensor placeholders appear automatically in the placeholder picker when the corr
 
 Each entry in the history list shows the sender name and a compact age indicator (`3m`, `2h`, `>1d`) in the top-right corner.
 
-**Short Enter** on a message opens it in fullscreen. **Hold Enter** opens the context menu (Reply, plus Navigate / Save waypoint when the message contains a location — see Fullscreen message view).
+**Short Enter** on a message opens it in fullscreen. **Hold Enter** — on a history row or in fullscreen — opens the same options menu: Reply, plus **Navigate** / **Save waypoint** when the message contains a location (see Fullscreen message view). You don't need to open the message first.
 
 ---
 

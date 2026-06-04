@@ -1407,7 +1407,7 @@ public:
       if (_ctx_menu.active) {
         auto res = _ctx_menu.handleInput(c);
         if (res == PopupMenu::SELECTED) {
-          startReply(false);
+          dispatchFsAction(false);
         } else if (res != PopupMenu::NONE) {
           _ctx_menu.active = false;
         }
@@ -1452,11 +1452,13 @@ public:
       }
       if (c == KEY_CONTEXT_MENU && _dm_hist_sel >= 0) {
         int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
-        if (ring_pos >= 0 && !_dm_hist[ring_pos].outgoing) {
-          char _tname[32]; DisplayDriver::translateUTF8Static(_tname, _sel_contact.name, sizeof(_tname));
-          snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _tname);
-          _ctx_menu.begin("Options", 1);
-          _ctx_menu.addItem("Reply");
+        if (ring_pos >= 0) {
+          bool reply_ok = !_dm_hist[ring_pos].outgoing;
+          if (reply_ok) {
+            char _tname[32]; DisplayDriver::translateUTF8Static(_tname, _sel_contact.name, sizeof(_tname));
+            snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _tname);
+          }
+          buildFsMenu(_dm_hist[ring_pos].text, reply_ok);
         }
         return true;
       }
@@ -1490,7 +1492,7 @@ public:
       if (_ctx_menu.active) {
         auto res = _ctx_menu.handleInput(c);
         if (res == PopupMenu::SELECTED) {
-          startReply(true);
+          dispatchFsAction(true);
         } else if (res != PopupMenu::NONE) {
           _ctx_menu.active = false;
         }
@@ -1525,10 +1527,8 @@ public:
       }
       if (c == KEY_CONTEXT_MENU && _hist_sel >= 0) {
         int ring_pos = histEntryForChannel(_sel_channel_idx, _hist_sel);
-        if (ring_pos >= 0 && buildChannelReplyPrefix(_hist[ring_pos].text)) {
-          _ctx_menu.begin("Options", 1);
-          _ctx_menu.addItem("Reply");
-        }
+        if (ring_pos >= 0)
+          buildFsMenu(_hist[ring_pos].text, buildChannelReplyPrefix(_hist[ring_pos].text));
         return true;
       }
 
