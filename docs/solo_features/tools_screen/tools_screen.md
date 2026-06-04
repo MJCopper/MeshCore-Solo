@@ -92,8 +92,7 @@ Cycle views with **LEFT / RIGHT**:
 | Readout               | LEFT/RIGHT or Enter | Summary shows Speed or Pace (in the global unit system) |
 | Grid                  | LEFT/RIGHT or Enter | Toggle scale grid on the map                        |
 | Mark here             | Enter               | Drop a waypoint at the current GPS fix (see below)  |
-| Add by coords         | Enter               | Add a waypoint from a lat/lon/label form — no GPS fix needed |
-| Waypoints             | Enter               | Open the waypoint list / navigation                 |
+| Waypoints             | Enter               | Open the waypoint list / navigation / add-by-coords |
 | Start / Stop tracking | Enter               | Begin or end a recording session                    |
 | Save trail            | Enter               | Write RAM ring to flash (`/trail`)                  |
 | Load trail            | Enter               | Restore flash trail into RAM                        |
@@ -102,7 +101,7 @@ Cycle views with **LEFT / RIGHT**:
 | Clear waypoints       | Enter               | Delete all saved waypoints (trail untouched)        |
 | Reset trail           | Enter               | Clear RAM ring and elapsed time                     |
 
-(Mark here / Waypoints / Clear waypoints appear only when applicable — e.g. with a GPS fix, or once at least one waypoint or trail point exists.)
+(Clear waypoints appears only once at least one waypoint exists. Mark here needs a GPS fix; Waypoints is always available.)
 
 ### Waypoints
 
@@ -110,7 +109,7 @@ A waypoint is a saved spot — your car, camp, a water source — that you can n
 
 **Dropping a waypoint** — **Hold Enter → Mark here**. This captures the current GPS fix and opens the on-screen keyboard for a short label (up to 11 characters — e.g. `CAR`, `CAMP`, `H2O`). Leaving it blank auto-names it `WP1`, `WP2`, … Marking works whether or not the trail is being recorded; it needs a GPS fix (otherwise it reports *No GPS fix*).
 
-**Adding by coordinates** — **Hold Enter → Add by coords** lets you create a waypoint without being there — no GPS fix required (handy for a meeting point or a spot read off a map). It opens a small form with three editable rows plus **Save**:
+**Adding by coordinates** — open **Hold Enter → Waypoints** and select the **+ Add by coords** row (always the last entry in the list). This creates a waypoint without being there — no GPS fix required (handy for a meeting point or a spot read off a map). It opens a small form with three editable rows plus **Save**:
 
 - **Lat** / **Lon** — **Enter** opens the keyboard to type the value in decimal degrees (magnitude only; the keyboard has no minus sign), and **LEFT/RIGHT** toggles the hemisphere — N/S for latitude, E/W for longitude.
 - **Label** — **Enter** to type a name (blank → auto `WP<n>`).

@@ -48,9 +48,9 @@ class TrailScreen : public UIScreen {
   // (Start/Stop tracking, Reset). PopupMenu stores label pointers verbatim, so
   // the labels live in member buffers that get refreshed in openActionMenu()
   // and after every LEFT/RIGHT cycle.
-  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_ADD_COORDS, ACT_WAYPOINTS, ACT_WP_CLEAR };
+  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS, ACT_WP_CLEAR };
   PopupMenu _action_menu;
-  uint8_t   _act_map[16];  // 13 used today; pad so adding an action doesn't OOB
+  uint8_t   _act_map[16];  // 12 used today; pad so adding an action doesn't OOB
   uint8_t   _act_count = 0;
   char      _act_min_dist_label[24];
   char      _act_units_label[24];
@@ -183,14 +183,20 @@ public:
       return true;
     }
 
-    // Waypoint list (row 0 is the synthetic "Trail start" when a trail exists).
+    // Waypoint list (row 0 is the synthetic "Trail start" when a trail exists;
+    // the final row is "+ Add by coords").
     if (_wp_mode == WP_LIST) {
       int n = wpListCount();
+      int total = n + 1;                       // + the "Add by coords" row
       if (c == KEY_CANCEL) { _wp_mode = WP_OFF; return true; }
-      if (c == KEY_UP   && _wp_sel > 0)     { _wp_sel--; if (_wp_sel < _wp_scroll) _wp_scroll = _wp_sel; return true; }
-      if (c == KEY_DOWN && _wp_sel < n - 1) { _wp_sel++; return true; }
-      if (c == KEY_ENTER && n > 0)          { _wp_mode = WP_NAV; return true; }
-      // Rename/Delete apply to saved waypoints only — not the Trail-start row.
+      if (c == KEY_UP   && _wp_sel > 0)         { _wp_sel--; if (_wp_sel < _wp_scroll) _wp_scroll = _wp_sel; return true; }
+      if (c == KEY_DOWN && _wp_sel < total - 1) { _wp_sel++; return true; }
+      if (c == KEY_ENTER) {
+        if (_wp_sel == n) handleAddByCoords();   // last row → open the add form
+        else              _wp_mode = WP_NAV;     // a waypoint / Trail-start row
+        return true;
+      }
+      // Rename/Delete/Send apply to saved waypoints only — not Trail-start or Add.
       if (c == KEY_CONTEXT_MENU && !selIsStart() && wpIndex() < _task->waypoints().count()) {
         _wp_ctx.begin("Waypoint", 3);
         _wp_ctx.addItem("Rename");
@@ -229,7 +235,6 @@ public:
           else if (act == ACT_EXPORT)       { handleExport(); }
           else if (act == ACT_EXPORT_SAVED) { handleExportSaved(); }
           else if (act == ACT_MARK)         { handleMarkHere(); }
-          else if (act == ACT_ADD_COORDS)   { handleAddByCoords(); }
           else if (act == ACT_WAYPOINTS)    { _wp_mode = WP_LIST; _wp_sel = 0; _wp_scroll = 0; }
           else if (act == ACT_WP_CLEAR)     { _task->waypoints().clear(); _task->saveWaypoints();
                                               _task->showAlert("Waypoints cleared", 800); }
@@ -356,13 +361,10 @@ private:
     _act_map[_act_count++] = ACT_GRID;     _action_menu.addItem(_act_grid_label);
     _act_map[_act_count++] = ACT_TOGGLE;   _action_menu.addItem(_act_toggle_label);
     // Waypoints: mark the current spot, and browse/navigate saved ones.
-    _act_map[_act_count++] = ACT_MARK;       _action_menu.addItem("Mark here");
-    _act_map[_act_count++] = ACT_ADD_COORDS; _action_menu.addItem("Add by coords");
-    // "Waypoints" opens the nav list — useful when there are saved waypoints
-    // OR a trail to backtrack to (the list always includes a "Trail start" row).
-    if (_task->waypoints().count() > 0 || !_store->empty()) {
-      _act_map[_act_count++] = ACT_WAYPOINTS; _action_menu.addItem("Waypoints");
-    }
+    _act_map[_act_count++] = ACT_MARK;     _action_menu.addItem("Mark here");
+    // "Waypoints" opens the nav list — always available; it hosts the list,
+    // backtrack (Trail-start row) and the "+ Add by coords" entry.
+    _act_map[_act_count++] = ACT_WAYPOINTS; _action_menu.addItem("Waypoints");
     if (_task->waypoints().count() > 0) {
       _act_map[_act_count++] = ACT_WP_CLEAR;  _action_menu.addItem("Clear waypoints");
     }
@@ -509,11 +511,8 @@ private:
     display.drawTextCentered(display.width() / 2, 0, "WAYPOINTS");
     display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
-    int n = wpListCount();
-    if (n == 0) {
-      display.drawTextCentered(display.width() / 2, display.height() / 2, "No waypoints");
-      return;
-    }
+    int n     = wpListCount();
+    int total = n + 1;                    // final row = "+ Add by coords"
     const int top  = display.listStart();
     const int step = display.lineStep();
     const int cw   = display.getCharWidth();
@@ -524,15 +523,21 @@ private:
 
     int32_t mylat, mylon; bool have = ownPos(mylat, mylon);
 
-    for (int i = 0; i < vis && (_wp_scroll + i) < n; i++) {
+    for (int i = 0; i < vis && (_wp_scroll + i) < total; i++) {
       int row = _wp_scroll + i;
-      int32_t tlat, tlon; const char* label;
-      if (!rowTarget(row, tlat, tlon, label)) continue;
       int y = top + i * step;
       bool sel = (row == _wp_sel);
       display.drawSelectionRow(0, y - 1, display.width(), step - 1, sel);
       display.setCursor(0, y); display.print(sel ? ">" : " ");
 
+      if (row == n) {                     // the synthetic "Add" row
+        display.setCursor(cw + 2, y); display.print("+ Add by coords");
+        display.setColor(DisplayDriver::LIGHT);
+        continue;
+      }
+
+      int32_t tlat, tlon; const char* label;
+      if (!rowTarget(row, tlat, tlon, label)) continue;
       char dist[12] = ""; int bw = 0;
       if (have) {
         geo::fmtDist(dist, sizeof(dist), geo::haversineKm(mylat, mylon, tlat, tlon), useImperial());
