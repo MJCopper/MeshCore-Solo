@@ -78,12 +78,19 @@ class QuickMsgScreen : public UIScreen {
   bool      _share_mode = false;
   char      _share_text[160] = "";
 
-  struct ChHistEntry { uint8_t ch_idx; char text[140]; uint32_t timestamp; };
+  // History text holds a full received message. Channel messages carry the
+  // sender embedded as "Name: body" in the payload, so a message can be up to
+  // the over-the-air maximum (MAX_TEXT_LEN). Size the buffers to that + NUL,
+  // otherwise long messages (and Polish text, where each accented char is two
+  // UTF-8 bytes) get their tail clipped.
+  static const int MSG_TEXT_BUF = MAX_TEXT_LEN + 1;
+
+  struct ChHistEntry { uint8_t ch_idx; char text[MSG_TEXT_BUF]; uint32_t timestamp; };
   ChHistEntry _hist[CH_HIST_MAX];
   int _hist_head, _hist_count;
 
   // DM_HIST
-  struct DmHistEntry { uint8_t prefix[4]; uint8_t outgoing; char text[80]; uint32_t timestamp; };
+  struct DmHistEntry { uint8_t prefix[4]; uint8_t outgoing; char text[MSG_TEXT_BUF]; uint32_t timestamp; };
   static const int DM_HIST_MAX = 64;
   DmHistEntry _dm_hist[DM_HIST_MAX];
   int _dm_hist_head, _dm_hist_count;
@@ -891,9 +898,9 @@ public:
         if (ring_pos >= 0) {
           const char* ftext = _hist[ring_pos].text;
           const char* fsep = strstr(ftext, ": ");
-          char fsender[22], fmsg[140];
+          char fsender[33], fmsg[MSG_TEXT_BUF];
           if (fsep) {
-            int nl = fsep - ftext; if (nl > 21) nl = 21;
+            int nl = fsep - ftext; if (nl > (int)sizeof(fsender) - 1) nl = sizeof(fsender) - 1;
             strncpy(fsender, ftext, nl); fsender[nl] = '\0';
             strncpy(fmsg, fsep + 2, sizeof(fmsg) - 1); fmsg[sizeof(fmsg)-1] = '\0';
           } else {
@@ -963,9 +970,9 @@ public:
 
         const char* text = _hist[ring_pos].text;
         const char* sep = strstr(text, ": ");
-        char sender[22], msg_part[140];
+        char sender[33], msg_part[MSG_TEXT_BUF];
         if (sep) {
-          int nl = sep - text; if (nl > 21) nl = 21;
+          int nl = sep - text; if (nl > (int)sizeof(sender) - 1) nl = sizeof(sender) - 1;
           strncpy(sender, text, nl); sender[nl] = '\0';
           strncpy(msg_part, sep + 2, sizeof(msg_part) - 1);
           msg_part[sizeof(msg_part) - 1] = '\0';
