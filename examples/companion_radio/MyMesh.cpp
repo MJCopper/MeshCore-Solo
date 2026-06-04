@@ -360,6 +360,8 @@ void MyMesh::onContactsFull() {
 }
 
 void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path_len, const uint8_t* path) {
+  if (_ui) _ui->notify(UIEventType::advertReceived);
+
   if (_serial->isConnected()) {
     if (is_new) {
       writeContactRespFrame(PUSH_CODE_NEW_ADVERT, contact);
@@ -368,10 +370,6 @@ void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path
       memcpy(&out_frame[1], contact.id.pub_key, PUB_KEY_SIZE);
       _serial->writeFrame(out_frame, 1 + PUB_KEY_SIZE);
     }
-  } else {
-#ifdef DISPLAY_CLASS
-    if (_ui) _ui->notify(UIEventType::newContactMessage);
-#endif
   }
 
   // add inbound-path to mem cache
@@ -920,7 +918,7 @@ void MyMesh::onControlDataRecv(mesh::Packet *packet) {
         memcpy(r.pub_key, pub_key, PUB_KEY_SIZE);
         r.timestamp = getRTCClock()->getCurrentTime();
       }
-      if (_ui) _ui->notify(UIEventType::newContactMessage);
+      if (_ui) _ui->notify(UIEventType::advertReceived);
       return;  // our discover — don't forward to BLE app
     }
   }
@@ -1090,6 +1088,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.ringtone_bpm_idx = 2;   // 120 bpm default
   _prefs.ringtone_len = 0;       // no custom ringtone by default
   _prefs.ringtone2_bpm_idx = 2;  // 120 bpm default
+  _prefs.notif_melody_ad = 0;    // built-in advert sound by default
   _prefs.home_pages_mask = 0x01FF;  // all pages visible
   _prefs.bot_enabled = 0;
   _prefs.bot_channel_enabled = 0;
@@ -2498,7 +2497,7 @@ void MyMesh::loop() {
   }
 
 #ifdef DISPLAY_CLASS
-  if (_ui) _ui->setHasConnection(_serial->isBLEConnected());
+  if (_ui) _ui->setHasConnection(_serial->isConnected());
 #endif
 }
 
