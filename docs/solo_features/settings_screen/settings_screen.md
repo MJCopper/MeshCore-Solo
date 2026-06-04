@@ -39,6 +39,7 @@ Press **Cancel/Back** to save and return to the home screen.
 | Volume         | 1–5                            | LEFT/RIGHT; preview tone plays on each change                |
 | DM Melody      | built-in / Melody 1 / Melody 2 | Notification sound for incoming private messages             |
 | Channel Melody | built-in / Melody 1 / Melody 2 | Notification sound for incoming channel messages             |
+| AD sound       | built-in / Melody 1 / Melody 2 | Sound played whenever an **advert** is received from *any* node — pairs with Auto-Advert as an audible "in range" heartbeat (see Tools › Auto-Advert). There's no *off* here; `built-in` still chirps, so silence it via the **Buzzer** setting |
 
 Melody 1 and Melody 2 are custom sequences editable in **Tools › Ringtone Editor**.
 
