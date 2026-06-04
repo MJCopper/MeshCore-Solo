@@ -14,7 +14,10 @@ static const char KB_CHARS[4][10] = {
 static const int KB_ROWS_CHAR  = 4;
 static const int KB_COLS_CHAR  = 10;
 static const int KB_SPECIAL    = 5;   // [^] [Sp] [De] [{}] [OK]
-static const int KB_MAX_LEN    = 139;
+// Buffer cap for typed text, in bytes. Matches MeshCore's MAX_TEXT_LEN
+// (10*CIPHER_BLOCK_SIZE = 160) so a full-length message can be composed; each
+// field passes its own smaller max to begin() where its store is smaller.
+static const int KB_MAX_LEN    = 160;
 
 static const int KB_PH_MAX     = 12;  // max placeholders in list
 static const int KB_PH_LEN     = 9;   // max placeholder string length incl. null

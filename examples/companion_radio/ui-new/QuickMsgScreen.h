@@ -1589,9 +1589,9 @@ public:
         NodePrefs* p = _task->getNodePrefs();
         int slot = _active_msgs[_msg_sel - 1];
         const char* tmpl = p ? p->custom_msgs[slot] : "OK";
-        char msg[140];
+        char msg[MSG_TEXT_BUF];
         if (_reply_mode) {
-          char body[140];
+          char body[MSG_TEXT_BUF];
           expandMsg(tmpl, body, sizeof(body));
           snprintf(msg, sizeof(msg), "%s%s", _reply_prefix, body);
         } else {

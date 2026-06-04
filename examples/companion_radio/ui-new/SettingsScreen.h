@@ -810,7 +810,10 @@ public:
     if (isMsgSlot(_selected) && enter) {
       int slot = msgSlotIndex(_selected);
       _edit_slot = slot;
-      _kb.begin(p ? p->custom_msgs[slot] : "");
+      // Bound to the custom_msgs store (140 B) so the wider keyboard buffer
+      // can't overflow it on save.
+      _kb.begin(p ? p->custom_msgs[slot] : "",
+                p ? (int)sizeof(p->custom_msgs[slot]) - 1 : KB_MAX_LEN);
       kbAddSensorPlaceholders(_kb, &sensors);
       return true;
     }
