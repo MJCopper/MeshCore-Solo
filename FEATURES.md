@@ -339,6 +339,45 @@ A fuller position-centred navigator (you fixed at screen centre, fixed/preset
 zoom, pan) is a larger separate feature; start with the rotate-the-fit version
 if pursued.
 
+### 📋 Battery / power optimization (CAD RX windowing + APC) — after trail polish
+
+Goal: multiply battery life **without losing functionality**. The dominant
+draw on this node is the radio in **continuous RX** (always-on `startReceive()`
+with boosted gain in [`RadioLibWrappers.cpp`](src/helpers/radiolib/RadioLibWrappers.cpp));
+the MCU already sleeps between iterations (`sd_app_evt_wait()`/WFE in
+[`NRF52Board.cpp`](src/helpers/NRF52Board.cpp)), so the framework is not the
+bottleneck — the radio is. The win is framework-agnostic and can land in this
+Arduino tree while keeping the Solo UI and upstream sync.
+
+Inspired by **ZephCore** (Zephyr MeshCore port, https://github.com/liquidraver/ZephCore),
+whose battery edge comes from radio/peripheral power technique, not the kernel:
+
+- **CAD-based RX windowing** — the biggest lever. Instead of continuous RX, use
+  the SX1262 RX-duty-cycle / Channel Activity Detection to briefly sample for a
+  preamble, then sleep, repeat. ZephCore quotes ~10–15 mA → ~3–5 mA RX. RadioLib
+  supports CAD / `startReceiveDutyCycle`. **Tradeoff:** slightly higher receive
+  latency / a small sensitivity hit — acceptable for a companion, must be a
+  toggle/setting so users who want lowest latency can keep continuous RX.
+- **Adaptive Power Control (APC)** — drop `tx_power_dbm` dynamically when link
+  quality (SNR/RSSI of acks) allows; raise it back when needed.
+- **Config-level wins** (mostly already exposed): BLE off when idle, OLED
+  auto-off (e-ink idle ≈ 0), longer advert intervals.
+
+**Explicitly out of scope: GPS power gating.** ZephCore powers the GNSS only
+during a fix; this device is used as a *live* navigator + trail recorder, so GPS
+stays continuously powered. Don't gate it.
+
+Cross-check: MeshCore upstream is already moving here too
+([PR #1238 NRF52 powersaving](https://github.com/meshcore-dev/MeshCore/pull/1238),
+[docs/nrf52_power_management.md](docs/nrf52_power_management.md), duty-cycle
+enforcement since companion v1.14.1) — prefer adopting/merging upstream work over
+a parallel implementation where possible. Note ZephCore's licence before copying
+any code verbatim (architecture inspiration is fine).
+
+Sequencing: **deferred until the trail/waypoints/nav polishing is finished.**
+First step when picked up: profile with a PPK2/meter to confirm RX is the hog,
+then prototype CAD windowing behind a setting and measure before/after.
+
 ### SOS broadcast
 
 Configurable in Settings › System › SOS:
