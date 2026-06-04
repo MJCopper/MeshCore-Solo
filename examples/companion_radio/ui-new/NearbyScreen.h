@@ -182,11 +182,13 @@ class NearbyScreen : public UIScreen {
   }
 
   void rebuildPingMenu() {
+    int keep = _ping_menu._sel;            // preserve selection across a rebuild
     _ping_menu.begin("Ping", 4);
     _ping_menu.addItem("Send");
     if (_ping_time_str[0])     _ping_menu.addItem(_ping_time_str);
     if (_ping_snr_out_str[0])  _ping_menu.addItem(_ping_snr_out_str);
     if (_ping_snr_back_str[0])  _ping_menu.addItem(_ping_snr_back_str);
+    if (keep > 0 && keep < _ping_menu._count) _ping_menu._sel = keep;
   }
 
   void openPingMenu() { rebuildPingMenu(); }
@@ -684,8 +686,9 @@ public:
 
       // Ping popup (opened from Options) consumes input while active.
       if (_ping_menu.active) {
-        uint8_t pk[PUB_KEY_SIZE]; selectedStoredPubKey(pk);
-        handlePingMenuInput(c, pk);
+        uint8_t pk[PUB_KEY_SIZE];
+        if (selectedStoredPubKey(pk)) handlePingMenuInput(c, pk);  // guard: never send to a stale/garbage key
+        else                          closePingMenu();
         return true;
       }
 

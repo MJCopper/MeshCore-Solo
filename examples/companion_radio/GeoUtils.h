@@ -94,8 +94,8 @@ static inline bool parseLatLon(const char* text, int32_t& lat_1e6, int32_t& lon_
     if (end2 == q) continue;
     if (la < -90.0 || la > 90.0 || lo < -180.0 || lo > 180.0) continue;
 
-    lat_1e6 = (int32_t)lroundf((float)(la * 1e6));
-    lon_1e6 = (int32_t)lroundf((float)(lo * 1e6));
+    lat_1e6 = (int32_t)(la * 1e6 + (la < 0 ? -0.5 : 0.5));   // round in double — float loses ~1m at 1e8
+    lon_1e6 = (int32_t)(lo * 1e6 + (lo < 0 ? -0.5 : 0.5));
     if (label && label_n > 0 && tag) {                // label only from a tagged share
       const char* s = end2;
       while (*s == ' ') s++;
