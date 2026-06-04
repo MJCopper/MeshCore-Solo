@@ -1,20 +1,28 @@
 #pragma once
 // Tools › Compass. A standalone heading view: shows the device's course over
-// ground (derived from GPS movement — there is no magnetometer) as a rotating
-// arrow plus a numeric degrees + cardinal readout. When standing still the
-// heading is undefined, so it shows a hint to move.
+// ground (derived from GPS movement — there is no magnetometer) as a horizontal
+// scrolling tape (N..E..S..W) under a fixed travel-direction marker, plus a
+// large numeric degrees + cardinal readout. When standing still the heading is
+// undefined, so it shows a hint to move.
+//
+// A linear tape (no trig) reads well in the short vertical space of the OLED,
+// where a circular dial leaves only a few-pixel needle.
 //
 // Reuses UITask's COG ring (currentCourse) — works whether or not a trail is
 // being recorded.
 
 #include "../GeoUtils.h"
-#include "GfxUtils.h"
-#include <math.h>
 
 class CompassScreen : public UIScreen {
   UITask* _task;
 
   bool gpsValid() const { int32_t lat, lon; return _task->currentLocation(lat, lon); }
+
+  static const char* cardinalLetter(int deg) {
+    switch (deg) { case 0: return "N"; case 90: return "E";
+                   case 180: return "S"; case 270: return "W"; }
+    return "";
+  }
 
 public:
   CompassScreen(UITask* task) : _task(task) {}
@@ -34,73 +42,72 @@ public:
     display.setTextSize(2);
     const int bigH = display.getLineHeight();
     display.setTextSize(1);
-    const int top = hdr + 2;
-    const int bottom = display.height() - bigH - 2;
-    const int cy  = (top + bottom) / 2;
-    // The cardinal letters ride on the outer radius; the ring is drawn a glyph
-    // smaller so the rotating letters sit just outside it and never touch it.
-    int outer = (bottom - top) / 2;
-    int outerx = display.width() / 2 - 2;
-    if (outerx < outer) outer = outerx;
-    int lr = outer - ch / 2 - 1;      // radius of the cardinal-letter centres
-    int r  = lr - ch / 2 - 3;          // ring radius (clear gap below the letters)
-    if (r < 6) { r = 6; lr = r + ch / 2 + 3; }
+    const int top      = hdr + 2;
+    const int readout_y = display.height() - bigH - 1;   // size-2 readout baseline
+    const int mid      = (top + readout_y) / 2;
 
     if (!gpsValid()) {
-      display.drawTextCentered(cx, cy - display.getLineHeight() / 2, "No GPS fix");
+      display.drawTextCentered(cx, mid - ch / 2, "No GPS fix");
       return 1000;
     }
 
     int cog;
     bool have = _task->currentCourse(cog);
 
-    gfx::drawCircle(display, cx, cy, r);   // compass ring
-
-    // Fixed forward index at the top: the direction you are travelling is
-    // always "up". The compass card (North) rotates underneath it.
-    display.fillRect(cx - 1, cy - r - 2, 3, 1);
-    display.fillRect(cx,     cy - r - 1, 1, 2);
-
     if (!have) {
-      // No stable heading yet — keep the ring as context but put the hint in
-      // the bottom readout band so it doesn't overlap the circle.
-      int lh = display.getLineHeight();
-      display.drawTextCentered(cx, bottom + 1,      "move to");
-      display.drawTextCentered(cx, bottom + 1 + lh, "set heading");
+      display.drawTextCentered(cx, mid - ch, "move to");
+      display.drawTextCentered(cx, mid,      "set heading");
       return 1000;
     }
 
-    // Heads-up compass: with "up" = course, an absolute bearing B sits at
-    // screen angle (B - cog). Draw the rotating card — a North needle plus the
-    // other three cardinals as letters around the ring.
-    auto cardPos = [&](int bearing, int rad_px, int& px, int& py) {
-      float a = (bearing - cog) * (float)M_PI / 180.0f;
-      px = cx + (int)(sinf(a) * rad_px);
-      py = cy - (int)(cosf(a) * rad_px);
-    };
+    // ── heading tape ─────────────────────────────────────────────────────────
+    // Centre of the tape = current course; bearings spread left/right at a fixed
+    // pixels-per-degree. HALF_SPAN degrees reach each edge.
+    const int area_x = 2;
+    const int area_w = display.width() - 4;
+    const float HALF_SPAN = 80.0f;                 // degrees visible to each side
+    const float ppd = (area_w / 2.0f) / HALF_SPAN;
 
-    // North needle from centre.
-    int nx, ny; cardPos(0, r - 2, nx, ny);
-    gfx::drawLine(display, cx, cy, nx, ny);
-    float nrad = (0 - cog) * (float)M_PI / 180.0f;
-    for (int da = -25; da <= 25; da += 50) {
-      float a = nrad + (float)M_PI + da * (float)M_PI / 180.0f;
-      gfx::drawLine(display, nx, ny, nx + (int)(sinf(a) * 4), ny - (int)(cosf(a) * 4));
+    const int pointerH  = 6;
+    const int tickMajor = 6;
+    const int tickMinor = 3;
+    const int blockH    = pointerH + 1 + tickMajor + 2 + ch;
+    const int block_top = top + ((readout_y - top) - blockH) / 2;
+    const int line_y    = block_top + pointerH;     // scale baseline
+    const int label_y   = line_y + 1 + tickMajor + 2;
+    const int x_lo = area_x, x_hi = area_x + area_w;
+
+    // Scale baseline.
+    display.fillRect(area_x, line_y, area_w, 1);
+
+    // Ticks + cardinal labels every 30°; majors (N/E/S/W) are taller + labelled.
+    for (int deg = 0; deg < 360; deg += 30) {
+      int delta = deg - cog;
+      while (delta >  180) delta -= 360;
+      while (delta < -180) delta += 360;
+      int x = cx + (int)(delta * ppd);
+      if (x < x_lo || x > x_hi) continue;
+      bool major = (deg % 90 == 0);
+      display.fillRect(x, line_y + 1, 1, major ? tickMajor : tickMinor);
+      if (major) {
+        const char* s = cardinalLetter(deg);
+        display.setCursor(x - cw / 2, label_y);
+        display.print(s);
+      }
     }
 
-    // Cardinal letters just outside the ring (N over the needle tip).
-    struct { int b; const char* s; } card[4] = { {0,"N"},{90,"E"},{180,"S"},{270,"W"} };
-    for (int i = 0; i < 4; i++) {
-      int lx, ly; cardPos(card[i].b, lr, lx, ly);
-      display.setCursor(lx - cw / 2, ly - ch / 2);
-      display.print(card[i].s);
+    // Fixed travel-direction pointer: a downward triangle whose tip touches the
+    // baseline at screen centre (your current course always sits under it).
+    for (int i = 0; i < pointerH; i++) {
+      int half = pointerH - 1 - i;
+      display.fillRect(cx - half, block_top + i, 2 * half + 1, 1);
     }
 
-    // Numeric readout below the ring — the absolute course you're travelling.
+    // ── numeric readout ──────────────────────────────────────────────────────
     char buf[16];
     snprintf(buf, sizeof(buf), "%d %s", cog, geo::bearingCardinal(cog));
     display.setTextSize(2);
-    display.drawTextCentered(cx, bottom + 1, buf);
+    display.drawTextCentered(cx, readout_y, buf);
     display.setTextSize(1);
     return 1000;
   }

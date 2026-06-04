@@ -154,9 +154,9 @@ Periodically broadcasts a 0-hop advert with your GPS position. Configurable inte
 
 ## Compass
 
-A heads-up GPS compass. The L1 has no magnetometer, so the heading is the **course over ground** — derived from how your GPS position moves over the last few seconds. The direction you are travelling is the fixed index at the **top** of the ring, and the compass card (the North needle plus the N/E/S/W letters) rotates underneath it as you turn. A large numeric readout below shows your course in degrees and cardinal (e.g. `145° SE`).
+A heads-up GPS compass. The L1 has no magnetometer, so the heading is the **course over ground** — derived from how your GPS position moves over the last few seconds. The display is a horizontal **heading tape**: a fixed travel-direction pointer sits at the centre and the N..E..S..W scale scrolls underneath it as you turn, so whatever is under the pointer is your current course. A large numeric readout below shows that course in degrees and cardinal (e.g. `145° SE`).
 
-Because the heading comes from movement, it only updates while you are actually moving: standing still shows *move to set heading* (and navigation's **Hdg** line reads `--`). Gross GPS jumps are rejected so a single bad fix can't swing the needle. The heading source runs whenever there's a GPS fix — recording a trail is **not** required.
+Because the heading comes from movement, it only updates while you are actually moving: standing still shows *move to set heading* (and navigation's **Hdg** line reads `--`). Gross GPS jumps are rejected so a single bad fix can't swing the heading. The heading source runs whenever there's a GPS fix — recording a trail is **not** required.
 
 ---
 
