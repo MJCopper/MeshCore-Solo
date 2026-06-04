@@ -6,6 +6,9 @@
 
 #include <Arduino.h>
 #include <math.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
 
 #ifndef M_PI
   #define M_PI 3.14159265358979323846
@@ -56,6 +59,54 @@ static inline void fmtDist(char* buf, int n, float km, bool imperial) {
     else if (km < 100.0f) snprintf(buf, n, "%.1fkm", km);
     else                  snprintf(buf, n, "%dkm",  (int)(km + 0.5f));
   }
+}
+
+// Tag marking a shared waypoint inside a message: "[WAY]<lat>,<lon> <label>".
+// A plain {loc} expansion ("<lat>,<lon>") parses too — the tag just adds intent
+// and a label, and keeps the text readable on apps/firmware that don't know it.
+#define WAYPOINT_MSG_TAG "[WAY]"
+
+// Scan a message for an embedded "lat,lon" location (decimal degrees, the same
+// text {loc} emits). If a WAYPOINT_MSG_TAG precedes it, the trailing text is
+// taken as the label. Returns true and fills lat/lon (1e6-scaled) on a valid,
+// in-range coordinate; label (optional) gets the trimmed tag suffix or "".
+static inline bool parseLatLon(const char* text, int32_t& lat_1e6, int32_t& lon_1e6,
+                               char* label = nullptr, int label_n = 0) {
+  if (label && label_n > 0) label[0] = '\0';
+  if (!text) return false;
+
+  const char* tag  = strstr(text, WAYPOINT_MSG_TAG);
+  const char* scan = tag ? tag + strlen(WAYPOINT_MSG_TAG) : text;
+
+  for (const char* p = scan; *p; p++) {
+    if (*p != '-' && *p != '+' && *p != '.' && !isdigit((unsigned char)*p)) continue;
+    char* end = nullptr;
+    double la = strtod(p, &end);
+    if (end == p) continue;
+    if (!memchr(p, '.', end - p)) continue;           // require a decimal point (skip "5,6")
+    const char* q = end;
+    while (*q == ' ') q++;
+    if (*q != ',') { p = end - 1; continue; }
+    q++;
+    while (*q == ' ') q++;
+    char* end2 = nullptr;
+    double lo = strtod(q, &end2);
+    if (end2 == q) continue;
+    if (la < -90.0 || la > 90.0 || lo < -180.0 || lo > 180.0) continue;
+
+    lat_1e6 = (int32_t)lroundf((float)(la * 1e6));
+    lon_1e6 = (int32_t)lroundf((float)(lo * 1e6));
+    if (label && label_n > 0 && tag) {                // label only from a tagged share
+      const char* s = end2;
+      while (*s == ' ') s++;
+      int n = 0;
+      while (s[n] && n < label_n - 1) { label[n] = s[n]; n++; }
+      while (n > 0 && label[n - 1] == ' ') n--;        // trim trailing spaces
+      label[n] = '\0';
+    }
+    return true;
+  }
+  return false;
 }
 
 }  // namespace geo

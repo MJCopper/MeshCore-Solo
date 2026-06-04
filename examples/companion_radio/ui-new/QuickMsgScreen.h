@@ -2,6 +2,8 @@
 // Custom screen — not part of upstream UITask.cpp
 // Included by UITask.cpp after SettingsScreen.h is defined.
 
+#include "NavView.h"   // navigate to a location shared inside a message
+
 class QuickMsgScreen : public UIScreen {
   UITask* _task;
 
@@ -57,6 +59,18 @@ class QuickMsgScreen : public UIScreen {
   bool      _dm_direct_entry;    // entered DM_HIST via Favourites shortcut; CANCEL returns home
   char      _reply_prefix[36];   // "@[nick] " built when reply is triggered
   bool      _reply_mode;         // true while composing a reply (prefix is prepended)
+
+  // Fullscreen-message context menu actions. Built per-message: Reply (when
+  // applicable) plus Navigate / Save waypoint when the message carries a
+  // location (a {loc} string or a [WAY] share). _fs_act maps each visible row
+  // back to an action so the index math survives the conditional layout.
+  enum FsAct : uint8_t { FS_REPLY, FS_NAV, FS_SAVE };
+  uint8_t   _fs_act[3];
+  int       _fs_act_n = 0;
+  // Inline navigate-to-location view layered over the fullscreen message.
+  bool      _nav_active = false;
+  int32_t   _nav_lat = 0, _nav_lon = 0;
+  char      _nav_label[24] = "";
 
   struct ChHistEntry { uint8_t ch_idx; char text[140]; uint32_t timestamp; };
   ChHistEntry _hist[CH_HIST_MAX];
@@ -119,6 +133,64 @@ class QuickMsgScreen : public UIScreen {
     _reply_mode = true;
     setupMsgPick();
     _phase = MSG_PICK;
+  }
+
+  // Build the fullscreen-message options popup: Reply (if allowed) plus
+  // Navigate / Save waypoint when `body` carries a location. Opens _ctx_menu
+  // only when there's at least one action. Parses the location once here and
+  // stashes it for the action handler.
+  void buildFsMenu(const char* body, bool reply_allowed) {
+    bool has_loc = geo::parseLatLon(body, _nav_lat, _nav_lon, _nav_label, sizeof(_nav_label));
+    int n = (reply_allowed ? 1 : 0) + (has_loc ? 2 : 0);
+    if (n == 0) return;
+    _fs_act_n = 0;
+    _ctx_menu.begin("Options", n);
+    if (reply_allowed) { _ctx_menu.addItem("Reply");         _fs_act[_fs_act_n++] = FS_REPLY; }
+    if (has_loc)       { _ctx_menu.addItem("Navigate");      _fs_act[_fs_act_n++] = FS_NAV;
+                         _ctx_menu.addItem("Save waypoint"); _fs_act[_fs_act_n++] = FS_SAVE; }
+  }
+
+  // Dispatch the selected fullscreen-options row. `channel` picks which
+  // fullscreen view to close when starting a reply.
+  void dispatchFsAction(bool channel) {
+    FsAct a = (FsAct)_fs_act[(_ctx_menu._sel >= 0 && _ctx_menu._sel < _fs_act_n) ? _ctx_menu._sel : 0];
+    _ctx_menu.active = false;
+    if (a == FS_REPLY) {
+      (channel ? _fs : _dm_fs).active = false;
+      startReply(channel);
+    } else if (a == FS_NAV) {
+      _nav_active = true;            // keep the message view active underneath
+    } else {
+      saveSharedWaypoint();
+    }
+  }
+
+  // Save the location parsed from the open message as a waypoint. Uses the
+  // [WAY] label when present, else auto-names it like a manually-marked point.
+  void saveSharedWaypoint() {
+    if (_task->waypoints().full()) { _task->showAlert("Waypoints full", 1000); return; }
+    char label[WAYPOINT_LABEL_LEN];
+    if (_nav_label[0]) {
+      strncpy(label, _nav_label, sizeof(label) - 1);
+      label[sizeof(label) - 1] = '\0';
+    } else {
+      snprintf(label, sizeof(label), "WP%d", _task->waypoints().count() + 1);
+    }
+    if (_task->waypoints().add(_nav_lat, _nav_lon,
+                               (uint32_t)rtc_clock.getCurrentTime(), label)) {
+      _task->saveWaypoints();
+      _task->showAlert("Waypoint saved", 800);
+    } else {
+      _task->showAlert("Waypoints full", 1000);
+    }
+  }
+
+  void renderNav(DisplayDriver& display) {
+    int32_t mylat, mylon; bool have = _task->currentLocation(mylat, mylon);
+    int cog; bool cogv = _task->currentCourse(cog);
+    NodePrefs* p = _task->getNodePrefs();
+    navview::draw(display, have, mylat, mylon, _nav_lat, _nav_lon,
+                  _nav_label[0] ? _nav_label : "Msg loc", cogv, cog, p && p->units_imperial);
   }
 
   void setupMsgPick() {
@@ -484,6 +556,7 @@ public:
 
     _ctx_menu.active = false;
     _ctx_dirty = false;
+    _nav_active = false;
     _pin_picker_active = false;
     _dm_direct_entry = false;
     _unread_at_entry = 0;
@@ -534,6 +607,9 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
+
+    // Navigate-to-location view sits over everything else while active.
+    if (_nav_active) { renderNav(display); return 1000; }
 
     int lh      = display.getLineHeight();
     int item_h  = display.lineStep();
@@ -985,6 +1061,11 @@ public:
   }
 
   bool handleInput(char c) override {
+    // Navigate view: any back key returns to the message it was opened from.
+    if (_nav_active) {
+      if (c == KEY_CANCEL || c == KEY_ENTER || c == KEY_CONTEXT_MENU) _nav_active = false;
+      return true;
+    }
     if (_phase == MODE_SELECT) {
       // Context menu (Mark-all-read) takes precedence while active.
       if (_ctx_menu.active) {
@@ -1268,8 +1349,7 @@ public:
         if (_ctx_menu.active) {
           auto res = _ctx_menu.handleInput(c);
           if (res == PopupMenu::SELECTED) {
-            _dm_fs.active = false;
-            startReply(false);
+            dispatchFsAction(false);
           } else if (res != PopupMenu::NONE) {
             _ctx_menu.active = false;
           }
@@ -1284,11 +1364,13 @@ public:
           _dm_fs.active = false;
         } else if (res == FullscreenMsgView::REPLY) {
           int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
-          if (ring_pos >= 0 && !_dm_hist[ring_pos].outgoing) {
-            char _tname[32]; DisplayDriver::translateUTF8Static(_tname, _sel_contact.name, sizeof(_tname));
-            snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _tname);
-            _ctx_menu.begin("Options", 1);
-            _ctx_menu.addItem("Reply");
+          if (ring_pos >= 0) {
+            bool reply_ok = !_dm_hist[ring_pos].outgoing;
+            if (reply_ok) {
+              char _tname[32]; DisplayDriver::translateUTF8Static(_tname, _sel_contact.name, sizeof(_tname));
+              snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _tname);
+            }
+            buildFsMenu(_dm_hist[ring_pos].text, reply_ok);
           }
         }
         return true;
@@ -1356,8 +1438,7 @@ public:
         if (_ctx_menu.active) {
           auto res = _ctx_menu.handleInput(c);
           if (res == PopupMenu::SELECTED) {
-            _fs.active = false;
-            startReply(true);
+            dispatchFsAction(true);
           } else if (res != PopupMenu::NONE) {
             _ctx_menu.active = false;
           }
@@ -1372,10 +1453,8 @@ public:
           _fs.active = false;
         } else if (res == FullscreenMsgView::REPLY) {
           int ring_pos = histEntryForChannel(_sel_channel_idx, _hist_sel);
-          if (ring_pos >= 0 && buildChannelReplyPrefix(_hist[ring_pos].text)) {
-            _ctx_menu.begin("Options", 1);
-            _ctx_menu.addItem("Reply");
-          }
+          if (ring_pos >= 0)
+            buildFsMenu(_hist[ring_pos].text, buildChannelReplyPrefix(_hist[ring_pos].text));
         }
         return true;
       }
