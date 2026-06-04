@@ -38,6 +38,7 @@ class SettingsScreen : public UIScreen {
     BUZZER_VOLUME,
     DM_MELODY,
     CH_MELODY,
+    AD_SOUND,
     // Home pages section
     SECTION_HOME_PAGES,
     HOME_CLOCK, HOME_FAVOURITES, HOME_RECENT, HOME_RADIO, HOME_BT, HOME_ADVERT,
@@ -445,6 +446,12 @@ class SettingsScreen : public UIScreen {
       { static const char* L[] = { "built-in", "M1", "M2" };
         uint8_t v = p ? p->notif_melody_ch : 0;
         display.print(L[v < 3 ? v : 0]); }
+    } else if (item == AD_SOUND) {
+      display.print("AD sound");
+      display.setCursor(display.valCol(), y);
+      { static const char* L[] = { "built-in", "M1", "M2" };
+        uint8_t v = p ? p->notif_melody_ad : 0;
+        display.print(L[v < 3 ? v : 0]); }
     } else if (isHomePage(item)) {
       if (p) ensurePageOrderInit(p);
       int pos = homePagePosition(item, p);
@@ -689,6 +696,10 @@ public:
     }
     if (_selected == CH_MELODY && p && (left || right || enter)) {
       p->notif_melody_ch = (p->notif_melody_ch + (left ? 2 : 1)) % 3;
+      _dirty = true; return true;
+    }
+    if (_selected == AD_SOUND && p && (left || right || enter)) {
+      p->notif_melody_ad = (p->notif_melody_ad + (left ? 2 : 1)) % 3;
       _dirty = true; return true;
     }
     if (isHomePage(_selected) && p) {

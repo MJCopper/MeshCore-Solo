@@ -103,7 +103,7 @@ switch(t){
     buzzer.play("ack:d=32,o=8,b=120:c");
     break;
   case UIEventType::roomMessage:
-  case UIEventType::newContactMessage:
+  case UIEventType::advertReceived:
   case UIEventType::none:
   default:
     break;

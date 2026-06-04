@@ -18,7 +18,7 @@ enum class UIEventType {
     contactMessage,
     channelMessage,
     roomMessage,
-    newContactMessage,
+    advertReceived,
     ack
 };
 

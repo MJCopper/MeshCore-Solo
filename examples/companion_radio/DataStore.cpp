@@ -317,6 +317,9 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.trail_units_idx,     sizeof(_prefs.trail_units_idx));
   rd(&_prefs.ch_fav_bitmask,      sizeof(_prefs.ch_fav_bitmask));
   rd(&_prefs.ch_fav_only,         sizeof(_prefs.ch_fav_only));
+  if (file.available() >= (int)(sizeof(_prefs.notif_melody_ad) + sizeof(uint32_t))) {
+    file.read((uint8_t *)&_prefs.notif_melody_ad, sizeof(_prefs.notif_melody_ad));
+  }
 
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
@@ -335,7 +338,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     // 0xC0DE0003 → 0xC0DE0004: trail_units_idx added after trail_min_delta_idx.
     // On a 0xC0DE0003 file the sentinel bytes sit where trail_units_idx is now,
     // so rd() picks up 0x03 (low byte of the old sentinel) — reset just that
-    // case to default 0. Newer mismatches (e.g. 0xC0DE0004 → 0xC0DE0005) had
+    // case to default 0. Newer mismatches (e.g. 0xC0DE0005 → 0xC0DE0006) had
     // the field saved correctly and must not be clobbered.
     if (sentinel == 0xC0DE0003) {
       _prefs.trail_units_idx = 0;
@@ -428,6 +431,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.trail_units_idx,     sizeof(_prefs.trail_units_idx));
     file.write((uint8_t *)&_prefs.ch_fav_bitmask,      sizeof(_prefs.ch_fav_bitmask));
     file.write((uint8_t *)&_prefs.ch_fav_only,         sizeof(_prefs.ch_fav_only));
+    file.write((uint8_t *)&_prefs.notif_melody_ad,     sizeof(_prefs.notif_melody_ad));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL.
     uint32_t sentinel = NodePrefs::SCHEMA_SENTINEL;

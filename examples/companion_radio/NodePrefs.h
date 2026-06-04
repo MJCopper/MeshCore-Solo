@@ -69,9 +69,10 @@ struct NodePrefs {  // persisted to file
   uint8_t  ringtone2_bpm_idx;
   uint8_t  ringtone2_len;
   uint8_t  ringtone2_notes[32];
-  // Global melody for notifications: 0=built-in, 1=melody1, 2=melody2
+  // Global melodies for notifications: 0=built-in, 1=melody1, 2=melody2
   uint8_t  notif_melody_dm;
   uint8_t  notif_melody_ch;
+  uint8_t  notif_melody_ad;
   // Per-channel melody override (2 bitmasks, 1 bit per channel)
   uint64_t ch_notif_melody_set;  // bit i = channel i has explicit melody
   uint64_t ch_notif_melody_2;    // bit i = use melody 2 (else melody 1, when set bit is set)
@@ -112,7 +113,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0005;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0006;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
