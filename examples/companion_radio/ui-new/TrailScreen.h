@@ -814,7 +814,11 @@ private:
     // Degenerate: everything at one coordinate — just centre the markers.
     if (min_lat == max_lat && min_lon == max_lon) {
       int ccx = area_x + area_w / 2, ccy = area_y + area_h / 2;
-      if (nwp > 0) {
+      // Only pin a waypoint to the centre in the genuine "lone waypoint, no
+      // trail" case. With a trail the centre is the trail's spot, and the
+      // waypoints (not folded into this box) belong elsewhere — don't draw
+      // them here, or they'd appear at the trail's location.
+      if (nwp > 0 && !have_trail) {
         drawWaypointMarker(display, ccx, ccy);
         const char* lbl = wp.at(0).label;        // single coincident spot — label it
         char s[3] = { lbl[0], lbl[0] ? lbl[1] : (char)0, 0 };
