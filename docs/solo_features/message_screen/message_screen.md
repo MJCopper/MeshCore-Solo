@@ -48,7 +48,7 @@ Sensor placeholders appear automatically in the placeholder picker when the corr
 
 Each entry in the history list shows the sender name and a compact age indicator (`3m`, `2h`, `>1d`) in the top-right corner.
 
-**Short Enter** on a message opens it in fullscreen. **Hold Enter** opens the context menu (Reply option).
+**Short Enter** on a message opens it in fullscreen. **Hold Enter** opens the context menu (Reply, plus Navigate / Save waypoint when the message contains a location — see Fullscreen message view).
 
 ---
 
@@ -66,7 +66,12 @@ If the message is a reply addressed to someone (`@[nick]`), a **To: nick** bar i
 | :-----------------------: | :-----------------------: |
 | ![](./mes_scr_5_oled.png) | ![](./mes_scr_5_eink.png) |
 
-**Hold Enter** in fullscreen opens the Reply option.
+**Hold Enter** in fullscreen opens the options menu. It always offers **Reply** for an incoming message, and when the message contains a **location** it adds two more:
+
+- **Navigate** — opens the bearing/distance view to those coordinates (the same two-bearing screen as Waypoints and Nearby; **Back** returns to the message).
+- **Save waypoint** — stores the location as a waypoint (visible on the trail map and in the Waypoints list).
+
+A location is any `lat,lon` pair in the text — exactly what the `{loc}` placeholder inserts — so you can navigate to anything a contact shares. A `[WAY]lat,lon label` share also carries a name, used as the waypoint label. This works on DMs and channel messages, incoming or outgoing.
 
 ---
 
