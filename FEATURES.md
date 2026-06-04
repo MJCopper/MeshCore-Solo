@@ -347,7 +347,16 @@ Configurable in Settings › System › SOS:
 
 Trigger: Hold Back + Hold Enter for 3 s on any screen → confirmation popup ("Send SOS?") → Enter to send. Sends with `{loc}` and `{batt}` filled. 30 s cooldown.
 
-### Range test
+### ✅ Range test — shipped as Nearby Nodes ping
+
+The practical need is covered by **ping** rather than a dedicated screen: in
+Nearby Nodes, a node's detail view → **Hold Enter → Ping** sends a direct mesh
+ping and shows RTT + SNR (own and remote), repeatable on demand. Available from
+both the stored-node detail and the active-discovery detail.
+
+The original idea below (a Tools › Range Test screen with continuous 5 s
+pinging and a 30-sample sparkline) was **not** built — kept as a possible
+future enhancement on top of the existing ping.
 
 Tools › Range Test:
 - Pick a node from contacts/nearby
@@ -391,9 +400,11 @@ Bot already has a single trigger word. Extend to a small table of (trigger, repl
 
 Stored in NodePrefs as fixed-size table (say 4 pairs × 16 B). UI: edit pairs in Tools › Auto-Reply Bot.
 
-### Lock-screen unread count
+### ✅ Lock-screen unread count
 
-Show `12 new` or two-line `5 DM / 7 ch` on lock screen below the time. Reuses existing `_hist`/`_dm_hist` unread counters. Cosmetic only, no schema change.
+Shipped: the lock screen shows a total unread badge (`<n> unread`, summing DM +
+channel + room counters) below the time. Reuses the existing unread counters;
+no schema change.
 
 ### Power profile presets
 
@@ -409,7 +420,7 @@ Single Enter applies. Stored as `uint8_t profile_idx` with hardcoded value table
 
 Settings › System › Batt Calibration: edit 5 voltage breakpoints used to convert mV → %. UP/DOWN selects breakpoint, LEFT/RIGHT changes voltage in 50 mV steps. Helps users with non-standard LiPos report accurate %.
 
-### Mark-read at type level — already covered above as priority
+### ✅ Mark-read at type level — done (see "Mark-all-read at type level" above)
 
 ### Display test pattern
 
