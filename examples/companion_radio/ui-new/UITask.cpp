@@ -1380,11 +1380,28 @@ switch(t){
     _last_notif_ch_idx = -1;
     break;
   }
+  case UIEventType::advertReceived: {
+    if (!buzzer.isQuiet()) {
+      int slot = _node_prefs ? (int)_node_prefs->notif_melody_ad : 0;
+      bool custom_played = false;
+      if (slot > 0 && _node_prefs) {
+        if (buzzer.isPlaying()) buzzer.stop();  // stop before overwriting _notif_mel_buf
+        buildMelodyFromPrefs(_node_prefs, slot, _notif_mel_buf, sizeof(_notif_mel_buf));
+        if (_notif_mel_buf[0]) {
+          buzzer.play(_notif_mel_buf);
+          custom_played = true;
+        }
+      }
+      if (!custom_played) {
+        buzzer.play("MsgRcv3:d=4,o=6,b=200:32e,32g,32b,16c7");
+      }
+    }
+    break;
+  }
   case UIEventType::ack:
     buzzer.play("ack:d=32,o=8,b=120:c");
     break;
   case UIEventType::roomMessage:
-  case UIEventType::newContactMessage:
   case UIEventType::none:
   default:
     break;
