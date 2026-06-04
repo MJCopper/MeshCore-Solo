@@ -691,10 +691,7 @@ private:
         drawWaypointMarker(display, ccx, ccy);
         const char* lbl = wp.at(0).label;        // single coincident spot — label it
         char s[3] = { lbl[0], lbl[0] ? lbl[1] : (char)0, 0 };
-        if (s[0] && ccx + 4 + (int)display.getTextWidth(s) <= area_x + area_w) {
-          display.setCursor(ccx + 4, ccy - 3);
-          display.print(s);
-        }
+        drawWaypointLabel(display, s, ccx, ccy, area_x, area_y, area_w, area_h);
       }
       if (have_gps || have_trail) drawCurrentMarker(display, ccx, ccy);
       return;
@@ -756,10 +753,7 @@ private:
       int wx, wy; projectLL(w.lat_1e6, w.lon_1e6, wx, wy);
       drawWaypointMarker(display, wx, wy);
       char s[3] = { w.label[0], w.label[0] ? w.label[1] : (char)0, 0 };
-      if (s[0] && wx + 4 + (int)display.getTextWidth(s) <= area_x + area_w) {
-        display.setCursor(wx + 4, wy - 3);
-        display.print(s);
-      }
+      drawWaypointLabel(display, s, wx, wy, area_x, area_y, area_w, area_h);
     }
 
     // Current position marker on top — live GPS if we have a fix, otherwise the
@@ -905,6 +899,25 @@ private:
 
     display.setCursor(area_x, area_y + area_h - lh);
     display.print(lbl);
+  }
+
+  // Place a 1–2 char waypoint label beside its marker, kept inside the map
+  // rect: prefer upper-right, flip to the left if it would clip the right
+  // edge, and clamp vertically so edge/corner waypoints stay on the map.
+  static void drawWaypointLabel(DisplayDriver& d, const char* s, int wx, int wy,
+                                int ax, int ay, int aw, int ah) {
+    if (!s[0]) return;
+    int tw = (int)d.getTextWidth(s);
+    int ch = d.getLineHeight();
+    int lx = wx + 4;
+    if (lx + tw > ax + aw) lx = wx - 4 - tw;     // would clip right → flip left
+    if (lx < ax)           lx = ax;               // clamp to left edge
+    if (lx + tw > ax + aw) lx = ax + aw - tw;     // clamp to right edge
+    int ly = wy - 3;
+    if (ly < ay)           ly = ay;               // clamp to top edge
+    if (ly + ch > ay + ah) ly = ay + ah - ch;     // clamp to bottom edge
+    d.setCursor(lx, ly);
+    d.print(s);
   }
 
   static void drawFilledDot(DisplayDriver& d, int cx, int cy) {
