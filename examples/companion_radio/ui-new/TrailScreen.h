@@ -508,7 +508,10 @@ private:
 
   void renderWpList(DisplayDriver& display) {
     display.setColor(DisplayDriver::LIGHT);
-    display.drawTextCentered(display.width() / 2, 0, "WAYPOINTS");
+    char title[24];
+    snprintf(title, sizeof(title), "WAYPOINTS %d/%d",
+             _task->waypoints().count(), WaypointStore::CAPACITY);
+    display.drawTextCentered(display.width() / 2, 0, title);
     display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
     int n     = wpListCount();
