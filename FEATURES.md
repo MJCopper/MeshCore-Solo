@@ -62,7 +62,7 @@ Render layout (250×122 landscape e-ink):
 
 Joystick navigation is natural with 6 tiles (UP/DOWN between rows, LEFT/RIGHT within row).
 
-### 🚧 GPS trail (renamed from breadcrumb)
+### ✅ GPS trail (renamed from breadcrumb)
 
 Phase 1 ✅ (storage + sampling + Summary view + G indicator in status bar)
 Phase 2 ✅ (auto-fit Map view with cos(lat) aspect compensation; LEFT/RIGHT cycles views)
@@ -153,7 +153,23 @@ Edge cases:
 
 ## Backlog (not yet prioritised)
 
-### Waypoints — mark a spot, navigate back ⭐ (next candidate)
+### ✅ Waypoints + navigation cluster — mark a spot, navigate back
+
+**✅ Shipped** (branch `feat/waypoints-nav`). The whole navigation suite landed. Notable deltas from the original spec that follows:
+
+- **Waypoints** — Mark here / list / Rename / Delete / **Clear waypoints** / **Send**; stored in `/waypoints` (16 max), independent of trail recording and kept across Reset trail.
+- **Map** — waypoint marker shows the **first two** label chars (not one), placed edge-aware so it stays on-map. With a trail the view frames the recorded route and clamps far waypoints to the nearest edge; with no trail it auto-fits to waypoints + live position. Degenerate single-point case handled.
+- **Shared NavView** — one `navview::draw(...)` reused by waypoints, Trail-start backtrack, Nearby-node nav and message-location nav. Shows distance + `To:` + `Hdg:` (two absolute bearings), honouring the global Units setting.
+- **COG ring in UITask** — heading source decoupled from trail logging, time-sampled with gross-error rejection + min-displacement gate; restarts after a >15 s GPS gap so a reacquired fix can't imply a teleport heading.
+- **Standalone Compass** (Tools › Compass) — heading-up **scrolling tape** with a fixed travel-direction pointer + large degrees/cardinal readout. (A north-up circular dial was tried first and dropped — only a few-px needle fits the OLED's vertical space.)
+- **Global Units** (Settings › System: Metric/Imperial) — drives every distance/speed in Tools, the min-distance gate, and the map scale-bar. New `units_imperial` + `trail_show_pace` prefs (schema 0xC0DE0006); the old combined `trail_units_idx` retired.
+- **Location over mesh** — Waypoints list → **Send** shares `[WAY]lat,lon label`; a received location ({loc} text or a [WAY] share) offers **Navigate / Save waypoint** from both the message list row and the fullscreen view. Backed by a shared `geo::parseLatLon`.
+
+Shared helpers extracted: `geo::` (haversineKm/bearingDeg/bearingCardinal/fmtDist/parseLatLon) in `GeoUtils.h`; 1-px `gfx::drawLine/drawCircle` in `GfxUtils.h`; one `UITask::currentLocation()` GPS accessor.
+
+The original design spec is kept below as a record.
+
+---
 
 Turns Solo from a comms device into a basic GPS navigator. Mark the current
 position with a short label, then later get bearing + distance back to it —
@@ -279,20 +295,49 @@ Open question: whether the nav view should also be reachable as a 4th Map
 overlay state (cycle a "highlighted" waypoint with LEFT/RIGHT on the Map) or
 stay list-driven only. Start list-driven; add map cycling later if wanted.
 
-### Backtrack — navigate home along the recorded trail
+### ✅ Backtrack — navigate home along the recorded trail
 
-Pairs with Waypoints but needs zero new storage: read the live `TrailStore`
-ring and show bearing + distance back to the trail start (or the nearest
-recorded point). "Get me back to where I started." A Trail action-menu entry
-"Navigate to start" opens the same fullscreen nav view as Waypoints.
+Shipped: the Waypoints list always begins with a synthetic **Trail start** row
+whenever a trail exists, opening the shared nav view to the first recorded
+point. No new storage. (Navigates to the start point, not progressive
+nearest-point following — adequate for "get me back".)
 
-### Compass to contact — folded into the Waypoints nav view
+### ✅ Compass to contact — folded into the Waypoints nav view
 
 Superseded by the shared nav view described under **Waypoints** above:
 navigate to a node = open that nav view with the contact's last-advert
 `gps_lat/gps_lon` as the target. No separate compass screen needed; the
 "two absolute bearings (To / Hdg)" approach replaces the relative-heading
 arrow this entry originally assumed. Kept here only as a cross-reference.
+
+### 📋 Heading-up (track-up) map orientation
+
+Today the trail Map is north-up. Optionally orient it to the current course
+(COG, same source as the compass tape) so the travel direction is up — a Trail
+action-menu toggle **Orientation: North-up / Heading-up**.
+
+Lightweight approach: rotate the already-fitted map around its centre by
+`-cog` (rotate each projected point before drawing). Point-glyph markers rotate
+cleanly; label text stays upright; the north arrow then points to actual north
+instead of straight up.
+
+Caveats that make it more than a one-line toggle:
+- **COG-only heading** (no magnetometer) — undefined while stationary, so hold
+  the last good course or fall back to north-up; it can't be heading-up when
+  you're standing still.
+- **Jitter** — rotating the whole map by raw COG makes it shake; needs heading
+  smoothing / hysteresis (only re-rotate past ~10–15° of change).
+- **Fit** — rotated content overflows the rectangle. Refitting to the rotated
+  bbox makes the scale "breathe" as you turn; alternative is to accept minor
+  edge clipping.
+- **Grid** — the axis-aligned scale grid becomes diagonal; drop it in
+  heading-up mode or rewrite it.
+- **e-ink** — a rotating map ghosts badly and refreshes slowly; this is really
+  an OLED feature, flag it as degraded on e-ink.
+
+A fuller position-centred navigator (you fixed at screen centre, fixed/preset
+zoom, pan) is a larger separate feature; start with the rotate-the-fit version
+if pursued.
 
 ### SOS broadcast
 
@@ -463,6 +508,19 @@ if (msgcount == 0) {
 ```
 
 When the companion app reads the last message from the offline queue, all on-device badges disappear. Previously discussed and a fix was reverted as "intended sync behaviour" — keep as known limitation; document or restrict to "Favourites Dial badges only".
+
+### ✅ Message buffers sized below the protocol maximum (clipped long messages)
+
+[`QuickMsgScreen.h`](examples/companion_radio/ui-new/QuickMsgScreen.h), [`KeyboardWidget.h`](examples/companion_radio/ui-new/KeyboardWidget.h)
+
+`ChHistEntry::text` was 140 B and `DmHistEntry::text` only 80 B, while the
+keyboard capped input at 139 B — all below MeshCore's `MAX_TEXT_LEN` (160 B).
+Channel messages embed the sender as `"Name: body"` in the payload, so the
+prefix ate into the 140 and clipped the tail; DMs over ~80 B were cut outright;
+and Polish text (2 bytes per accented char) roughly halved the visible limit.
+Fixed: history + fullscreen/preview copies sized to `MAX_TEXT_LEN + 1`, keyboard
+cap raised to 160 with per-field maxima kept on the smaller stores (custom_msgs,
+bot reply). Full-length messages now compose, send, store and display intact.
 
 ### ✅ `loadPrefsInt` scopes `trail_units_idx` reset to the 0xC0DE0003 jump
 
