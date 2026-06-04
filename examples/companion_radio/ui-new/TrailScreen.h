@@ -440,10 +440,23 @@ private:
     dst[cap - 1] = '\0';
   }
 
+  // Parse a numeric field: true only when the whole string is a number (so a
+  // stray letter from the full keyboard can't silently read as 0).
+  static bool parseNum(const char* s, double& out) {
+    if (!s || !s[0]) return false;
+    char* end = nullptr;
+    out = strtod(s, &end);
+    if (end == s) return false;          // nothing numeric parsed
+    while (*end == ' ') end++;
+    return *end == '\0';                  // no trailing non-numeric chars
+  }
+
   // Validate the form and save the waypoint.
   void commitAddForm() {
-    if (!_add_lat[0] || !_add_lon[0]) { _task->showAlert("Lat/Lon needed", 1200); return; }
-    double la = atof(_add_lat), lo = atof(_add_lon);
+    double la, lo;
+    if (!parseNum(_add_lat, la) || !parseNum(_add_lon, lo)) {
+      _task->showAlert("Lat/Lon invalid", 1200); return;
+    }
     if (_add_lat_neg) la = -la;
     if (_add_lon_neg) lo = -lo;
     if (la < -90.0 || la > 90.0 || lo < -180.0 || lo > 180.0) {
