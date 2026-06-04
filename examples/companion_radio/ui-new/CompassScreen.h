@@ -28,6 +28,8 @@ public:
 
     const int hdr = display.headerH();
     const int cx  = display.width() / 2;
+    const int ch  = display.getLineHeight();
+    const int cw  = display.getCharWidth();
     // Reserve a size-2 row at the bottom for the numeric readout.
     display.setTextSize(2);
     const int bigH = display.getLineHeight();
@@ -35,10 +37,14 @@ public:
     const int top = hdr + 2;
     const int bottom = display.height() - bigH - 2;
     const int cy  = (top + bottom) / 2;
-    int r = ((bottom - top) / 2);
-    int rx = (display.width() / 2) - 4;
-    if (rx < r) r = rx;
-    if (r < 6) r = 6;
+    // The cardinal letters ride on the outer radius; the ring is drawn a glyph
+    // smaller so the rotating letters sit just outside it and never touch it.
+    int outer = (bottom - top) / 2;
+    int outerx = display.width() / 2 - 2;
+    if (outerx < outer) outer = outerx;
+    int lr = outer - ch / 2 - 1;      // radius of the cardinal-letter centres
+    int r  = lr - ch / 2 - 3;          // ring radius (clear gap below the letters)
+    if (r < 6) { r = 6; lr = r + ch / 2 + 3; }
 
     if (!gpsValid()) {
       display.drawTextCentered(cx, cy - display.getLineHeight() / 2, "No GPS fix");
@@ -82,11 +88,10 @@ public:
       gfx::drawLine(display, nx, ny, nx + (int)(sinf(a) * 4), ny - (int)(cosf(a) * 4));
     }
 
-    // Cardinal letters around the rim (N at the needle tip).
-    const int cw = display.getCharWidth(), ch = display.getLineHeight();
+    // Cardinal letters just outside the ring (N over the needle tip).
     struct { int b; const char* s; } card[4] = { {0,"N"},{90,"E"},{180,"S"},{270,"W"} };
     for (int i = 0; i < 4; i++) {
-      int lx, ly; cardPos(card[i].b, r - 2, lx, ly);
+      int lx, ly; cardPos(card[i].b, lr, lx, ly);
       display.setCursor(lx - cw / 2, ly - ch / 2);
       display.print(card[i].s);
     }
