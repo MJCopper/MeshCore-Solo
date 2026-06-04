@@ -56,8 +56,11 @@ public:
     display.fillRect(cx,     cy - r - 1, 1, 2);
 
     if (!have) {
-      display.drawTextCentered(cx, cy - display.getLineHeight() / 2, "move to");
-      display.drawTextCentered(cx, cy + display.getLineHeight() / 2, "set heading");
+      // No stable heading yet — keep the ring as context but put the hint in
+      // the bottom readout band so it doesn't overlap the circle.
+      int lh = display.getLineHeight();
+      display.drawTextCentered(cx, bottom + 1,      "move to");
+      display.drawTextCentered(cx, bottom + 1 + lh, "set heading");
       return 1000;
     }
 
