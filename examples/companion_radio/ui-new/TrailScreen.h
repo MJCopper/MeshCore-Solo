@@ -30,6 +30,7 @@ class TrailScreen : public UIScreen {
   PopupMenu _wp_ctx;                 // Rename / Delete on a selected waypoint
   KeyboardWidget _wp_kb;             // label entry (mark new / rename)
   bool      _kb_active = false;
+  bool      _kb_coords = false;      // keyboard is entering "lat,lon" (then asks for a label)
   int       _kb_rename_idx = -1;     // -1 = marking new, ≥0 = renaming that index
   int32_t   _mark_lat = 0, _mark_lon = 0;   // pending new-mark position
   uint32_t  _mark_ts  = 0;
@@ -39,9 +40,9 @@ class TrailScreen : public UIScreen {
   // (Start/Stop tracking, Reset). PopupMenu stores label pointers verbatim, so
   // the labels live in member buffers that get refreshed in openActionMenu()
   // and after every LEFT/RIGHT cycle.
-  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS, ACT_WP_CLEAR };
+  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_ADD_COORDS, ACT_WAYPOINTS, ACT_WP_CLEAR };
   PopupMenu _action_menu;
-  uint8_t   _act_map[14];  // 12 used today; pad so adding an action doesn't OOB
+  uint8_t   _act_map[16];  // 13 used today; pad so adding an action doesn't OOB
   uint8_t   _act_count = 0;
   char      _act_min_dist_label[24];
   char      _act_units_label[24];
@@ -62,6 +63,7 @@ public:
     _wp_mode = WP_OFF;
     _wp_ctx.active = false;
     _kb_active = false;
+    _kb_coords = false;
   }
 
   int render(DisplayDriver& display) override {
@@ -101,8 +103,12 @@ public:
     // Label keyboard (mark new / rename) takes all input first.
     if (_kb_active) {
       auto r = _wp_kb.handleInput(c);
-      if (r == KeyboardWidget::DONE)        { commitLabel(_wp_kb.buf); _kb_active = false; }
-      else if (r == KeyboardWidget::CANCELLED) { _kb_active = false; }
+      if (r == KeyboardWidget::DONE) {
+        if (_kb_coords) commitCoords(_wp_kb.buf);              // parse → then ask for a label
+        else            { commitLabel(_wp_kb.buf); _kb_active = false; }
+      } else if (r == KeyboardWidget::CANCELLED) {
+        _kb_active = false; _kb_coords = false;
+      }
       return true;
     }
 
@@ -193,6 +199,7 @@ public:
           else if (act == ACT_EXPORT)       { handleExport(); }
           else if (act == ACT_EXPORT_SAVED) { handleExportSaved(); }
           else if (act == ACT_MARK)         { handleMarkHere(); }
+          else if (act == ACT_ADD_COORDS)   { handleAddByCoords(); }
           else if (act == ACT_WAYPOINTS)    { _wp_mode = WP_LIST; _wp_sel = 0; _wp_scroll = 0; }
           else if (act == ACT_WP_CLEAR)     { _task->waypoints().clear(); _task->saveWaypoints();
                                               _task->showAlert("Waypoints cleared", 800); }
@@ -319,7 +326,8 @@ private:
     _act_map[_act_count++] = ACT_GRID;     _action_menu.addItem(_act_grid_label);
     _act_map[_act_count++] = ACT_TOGGLE;   _action_menu.addItem(_act_toggle_label);
     // Waypoints: mark the current spot, and browse/navigate saved ones.
-    _act_map[_act_count++] = ACT_MARK;     _action_menu.addItem("Mark here");
+    _act_map[_act_count++] = ACT_MARK;       _action_menu.addItem("Mark here");
+    _act_map[_act_count++] = ACT_ADD_COORDS; _action_menu.addItem("Add by coords");
     // "Waypoints" opens the nav list — useful when there are saved waypoints
     // OR a trail to backtrack to (the list always includes a "Trail start" row).
     if (_task->waypoints().count() > 0 || !_store->empty()) {
@@ -380,6 +388,31 @@ private:
     _kb_rename_idx = -1;
     _wp_kb.begin("", WAYPOINT_LABEL_LEN - 1);
     _kb_active = true;
+  }
+
+  // Add a waypoint by typing "lat,lon" (no GPS fix needed). Opens the keyboard
+  // for coordinates; on a valid parse it falls through to the label keyboard.
+  void handleAddByCoords() {
+    if (_task->waypoints().full()) { _task->showAlert("Waypoints full", 1000); return; }
+    _kb_coords = true;
+    _kb_rename_idx = -1;
+    _wp_kb.begin("", 30);              // "-12.345678,-123.456789" fits in 30
+    _kb_active = true;
+  }
+
+  // Parse the typed coordinates; on success store the fix and switch the
+  // keyboard to label entry (reusing the Mark-here commit path).
+  void commitCoords(const char* buf) {
+    int32_t lat, lon;
+    if (!geo::parseLatLon(buf, lat, lon)) {
+      _task->showAlert("Bad coordinates", 1200);
+      _kb_active = false; _kb_coords = false;
+      return;
+    }
+    _mark_lat = lat; _mark_lon = lon; _mark_ts = (uint32_t)rtc_clock.getCurrentTime();
+    _kb_coords = false;
+    _kb_rename_idx = -1;
+    _wp_kb.begin("", WAYPOINT_LABEL_LEN - 1);   // now name it (empty → auto WP<n>)
   }
 
   void commitLabel(const char* buf) {
