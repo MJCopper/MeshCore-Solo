@@ -35,6 +35,10 @@ protected:
 public:
   void setHasConnection(bool connected) { _connected = connected; }
   bool hasConnection() const { return _connected; }
+  // True only when a BLE central is actually bonded/connected. On a dual
+  // (BLE+USB) interface hasConnection() is always true (USB counts), so use
+  // this for BLE-specific UI like the pairing-PIN prompt.
+  bool isBLEConnected() const { return _serial->isBLEConnected(); }
   uint16_t getBattMilliVolts() const { return _board->getBattMilliVolts(); }
   bool isSerialEnabled() const { return _serial->isEnabled(); }
   void enableSerial() { _serial->enable(); }

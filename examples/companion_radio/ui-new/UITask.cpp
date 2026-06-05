@@ -740,7 +740,10 @@ public:
       display.drawXbm((display.width() - 32) / 2, content_y,
           _task->isSerialEnabled() ? bluetooth_on : bluetooth_off, 32, 32);
       const int text_y = content_y + 32 + 3;
-      const bool waiting_for_pair = _task->isSerialEnabled() && !_task->hasConnection() && the_mesh.getBLEPin() != 0;
+      // Gate on BLE-bonded state, not hasConnection(): on a dual BLE+USB
+      // interface hasConnection() is always true (USB), which would hide the
+      // PIN forever — the exact e-ink dual-build pairing bug.
+      const bool waiting_for_pair = _task->isSerialEnabled() && !_task->isBLEConnected() && the_mesh.getBLEPin() != 0;
       if (waiting_for_pair && !display.isLandscape()) {
         char pin_buf[16];
         snprintf(pin_buf, sizeof(pin_buf), "PIN: %d", the_mesh.getBLEPin());
