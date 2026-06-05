@@ -2497,7 +2497,12 @@ void MyMesh::loop() {
   }
 
 #ifdef DISPLAY_CLASS
-  if (_ui) _ui->setHasConnection(_serial->isConnected());
+  // Use BLE-bonded state, not isConnected(): on a dual (BLE+USB) interface
+  // isConnected() is hardcoded true (USB is always a send fallback), and USB
+  // client presence isn't detectable anyway. hasConnection() drives the BT
+  // status indicator, message-wake and the Auto buzzer mute — all of which
+  // mean "a companion app is connected", i.e. BLE bonded.
+  if (_ui) _ui->setHasConnection(_serial->isBLEConnected());
 #endif
 }
 
