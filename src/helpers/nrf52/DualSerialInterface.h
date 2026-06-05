@@ -33,6 +33,10 @@ public:
   bool isConnected() const override { return true; }
   // True only when a BLE companion app is paired and connected.
   bool isBLEConnected() const override { return _ble_enabled && _ble.isConnected(); }
+  // A companion app is actually connected if BLE is bonded OR a host holds the
+  // USB-CDC port open. (bool)Serial == tud_cdc_n_connected() (DTR asserted) — a
+  // serial monitor counts too, but charging-only (no host) does not.
+  bool isClientConnected() const override { return isBLEConnected() || (bool)Serial; }
 
   bool isWriteBusy() const override {
     return (_ble_enabled && _ble.isConnected()) ? _ble.isWriteBusy() : _usb.isWriteBusy();

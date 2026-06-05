@@ -456,7 +456,7 @@ class HomeScreen : public UIScreen {
     int leftmostX = battLeftX;
     if (_task->isSerialEnabled()) {
       int btX = battLeftX - ind - ind_gap;
-      if (_task->hasConnection()) {
+      if (_task->isBLEConnected()) {   // BT icon reflects BLE link, not USB
         display.setColor(DisplayDriver::LIGHT);
         display.fillRect(btX, 0, ind, ind_h);
         display.setColor(DisplayDriver::DARK);

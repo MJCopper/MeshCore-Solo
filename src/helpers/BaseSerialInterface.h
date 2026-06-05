@@ -18,6 +18,12 @@ public:
   // isConnected(); override in dual-interface wrappers that always report
   // isConnected()=true but still need to distinguish BLE from USB state.
   virtual bool isBLEConnected() const { return isConnected(); }
+  // True when a companion app is actually connected over *any* transport
+  // (BLE bonded or a host holding the USB-CDC port open). Distinct from
+  // isConnected(), which a dual interface hardcodes true as a send fallback.
+  // Used for app-connected UI (Auto buzzer mute, message-wake). Default =
+  // isConnected() so single-transport interfaces are unchanged.
+  virtual bool isClientConnected() const { return isConnected(); }
 
   virtual bool isWriteBusy() const = 0;
   virtual size_t writeFrame(const uint8_t src[], size_t len) = 0;
