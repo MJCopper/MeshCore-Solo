@@ -39,6 +39,9 @@ public:
   // (BLE+USB) interface hasConnection() is always true (USB counts), so use
   // this for BLE-specific UI like the pairing-PIN prompt.
   bool isBLEConnected() const { return _serial->isBLEConnected(); }
+  // True when a companion app is connected over any transport (BLE bonded or an
+  // open USB-CDC port). For app-connected behaviour like Auto buzzer mute.
+  bool isClientConnected() const { return _serial->isClientConnected(); }
   uint16_t getBattMilliVolts() const { return _board->getBattMilliVolts(); }
   bool isSerialEnabled() const { return _serial->isEnabled(); }
   void enableSerial() { _serial->enable(); }

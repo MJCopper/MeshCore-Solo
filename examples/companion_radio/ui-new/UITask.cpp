@@ -740,9 +740,9 @@ public:
       display.drawXbm((display.width() - 32) / 2, content_y,
           _task->isSerialEnabled() ? bluetooth_on : bluetooth_off, 32, 32);
       const int text_y = content_y + 32 + 3;
-      // Gate on BLE-bonded state, not hasConnection(): on a dual BLE+USB
-      // interface hasConnection() is always true (USB), which would hide the
-      // PIN forever — the exact e-ink dual-build pairing bug.
+      // The pairing PIN is BLE-specific: show it while BLE is on but not yet
+      // bonded. (Gating on a plain isConnected() broke this on dual builds,
+      // where it's hardcoded true.)
       const bool waiting_for_pair = _task->isSerialEnabled() && !_task->isBLEConnected() && the_mesh.getBLEPin() != 0;
       if (waiting_for_pair && !display.isLandscape()) {
         char pin_buf[16];
@@ -1521,7 +1521,7 @@ void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, i
   showAlert(alert_buf, 3000);
 
   if (_display != NULL && !_locked) {
-    if (!_display->isOn() && !hasConnection()) {
+    if (!_display->isOn() && !isClientConnected()) {   // wake for the msg unless an app (BLE/USB) is already showing it
       _display->turnOn();
     }
     if (_display->isOn()) {
@@ -1791,7 +1791,7 @@ void UITask::loop() {
 
 #ifdef PIN_BUZZER
   if (_node_prefs && _node_prefs->buzzer_auto) {
-    bool should_quiet = hasConnection();
+    bool should_quiet = isClientConnected();   // BLE bonded or an open USB port
     if (buzzer.isQuiet() != should_quiet) {
       buzzer.quiet(should_quiet);
       _next_refresh = 0;
@@ -2197,7 +2197,7 @@ void UITask::cycleBuzzerMode() {
   _node_prefs->buzzer_auto = (mode == 2) ? 1 : 0;
   if (mode == 0) { buzzer.quiet(false); _node_prefs->buzzer_quiet = 0; notify(UIEventType::ack); }
   if (mode == 1) { buzzer.quiet(true);  _node_prefs->buzzer_quiet = 1; }
-  if (mode == 2) { buzzer.quiet(hasConnection()); }
+  if (mode == 2) { buzzer.quiet(isClientConnected()); }
   static const char* labels[] = { "Buzzer: ON", "Buzzer: OFF", "Buzzer: Auto" };
   showAlert(labels[mode], 800);
   _next_refresh = 0;

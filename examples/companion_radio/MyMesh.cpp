@@ -2497,11 +2497,12 @@ void MyMesh::loop() {
   }
 
 #ifdef DISPLAY_CLASS
-  // "a companion app is connected over any transport" — BLE bonded or a host
-  // holding the USB-CDC port open. Drives Auto buzzer mute + message-wake.
-  // (Not isConnected(): a dual interface hardcodes that true as a send
-  // fallback. The BT status indicator and pairing PIN use isBLEConnected().)
-  if (_ui) _ui->setHasConnection(_serial->isClientConnected());
+  // hasConnection() means "a BLE companion app is connected". Not isConnected()
+  // (a dual interface hardcodes that true as a USB send-fallback). Drives the BT
+  // status indicator, pairing PIN, and the GPX-export collision warning — all
+  // BLE-specific. The Auto buzzer mute / message-wake use isClientConnected()
+  // (BLE *or* an open USB port) directly instead.
+  if (_ui) _ui->setHasConnection(_serial->isBLEConnected());
 #endif
 }
 
