@@ -367,16 +367,24 @@ whose battery edge comes from radio/peripheral power technique, not the kernel:
 during a fix; this device is used as a *live* navigator + trail recorder, so GPS
 stays continuously powered. Don't gate it.
 
-Cross-check: MeshCore upstream is already moving here too
-([PR #1238 NRF52 powersaving](https://github.com/meshcore-dev/MeshCore/pull/1238),
-[docs/nrf52_power_management.md](docs/nrf52_power_management.md), duty-cycle
-enforcement since companion v1.14.1) — prefer adopting/merging upstream work over
-a parallel implementation where possible. Note ZephCore's licence before copying
-any code verbatim (architecture inspiration is fine).
+Cross-check: as of the **v1.16 upstream merge**, MeshCore now ships native
+NRF52 companion power-saving ([PR #1238](https://github.com/meshcore-dev/MeshCore/pull/1238),
+[docs/nrf52_power_management.md](docs/nrf52_power_management.md)). The companion
+loop now sleeps via `board.sleep(0)` whenever `hasPendingWork()` is false — but
+that only covers **MCU idle** (it does not touch the radio, which is the real
+draw), and there is no on/off toggle because not-sleeping would only waste power.
+The same merge also brought the **preamble 16→32 bump for SF<9**, which was the
+blocker for our CAD RX-windowing experiment (short windows dropped long packets
+at preamble 16). Prefer adopting/extending upstream work over a parallel
+implementation. Note ZephCore's licence before copying any code verbatim
+(architecture inspiration is fine).
 
 Sequencing: **deferred until the trail/waypoints/nav polishing is finished.**
-First step when picked up: profile with a PPK2/meter to confirm RX is the hog,
-then prototype CAD windowing behind a setting and measure before/after.
+The radio-side CAD windowing lives on the `feat/power-saving` branch and is now
+**unblocked** by the preamble fix. First step when picked up: rebase it onto the
+v1.16 merge (it will hit the removed `radio_set_tx_power()`/`radio_set_params()`
+globals — replace with `radio_driver.*` like the merge did), then re-test whether
+long messages still drop at preamble 32, ideally profiling with a PPK2/meter.
 
 ### SOS broadcast
 
