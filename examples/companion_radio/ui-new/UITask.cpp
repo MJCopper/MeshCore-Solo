@@ -507,7 +507,7 @@ class HomeScreen : public UIScreen {
   bool sensors_scroll = false;
   int sensors_scroll_offset = 0;
   int next_sensors_refresh = 0;
-  
+
   void refresh_sensors() {
     if (millis() > next_sensors_refresh) {
       sensors_lpp.reset();
@@ -531,7 +531,7 @@ class HomeScreen : public UIScreen {
 
 public:
   HomeScreen(UITask* task, mesh::RTCClock* rtc, SensorManager* sensors, NodePrefs* node_prefs)
-     : _task(task), _rtc(rtc), _sensors(sensors), _node_prefs(node_prefs), _page(0), 
+     : _task(task), _rtc(rtc), _sensors(sensors), _node_prefs(node_prefs), _page(0),
        _shutdown_init(false), sensors_lpp(200) {  }
 
   void poll() override {
@@ -706,10 +706,10 @@ public:
         } else {
           snprintf(tmp, sizeof(tmp),"%dh", secs / (60*60));
         }
-        
+
         int timestamp_width = display.getTextWidth(tmp);
         int max_name_width = display.width() - timestamp_width - 1;
-        
+
         char filtered_recent_name[sizeof(a->name)];
         display.translateUTF8ToBlocks(filtered_recent_name, a->name, sizeof(filtered_recent_name));
         display.drawTextEllipsized(0, y, max_name_width, filtered_recent_name);
@@ -804,8 +804,22 @@ public:
       int y = content_y;
       refresh_sensors();
 
+      // Enumerate the distinct telemetry types directly from the freshly
+      // populated buffer. (Upstream replaced the per-sensor *_initialized flags
+      // with a generic registration model, so we derive availability from what
+      // querySensors() actually produced instead of asking the manager.)
       uint8_t avail_types[16];
-      int avail_count = _sensors ? _sensors->getAvailableLPPTypes(avail_types, 16) : 0;
+      int avail_count = 0;
+      {
+        LPPReader er(sensors_lpp.getBuffer(), sensors_lpp.getSize());
+        uint8_t ech, etype;
+        while (er.readHeader(ech, etype) && avail_count < 16) {
+          er.skipData(etype);
+          bool dup = false;
+          for (int k = 0; k < avail_count; k++) if (avail_types[k] == etype) { dup = true; break; }
+          if (!dup) avail_types[avail_count++] = etype;
+        }
+      }
       bool need_scroll = avail_count > UI_RECENT_LIST_SIZE;
       int offset = need_scroll ? (sensors_scroll_offset % avail_count) : 0;
       int show_n = need_scroll ? UI_RECENT_LIST_SIZE : avail_count;
@@ -1740,7 +1754,7 @@ void UITask::loop() {
 #endif
 #if defined(PIN_USER_BTN_ANA)
   if (millis() - _analogue_pin_read_millis > 10) {
-    ev = analog_btn.check();
+    int ev = analog_btn.check();
     if (ev == BUTTON_EVENT_CLICK) {
       c = checkDisplayOn(KEY_NEXT);
     } else if (ev == BUTTON_EVENT_LONG_PRESS) {
@@ -1897,6 +1911,15 @@ void UITask::loop() {
       _display->endFrame();
     }
 #if AUTO_OFF_MILLIS > 0
+#ifdef KEEP_DISPLAY_ON_USB
+    // Opt-in: refresh the auto-off deadline while externally powered, so the
+    // timer counts from the moment external power is removed. Off by default
+    // because OLED panels burn in quickly; only enable for LCD targets or
+    // where the display is replaceable.
+    if (board.isExternalPowered()) {
+      _auto_off = millis() + AUTO_OFF_MILLIS;
+    }
+#endif
     if (!_locked && autoOffMillis() > 0 && millis() > _auto_off) {
       _display->turnOff();
 #ifdef PIN_LED
@@ -1921,7 +1944,8 @@ void UITask::loop() {
       _batt_mv = (_batt_mv == 0) ? raw : (uint16_t)((_batt_mv * 4u + raw) / 5u);
     }
     uint16_t low_mv = _node_prefs ? _node_prefs->low_batt_mv : 0;
-    if (low_mv > 0 && _batt_mv > 0 && _batt_mv < low_mv) {
+    // Don't shut down while on external power (charging) — avoids a shutdown loop.
+    if (low_mv > 0 && _batt_mv > 0 && _batt_mv < low_mv && !board.isExternalPowered()) {
       if (_display != NULL) {
         _display->startFrame();
         _display->setTextSize(1);
@@ -1931,7 +1955,7 @@ void UITask::loop() {
         _display->drawTextCentered(_display->width() / 2, mid - step, "Low Battery");
         _display->drawTextCentered(_display->width() / 2, mid, "Shutting down");
         _display->endFrame();
-        delay(2000);
+        if (_display->isEink() == false) { delay(2000); }
       }
       shutdown();
     }
@@ -2064,6 +2088,7 @@ char UITask::handleLongPress(char c) {
 }
 
 char UITask::handleDoubleClick(char c) {
+  MESH_DEBUG_PRINTLN("UITask: double-click triggered");
   checkDisplayOn(c);
   return c;
 }
@@ -2082,7 +2107,7 @@ bool UITask::getGPSState() {
         return !strcmp(_sensors->getSettingValue(i), "1");
       }
     }
-  } 
+  }
   return false;
 }
 
@@ -2112,7 +2137,7 @@ void UITask::toggleGPS() {
 
 void UITask::applyTxPower() {
   if (_node_prefs == NULL) return;
-  radio_set_tx_power(_node_prefs->tx_power_dbm);
+  radio_driver.setTxPower(_node_prefs->tx_power_dbm);
 }
 
 void UITask::applyBrightness() {

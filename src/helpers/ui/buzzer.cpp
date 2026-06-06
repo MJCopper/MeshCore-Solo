@@ -1,3 +1,4 @@
+#include "Arduino.h"
 #ifdef PIN_BUZZER
 #include "buzzer.h"
 
@@ -7,7 +8,7 @@ void genericBuzzer::begin() {
       digitalWrite(PIN_BUZZER_EN, HIGH);
     #endif
     pinMode(PIN_BUZZER, OUTPUT);
-    digitalWrite(PIN_BUZZER, LOW);
+    digitalWrite(PIN_BUZZER, LOW); // need to pull low by default to avoid extreme power draw
     startup();
 }
 

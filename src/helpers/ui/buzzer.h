@@ -2,9 +2,24 @@
 
 #include <Arduino.h>
 
+// NRF52 uses a custom non-blocking RTTTL player (see buzzer.cpp); only the
+// other platforms pull in the NonBlockingRtttl library here.
 #if !defined(NRF52_PLATFORM)
   #include <NonBlockingRtttl.h>
 #endif
+
+/* class abstracts underlying RTTTL library
+
+    Just a simple implementation to start.  At the moment use same
+    melody for message and discovery
+    Suggest enum type for different sounds
+    - on message
+    - on discovery
+
+    TODO
+    - make message ring tone configurable
+
+*/
 
 class genericBuzzer
 {
