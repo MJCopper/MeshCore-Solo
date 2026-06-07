@@ -89,6 +89,8 @@ class SettingsScreen : public UIScreen {
   static const int LOW_BAT_COUNT = 7;
   static const char* BATT_DISPLAY_LABELS[3];
   static const int BATT_DISPLAY_COUNT = 3;
+  static const char* SOUND_LABELS[4];
+  static const int SOUND_COUNT = 4;
 #if FEAT_FULL_REFRESH_SETTING
   static const char* EINK_FULL_REFRESH_LABELS[5];
   static const int   EINK_FULL_REFRESH_COUNT = 5;
@@ -438,21 +440,18 @@ class SettingsScreen : public UIScreen {
     } else if (item == DM_MELODY) {
       display.print("DM sound");
       display.setCursor(display.valCol(), y);
-      { static const char* L[] = { "built-in", "M1", "M2" };
-        uint8_t v = p ? p->notif_melody_dm : 0;
-        display.print(L[v < 3 ? v : 0]); }
+      { uint8_t v = p ? p->notif_melody_dm : 0;
+        display.print(SOUND_LABELS[v < SOUND_COUNT ? v : 0]); }
     } else if (item == CH_MELODY) {
       display.print("Ch sound");
       display.setCursor(display.valCol(), y);
-      { static const char* L[] = { "built-in", "M1", "M2" };
-        uint8_t v = p ? p->notif_melody_ch : 0;
-        display.print(L[v < 3 ? v : 0]); }
+      { uint8_t v = p ? p->notif_melody_ch : 0;
+        display.print(SOUND_LABELS[v < SOUND_COUNT ? v : 0]); }
     } else if (item == AD_SOUND) {
       display.print("AD sound");
       display.setCursor(display.valCol(), y);
-      { static const char* L[] = { "built-in", "M1", "M2" };
-        uint8_t v = p ? p->notif_melody_ad : 0;
-        display.print(L[v < 3 ? v : 0]); }
+      { uint8_t v = p ? p->notif_melody_ad : 0;
+        display.print(SOUND_LABELS[v < SOUND_COUNT ? v : 0]); }
     } else if (isHomePage(item)) {
       if (p) ensurePageOrderInit(p);
       int pos = homePagePosition(item, p);
@@ -696,15 +695,15 @@ public:
       return right || left;
     }
     if (_selected == DM_MELODY && p && (left || right || enter)) {
-      p->notif_melody_dm = (p->notif_melody_dm + (left ? 2 : 1)) % 3;
+      p->notif_melody_dm = (p->notif_melody_dm + (left ? SOUND_COUNT - 1 : 1)) % SOUND_COUNT;
       _dirty = true; return true;
     }
     if (_selected == CH_MELODY && p && (left || right || enter)) {
-      p->notif_melody_ch = (p->notif_melody_ch + (left ? 2 : 1)) % 3;
+      p->notif_melody_ch = (p->notif_melody_ch + (left ? SOUND_COUNT - 1 : 1)) % SOUND_COUNT;
       _dirty = true; return true;
     }
     if (_selected == AD_SOUND && p && (left || right || enter)) {
-      p->notif_melody_ad = (p->notif_melody_ad + (left ? 2 : 1)) % 3;
+      p->notif_melody_ad = (p->notif_melody_ad + (left ? SOUND_COUNT - 1 : 1)) % SOUND_COUNT;
       _dirty = true; return true;
     }
     if (isHomePage(_selected) && p) {
@@ -839,6 +838,7 @@ const char*    SettingsScreen::AUTO_OFF_LABELS[5]  = { "5s", "15s", "30s", "60s"
 const uint16_t SettingsScreen::LOW_BAT_OPTS[7]   = { 0, 3000, 3100, 3200, 3300, 3400, 3500 };
 const char*    SettingsScreen::LOW_BAT_LABELS[7]  = { "off", "3.0V", "3.1V", "3.2V", "3.3V", "3.4V", "3.5V" };
 const char*    SettingsScreen::BATT_DISPLAY_LABELS[3] = { "icon", "%", "V" };
+const char*    SettingsScreen::SOUND_LABELS[4] = { "built-in", "M1", "M2", "None" };
 #if FEAT_FULL_REFRESH_SETTING
 const char* SettingsScreen::EINK_FULL_REFRESH_LABELS[5] = { "off", "5", "10", "20", "30" };
 #endif

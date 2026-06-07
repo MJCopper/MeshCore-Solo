@@ -1413,7 +1413,9 @@ switch(t){
             { slot = _node_prefs->dm_melody[i].slot; break; }
       }
       bool custom_played = false;
-      if (slot > 0 && _node_prefs) {
+      if (slot == 3) {
+        custom_played = true;  // explicit silence
+      } else if (slot > 0 && _node_prefs) {
         if (buzzer.isPlaying()) buzzer.stop();  // stop before overwriting _notif_mel_buf
         buildMelodyFromPrefs(_node_prefs, slot, _notif_mel_buf, sizeof(_notif_mel_buf));
         if (_notif_mel_buf[0]) {
@@ -1449,7 +1451,9 @@ switch(t){
           slot = (_node_prefs->ch_notif_melody_2 & mask) ? 2 : 1;
       }
       bool custom_played = false;
-      if (slot > 0 && _node_prefs) {
+      if (slot == 3) {
+        custom_played = true;  // explicit silence
+      } else if (slot > 0 && _node_prefs) {
         if (buzzer.isPlaying()) buzzer.stop();  // stop before overwriting _notif_mel_buf
         buildMelodyFromPrefs(_node_prefs, slot, _notif_mel_buf, sizeof(_notif_mel_buf));
         if (_notif_mel_buf[0]) {
@@ -1469,7 +1473,9 @@ switch(t){
     if (!buzzer.isQuiet()) {
       int slot = _node_prefs ? (int)_node_prefs->notif_melody_ad : 0;
       bool custom_played = false;
-      if (slot > 0 && _node_prefs) {
+      if (slot == 3) {
+        custom_played = true;  // explicit silence
+      } else if (slot > 0 && _node_prefs) {
         if (buzzer.isPlaying()) buzzer.stop();  // stop before overwriting _notif_mel_buf
         buildMelodyFromPrefs(_node_prefs, slot, _notif_mel_buf, sizeof(_notif_mel_buf));
         if (_notif_mel_buf[0]) {

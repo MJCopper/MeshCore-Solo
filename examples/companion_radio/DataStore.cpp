@@ -322,7 +322,8 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.trail_show_pace,     sizeof(_prefs.trail_show_pace));
   // These three were appended together; an older file leaves stray bytes here
   // (the old tail sentinel gets partly consumed), so clamp out-of-range values.
-  if (_prefs.notif_melody_ad > 2) _prefs.notif_melody_ad = 0;
+  // Values: 0=built-in, 1=melody1, 2=melody2, 3=none.
+  if (_prefs.notif_melody_ad > 3) _prefs.notif_melody_ad = 0;
   if (_prefs.units_imperial  > 1) _prefs.units_imperial  = 0;
   if (_prefs.trail_show_pace > 1) _prefs.trail_show_pace = 0;
 

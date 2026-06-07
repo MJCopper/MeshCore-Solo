@@ -69,7 +69,7 @@ struct NodePrefs {  // persisted to file
   uint8_t  ringtone2_bpm_idx;
   uint8_t  ringtone2_len;
   uint8_t  ringtone2_notes[32];
-  // Global melodies for notifications: 0=built-in, 1=melody1, 2=melody2
+  // Global melodies for notifications: 0=built-in, 1=melody1, 2=melody2, 3=none
   uint8_t  notif_melody_dm;
   uint8_t  notif_melody_ch;
   uint8_t  notif_melody_ad;
