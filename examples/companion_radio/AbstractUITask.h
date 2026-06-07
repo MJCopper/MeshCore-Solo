@@ -19,6 +19,8 @@ enum class UIEventType {
     channelMessage,
     roomMessage,
     advertReceived,
+    advertReceivedFlood,
+    advertReceivedZeroHop,
     ack
 };
 

@@ -360,8 +360,8 @@ void MyMesh::onContactsFull() {
   }
 }
 
-void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path_len, const uint8_t* path) {
-  if (_ui) _ui->notify(UIEventType::advertReceived);
+void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path_len, const uint8_t* path, bool was_flood) {
+  if (_ui) _ui->notify(was_flood ? UIEventType::advertReceivedFlood : UIEventType::advertReceivedZeroHop);
 
   if (_serial->isConnected()) {
     if (is_new) {
@@ -927,7 +927,7 @@ void MyMesh::onControlDataRecv(mesh::Packet *packet) {
         memcpy(r.pub_key, pub_key, PUB_KEY_SIZE);
         r.timestamp = getRTCClock()->getCurrentTime();
       }
-      if (_ui) _ui->notify(UIEventType::advertReceived);
+      if (_ui) _ui->notify(packet->isRouteFlood() ? UIEventType::advertReceivedFlood : UIEventType::advertReceivedZeroHop);
       return;  // our discover — don't forward to BLE app
     }
   }
@@ -1100,6 +1100,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.ringtone_len = 0;       // no custom ringtone by default
   _prefs.ringtone2_bpm_idx = 2;  // 120 bpm default
   _prefs.notif_melody_ad = 0;    // built-in advert sound by default
+  _prefs.advert_sound_scope = ADVERT_SOUND_SCOPE_ALL;  // sound every advert by default
   _prefs.home_pages_mask = 0x01FF;  // all pages visible
   _prefs.bot_enabled = 0;
   _prefs.bot_channel_enabled = 0;

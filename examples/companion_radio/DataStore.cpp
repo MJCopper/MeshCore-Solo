@@ -320,12 +320,15 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.notif_melody_ad,     sizeof(_prefs.notif_melody_ad));
   rd(&_prefs.units_imperial,      sizeof(_prefs.units_imperial));
   rd(&_prefs.trail_show_pace,     sizeof(_prefs.trail_show_pace));
-  // These three were appended together; an older file leaves stray bytes here
-  // (the old tail sentinel gets partly consumed), so clamp out-of-range values.
-  // Values: 0=built-in, 1=melody1, 2=melody2, 3=none.
+  rd(&_prefs.advert_sound_scope,  sizeof(_prefs.advert_sound_scope));
+  // These fields were appended after ch_fav_only; an older file can leave
+  // stray bytes here (the old tail sentinel gets partly consumed), so clamp
+  // out-of-range values back to defaults.
+  // Values for notif_melody_ad: 0=built-in, 1=melody1, 2=melody2, 3=none.
   if (_prefs.notif_melody_ad > 3) _prefs.notif_melody_ad = 0;
   if (_prefs.units_imperial  > 1) _prefs.units_imperial  = 0;
   if (_prefs.trail_show_pace > 1) _prefs.trail_show_pace = 0;
+  if (_prefs.advert_sound_scope > 1) _prefs.advert_sound_scope = ADVERT_SOUND_SCOPE_ALL;
 
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
@@ -349,11 +352,10 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     if (sentinel == 0xC0DE0003) {
       _prefs.trail_units_idx = 0;
     }
-    // → 0xC0DE0007: merge of two parallel 0xC0DE0006 layouts — notif_melody_ad
-    // (advert sound) and units_imperial + trail_show_pace were appended after
-    // ch_fav_only. Any older file (incl. either single-feature 0006) leaves
-    // stray/old bytes in these fields; they're clamped above, so upgraders fall
-    // back to built-in advert sound + metric + speed.
+    // → 0xC0DE0008: append advert_sound_scope after the existing 0xC0DE0007
+    // tail (notif_melody_ad + units_imperial + trail_show_pace). Older files
+    // leave stray/old bytes in these fields; they're clamped above, so
+    // upgraders fall back to built-in advert sound + metric + speed + All.
   }
 
   file.close();
@@ -445,6 +447,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.notif_melody_ad,     sizeof(_prefs.notif_melody_ad));
     file.write((uint8_t *)&_prefs.units_imperial,      sizeof(_prefs.units_imperial));
     file.write((uint8_t *)&_prefs.trail_show_pace,     sizeof(_prefs.trail_show_pace));
+    file.write((uint8_t *)&_prefs.advert_sound_scope,  sizeof(_prefs.advert_sound_scope));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL.
     uint32_t sentinel = NodePrefs::SCHEMA_SENTINEL;

@@ -9,6 +9,9 @@
 #define ADVERT_LOC_NONE       0
 #define ADVERT_LOC_SHARE      1
 
+#define ADVERT_SOUND_SCOPE_ALL        0
+#define ADVERT_SOUND_SCOPE_ZERO_HOP   1
+
 struct NodePrefs {  // persisted to file
   float airtime_factor;
   char node_name[32];
@@ -73,6 +76,8 @@ struct NodePrefs {  // persisted to file
   uint8_t  notif_melody_dm;
   uint8_t  notif_melody_ch;
   uint8_t  notif_melody_ad;
+  // Advert sound filter: 0=all adverts, 1=zero-hop only
+  uint8_t  advert_sound_scope;
   // Per-channel melody override (2 bitmasks, 1 bit per channel)
   uint64_t ch_notif_melody_set;  // bit i = channel i has explicit melody
   uint64_t ch_notif_melody_2;    // bit i = use melody 2 (else melody 1, when set bit is set)
@@ -120,7 +125,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0007;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0008;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage

@@ -39,6 +39,7 @@ class SettingsScreen : public UIScreen {
     DM_MELODY,
     CH_MELODY,
     AD_SOUND,
+    AD_SOUND_SCOPE,
     // Home pages section
     SECTION_HOME_PAGES,
     HOME_CLOCK, HOME_FAVOURITES, HOME_RECENT, HOME_RADIO, HOME_BT, HOME_ADVERT,
@@ -91,6 +92,8 @@ class SettingsScreen : public UIScreen {
   static const int BATT_DISPLAY_COUNT = 3;
   static const char* SOUND_LABELS[4];
   static const int SOUND_COUNT = 4;
+  static const char* AD_SCOPE_LABELS[2];
+  static const int AD_SCOPE_COUNT = 2;
 #if FEAT_FULL_REFRESH_SETTING
   static const char* EINK_FULL_REFRESH_LABELS[5];
   static const int   EINK_FULL_REFRESH_COUNT = 5;
@@ -452,6 +455,11 @@ class SettingsScreen : public UIScreen {
       display.setCursor(display.valCol(), y);
       { uint8_t v = p ? p->notif_melody_ad : 0;
         display.print(SOUND_LABELS[v < SOUND_COUNT ? v : 0]); }
+    } else if (item == AD_SOUND_SCOPE) {
+      display.print("AD scope");
+      display.setCursor(display.valCol(), y);
+      { uint8_t v = p ? p->advert_sound_scope : ADVERT_SOUND_SCOPE_ALL;
+        display.print(AD_SCOPE_LABELS[v < AD_SCOPE_COUNT ? v : 0]); }
     } else if (isHomePage(item)) {
       if (p) ensurePageOrderInit(p);
       int pos = homePagePosition(item, p);
@@ -706,6 +714,10 @@ public:
       p->notif_melody_ad = (p->notif_melody_ad + (left ? SOUND_COUNT - 1 : 1)) % SOUND_COUNT;
       _dirty = true; return true;
     }
+    if (_selected == AD_SOUND_SCOPE && p && (left || right || enter)) {
+      p->advert_sound_scope ^= 1;
+      _dirty = true; return true;
+    }
     if (isHomePage(_selected) && p) {
       if (left || right) {
         movePageInOrder(_selected, left ? -1 : 1, p);
@@ -839,6 +851,7 @@ const uint16_t SettingsScreen::LOW_BAT_OPTS[7]   = { 0, 3000, 3100, 3200, 3300, 
 const char*    SettingsScreen::LOW_BAT_LABELS[7]  = { "off", "3.0V", "3.1V", "3.2V", "3.3V", "3.4V", "3.5V" };
 const char*    SettingsScreen::BATT_DISPLAY_LABELS[3] = { "icon", "%", "V" };
 const char*    SettingsScreen::SOUND_LABELS[4] = { "built-in", "M1", "M2", "None" };
+const char*    SettingsScreen::AD_SCOPE_LABELS[2] = { "All", "Zero-hop" };
 #if FEAT_FULL_REFRESH_SETTING
 const char* SettingsScreen::EINK_FULL_REFRESH_LABELS[5] = { "off", "5", "10", "20", "30" };
 #endif

@@ -1469,7 +1469,13 @@ switch(t){
     _last_notif_ch_idx = -1;
     break;
   }
-  case UIEventType::advertReceived: {
+  case UIEventType::advertReceived:
+  case UIEventType::advertReceivedFlood:
+  case UIEventType::advertReceivedZeroHop: {
+    bool is_flood = (t == UIEventType::advertReceivedFlood);
+    if (_node_prefs && _node_prefs->advert_sound_scope == ADVERT_SOUND_SCOPE_ZERO_HOP && is_flood) {
+      break;
+    }
     if (!buzzer.isQuiet()) {
       int slot = _node_prefs ? (int)_node_prefs->notif_melody_ad : 0;
       bool custom_played = false;
