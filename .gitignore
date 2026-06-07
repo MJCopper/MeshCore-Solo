@@ -20,3 +20,7 @@ platformio.local.ini
 CODE_REVIEW.md
 tools/pngs/
 tools/gpx/
+
+# graphify
+graphify-out/
+.claude/settings.local.json
