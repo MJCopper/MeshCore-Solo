@@ -285,7 +285,9 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   if (_prefs.ringtone2_len > 32) _prefs.ringtone2_len = 0;
   rd(_prefs.ringtone2_notes,            sizeof(_prefs.ringtone2_notes));
   rd(&_prefs.notif_melody_dm,           sizeof(_prefs.notif_melody_dm));
+  if (_prefs.notif_melody_dm > 3) _prefs.notif_melody_dm = 0;
   rd(&_prefs.notif_melody_ch,           sizeof(_prefs.notif_melody_ch));
+  if (_prefs.notif_melody_ch > 3) _prefs.notif_melody_ch = 0;
   rd(&_prefs.ch_notif_melody_set,       sizeof(_prefs.ch_notif_melody_set));
   rd(&_prefs.ch_notif_melody_2,         sizeof(_prefs.ch_notif_melody_2));
   rd(_prefs.dm_melody,                  sizeof(_prefs.dm_melody));
