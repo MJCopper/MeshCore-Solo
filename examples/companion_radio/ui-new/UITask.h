@@ -24,6 +24,7 @@
 #include "../NodePrefs.h"
 #include "../Trail.h"
 #include "../Waypoint.h"
+#include "KeyboardWidget.h"
 
 class UITask : public AbstractUITask {
   DisplayDriver* _display;
@@ -43,6 +44,7 @@ class UITask : public AbstractUITask {
   bool _lock_seq_used;             // true = suppress next back_btn CLICK (post-sequence release)
   char _alert[80];
   char _notif_mel_buf[220];  // persistent RTTTL buffer for custom notification melodies
+  KeyboardWidget _kb;        // shared across all screens — only one active at a time
   unsigned long _alert_expiry;
   int _msgcount;
   int _room_unread;

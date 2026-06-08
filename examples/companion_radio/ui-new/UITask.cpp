@@ -105,7 +105,6 @@ public:
 static const int QUICK_MSGS_MAX = 10;
 
 
-#include "KeyboardWidget.h"
 #include "FullscreenMsgView.h"
 #include "SensorPlaceholders.h"
 #include "SettingsScreen.h"
@@ -1198,11 +1197,11 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 
   splash = new SplashScreen(this);
   home = new HomeScreen(this, &rtc_clock, sensors, node_prefs);
-  settings = new SettingsScreen(this);
-  quick_msg = new QuickMsgScreen(this);
+  settings = new SettingsScreen(this, &_kb);
+  quick_msg = new QuickMsgScreen(this, &_kb);
   tools_screen  = new ToolsScreen(this);
   ringtone_edit = new RingtoneEditorScreen(this, node_prefs);
-  bot_screen    = new BotScreen(this, node_prefs);
+  bot_screen    = new BotScreen(this, node_prefs, &_kb);
   nearby_screen = new NearbyScreen(this);
   dashboard_config = new DashboardConfigScreen(this, node_prefs);
   auto_advert_screen = new AutoAdvertScreen(this, node_prefs);

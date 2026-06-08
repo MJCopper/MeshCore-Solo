@@ -572,12 +572,12 @@ class SettingsScreen : public UIScreen {
   }
 
   // Keyboard state for editing message slots
-  int           _edit_slot;  // -1 = not editing, 0..9 = slot being edited
-  KeyboardWidget _kb;
+  int            _edit_slot;  // -1 = not editing, 0..9 = slot being edited
+  KeyboardWidget* _kb;
 
 public:
-  SettingsScreen(UITask* task)
-    : _task(task), _selected(SECTION_DISPLAY), _scroll(0), _visible(4), _dirty(false), _edit_slot(-1) {
+  SettingsScreen(UITask* task, KeyboardWidget* kb)
+    : _task(task), _kb(kb), _selected(SECTION_DISPLAY), _scroll(0), _visible(4), _dirty(false), _edit_slot(-1) {
     buildVis();
   }
 
@@ -594,7 +594,7 @@ public:
     display.setTextSize(1);
 
     if (_edit_slot >= 0) {
-      return _kb.render(display);
+      return _kb->render(display);
     }
 
     int item_h  = display.lineStep();
@@ -629,10 +629,10 @@ public:
 
     // Keyboard editing mode for message slots
     if (_edit_slot >= 0) {
-      auto res = _kb.handleInput(c);
+      auto res = _kb->handleInput(c);
       if (res == KeyboardWidget::DONE) {
         if (p) {
-          strncpy(p->custom_msgs[_edit_slot], _kb.buf, sizeof(p->custom_msgs[0]) - 1);
+          strncpy(p->custom_msgs[_edit_slot], _kb->buf, sizeof(p->custom_msgs[0]) - 1);
           p->custom_msgs[_edit_slot][sizeof(p->custom_msgs[0]) - 1] = '\0';
           _dirty = true;
         }
@@ -834,7 +834,7 @@ public:
       _edit_slot = slot;
       // Bound to the custom_msgs store (140 B) so the wider keyboard buffer
       // can't overflow it on save.
-      _kb.begin(p ? p->custom_msgs[slot] : "",
+      _kb->begin(p ? p->custom_msgs[slot] : "",
                 p ? (int)sizeof(p->custom_msgs[slot]) - 1 : KB_MAX_LEN);
       kbAddSensorPlaceholders(_kb, &sensors);
       return true;

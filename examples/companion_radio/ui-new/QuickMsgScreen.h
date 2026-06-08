@@ -45,7 +45,7 @@ class QuickMsgScreen : public UIScreen {
   static const int CH_HIST_MAX = 96;
 
   // KEYBOARD
-  KeyboardWidget _kb;
+  KeyboardWidget* _kb;
 
   // Context menu (opened by KEY_CONTEXT_MENU in CHANNEL_PICK / CONTACT_PICK / histories)
   PopupMenu _ctx_menu;
@@ -152,7 +152,7 @@ class QuickMsgScreen : public UIScreen {
   void beginShareCompose(bool channel) {
     _sending_to_channel = channel;
     _reply_mode = false;
-    _kb.begin(_share_text);
+    _kb->begin(_share_text);
     _phase = KEYBOARD;
   }
 
@@ -494,8 +494,8 @@ class QuickMsgScreen : public UIScreen {
   }
 
 public:
-  QuickMsgScreen(UITask* task)
-    : _task(task), _phase(MODE_SELECT), _mode_sel(0),
+  QuickMsgScreen(UITask* task, KeyboardWidget* kb)
+    : _task(task), _kb(kb), _phase(MODE_SELECT), _mode_sel(0),
       _contact_sel(0), _contact_scroll(0), _num_contacts(0), _room_mode(false),
       _channel_sel(0), _channel_scroll(0), _num_channels(0),
       _sel_channel_idx(0), _sending_to_channel(false),
@@ -1045,7 +1045,7 @@ public:
       if (_ctx_menu.active) _ctx_menu.render(display);
 
     } else if (_phase == KEYBOARD) {
-      return _kb.render(display);
+      return _kb->render(display);
 
     } else { // MSG_PICK
       char title[24];
@@ -1540,21 +1540,21 @@ public:
       }
 
     } else if (_phase == KEYBOARD) {
-      auto res = _kb.handleInput(c);
+      auto res = _kb->handleInput(c);
       if (res == KeyboardWidget::CANCELLED) {
         if (_share_mode) { _share_mode = false; _task->gotoHomeScreen(); }
         else             { _phase = MSG_PICK; }
       } else if (res == KeyboardWidget::DONE) {
         int prefix_len = _reply_mode ? (int)strlen(_reply_prefix) : 0;
-        if (_kb.len > prefix_len) {
+        if (_kb->len > prefix_len) {
           // Expand only the body — prefix "@[nick] " is preserved verbatim, so a nick
           // that happens to contain a placeholder token isn't substituted.
           char expanded[KB_MAX_LEN + 1];
           if (prefix_len > 0) {
-            memcpy(expanded, _kb.buf, prefix_len);
-            expandMsg(_kb.buf + prefix_len, expanded + prefix_len, sizeof(expanded) - prefix_len);
+            memcpy(expanded, _kb->buf, prefix_len);
+            expandMsg(_kb->buf + prefix_len, expanded + prefix_len, sizeof(expanded) - prefix_len);
           } else {
-            expandMsg(_kb.buf, expanded, sizeof(expanded));
+            expandMsg(_kb->buf, expanded, sizeof(expanded));
           }
           bool ok = sendText(expanded);
           afterSend(ok, expanded);
@@ -1581,7 +1581,7 @@ public:
       }
       if (c == KEY_ENTER) {
         if (_msg_sel == 0) {
-          _kb.begin(_reply_mode ? _reply_prefix : "");
+          _kb->begin(_reply_mode ? _reply_prefix : "");
           kbAddSensorPlaceholders(_kb, &sensors);
           _phase = KEYBOARD;
           return true;

@@ -13,8 +13,8 @@ class BotScreen : public UIScreen {
   bool _dirty;
 
   // keyboard state (reused for trigger and reply fields)
-  int            _kb_field;   // -1=off, 2=trigger, 3=reply DM, 4=reply Ch
-  KeyboardWidget _kb;
+  int             _kb_field;   // -1=off, 2=trigger, 3=reply DM, 4=reply Ch
+  KeyboardWidget* _kb;
 
   // channel cache (refreshed on enter)
   int     _num_channels;
@@ -38,7 +38,7 @@ class BotScreen : public UIScreen {
   }
 
 public:
-  BotScreen(UITask* task, NodePrefs* prefs) : _task(task), _prefs(prefs) {}
+  BotScreen(UITask* task, NodePrefs* prefs, KeyboardWidget* kb) : _task(task), _prefs(prefs), _kb(kb) {}
 
   void enter() {
     _sel      = 0;
@@ -52,7 +52,7 @@ public:
     display.setColor(DisplayDriver::LIGHT);
 
     if (_kb_field >= 0) {
-      return _kb.render(display);
+      return _kb->render(display);
     }
 
     int avail_h = display.height() - display.listStart();
@@ -109,17 +109,17 @@ public:
     bool cancel = (c == KEY_CANCEL || c == KEY_CONTEXT_MENU);
 
     if (_kb_field >= 0) {
-      auto res = _kb.handleInput(c);
+      auto res = _kb->handleInput(c);
       if (res == KeyboardWidget::DONE) {
         if (_kb_field == 2) {
-          strncpy(_prefs->bot_trigger, _kb.buf, sizeof(_prefs->bot_trigger) - 1);
+          strncpy(_prefs->bot_trigger, _kb->buf, sizeof(_prefs->bot_trigger) - 1);
           _prefs->bot_trigger[sizeof(_prefs->bot_trigger) - 1] = '\0';
           for (char* p = _prefs->bot_trigger; *p; p++) *p = (char)tolower((uint8_t)*p);
         } else if (_kb_field == 3) {
-          strncpy(_prefs->bot_reply_dm, _kb.buf, sizeof(_prefs->bot_reply_dm) - 1);
+          strncpy(_prefs->bot_reply_dm, _kb->buf, sizeof(_prefs->bot_reply_dm) - 1);
           _prefs->bot_reply_dm[sizeof(_prefs->bot_reply_dm) - 1] = '\0';
         } else {
-          strncpy(_prefs->bot_reply_ch, _kb.buf, sizeof(_prefs->bot_reply_ch) - 1);
+          strncpy(_prefs->bot_reply_ch, _kb->buf, sizeof(_prefs->bot_reply_ch) - 1);
           _prefs->bot_reply_ch[sizeof(_prefs->bot_reply_ch) - 1] = '\0';
         }
         _dirty    = true;
@@ -180,9 +180,9 @@ public:
         initial = _prefs->bot_reply_ch;
         max     = sizeof(_prefs->bot_reply_ch) - 1;
       }
-      _kb.begin(initial, max);
+      _kb->begin(initial, max);
       if (_sel == 2) {
-        _kb.clearPlaceholders();  // trigger is literal text — placeholders never match incoming msgs
+        _kb->clearPlaceholders();  // trigger is literal text — placeholders never match incoming msgs
       } else {
         kbAddSensorPlaceholders(_kb, &sensors);
       }
