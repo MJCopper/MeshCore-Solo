@@ -102,7 +102,8 @@ protected:
   virtual bool shouldOverwriteWhenFull() const { return false; }
   virtual uint8_t getAutoAddMaxHops() const { return 0; }  // 0 = no limit, 1 = direct (0 hops), N = up to N-1 hops
   virtual void onContactOverwrite(const uint8_t* pub_key) {};
-  virtual void onDiscoveredContact(ContactInfo& contact, bool is_new, uint8_t path_len, const uint8_t* path, bool was_flood) = 0;
+  virtual void onDiscoveredContact(ContactInfo& contact, bool is_new, uint8_t path_len, const uint8_t* path) = 0;
+  virtual void onDiscoveredAdvert(bool was_flood) {}
   virtual ContactInfo* processAck(const uint8_t *data) = 0;
   virtual void onContactPathUpdated(const ContactInfo& contact) = 0;
   virtual bool onContactPathRecv(ContactInfo& from, uint8_t* in_path, uint8_t in_path_len, uint8_t* out_path, uint8_t out_path_len, uint8_t extra_type, uint8_t* extra, uint8_t extra_len);

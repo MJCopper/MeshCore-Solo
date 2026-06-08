@@ -360,9 +360,11 @@ void MyMesh::onContactsFull() {
   }
 }
 
-void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path_len, const uint8_t* path, bool was_flood) {
+void MyMesh::onDiscoveredAdvert(bool was_flood) {
   if (_ui) _ui->notify(was_flood ? UIEventType::advertReceivedFlood : UIEventType::advertReceivedZeroHop);
+}
 
+void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path_len, const uint8_t* path) {
   if (_serial->isConnected()) {
     if (is_new) {
       writeContactRespFrame(PUSH_CODE_NEW_ADVERT, contact);

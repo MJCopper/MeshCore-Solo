@@ -144,7 +144,8 @@ void BaseChatMesh::onAdvertRecv(mesh::Packet* packet, const mesh::Identity& id, 
     if (!shouldAutoAddContactType(parser.getType())) {
       ContactInfo ci;
       populateContactFromAdvert(ci, id, parser, timestamp);
-      onDiscoveredContact(ci, true, packet->path_len, packet->path, packet->isRouteFlood());       // let UI know
+      onDiscoveredContact(ci, true, packet->path_len, packet->path);       // let UI know
+      onDiscoveredAdvert(packet->isRouteFlood());
       return;
     }
 
@@ -153,7 +154,8 @@ void BaseChatMesh::onAdvertRecv(mesh::Packet* packet, const mesh::Identity& id, 
     if (max_hops > 0 && packet->getPathHashCount() >= max_hops) {
       ContactInfo ci;
       populateContactFromAdvert(ci, id, parser, timestamp);
-      onDiscoveredContact(ci, true, packet->path_len, packet->path, packet->isRouteFlood());       // let UI know
+      onDiscoveredContact(ci, true, packet->path_len, packet->path);       // let UI know
+      onDiscoveredAdvert(packet->isRouteFlood());
       return;
     }
 
@@ -161,7 +163,8 @@ void BaseChatMesh::onAdvertRecv(mesh::Packet* packet, const mesh::Identity& id, 
     if (from == NULL) {
       ContactInfo ci;
       populateContactFromAdvert(ci, id, parser, timestamp);
-      onDiscoveredContact(ci, true, packet->path_len, packet->path, packet->isRouteFlood());
+      onDiscoveredContact(ci, true, packet->path_len, packet->path);
+      onDiscoveredAdvert(packet->isRouteFlood());
       onContactsFull();
       MESH_DEBUG_PRINTLN("onAdvertRecv: unable to allocate contact slot for new contact");
       return;
@@ -183,7 +186,8 @@ void BaseChatMesh::onAdvertRecv(mesh::Packet* packet, const mesh::Identity& id, 
   from->last_advert_timestamp = timestamp;
   from->lastmod = getRTCClock()->getCurrentTime();
 
-  onDiscoveredContact(*from, is_new, packet->path_len, packet->path, packet->isRouteFlood());       // let UI know
+  onDiscoveredContact(*from, is_new, packet->path_len, packet->path);       // let UI know
+  onDiscoveredAdvert(packet->isRouteFlood());
 }
 
 int BaseChatMesh::searchPeersByHash(const uint8_t* hash) {
