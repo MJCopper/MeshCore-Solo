@@ -1468,7 +1468,6 @@ switch(t){
     _last_notif_ch_idx = -1;
     break;
   }
-  case UIEventType::advertReceived:
   case UIEventType::advertReceivedFlood:
   case UIEventType::advertReceivedZeroHop: {
     bool is_flood = (t == UIEventType::advertReceivedFlood);
