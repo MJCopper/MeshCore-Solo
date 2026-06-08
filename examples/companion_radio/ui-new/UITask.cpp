@@ -1,4 +1,5 @@
 #include "UITask.h"
+#include "SoundNotifier.h"
 #include <helpers/TxtDataHelpers.h>
 #include "../MyMesh.h"
 #include "../MsgExpand.h"
@@ -1375,124 +1376,23 @@ void UITask::showAlert(const char* text, int duration_millis) {
   _alert_expiry = millis() + duration_millis;
 }
 
-static void buildMelodyFromPrefs(const NodePrefs* p, int slot, char* buf, int size) {
-  const uint8_t* notes = (slot == 2) ? p->ringtone2_notes   : p->ringtone_notes;
-  uint8_t        len   = (slot == 2) ? p->ringtone2_len      : p->ringtone_len;
-  uint8_t        bpm_i = (slot == 2) ? p->ringtone2_bpm_idx  : p->ringtone_bpm_idx;
-  NodePrefs::buildRTTTLString(notes, len, bpm_i, buf, size);
-}
-
 void UITask::notify(UIEventType t) {
 #if defined(PIN_BUZZER)
-switch(t){
-  case UIEventType::contactMessage: {
-    bool play = false;
-    bool force = false;
-    if (_last_notif_dm_valid && _node_prefs) {
-      uint8_t state = 0;
-      for (int i = 0; i < NodePrefs::DM_NOTIF_TABLE_MAX; i++) {
-        if (_node_prefs->dm_notif[i].state &&
-            memcmp(_node_prefs->dm_notif[i].prefix, _last_notif_dm_prefix, 4) == 0) {
-          state = _node_prefs->dm_notif[i].state; break;
-        }
-      }
-      if (state == 2) { play = true; force = true; }   // force-on
-      else if (state == 1) { /* muted */ }
-      else { play = !buzzer.isQuiet(); }               // default: follow global
-    } else {
-      play = !buzzer.isQuiet();
-    }
+{
+  SoundNotifier sn(buzzer, _node_prefs, _notif_mel_buf, sizeof(_notif_mel_buf));
+  switch(t){
+  case UIEventType::contactMessage:
+    sn.playDM(_last_notif_dm_valid, _last_notif_dm_prefix);
     _last_notif_dm_valid = false;
-    if (play) {
-      int slot = _node_prefs ? (int)_node_prefs->notif_melody_dm : 0;
-      if (_node_prefs) {
-        for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++)
-          if (_node_prefs->dm_melody[i].slot &&
-              memcmp(_node_prefs->dm_melody[i].prefix, _last_notif_dm_prefix, 4) == 0)
-            { slot = _node_prefs->dm_melody[i].slot; break; }
-      }
-      bool custom_played = false;
-      if (slot == 3) {
-        custom_played = true;  // explicit silence
-      } else if (slot > 0 && _node_prefs) {
-        if (buzzer.isPlaying()) buzzer.stop();  // stop before overwriting _notif_mel_buf
-        buildMelodyFromPrefs(_node_prefs, slot, _notif_mel_buf, sizeof(_notif_mel_buf));
-        if (_notif_mel_buf[0]) {
-          if (force) buzzer.playForced(_notif_mel_buf); else buzzer.play(_notif_mel_buf);
-          custom_played = true;
-        }
-      }
-      if (!custom_played) {
-        if (force) buzzer.playForced("MsgRcv3:d=4,o=6,b=200:32e,32g,32b,16c7");
-        else       buzzer.play("MsgRcv3:d=4,o=6,b=200:32e,32g,32b,16c7");
-      }
-    }
     break;
-  }
-  case UIEventType::channelMessage: {
-    bool play = false;
-    bool force = false;
-    if (_last_notif_ch_idx >= 0 && _last_notif_ch_idx < 64 && _node_prefs) {
-      uint64_t mask = 1ULL << _last_notif_ch_idx;
-      if (_node_prefs->ch_notif_override & mask) {
-        if (!(_node_prefs->ch_notif_muted & mask)) { play = true; force = true; }
-      } else {
-        play = !buzzer.isQuiet();
-      }
-    } else {
-      play = !buzzer.isQuiet();
-    }
-    if (play) {
-      int slot = _node_prefs ? (int)_node_prefs->notif_melody_ch : 0;
-      if (_last_notif_ch_idx >= 0 && _last_notif_ch_idx < 64 && _node_prefs) {
-        uint64_t mask = 1ULL << _last_notif_ch_idx;
-        if (_node_prefs->ch_notif_melody_set & mask)
-          slot = (_node_prefs->ch_notif_melody_2 & mask) ? 2 : 1;
-      }
-      bool custom_played = false;
-      if (slot == 3) {
-        custom_played = true;  // explicit silence
-      } else if (slot > 0 && _node_prefs) {
-        if (buzzer.isPlaying()) buzzer.stop();  // stop before overwriting _notif_mel_buf
-        buildMelodyFromPrefs(_node_prefs, slot, _notif_mel_buf, sizeof(_notif_mel_buf));
-        if (_notif_mel_buf[0]) {
-          if (force) buzzer.playForced(_notif_mel_buf); else buzzer.play(_notif_mel_buf);
-          custom_played = true;
-        }
-      }
-      if (!custom_played) {
-        if (force) buzzer.playForced("kerplop:d=16,o=6,b=120:32g#,32c#");
-        else       buzzer.play("kerplop:d=16,o=6,b=120:32g#,32c#");
-      }
-    }
+  case UIEventType::channelMessage:
+    sn.playCH(_last_notif_ch_idx);
     _last_notif_ch_idx = -1;
     break;
-  }
   case UIEventType::advertReceivedFlood:
-  case UIEventType::advertReceivedZeroHop: {
-    bool is_flood = (t == UIEventType::advertReceivedFlood);
-    if (_node_prefs && _node_prefs->advert_sound_scope == ADVERT_SOUND_SCOPE_ZERO_HOP && is_flood) {
-      break;
-    }
-    if (!buzzer.isQuiet()) {
-      int slot = _node_prefs ? (int)_node_prefs->notif_melody_ad : 0;
-      bool custom_played = false;
-      if (slot == 3) {
-        custom_played = true;  // explicit silence
-      } else if (slot > 0 && _node_prefs) {
-        if (buzzer.isPlaying()) buzzer.stop();  // stop before overwriting _notif_mel_buf
-        buildMelodyFromPrefs(_node_prefs, slot, _notif_mel_buf, sizeof(_notif_mel_buf));
-        if (_notif_mel_buf[0]) {
-          buzzer.play(_notif_mel_buf);
-          custom_played = true;
-        }
-      }
-      if (!custom_played) {
-        buzzer.play("MsgRcv3:d=4,o=6,b=200:32e,32g,32b,16c7");
-      }
-    }
+  case UIEventType::advertReceivedZeroHop:
+    sn.playAD(t == UIEventType::advertReceivedFlood);
     break;
-  }
   case UIEventType::ack:
     buzzer.play("ack:d=32,o=8,b=120:c");
     break;
@@ -1500,6 +1400,7 @@ switch(t){
   case UIEventType::none:
   default:
     break;
+  }
 }
 #endif
 
