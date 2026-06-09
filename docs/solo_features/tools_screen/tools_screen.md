@@ -134,7 +134,14 @@ There is no magnetometer, so the screen shows two *absolute* bearings and you co
 
 ### Downloading GPX
 
-**Recommended — `tools/trail_export.py`** (auto-detects the port, captures from `<?xml` to `</gpx>`, writes a timestamped file under `tools/gpx/`):
+**Easiest — [Solo GPX Downloader](https://marekzegare4.github.io/solo-tools/)** (browser-based, no install):
+
+1. Open the link in **Chrome** or **Edge** (Web Serial API required).
+2. Click **Connect device** and select the USB serial port.
+3. On the device: **Tools › Trail** → **Hold Enter** → **Export (live)** or **Export (saved)**.
+4. The browser captures the stream automatically — set a filename and click **Download**.
+
+**Script — `tools/trail_export.py`** (auto-detects the port, captures from `<?xml` to `</gpx>`, writes a timestamped file under `tools/gpx/`):
 
 ```sh
 uv run tools/trail_export.py
