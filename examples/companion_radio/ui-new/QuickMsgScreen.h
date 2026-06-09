@@ -1197,7 +1197,11 @@ public:
           if (the_mesh.getContactByIdx(_sorted[_contact_sel], ci)) {
             int sel = _ctx_menu.selectedIndex();
             if (sel == 0) {
+              int cleared = (int)_task->getDMUnread(ci.id.pub_key);
               _task->clearDMUnread(ci.id.pub_key);
+              char msg[32];
+              snprintf(msg, sizeof(msg), "%d marked read", cleared);
+              _task->showAlert(msg, 800);
             } else if (sel == 3) {
               // Pin / Unpin
               int pinned_slot = _task->findFavouriteSlot(ci.id.pub_key);
@@ -1327,7 +1331,11 @@ public:
           uint8_t ch_idx = _channel_indices[_channel_sel];
           int sel = _ctx_menu.selectedIndex();
           if (sel == 0) {
+            int cleared = (int)_ch_unread[ch_idx];
             _ch_unread[ch_idx] = 0;
+            char msg[32];
+            snprintf(msg, sizeof(msg), "%d marked read", cleared);
+            _task->showAlert(msg, 800);
           }
           // sel 1/2/3 already handled by LEFT/RIGHT; ENTER just closes.
         }
