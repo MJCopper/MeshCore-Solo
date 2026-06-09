@@ -134,7 +134,7 @@ static int battMvToPercent(int mv, int low_mv) {
   static const struct { uint16_t mv; uint8_t pct; } CURVE[] = {
     {3200,  0}, {3300,  3}, {3400,  8}, {3500, 15},
     {3600, 25}, {3650, 33}, {3700, 45}, {3750, 58},
-    {3800, 68}, {3900, 77}, {4000, 86}, {4100, 93}, {4200, 100}
+    {3800, 68}, {3900, 77}, {4000, 86}, {4100, 93}, {4170, 100}
   };
   static const int CURVE_LEN = sizeof(CURVE) / sizeof(CURVE[0]);
   auto curveAt = [&](int v) -> int {

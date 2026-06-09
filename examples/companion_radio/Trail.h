@@ -6,8 +6,9 @@
 #include <time.h>
 
 // RAM-only GPS trail ring buffer.
-// Storage cost: 256 × 12 B = 3 KB. The trail survives auto-off (only the
-// display blanks) but is lost on reboot — user explicitly snapshots to a
+// Storage cost: CAPACITY(512) × sizeof(TrailPoint)(16 B, padded) = 8 KB,
+// always resident (UITask::_trail member). The trail survives auto-off (only
+// the display blanks) but is lost on reboot — user explicitly snapshots to a
 // LittleFS slot before powering down to keep it.
 
 struct TrailPoint {
@@ -265,7 +266,7 @@ public:
         "<wpt lat=\"%.6f\" lon=\"%.6f\"><name>%s</name>",
         w.lat_1e6 / 1.0e6, w.lon_1e6 / 1.0e6, esc);
       if (len > 0) {
-        if ((size_t)len > sizeof(buf)) len = sizeof(buf);
+        if ((size_t)len >= sizeof(buf)) len = sizeof(buf) - 1;  // truncated: emit chars only, not the NUL
         n += out.write((const uint8_t*)buf, (size_t)len);
       }
       if (w.ts > 1000000000UL) {                 // append <time> when the RTC was set
@@ -276,7 +277,7 @@ public:
             "<time>%04d-%02d-%02dT%02d:%02d:%02dZ</time>",
             gt->tm_year + 1900, gt->tm_mon + 1, gt->tm_mday,
             gt->tm_hour, gt->tm_min, gt->tm_sec);
-          if (len > 0) { if ((size_t)len > sizeof(buf)) len = sizeof(buf);
+          if (len > 0) { if ((size_t)len >= sizeof(buf)) len = sizeof(buf) - 1;
                          n += out.write((const uint8_t*)buf, (size_t)len); }
         }
       }
@@ -314,7 +315,7 @@ public:
       gt->tm_year + 1900, gt->tm_mon + 1, gt->tm_mday,
       gt->tm_hour, gt->tm_min, gt->tm_sec);
     if (len < 0) return n;
-    if ((size_t)len > sizeof(buf)) len = sizeof(buf);  // snprintf returns intended size
+    if ((size_t)len >= sizeof(buf)) len = sizeof(buf) - 1;  // truncated: emit chars only, not the NUL
     n += out.write((const uint8_t*)buf, (size_t)len);
     return n;
   }
