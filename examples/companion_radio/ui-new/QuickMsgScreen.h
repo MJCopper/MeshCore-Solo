@@ -551,6 +551,12 @@ public:
     return total;
   }
 
+  void markReadAlert(int n) {
+    char msg[32];
+    snprintf(msg, sizeof(msg), "%d marked read", n);
+    _task->showAlert(msg, 800);
+  }
+
   void clearAllChannelUnread() {
     memset(_ch_unread, 0, sizeof(_ch_unread));
   }
@@ -1116,9 +1122,7 @@ public:
             cleared = _task->getRoomUnreadCount();
             _task->clearRoomUnread();
           }
-          char msg[32];
-          snprintf(msg, sizeof(msg), "%d marked read", cleared);
-          _task->showAlert(msg, 800);
+          markReadAlert(cleared);
         }
         return true;
       }
@@ -1199,9 +1203,7 @@ public:
             if (sel == 0) {
               int cleared = (int)_task->getDMUnread(ci.id.pub_key);
               _task->clearDMUnread(ci.id.pub_key);
-              char msg[32];
-              snprintf(msg, sizeof(msg), "%d marked read", cleared);
-              _task->showAlert(msg, 800);
+              markReadAlert(cleared);
             } else if (sel == 3) {
               // Pin / Unpin
               int pinned_slot = _task->findFavouriteSlot(ci.id.pub_key);
@@ -1333,9 +1335,7 @@ public:
           if (sel == 0) {
             int cleared = (int)_ch_unread[ch_idx];
             _ch_unread[ch_idx] = 0;
-            char msg[32];
-            snprintf(msg, sizeof(msg), "%d marked read", cleared);
-            _task->showAlert(msg, 800);
+            markReadAlert(cleared);
           }
           // sel 1/2/3 already handled by LEFT/RIGHT; ENTER just closes.
         }
