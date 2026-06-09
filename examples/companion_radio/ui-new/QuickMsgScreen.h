@@ -189,7 +189,6 @@ class QuickMsgScreen : public UIScreen {
   // Save the location parsed from the open message as a waypoint. Uses the
   // [WAY] label when present, else auto-names it like a manually-marked point.
   void saveSharedWaypoint() {
-    if (_task->waypoints().full()) { _task->showAlert("Waypoints full", 1000); return; }
     char label[WAYPOINT_LABEL_LEN];
     if (_nav_label[0]) {
       strncpy(label, _nav_label, sizeof(label) - 1);
@@ -197,13 +196,7 @@ class QuickMsgScreen : public UIScreen {
     } else {
       snprintf(label, sizeof(label), "WP%d", _task->waypoints().count() + 1);
     }
-    if (_task->waypoints().add(_nav_lat, _nav_lon,
-                               (uint32_t)rtc_clock.getCurrentTime(), label)) {
-      _task->saveWaypoints();
-      _task->showAlert("Waypoint saved", 800);
-    } else {
-      _task->showAlert("Waypoints full", 1000);
-    }
+    _task->addWaypoint(_nav_lat, _nav_lon, label);
   }
 
   void renderNav(DisplayDriver& display) {
@@ -1590,7 +1583,7 @@ public:
       if (c == KEY_ENTER) {
         if (_msg_sel == 0) {
           _kb->begin(_reply_mode ? _reply_prefix : "");
-          kbAddSensorPlaceholders(_kb, &sensors);
+          kbAddSensorPlaceholders(*_kb, &sensors);
           _phase = KEYBOARD;
           return true;
         }

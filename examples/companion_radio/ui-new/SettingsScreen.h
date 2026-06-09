@@ -836,7 +836,7 @@ public:
       // can't overflow it on save.
       _kb->begin(p ? p->custom_msgs[slot] : "",
                 p ? (int)sizeof(p->custom_msgs[slot]) - 1 : KB_MAX_LEN);
-      kbAddSensorPlaceholders(_kb, &sensors);
+      kbAddSensorPlaceholders(*_kb, &sensors);
       return true;
     }
     return false;

@@ -468,13 +468,7 @@ private:
     char label[WAYPOINT_LABEL_LEN];
     if (_add_label[0]) { strncpy(label, _add_label, sizeof(label) - 1); label[sizeof(label) - 1] = '\0'; }
     else               snprintf(label, sizeof(label), "WP%d", _task->waypoints().count() + 1);
-    if (_task->waypoints().add(lat, lon, (uint32_t)rtc_clock.getCurrentTime(), label)) {
-      _task->saveWaypoints();
-      _task->showAlert("Waypoint saved", 800);
-      _wp_mode = WP_OFF;
-    } else {
-      _task->showAlert("Waypoints full", 1000);
-    }
+    if (_task->addWaypoint(lat, lon, label)) { _wp_mode = WP_OFF; }
   }
 
   void renderAddForm(DisplayDriver& display) {
@@ -511,12 +505,7 @@ private:
       snprintf(auto_lbl, sizeof(auto_lbl), "WP%d", _task->waypoints().count() + 1);
       buf = auto_lbl;
     }
-    if (_task->waypoints().add(_mark_lat, _mark_lon, _mark_ts, buf)) {
-      _task->saveWaypoints();
-      _task->showAlert("Waypoint saved", 800);
-    } else {
-      _task->showAlert("Waypoints full", 1000);
-    }
+    _task->addWaypoint(_mark_lat, _mark_lon, _mark_ts, buf);
   }
 
   void renderWpList(DisplayDriver& display) {

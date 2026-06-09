@@ -3,7 +3,7 @@
 // UITask::notify() don't create merge conflicts.
 #ifdef PIN_BUZZER
 #include <helpers/ui/buzzer.h>
-#include "NodePrefs.h"
+#include "../NodePrefs.h"
 
 class SoundNotifier {
   genericBuzzer&   _buz;

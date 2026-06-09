@@ -151,7 +151,11 @@ public:
   void gotoCompassScreen();
   TrailStore& trail() { return _trail; }
   WaypointStore& waypoints() { return _waypoints; }
-  void saveWaypoints();   // persist the table to /waypoints
+  void saveWaypoints();
+  // Add a waypoint, persist, and show the standard "Waypoint saved" / "Waypoints
+  // full" alert. Returns true on success. The ts-less overload uses current RTC time.
+  bool addWaypoint(int32_t lat, int32_t lon, uint32_t ts, const char* label);
+  bool addWaypoint(int32_t lat, int32_t lon, const char* label);
   // Current course over ground in degrees (0..359), or false if not enough
   // recent movement to derive a stable heading. Independent of trail logging.
   bool currentCourse(int& deg_out) const;

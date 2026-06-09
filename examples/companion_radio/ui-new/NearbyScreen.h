@@ -12,7 +12,7 @@ class NearbyScreen : public UIScreen {
 
   int _visible   = 4;   // updated each render; used by handleInput for scroll clamping
 
-  static const int FILTER_COUNT = 6;
+  static const int FILTER_COUNT = 7;
   static const char*    FILTER_LABELS[FILTER_COUNT];
   static const uint8_t  FILTER_TYPES[FILTER_COUNT];
 
@@ -121,7 +121,7 @@ class NearbyScreen : public UIScreen {
       ContactInfo ci;
       if (!the_mesh.getContactByIdx(i, ci)) continue;
       if (_filter == 0 && !(ci.flags & 1)) continue;
-      if (_filter >= 2 && ci.type != FILTER_TYPES[_filter]) continue;
+      if (_filter >= 2 && _filter < FILTER_COUNT - 1 && ci.type != FILTER_TYPES[_filter]) continue;
 
       Entry& e = _entries[_count++];
       strncpy(e.name, ci.name, sizeof(e.name) - 1);
@@ -137,12 +137,16 @@ class NearbyScreen : public UIScreen {
       e.lastmod     = ci.lastmod;
     }
 
-    // sort by distance ascending; nodes without GPS go to the end
     for (int i = 0; i < _count - 1; i++) {
       int best = i;
       for (int j = i + 1; j < _count; j++) {
-        float dj = _entries[j].dist_km, db = _entries[best].dist_km;
-        if (dj >= 0.0f && (db < 0.0f || dj < db)) best = j;
+        if (_filter == FILTER_COUNT - 1) {
+          uint32_t tj = _entries[j].lastmod, tb = _entries[best].lastmod;
+          if (tj > 0 && (tb == 0 || tj > tb)) best = j;  // descending — most recent first
+        } else {
+          float dj = _entries[j].dist_km, db = _entries[best].dist_km;
+          if (dj >= 0.0f && (db < 0.0f || dj < db)) best = j;  // ascending — closest first
+        }
       }
       if (best != i) { Entry tmp = _entries[i]; _entries[i] = _entries[best]; _entries[best] = tmp; }
     }
@@ -629,11 +633,19 @@ public:
         display.drawTextEllipsized(2, y, dist_col - 4, filt);
 
         display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
-        char dist[10];
-        if (e.dist_km >= 0.0f) geo::fmtDist(dist, sizeof(dist), e.dist_km, useImperial());
-        else                   strncpy(dist, "?GPS", sizeof(dist));
+        char right[10];
+        if (_filter == FILTER_COUNT - 1) {
+          uint32_t now = rtc_clock.getCurrentTime();
+          uint32_t age = (e.lastmod > 0 && now >= e.lastmod) ? now - e.lastmod : 0;
+          if      (age < 60)   snprintf(right, sizeof(right), "%us", age);
+          else if (age < 3600) snprintf(right, sizeof(right), "%um", age / 60);
+          else                 snprintf(right, sizeof(right), "%uh", age / 3600);
+        } else {
+          if (e.dist_km >= 0.0f) geo::fmtDist(right, sizeof(right), e.dist_km, useImperial());
+          else                   strncpy(right, "?GPS", sizeof(right));
+        }
         display.setCursor(dist_col, y);
-        display.print(dist);
+        display.print(right);
       }
 
       display.setColor(DisplayDriver::LIGHT);
@@ -669,16 +681,27 @@ public:
       if (_opts.active) {
         auto res = _opts.handleInput(c);
         if (res == PopupMenu::SELECTED) {
-          if (_opts.selectedIndex() == 0) {            // Navigate
+          int idx = _opts.selectedIndex();
+          if (idx == 0) {                              // Navigate
             if (_sel < _count) {
               const Entry& e = _entries[_sel];
               if (e.lat_e6 != 0 || e.lon_e6 != 0) _nav = true;
               else _task->showAlert("No node GPS", 1000);
             }
-          } else {                                      // Ping
+          } else if (idx == 1) {                       // Ping
             uint8_t pk[PUB_KEY_SIZE];
             openPingMenu();
             if (selectedStoredPubKey(pk)) startPingForKey(pk);
+          } else if (idx == 2 && _sel < _count) {      // Save waypoint
+            const Entry& e = _entries[_sel];
+            if (e.lat_e6 == 0 && e.lon_e6 == 0) {
+              _task->showAlert("No node GPS", 1000);
+            } else {
+              char label[WAYPOINT_LABEL_LEN];
+              strncpy(label, e.name, WAYPOINT_LABEL_LEN - 1);
+              label[WAYPOINT_LABEL_LEN - 1] = '\0';
+              _task->addWaypoint(e.lat_e6, e.lon_e6, label);
+            }
           }
         }
         return true;
@@ -694,9 +717,10 @@ public:
 
       if (c == KEY_CANCEL) { _detail = false; closePingMenu(); return true; }
       if (c == KEY_CONTEXT_MENU) {
-        _opts.begin("Options", 2);
+        _opts.begin("Options", 3);
         _opts.addItem("Navigate");
         _opts.addItem("Ping");
+        _opts.addItem("Save waypoint");
         return true;
       }
       return true;
@@ -705,16 +729,39 @@ public:
     // ── context menu ─────────────────────────────────────────────────────────
     if (_ctx_menu.active) {
       auto res = _ctx_menu.handleInput(c);
-      if (res == PopupMenu::SELECTED)
-        enterDiscoverMode();
+      if (res == PopupMenu::SELECTED) {
+        int sel = _ctx_menu.selectedIndex();
+        if (sel == 0) {
+          enterDiscoverMode();
+        } else if (sel == 1 && _sel < _count) {
+          const Entry& e = _entries[_sel];
+          if (e.lat_e6 != 0 || e.lon_e6 != 0) _nav = true;
+          else _task->showAlert("No node GPS", 1000);
+        } else if (sel == 2 && _sel < _count) {
+          const Entry& e = _entries[_sel];
+          if (e.lat_e6 == 0 && e.lon_e6 == 0) {
+            _task->showAlert("No node GPS", 1000);
+          } else {
+            char label[WAYPOINT_LABEL_LEN];
+            strncpy(label, e.name, WAYPOINT_LABEL_LEN - 1);
+            label[WAYPOINT_LABEL_LEN - 1] = '\0';
+            _task->addWaypoint(e.lat_e6, e.lon_e6, label);
+          }
+        }
+      }
       return true;
     }
 
     // ── list view ────────────────────────────────────────────────────────────
     if (c == KEY_CANCEL) { _task->gotoToolsScreen(); return true; }
     if (c == KEY_CONTEXT_MENU) {
-      _ctx_menu.begin("Options", 1);
+      bool has_node = (_count > 0 && _sel < _count);
+      _ctx_menu.begin("Options", has_node ? 3 : 1);
       _ctx_menu.addItem("Discover nearby");
+      if (has_node) {
+        _ctx_menu.addItem("Navigate");
+        _ctx_menu.addItem("Save waypoint");
+      }
       return true;
     }
     if (c == KEY_UP && _sel > 0) {
@@ -747,5 +794,5 @@ public:
   }
 };
 
-const char*   NearbyScreen::FILTER_LABELS[6] = { "Fav", "ALL", "Comp", "Rpt", "Room", "Snsr" };
-const uint8_t NearbyScreen::FILTER_TYPES[6]  = { 0, 0, ADV_TYPE_CHAT, ADV_TYPE_REPEATER, ADV_TYPE_ROOM, ADV_TYPE_SENSOR };
+const char*   NearbyScreen::FILTER_LABELS[7] = { "Fav", "ALL", "Comp", "Rpt", "Room", "Snsr", "TIME" };
+const uint8_t NearbyScreen::FILTER_TYPES[7]  = { 0, 0, ADV_TYPE_CHAT, ADV_TYPE_REPEATER, ADV_TYPE_ROOM, ADV_TYPE_SENSOR, 0 };

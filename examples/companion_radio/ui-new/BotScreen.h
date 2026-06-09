@@ -184,7 +184,7 @@ public:
       if (_sel == 2) {
         _kb->clearPlaceholders();  // trigger is literal text — placeholders never match incoming msgs
       } else {
-        kbAddSensorPlaceholders(_kb, &sensors);
+        kbAddSensorPlaceholders(*_kb, &sensors);
       }
       return true;
     }

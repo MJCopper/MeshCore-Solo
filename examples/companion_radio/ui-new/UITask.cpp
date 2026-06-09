@@ -1964,6 +1964,21 @@ void UITask::saveWaypoints() {
   f.close();
 }
 
+bool UITask::addWaypoint(int32_t lat, int32_t lon, uint32_t ts, const char* label) {
+  if (_waypoints.full()) { showAlert("Waypoints full", 1000); return false; }
+  if (_waypoints.add(lat, lon, ts, label)) {
+    saveWaypoints();
+    showAlert("Waypoint saved", 800);
+    return true;
+  }
+  showAlert("Waypoints full", 1000);
+  return false;
+}
+
+bool UITask::addWaypoint(int32_t lat, int32_t lon, const char* label) {
+  return addWaypoint(lat, lon, (uint32_t)rtc_clock.getCurrentTime(), label);
+}
+
 char UITask::checkDisplayOn(char c) {
   if (_display != NULL) {
     if (!_display->isOn()) {
