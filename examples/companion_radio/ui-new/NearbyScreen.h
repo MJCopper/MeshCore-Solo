@@ -139,11 +139,14 @@ class NearbyScreen : public UIScreen {
       e.lastmod     = ci.lastmod;
     }
 
+    uint32_t _now_ts = rtc_clock.getCurrentTime();
     for (int i = 0; i < _count - 1; i++) {
       int best = i;
       for (int j = i + 1; j < _count; j++) {
         if (_filter == FILTER_COUNT - 1) {
-          uint32_t tj = _entries[j].lastmod, tb = _entries[best].lastmod;
+          // Treat lastmod=0 or lastmod>now (RTC not synced) as "unknown" → sort to bottom.
+          uint32_t tj = (_entries[j].lastmod > 0 && _now_ts >= _entries[j].lastmod) ? _entries[j].lastmod : 0;
+          uint32_t tb = (_entries[best].lastmod > 0 && _now_ts >= _entries[best].lastmod) ? _entries[best].lastmod : 0;
           if (tj > 0 && (tb == 0 || tj > tb)) best = j;  // descending — most recent first
         } else {
           float dj = _entries[j].dist_km, db = _entries[best].dist_km;
