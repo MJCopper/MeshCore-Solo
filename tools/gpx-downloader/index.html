@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MeshCore GPX Downloader</title>
+  <style>
+    :root {
+      --bg:     #12121e;
+      --card:   #1a1a2e;
+      --green:  #4ecca3;
+      --yellow: #f6c90e;
+      --text:   #e8e8f0;
+      --muted:  #6a6a88;
+      --err:    #e05c5c;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100svh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.25rem;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 2rem 2.25rem;
+      width: 100%;
+      max-width: 460px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+    }
+    h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; }
+    .subtitle { color: var(--muted); font-size: 0.82rem; margin-top: 0.2rem; margin-bottom: 2rem; }
+
+    .step { margin-bottom: 1.6rem; }
+    .step-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 0.55rem;
+    }
+
+    /* ---- buttons ---- */
+    button {
+      background: var(--green);
+      color: #0d1a14;
+      border: none;
+      border-radius: 8px;
+      padding: 0.55rem 1.25rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.12s;
+      white-space: nowrap;
+    }
+    button:disabled { opacity: 0.3; cursor: default; }
+    button:not(:disabled):hover { opacity: 0.82; }
+    button.ghost {
+      background: transparent;
+      color: var(--green);
+      border: 1.5px solid var(--green);
+    }
+
+    /* ---- connection row ---- */
+    .conn-row { display: flex; align-items: center; gap: 0.75rem; }
+    .dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .dot.on        { background: var(--green); }
+    .dot.receiving { background: var(--yellow); animation: blink 0.9s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.25} }
+    .conn-label { font-size: 0.82rem; color: var(--muted); }
+
+    /* ---- progress box ---- */
+    .hint { font-size: 0.82rem; color: var(--muted); margin-bottom: 0.5rem; }
+    .hint kbd {
+      background: #2a2a44;
+      border-radius: 4px;
+      padding: 0.05em 0.35em;
+      font-size: 0.78rem;
+      color: var(--text);
+    }
+    .progress-box {
+      background: #0a0a14;
+      border: 1px solid #252535;
+      border-radius: 8px;
+      padding: 0.7rem 0.9rem;
+      font-family: ui-monospace, monospace;
+      font-size: 0.78rem;
+      color: var(--green);
+      min-height: 2.6rem;
+      line-height: 1.5;
+    }
+    .progress-box.error { color: var(--err); }
+
+    /* ---- download row ---- */
+    .dl-row { display: flex; gap: 0.5rem; }
+    input[type="text"] {
+      flex: 1;
+      min-width: 0;
+      background: #0a0a14;
+      border: 1px solid #252535;
+      border-radius: 8px;
+      padding: 0.52rem 0.8rem;
+      color: var(--text);
+      font-size: 0.88rem;
+    }
+    input[type="text"]:focus { outline: none; border-color: var(--green); }
+
+    /* ---- warning banner ---- */
+    .warn {
+      background: #1e1400;
+      border: 1px solid #6a3800;
+      border-radius: 8px;
+      padding: 0.7rem 0.9rem;
+      font-size: 0.8rem;
+      color: var(--yellow);
+      margin-bottom: 1.5rem;
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>MeshCore GPX Downloader</h1>
+  <p class="subtitle">Receive trail data from device over USB serial</p>
+
+  <div id="noSerialWarn" class="warn hidden">
+    Web Serial API is not supported in this browser.<br>
+    Please use <strong>Chrome</strong> or <strong>Edge</strong> (desktop).
+  </div>
+
+  <!-- Step 1 -->
+  <div class="step">
+    <div class="step-label">Step 1 — Connect</div>
+    <div class="conn-row">
+      <button id="connectBtn">Connect device</button>
+      <span class="dot" id="dot"></span>
+      <span class="conn-label" id="connLabel">Disconnected</span>
+    </div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="step" id="step2">
+    <div class="step-label">Step 2 — Export from device</div>
+    <p class="hint">On device: <kbd>Trail</kbd> → <kbd>⋮</kbd> → <kbd>Export GPX</kbd></p>
+    <div class="progress-box" id="progressBox">Waiting for data…</div>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="step hidden" id="step3">
+    <div class="step-label">Step 3 — Save file</div>
+    <div class="dl-row">
+      <input type="text" id="filename" spellcheck="false" autocomplete="off">
+      <button id="downloadBtn">Download</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const $id = id => document.getElementById(id);
+
+let port       = null;
+let reader     = null;
+let gpxBuffer  = '';
+let capturing  = false;
+let captured   = false;
+
+// ---- initial state ----
+if (!('serial' in navigator)) {
+  $id('noSerialWarn').classList.remove('hidden');
+  $id('connectBtn').disabled = true;
+}
+
+resetFilename();
+
+// ---- connect / disconnect ----
+$id('connectBtn').addEventListener('click', async () => {
+  if (port) { await doDisconnect(); return; }
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    setConn(true);
+    readLoop();
+  } catch (e) {
+    if (e.name !== 'NotFoundError') showError('Connect failed: ' + e.message);
+  }
+});
+
+async function doDisconnect() {
+  if (reader) { try { await reader.cancel(); } catch {} reader = null; }
+  if (port)   { try { await port.close();    } catch {} port   = null; }
+  setConn(false);
+  if (!captured) resetProgress();
+}
+
+// ---- read loop ----
+async function readLoop() {
+  const dec = new TextDecoder();
+  try {
+    while (port?.readable) {
+      reader = port.readable.getReader();
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          processChunk(dec.decode(value, { stream: true }));
+        }
+      } finally {
+        reader.releaseLock();
+        reader = null;
+      }
+    }
+  } catch (_) {}
+  if (port) await doDisconnect();
+}
+
+// ---- GPX detection ----
+function processChunk(chunk) {
+  if (captured) return;
+
+  if (!capturing) {
+    const start = chunk.indexOf('<?xml');
+    if (start === -1) return;
+    capturing  = true;
+    gpxBuffer  = chunk.slice(start);
+    setDot('receiving');
+    $id('progressBox').textContent = `Receiving… ${gpxBuffer.length} B`;
+  } else {
+    gpxBuffer += chunk;
+    $id('progressBox').textContent = `Receiving… ${gpxBuffer.length} B`;
+  }
+
+  const end = gpxBuffer.indexOf('</gpx>');
+  if (end !== -1) {
+    gpxBuffer  = gpxBuffer.slice(0, end + 6);
+    capturing  = false;
+    captured   = true;
+    setDot(port ? 'on' : '');
+    $id('progressBox').textContent = `Done — ${gpxBuffer.length} B`;
+    $id('step3').classList.remove('hidden');
+  }
+}
+
+// ---- download ----
+$id('downloadBtn').addEventListener('click', () => {
+  if (!gpxBuffer) return;
+  const blob = new Blob([gpxBuffer], { type: 'application/gpx+xml' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = $id('filename').value.trim() || 'trail.gpx';
+  a.click();
+  URL.revokeObjectURL(url);
+
+  // Reset for next export
+  setTimeout(() => {
+    gpxBuffer = '';
+    captured  = false;
+    $id('step3').classList.add('hidden');
+    resetProgress();
+    resetFilename();
+  }, 400);
+});
+
+// ---- helpers ----
+function setConn(ok) {
+  setDot(ok ? 'on' : '');
+  $id('connLabel').textContent  = ok ? 'Connected' : 'Disconnected';
+  $id('connectBtn').textContent = ok ? 'Disconnect' : 'Connect device';
+}
+
+function setDot(cls) {
+  $id('dot').className = 'dot' + (cls ? ' ' + cls : '');
+}
+
+function resetProgress() {
+  $id('progressBox').className = 'progress-box';
+  $id('progressBox').textContent = 'Waiting for data…';
+  capturing = false;
+  gpxBuffer = '';
+}
+
+function resetFilename() {
+  const d = new Date().toISOString().slice(0, 10);
+  $id('filename').value = `trail_${d}.gpx`;
+}
+
+function showError(msg) {
+  $id('progressBox').className = 'progress-box error';
+  $id('progressBox').textContent = msg;
+}
+</script>
+</body>
+</html>
