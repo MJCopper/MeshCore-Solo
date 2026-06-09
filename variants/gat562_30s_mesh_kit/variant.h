@@ -86,10 +86,10 @@ extern "C"
  * Buttons
  */
 #define PIN_BUTTON1             (9) // Menu / User Button
-#define PIN_BUTTON2             (28) // Joystick Up
-#define PIN_BUTTON3             (4) // Joystick Down
-#define PIN_BUTTON4             (30) // Joystick Left
-#define PIN_BUTTON5             (31) // Joystick Right
+#define PIN_BUTTON2             (28) // Joystick Up    (P0.28, IC pin 35)
+#define PIN_BUTTON3             (4)  // Joystick Down  (P0.04, IC pin 37)
+#define PIN_BUTTON4             (30) // Joystick Left  (P0.30, IC pin 34)
+#define PIN_BUTTON5             (31) // Joystick Right (P0.31, IC pin 33)
 #define PIN_BUTTON6             (26) // Joystick Press
 #define PIN_BACK_BTN            PIN_BUTTON1
 #define JOYSTICK_UP             PIN_BUTTON2
@@ -216,7 +216,7 @@ extern "C"
 #define GPS_THREAD_INTERVAL     50
 #define PIN_GPS_TX              PIN_SERIAL1_RX
 #define PIN_GPS_RX              PIN_SERIAL1_TX
-#define PIN_GPS_EN              (33)
+#define PIN_GPS_EN              (34)  // IO2 = P1.02 — GPS module power enable
 #define PIN_GPS_PPS             (17)
 
 #ifdef __cplusplus

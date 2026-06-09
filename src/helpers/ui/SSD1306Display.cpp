@@ -53,6 +53,7 @@ void SSD1306Display::startFrame(Color bkg) {
 }
 
 void SSD1306Display::setTextSize(int sz) {
+  _text_sz = sz;
   display.setTextSize(sz);
 }
 

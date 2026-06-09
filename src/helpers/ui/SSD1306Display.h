@@ -19,6 +19,7 @@ class SSD1306Display : public DisplayDriver {
   Adafruit_SSD1306 display;
   bool _isOn;
   uint8_t _color;
+  int _text_sz = 1;
   RefCountedDigitalPin* _peripher_power;
 
   bool i2c_probe(TwoWire& wire, uint8_t addr);
@@ -30,6 +31,9 @@ public:
     _isOn = false; 
   }
   bool begin();
+
+  int getCharWidth()  const override { return 6 * _text_sz; }
+  int getLineHeight() const override { return 8 * _text_sz; }
 
   bool isOn() override { return _isOn; }
   void turnOn() override;
