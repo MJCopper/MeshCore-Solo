@@ -151,6 +151,12 @@ Options:
 
 Capture the GPS trail as a GPX 1.1 file by streaming it over USB serial.
 
+### [Solo GPX Downloader](https://marekzegare4.github.io/solo-tools/) — no install required
+
+Open the link in **Chrome** or **Edge**, click **Connect device**, then trigger the export on the device. The browser captures the stream and offers a timestamped `.gpx` file for download.
+
+### Script
+
 ```sh
 uv run tools/trail_export.py
 ```
