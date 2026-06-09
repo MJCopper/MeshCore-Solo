@@ -38,7 +38,9 @@ class NearbyScreen : public UIScreen {
   uint8_t _filter;
 
   unsigned long _detail_refresh_ms;
+  unsigned long _list_refresh_ms = 0;
   static const unsigned long DETAIL_REFRESH_MS = 10000UL;
+  static const unsigned long TIME_LIST_REFRESH_MS = 3000UL;
 
   PopupMenu _ctx_menu;
   PopupMenu _opts;            // detail-view Options: Navigate / Ping
@@ -605,6 +607,13 @@ public:
     }
 
     // ── list view ────────────────────────────────────────────────────────────
+    // In TIME mode re-sort periodically so newly-heard contacts bubble up.
+    if (_filter == FILTER_COUNT - 1 &&
+        millis() - _list_refresh_ms >= TIME_LIST_REFRESH_MS) {
+      refresh();
+      _list_refresh_ms = millis();
+    }
+
     int item_h   = display.lineStep();
     int start_y  = display.listStart();
     int dist_col = display.width() - display.getCharWidth() * 7;
@@ -644,7 +653,8 @@ public:
           if (e.dist_km >= 0.0f) geo::fmtDist(right, sizeof(right), e.dist_km, useImperial());
           else                   strncpy(right, "?GPS", sizeof(right));
         }
-        display.setCursor(dist_col, y);
+        // Right-align within the right column (2 px margin from edge).
+        display.setCursor(display.width() - display.getTextWidth(right) - 2, y);
         display.print(right);
       }
 
