@@ -645,10 +645,14 @@ public:
         char right[10];
         if (_filter == FILTER_COUNT - 1) {
           uint32_t now = rtc_clock.getCurrentTime();
-          uint32_t age = (e.lastmod > 0 && now >= e.lastmod) ? now - e.lastmod : 0;
-          if      (age < 60)   snprintf(right, sizeof(right), "%us", age);
-          else if (age < 3600) snprintf(right, sizeof(right), "%um", age / 60);
-          else                 snprintf(right, sizeof(right), "%uh", age / 3600);
+          if (e.lastmod == 0 || now < e.lastmod) {
+            snprintf(right, sizeof(right), "?");
+          } else {
+            uint32_t age = now - e.lastmod;
+            if      (age < 60)   snprintf(right, sizeof(right), "%us", age);
+            else if (age < 3600) snprintf(right, sizeof(right), "%um", age / 60);
+            else                 snprintf(right, sizeof(right), "%uh", age / 3600);
+          }
         } else {
           if (e.dist_km >= 0.0f) geo::fmtDist(right, sizeof(right), e.dist_km, useImperial());
           else                   strncpy(right, "?GPS", sizeof(right));
