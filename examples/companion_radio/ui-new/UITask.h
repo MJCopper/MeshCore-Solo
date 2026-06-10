@@ -249,6 +249,8 @@ public:
   void setBuzzerVolumeLevel(uint8_t level);
   uint8_t getBuzzerVolume() const { return _node_prefs ? _node_prefs->buzzer_volume : 4; }
   void applyTxPower();
+  void applyPowerSave();   // hardware duty-cycle RX on/off from prefs
+  void applyApc();         // Adaptive Power Control on/off from prefs
   void applyFont();
   void applyRotation();
   void applyFullRefreshInterval();

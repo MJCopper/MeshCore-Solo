@@ -19,10 +19,27 @@ protected:
   virtual bool isReceivingPacket() =0;
   virtual void doResetAGC();
 
+  // Power-save RX: hardware SX126x RX duty-cycle (SetRxDutyCycle). Instead of a
+  // continuous receive the chip itself cycles RX↔sleep, latches a preamble, then
+  // stays in RX to receive the packet (RX_DONE on DIO1) — no MCU state machine,
+  // average RX current cut several-fold. Driven from armRecv()/loop(); falls back
+  // to continuous RX if the modem doesn't support it.
+  bool _power_save = false;
+  bool _ps_active = false;       // is the radio currently armed in duty-cycle mode
+  int8_t _tx_dbm = 0;            // last TX power applied (tracks APC's live value)
+  void armRecv();                // arm RX: duty-cycle in power-save, else continuous
+  // Arm the hardware RX duty-cycle. Base returns UNSUPPORTED → armRecv() falls
+  // back to continuous RX; SX126x overrides with startReceiveDutyCycleAuto().
+  virtual int16_t startPowerSaveRecv() { return RADIOLIB_ERR_UNSUPPORTED; }
+
 public:
   RadioLibWrapper(PhysicalLayer& radio, mesh::MainBoard& board) : _radio(&radio), _board(&board), _preamble_sf(0) { n_recv = n_sent = 0; }
 
   void begin() override;
+  // Enable/disable hardware duty-cycle RX. Takes effect on the next RX re-arm
+  // (loop() re-arms once the live mode differs from this request).
+  void setPowerSaving(bool en) { _power_save = en; }
+  bool getPowerSaving() const { return _power_save; }
   virtual void powerOff() { _radio->sleep(); }
   int recvRaw(uint8_t* bytes, int sz) override;
   uint32_t getEstAirtimeFor(int len_bytes) override;
@@ -32,7 +49,7 @@ public:
   bool isInRecvMode() const override;
   bool isChannelActive();
 
-  bool isReceiving() override { 
+  bool isReceiving() override {
     if (isReceivingPacket()) return true;
 
     return isChannelActive();
@@ -41,10 +58,17 @@ public:
   virtual void setParams(float freq, float bw, uint8_t sf, uint8_t cr) = 0;
   uint32_t getRngSeed();
   void setTxPower(int8_t dbm);
+  int8_t getTxPower() const { return _tx_dbm; }   // actual current power (reflects APC)
 
   virtual float getCurrentRSSI() =0;
   virtual uint8_t getSpreadingFactor() const { return LORA_SF; }
   static uint16_t preambleLengthForSF(uint8_t sf) { return sf <= 8 ? 32 : 16; }
+  // Approx SNR demod floor per SF (Semtech): SF7 -7.5 dB … SF12 -20 dB, -2.5 dB/SF.
+  // Single source for both packetScore() and the APC link-margin target.
+  static float snrFloorForSF(uint8_t sf) {
+    if (sf < 7) sf = 7; else if (sf > 12) sf = 12;
+    return -7.5f - 2.5f * (float)(sf - 7);
+  }
   void updatePreamble(uint8_t sf) { _preamble_sf = sf; _radio->setPreambleLength(preambleLengthForSF(sf)); }
 
   int getNoiseFloor() const override { return _noise_floor; }

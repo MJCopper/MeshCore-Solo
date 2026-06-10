@@ -323,14 +323,17 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.units_imperial,      sizeof(_prefs.units_imperial));
   rd(&_prefs.trail_show_pace,     sizeof(_prefs.trail_show_pace));
   rd(&_prefs.advert_sound_scope,  sizeof(_prefs.advert_sound_scope));
-  // These fields were appended after ch_fav_only; an older file can leave
-  // stray bytes here (the old tail sentinel gets partly consumed), so clamp
-  // out-of-range values back to defaults.
+  rd(&_prefs.rx_powersave,        sizeof(_prefs.rx_powersave));
+  rd(&_prefs.tx_apc,              sizeof(_prefs.tx_apc));
+  // These fields were appended over successive schema bumps; an older file
+  // can leave stray bytes here, so clamp out-of-range values back to defaults.
   // Values for notif_melody_ad: 0=built-in, 1=melody1, 2=melody2, 3=none.
   if (_prefs.notif_melody_ad > 3) _prefs.notif_melody_ad = 0;
   if (_prefs.units_imperial  > 1) _prefs.units_imperial  = 0;
   if (_prefs.trail_show_pace > 1) _prefs.trail_show_pace = 0;
   if (_prefs.advert_sound_scope > 1) _prefs.advert_sound_scope = ADVERT_SOUND_SCOPE_ALL;
+  if (_prefs.rx_powersave    > 1) _prefs.rx_powersave    = 0;
+  if (_prefs.tx_apc          > 1) _prefs.tx_apc          = 0;
 
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
@@ -358,6 +361,8 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     // tail (notif_melody_ad + units_imperial + trail_show_pace). Older files
     // leave stray/old bytes in these fields; they're clamped above, so
     // upgraders fall back to built-in advert sound + metric + speed + All.
+    // → 0xC0DE0009: append tx_apc after rx_powersave. Clamped above, so
+    // upgraders fall back to APC off (fixed tx power).
   }
 
   file.close();
@@ -450,6 +455,8 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.units_imperial,      sizeof(_prefs.units_imperial));
     file.write((uint8_t *)&_prefs.trail_show_pace,     sizeof(_prefs.trail_show_pace));
     file.write((uint8_t *)&_prefs.advert_sound_scope,  sizeof(_prefs.advert_sound_scope));
+    file.write((uint8_t *)&_prefs.rx_powersave,        sizeof(_prefs.rx_powersave));
+    file.write((uint8_t *)&_prefs.tx_apc,              sizeof(_prefs.tx_apc));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL.
     uint32_t sentinel = NodePrefs::SCHEMA_SENTINEL;

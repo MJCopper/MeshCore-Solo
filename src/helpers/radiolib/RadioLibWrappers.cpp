@@ -47,6 +47,7 @@ uint32_t RadioLibWrapper::getRngSeed() {
 }
 
 void RadioLibWrapper::setTxPower(int8_t dbm) {
+  _tx_dbm = dbm;
   _radio->setOutputPower(dbm);
 }
 
@@ -84,6 +85,17 @@ void RadioLibWrapper::resetAGC() {
 }
 
 void RadioLibWrapper::loop() {
+  // Power-save toggled vs the currently-armed RX mode: re-arm into the other mode
+  // once the radio is idle (don't interrupt an in-flight TX or an unread RX-done).
+  if (_power_save != _ps_active) {
+    if (state != STATE_TX_WAIT && !(state & STATE_INT_READY) && !isReceivingPacket()) armRecv();
+    return;
+  }
+  // In power-save the SX126x hardware duty-cycles RX on its own — nothing to poll
+  // here, and noise-floor sampling (used only by the disabled interference check)
+  // would read a chip that is asleep most of the time.
+  if (_power_save) return;
+
   if (state == STATE_RX && _num_floor_samples < NUM_NOISE_FLOOR_SAMPLES) {
     if (!isReceivingPacket()) {
       int rssi = getCurrentRSSI();
@@ -104,6 +116,21 @@ void RadioLibWrapper::loop() {
 }
 
 void RadioLibWrapper::startRecv() {
+  armRecv();
+}
+
+// Arm the receiver. In power-save mode this starts the SX126x hardware RX
+// duty-cycle (the chip cycles RX↔sleep and latches a preamble on its own);
+// otherwise a continuous RX. Falls back to continuous RX if the modem doesn't
+// support duty-cycle (base startPowerSaveRecv() returns UNSUPPORTED).
+void RadioLibWrapper::armRecv() {
+  if (_power_save) {
+    int16_t e = startPowerSaveRecv();
+    if (e == RADIOLIB_ERR_NONE) { state = STATE_RX; _ps_active = true; return; }
+    MESH_DEBUG_PRINTLN("RadioLibWrapper: RX duty-cycle unsupported (%d) — power-save off", (int)e);
+    _power_save = false;
+  }
+  _ps_active = false;
   int err = _radio->startReceive();
   if (err == RADIOLIB_ERR_NONE) {
     state = STATE_RX;
@@ -136,12 +163,7 @@ int RadioLibWrapper::recvRaw(uint8_t* bytes, int sz) {
   }
 
   if (state != STATE_RX) {
-    int err = _radio->startReceive();
-    if (err == RADIOLIB_ERR_NONE) {
-      state = STATE_RX;
-    } else {
-      MESH_DEBUG_PRINTLN("RadioLibWrapper: error: startReceive(%d)", err);
-    }
+    armRecv();   // continuous RX, or re-arm the duty-cycle in power-save mode
   }
   return len;
 }
@@ -191,22 +213,13 @@ float RadioLibWrapper::getLastSNR() const {
   return _radio->getSNR();
 }
 
-// Approximate SNR threshold per SF for successful reception (based on Semtech datasheets)
-static float snr_threshold[] = {
-    -7.5,  // SF7 needs at least -7.5 dB SNR
-    -10,   // SF8 needs at least -10 dB SNR
-    -12.5, // SF9 needs at least -12.5 dB SNR
-    -15,  // SF10 needs at least -15 dB SNR
-    -17.5,// SF11 needs at least -17.5 dB SNR
-    -20   // SF12 needs at least -20 dB SNR
-};
-  
 float RadioLibWrapper::packetScoreInt(float snr, int sf, int packet_len) {
   if (sf < 7) return 0.0f;
-  
-  if (snr < snr_threshold[sf - 7]) return 0.0f;    // Below threshold, no chance of success
 
-  auto success_rate_based_on_snr = (snr - snr_threshold[sf - 7]) / 10.0;
+  float floor = snrFloorForSF(sf);                 // min SNR for a chance of success
+  if (snr < floor) return 0.0f;                    // below the demod floor → no chance
+
+  auto success_rate_based_on_snr = (snr - floor) / 10.0;
   auto collision_penalty = 1 - (packet_len / 256.0);   // Assuming max packet of 256 bytes
 
   return max(0.0, min(1.0, success_rate_based_on_snr * collision_penalty));

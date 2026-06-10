@@ -63,9 +63,11 @@ Lists all available home screen pages. For each entry:
 
 ### Radio
 
-| Setting  | Options  | Notes      |
-| -------- | -------- | ---------- |
-| TX power | 2–22 dBm | LEFT/RIGHT |
+| Setting   | Options    | Notes                                                                                                                                                              |
+| --------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| TX power  | 2–22 dBm   | LEFT/RIGHT. With **Auto pwr** on this is the *ceiling* — the radio may transmit lower. |
+| Pwr save  | ON / OFF   | **Battery saver.** Hardware duty-cycle receive: the SX126x cycles RX↔sleep on its own and wakes on a preamble, cutting average RX current. Trades a little receive latency; leave OFF for lowest-latency reception. Requires an SX126x radio (otherwise stays on continuous RX). |
+| Auto pwr  | ON / OFF   | **Adaptive Power Control.** Lowers actual TX power on strong links to save energy, ramping back up — to the **TX power** ceiling — on weak or lost links. Link quality comes from direct-message ACK SNR and, for channel messages (no ACK), from hearing a repeater rebroadcast your packet. The radio page / name bar shows the live power. Default OFF (fixed TX power). |
 
 ---
 

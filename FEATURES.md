@@ -339,7 +339,65 @@ A fuller position-centred navigator (you fixed at screen centre, fixed/preset
 zoom, pan) is a larger separate feature; start with the rotate-the-fit version
 if pursued.
 
-### 📋 Battery / power optimization (CAD RX windowing + APC) — after trail polish
+### 🚧 Battery / power optimization (duty-cycle RX + APC)
+
+**On branch `feat/power-saving`** — two independent toggles under Settings ›
+Radio, both **default OFF**. Under field testing; not yet merged.
+
+**✅ Done — hardware duty-cycle RX ("Pwr save")**
+- Uses the SX126x's own **RX duty-cycle** (`SetRxDutyCycle`, datasheet 13.1.7) via
+  RadioLib `startReceiveDutyCycleAuto(preamble, 8)`: the chip's sequencer cycles
+  RX↔sleep, latches a preamble and stays in RX to receive the packet (RX_DONE on
+  DIO1). No MCU state machine — `recvRaw()` reads the packet exactly as in
+  continuous RX. `armRecv()` arms duty-cycle when power-save is on, else a normal
+  `startReceive()`; `loop()` re-arms only on a toggle. Falls back to continuous RX
+  if the modem doesn't support duty-cycle (non-SX126x). `state` stays `STATE_RX`
+  so the dispatcher's not-in-RX watchdog never trips.
+- Duty-cycle engages when the configured preamble ≥ 2·8+1 symbols. At SF≤8 the
+  preamble is 32 → full duty-cycle; at SF9–12 it is 16 → RadioLib transparently
+  stays on continuous RX (no power saving on the slow SFs).
+- Companion: `rx_powersave` pref (schema `0xC0DE0009`), **Settings › Radio ›
+  "Pwr save"**, applied at boot (MyMesh) and on change (UITask). Noise-floor
+  sampling is skipped while on (chip is asleep most of the time) — the radio page
+  shows "Noise floor: n/a".
+
+  > **History:** an earlier attempt used a *software* CAD state machine (scan →
+  > warm-sleep window → on-detect full RX, with `standbyXOSC`/burst windows). It
+  > fought the hardware — querying a warm-sleeping chip from `checkSend()` gave a
+  > phantom-busy channel that stalled TX for ~4 s, and ACKs dropped in the scan
+  > gaps. Replaced wholesale by the hardware duty-cycle above, which fixed both.
+
+**✅ Done — Adaptive Power Control ("Auto pwr")**
+- `tx_power_dbm` becomes a *ceiling*; APC drives the radio's actual power within
+  `[APC_MIN_DBM −9, ceiling]` to hold the link margin near a target. Lives in
+  `MyMesh` (`applyApc` + `apcSampleSnr`/`apcOnFailure` controller), `tx_apc` pref.
+- **Two feedback sources**, both the *reverse* link (no protocol change):
+  - **Direct messages** — ACK SNR (`onAckRecv`); missed ACK (`onSendTimeout`) =
+    lost confirmation.
+  - **Channel/flood messages** — no ACK exists, so we hash each originated flood
+    (`apcTrackFloodSend` in `sendFloodScoped`, hash excludes the path) and listen
+    in `filterRecvFloodPacket` for a repeater rebroadcasting it; the heard echo's
+    SNR is a sample, and **no echo within ~6 s** counts as a lost confirmation.
+    This is what lets a channel send recover after APC trimmed power below what the
+    repeaters can hear (previously it could strand channel TX at the floor).
+- Margin is measured **above the per-SF demod floor** (`−7.5 − 2.5·(SF−7)` dB) so
+  one target works across SF7–12. Each SNR sample is smoothed with an EWMA (α=0.4);
+  power steps **proportionally** to the error (capped ±2 dB) with a ±2 dB deadband
+  to avoid hunting; the EWMA is nudged by each step so it doesn't re-trigger on a
+  stale sample.
+- Lost confirmation → step up `+4 dB`; **2 consecutive** losses → jump to the
+  ceiling (ramp gradually first since a loss is an ambiguous power signal). Any
+  confirmation clears the streak. Live power shown on the radio page + name bar.
+
+**⏸ To return to (not done)**
+- **Current measurement** — never taken (no PPK2/meter to hand). Reliability is
+  confirmed in use; the actual mA win is still unquantified. Do this first.
+- **APC sample targeting** — a direct ACK's SNR is the last hop of the *return*
+  path (sound on symmetric/direct links); a flood echo is the *first* hop from us
+  to a repeater, which is exactly what our TX power controls. Both feed one shared
+  controller; per-source weighting or direct-only (0-hop) gating could be explored.
+
+**Original analysis (kept for context):**
 
 Goal: multiply battery life **without losing functionality**. The dominant
 draw on this node is the radio in **continuous RX** (always-on `startReceive()`
@@ -373,18 +431,15 @@ NRF52 companion power-saving ([PR #1238](https://github.com/meshcore-dev/MeshCor
 loop now sleeps via `board.sleep(0)` whenever `hasPendingWork()` is false — but
 that only covers **MCU idle** (it does not touch the radio, which is the real
 draw), and there is no on/off toggle because not-sleeping would only waste power.
-The same merge also brought the **preamble 16→32 bump for SF<9**, which was the
-blocker for our CAD RX-windowing experiment (short windows dropped long packets
-at preamble 16). Prefer adopting/extending upstream work over a parallel
+The same merge also brought the **preamble 16→32 bump for SF<9**, which is what
+makes the hardware RX duty-cycle viable at SF8 (it needs ≥ 2·8+1 = 17 preamble
+symbols to latch). Prefer adopting/extending upstream work over a parallel
 implementation. Note ZephCore's licence before copying any code verbatim
 (architecture inspiration is fine).
 
-Sequencing: **deferred until the trail/waypoints/nav polishing is finished.**
-The radio-side CAD windowing lives on the `feat/power-saving` branch and is now
-**unblocked** by the preamble fix. First step when picked up: rebase it onto the
-v1.16 merge (it will hit the removed `radio_set_tx_power()`/`radio_set_params()`
-globals — replace with `radio_driver.*` like the merge did), then re-test whether
-long messages still drop at preamble 32, ideally profiling with a PPK2/meter.
+Sequencing: hardware duty-cycle RX and APC are both done and in field test on
+`feat/power-saving`; see the status block at the top of this entry for what's
+left (PPK2 current measurement, multi-hop APC gating).
 
 ### SOS broadcast
 

@@ -120,12 +120,22 @@ struct NodePrefs {  // persisted to file
   // Trail Summary readout: 0=speed (km/h or mph), 1=pace (min/km or min/mi).
   // The km-vs-mi choice now comes from units_imperial, so this is just the mode.
   uint8_t  trail_show_pace;
+  // Hardware duty-cycle receive (battery saver): 0=continuous RX (default), 1=on.
+  // The SX126x cycles RX↔sleep on its own and wakes on a preamble — cuts average
+  // RX current at the cost of a little receive latency. See RadioLibWrapper
+  // power-save (startReceiveDutyCycleAuto).
+  uint8_t  rx_powersave;
+  // Adaptive Power Control: 0=off (fixed tx_power_dbm, default), 1=on. When on,
+  // tx_power_dbm is treated as a ceiling and the radio's actual power is lowered
+  // at runtime on strong links (good ACK SNR), saving TX energy. Never persisted
+  // below the ceiling, so disabling restores the user's configured power.
+  uint8_t  tx_apc;
 
   // Tail sentinel written at the end of /new_prefs. Bump the low byte when
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0008;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0009;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage

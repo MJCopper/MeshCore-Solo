@@ -555,7 +555,15 @@ public:
       display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
       int rightEdge = renderBatteryIndicator(display, _task->getBattMilliVolts());
       display.setColor(DisplayDriver::LIGHT);
-      display.drawTextEllipsized(0, 0, rightEdge - 2, filtered_name);
+      if (_node_prefs && _node_prefs->tx_apc) {
+        char pwr_buf[8];
+        snprintf(pwr_buf, sizeof(pwr_buf), "%ddB", (int)radio_driver.getTxPower());
+        int pwr_w = display.getTextWidth(pwr_buf);
+        display.drawTextEllipsized(0, 0, rightEdge - 2 - pwr_w - 2, filtered_name);
+        display.drawTextRightAlign(rightEdge - 2, 0, pwr_buf);
+      } else {
+        display.drawTextEllipsized(0, 0, rightEdge - 2, filtered_name);
+      }
     }
 
     // ensure current page is visible (e.g. after settings change)
@@ -729,10 +737,14 @@ public:
 
       // tx power, noise floor
       display.setCursor(0, content_y + step * 2);
-      snprintf(tmp, sizeof(tmp),"TX: %ddBm", _node_prefs->tx_power_dbm);
+      snprintf(tmp, sizeof(tmp),"TX: %ddBm", radio_driver.getTxPower());   // live value (reflects APC)
       display.print(tmp);
       display.setCursor(0, content_y + step * 3);
-      snprintf(tmp, sizeof(tmp),"Noise floor: %d", radio_driver.getNoiseFloor());
+      if (radio_driver.getPowerSaving()) {   // duty-cycle RX doesn't sample the floor
+        snprintf(tmp, sizeof(tmp),"Noise floor: n/a");
+      } else {
+        snprintf(tmp, sizeof(tmp),"Noise floor: %d", radio_driver.getNoiseFloor());
+      }
       display.print(tmp);
     } else if (_page == HomePage::BLUETOOTH) {
       display.setColor(DisplayDriver::LIGHT);
@@ -2063,7 +2075,19 @@ void UITask::toggleGPS() {
 
 void UITask::applyTxPower() {
   if (_node_prefs == NULL) return;
+  // With APC on, tx_power_dbm is the ceiling — re-baseline the controller to it
+  // (which also sets the radio) so the live power tracks the new ceiling at once.
+  if (_node_prefs->tx_apc) { the_mesh.applyApc(); return; }
   radio_driver.setTxPower(_node_prefs->tx_power_dbm);
+}
+
+void UITask::applyPowerSave() {
+  if (_node_prefs == NULL) return;
+  radio_driver.setPowerSaving(_node_prefs->rx_powersave);
+}
+
+void UITask::applyApc() {
+  the_mesh.applyApc();   // (re)initialise Adaptive Power Control from prefs
 }
 
 void UITask::applyBrightness() {

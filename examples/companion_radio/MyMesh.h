@@ -194,6 +194,13 @@ protected:
   uint32_t calcFloodTimeoutMillisFor(uint32_t pkt_airtime_millis) const override;
   uint32_t calcDirectTimeoutMillisFor(uint32_t pkt_airtime_millis, uint8_t path_len) const override;
   void onSendTimeout() override;
+  void onAckRecv(mesh::Packet* packet, uint32_t ack_crc) override;          // APC: ACK SNR sample
+  // APC internals (see MyMesh.cpp): one reverse-link SNR sample, a lost-confirmation
+  // ramp-up, and tracking an originated flood so its echo (or absence) can be scored.
+  // The heard-echo sampling itself lives in filterRecvFloodPacket() (declared below).
+  void apcSampleSnr(float snr);
+  void apcOnFailure();
+  void apcTrackFloodSend(const mesh::Packet* pkt);
 
   // DataStoreHost methods
   bool onContactLoaded(const ContactInfo& contact) override { return addContact(contact); }
@@ -209,6 +216,7 @@ public:
   void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
   void saveRTCTime() { _store->saveRTCTime(); }
   DataStore* getDataStore() const { return _store; }
+  void applyApc();   // (re)initialise Adaptive Power Control from prefs
 
   bool isAckPending(uint32_t expected_ack) const {
     for (int i = 0; i < EXPECTED_ACK_TABLE_SIZE; i++)
@@ -276,6 +284,13 @@ private:
   uint32_t _active_ble_pin;
   bool _iter_started;
   bool _cli_rescue;
+  int8_t _apc_cur_dbm;       // APC current TX power (≤ tx_power_dbm ceiling) when tx_apc on
+  float _apc_margin_ewma;    // APC smoothed reverse-link SNR margin above the SF demod floor
+  uint8_t _apc_fail_count;   // APC consecutive lost-confirmation count (graduated ramp-up)
+  uint8_t _apc_flood_hash[MAX_HASH_SIZE];  // hash of the channel/flood send awaiting a repeater echo
+  uint16_t _apc_flood_len;                 // its payload length — cheap pre-filter before hashing
+  uint32_t _apc_flood_deadline;            // echo-wait deadline for that send
+  bool _apc_flood_pending;                 // a tracked flood send is awaiting its echo
   bool send_unscoped;   // force un-scoped flood (instead of using send_scope)
   char cli_command[80];
   uint8_t app_target_ver;
