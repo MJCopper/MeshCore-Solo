@@ -203,10 +203,7 @@ extern "C"
 #define PIN_QSPI_IO2 28 // 22
 #define PIN_QSPI_IO3 2	// 23
 
-// On-board QSPI Flash
-// No onboard flash
-#define EXTERNAL_FLASH_DEVICES IS25LP080D
-#define EXTERNAL_FLASH_USE_QSPI
+// No QSPI flash on this board — QSPI DIO pins are used by joystick and WS2812
 
 #define GPS_ADDRESS   0x42  //i2c address for GPS
 
