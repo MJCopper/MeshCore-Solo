@@ -61,7 +61,7 @@ jobs:
 
       - name: Rename firmware
         run: |
-          DEVICE_NAME=$(echo "${{ matrix.env }}" | sed 's/_solo_dual$//' | tr '_' '-')
+          DEVICE_NAME=$(echo "${{ matrix.env }}" | sed 's/_solo_dual$//;s/_companion$//' | tr '_' '-')
           mv out/*.uf2 "out/solo-${{ env.BUILD_VERSION }}-${DEVICE_NAME}.uf2" 2>/dev/null || true
 
       - name: Upload Firmware
