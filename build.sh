@@ -14,6 +14,7 @@ Commands:
   build-companion-firmwares: Build all companion firmwares for all build targets.
   build-repeater-firmwares: Build all repeater firmwares for all build targets.
   build-room-server-firmwares: Build all chat room server firmwares for all build targets.
+  build-solo-firmwares: Build all solo firmwares for all build targets.
 
 Examples:
 Build firmware for the "RAK_4631_repeater" device target
@@ -234,6 +235,13 @@ build_wio_tracker_l1_firmwares() {
   build_firmware "WioTrackerL1_companion_dual"
 }
 
+build_solo_firmwares() {
+  # build_firmware "GAT562_30S_Mesh_Kit_solo_dual"
+  # build_firmware "WioTrackerL1_companion_dual"
+  # build_firmware "WioTrackerL1Eink_companion_dual"
+  build_all_firmwares_by_suffix "_solo_dual"
+}
+
 build_room_server_firmwares() {
 
 #  # build specific room server firmwares
@@ -281,6 +289,8 @@ elif [[ $1 == "build-repeater-firmwares" ]]; then
   build_repeater_firmwares
 elif [[ $1 == "build-wio-tracker-l1-firmwares" ]]; then
   build_wio_tracker_l1_firmwares
+elif [[ $1 == "build-solo-firmwares" ]]; then
+  build_solo_firmwares
 elif [[ $1 == "build-room-server-firmwares" ]]; then
   build_room_server_firmwares
 fi
