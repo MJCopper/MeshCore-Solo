@@ -34,8 +34,13 @@ protected:
   }
 
 public:
-  void setHasConnection(bool connected) { _connected = connected; }
+  void setHasConnection(bool connected) {
+    bool prev = _connected;
+    _connected = connected;
+    if (prev && !connected) onBLEDisconnected();
+  }
   bool hasConnection() const { return _connected; }
+  virtual void onBLEDisconnected() {}
   // True only when a BLE central is actually bonded/connected. On a dual
   // (BLE+USB) interface hasConnection() is always true (USB counts), so use
   // this for BLE-specific UI like the pairing-PIN prompt.

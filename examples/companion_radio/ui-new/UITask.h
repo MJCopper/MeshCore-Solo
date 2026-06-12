@@ -132,6 +132,7 @@ public:
     curr = NULL;
   }
   void begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* node_prefs);
+  void onBLEDisconnected() override { _next_refresh = 0; }
 
   NodePrefs* getNodePrefs() const { return _node_prefs; }
   uint16_t getBattMilliVolts() const { return _batt_mv > 0 ? _batt_mv : AbstractUITask::getBattMilliVolts(); }
