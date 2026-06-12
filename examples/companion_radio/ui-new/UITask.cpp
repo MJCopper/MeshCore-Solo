@@ -86,9 +86,9 @@ public:
     display.setColor(DisplayDriver::DARK);
     char solo_label[24];
     if (_solo_ver[0])
-      snprintf(solo_label, sizeof(solo_label), "Solo %s for Wio", _solo_ver);
+      snprintf(solo_label, sizeof(solo_label), "Solo %s", _solo_ver);
     else
-      snprintf(solo_label, sizeof(solo_label), "Solo for Wio");
+      snprintf(solo_label, sizeof(solo_label), "Solo");
     display.drawTextCentered(display.width()/2, solo_y, solo_label);
     display.setColor(DisplayDriver::LIGHT);
 #endif
