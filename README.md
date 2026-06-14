@@ -1,27 +1,34 @@
-# Seeed Wio Tracker L1 - MeshCore "Solo" companion firmware
+# MeshCore Solo Companion Firmware
 
-This branch extends the official MeshCore companion radio firmware for the **Seeed Wio Tracker L1**. Provides support for both the original OLED and the e-ink variant, with additional features and UI enhancements.
-
-It turns the L1 into a capable off-grid **handheld navigator** — waypoints, a GPS compass, and navigate-to-anything (a saved point, a mesh node, or a location a contact texts you) — on top of a polished, multi-language messaging UI. No extra hardware required.
+A fork of the official [MeshCore](https://github.com/meshcore-dev/MeshCore) companion radio firmware with extended features and UI enhancements, targeting a growing set of supported devices.
 
 Join the discussion on the official MeshCore Discord: https://discord.gg/sdhYArU2jr
 
 Solo firmware thread: https://discord.com/channels/1495203904898728149/1505294337884553447
 
-<img src="./img/radios.jpeg">
+---
 
-**Enclosures**
+## Supported Devices
 
+| Device | Display | Firmware file |
+| ------ | ------- | ------------- |
+| Seeed Wio Tracker L1 (OLED) | SSD1306 / SH1106 128 × 64 | `solo-<version>-WioTrackerL1.uf2` |
+| Seeed Wio Tracker L1 (E-ink) | GxEPD2 250 × 122 | `solo-<version>-WioTrackerL1Eink.uf2` |
+| GAT562 30S Mesh Kit | SSD1306 128 × 64 | `solo-<version>-GAT562-30S-Mesh-Kit.uf2` |
+
+All firmware files are published on the [releases page](https://github.com/MarekZegare4/MeshCore-Solo/releases). Each binary supports both BLE and USB serial — there are no separate BLE/USB builds.
+
+<!-- **Enclosures (Wio Tracker L1)**
 - [E-ink case](https://www.printables.com/model/1420534-seeed-wio-tracker-l1-e-ink-enclosure)
-- [Oled case](https://www.printables.com/model/1380791-meshpack-seeed-l1-oled)
+- [OLED case](https://www.printables.com/model/1380791-meshpack-seeed-l1-oled) -->
 
 ---
 
 ## Feature highlights
 
-- Extended language support with native Unicode rendering and input [Lemon font](https://github.com/cmvnd/fonts) alongside the original ASCII mode (Default font with transliteration)
+- Extended language support with native Unicode rendering and input ([Lemon font](https://github.com/cmvnd/fonts)) alongside the original ASCII mode (Default font with transliteration)
 
-- Enabled sensor screens with support for all onboard sensors (temperature, humidity, pressure, luminosity, CO₂) and GPS data
+- Enabled sensor screens with support for onboard sensors (temperature, humidity, pressure, luminosity, CO₂) and GPS data
 
 - **GPS navigation** — a full navigation suite that needs no extra hardware (details in the [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) docs):
 
@@ -29,7 +36,7 @@ Solo firmware thread: https://discord.com/channels/1495203904898728149/150529433
   - **GPS compass** — heading derived from course-over-ground (no magnetometer needed), shown as a clear scrolling heading tape with a large degrees + cardinal readout
   - **Navigate to anything** — a saved waypoint, a node straight from Nearby Nodes, or a location someone shares with you in a message
   - **Share & save locations** — send a waypoint to a contact or channel; on the other end, navigate to or save any shared location with one menu
-  - **GPS trail** — background route recording with an auto-fit map (waypoints + live position), summary stats, and [GPX export](#gpx-trail-export)
+  - **GPS trail** — background route recording with an auto-fit map (waypoints + live position), summary stats, and [GPX export](#solo-tools)
   - **Metric or imperial** — one global Units setting drives every distance and speed across the UI
 
 - [Messages Screen](./docs/solo_features/message_screen/message_screen.md) — view and send messages, open message details, reply with quick messages or custom text, navigate to / save locations shared in a message, per-channel notification and melody overrides
@@ -48,7 +55,7 @@ Solo firmware thread: https://discord.com/channels/1495203904898728149/150529433
   - **Pwr save** — hardware duty-cycle receive (SX126x `SetRxDutyCycle`): the radio cycles RX↔sleep on its own and wakes on a preamble, cutting average RX current with only a little added receive latency
   - **Auto pwr** — Adaptive Power Control: trims actual TX power on strong links (from ACK SNR) and ramps back up to the configured ceiling on weak/lost links; the home screen shows the live power
 
-### E-ink Display
+### E-ink Display (Wio Tracker L1)
 
 The e-ink variant targets the Wio Tracker L1 fitted with a 2.13″ GxEPD2 panel (250 × 122 px). All screens have been adapted for the e-ink panel:
 
@@ -58,36 +65,24 @@ The e-ink variant targets the Wio Tracker L1 fitted with a 2.13″ GxEPD2 panel 
 - **Full refresh interval** — configurable in Settings › Display; reduces ghosting on long sessions
 - **Clock seconds suppressed by default** — seconds are hidden to reduce per-second panel refreshes and extend display lifetime; re-enable in Settings › Display
 
-## Firmware Variants
+---
 
-Two firmware builds are published with each release:
+## Flashing
 
-| Variant   | Display                   | File                      |
-| --------- | ------------------------- | ------------------------- |
-| **OLED**  | SSD1306 / SH1106 128 × 64 | `solo-<version>-oled.uf2` |
-| **E-ink** | GxEPD2 250 × 122          | `solo-<version>-eink.uf2` |
-
-Both variants are built from a single codebase and share the same feature set. The firmware supports both BLE and USB serial in a single binary — there are no separate BLE/USB builds.
+1. Download the `.uf2` file for your device from the [releases page](https://github.com/MarekZegare4/MeshCore-Solo/releases)
+2. Press reset twice quickly to enter bootloader mode — the device should appear as a mass storage drive on your computer
+3. Copy the `.uf2` file to the drive to flash the firmware
 
 > [!IMPORTANT]
 > BLE connection has priority over USB serial. When a BLE connection is active, the USB protocol is suspended. When connecting to the companion app via USB, ensure to disconnect from BLE first or disable BLE directly from the device to avoid confusion.
 
-### Flashing
-
-1. Download the appropriate `.uf2` file for your display variant from the [releases page](https://github.com/MarekZegare4/MeshCore-Solo/releases)
-2. Press reset twice quickly to enter bootloader mode (solid amber LED) - the device should appear as a mass storage drive on your computer
-3. Copy the `.uf2` file to the drive to flash the firmware
-
-Updating to newer firmware versions usually does not require erasing flash unless the release notes explicitly state otherwise. To retain your settings and data, avoid performing a factory reset after flashing unless you need to start fresh or encounter problems.
+Updating to a newer version usually does not require erasing flash unless the release notes explicitly state otherwise.
 
 > [!WARNING]
-> When migrating from official/custom firmware, backup your data and **perform factory reset** to prevent conflicts with existing settings and data:
+> When migrating from official or other custom firmware, backup your data and **perform a factory reset** to prevent conflicts with existing settings:
 >
-> 1.  Open device settings in the companion app and download data backup
-> 2.  Go to [MeshCore Flasher](https://meshcore.io/flasher) website
-> 3.  Select "Wio Tracker L1 Pro"
-> 4.  Choose any of the firmware variant
-> 5.  Perform "Erase flash"
+> 1. Open device settings in the companion app and download a data backup
+> 2. Go to [MeshCore Flasher](https://meshcore.io/flasher), select your device, and perform **Erase flash** before flashing
 
 ---
 
@@ -117,68 +112,28 @@ Updating to newer firmware versions usually does not require erasing flash unles
 
 ---
 
-## Screenshot Tool
+## Solo Tools
 
-The firmware can capture the current display contents and send them over USB serial as a PNG — useful for debugging and documentation. Works with both OLED and e-ink variants.
+All solo builds include screenshot and GPX trail export support out of the box — no special build flags required.
 
-> [!NOTE]
-> Requires firmware built with `-D ENABLE_SCREENSHOT`. Use the `_dev` environment or add the flag manually.
+### [Solo Tools Web App](https://marekzegare4.github.io/Solo-tools/) — no install required
 
-**1. Build and flash with screenshot support**
+Open the link in a browser with Web Serial support (Chromium-based) and click **Connect device**. The web app supports:
 
-```sh
-# OLED
-PLATFORMIO_BUILD_FLAGS="-D ENABLE_SCREENSHOT" pio run -e WioTrackerL1_companion_dual -t upload
+- **Screenshot** — capture the current display contents as a PNG
+- **GPX export** — stream the GPS trail and download a timestamped `.gpx` file
 
-# E-ink
-pio run -e WioTrackerL1Eink_companion_dual_dev -t upload
-```
+Trigger the relevant action on the device (**Tools › Trail › Hold Enter** for GPX export, **S** key for screenshot) after connecting.
 
-**2. Disconnect from the companion app** — USB serial is not available while BLE/app is connected
+> Disconnect from the companion app before connecting via USB — USB serial is suspended while a BLE connection is active.
 
-**3. Run the tool** — [uv](https://docs.astral.sh/uv/) is recommended for managing Python dependencies:
-
-```sh
-uv run tools/screenshot.py
-```
-
-Options:
-
-- `--port PORT` — serial port (default: auto-detect)
-- `--scale SCALE` — upscale factor for output image (default: 1)
-
-**4.** Press **S** in the interactive menu to capture. Screenshots are saved to `tools/pngs/` with a timestamp filename.
-
----
-
-## GPX Trail Export
-
-Capture the GPS trail as a GPX 1.1 file by streaming it over USB serial.
-
-### [Solo GPX Downloader](https://marekzegare4.github.io/solo-tools/) — no install required
-
-Open the link in **Chrome** or **Edge**, click **Connect device**, then trigger the export on the device. The browser captures the stream and offers a timestamped `.gpx` file for download.
-
-### Script
-
-```sh
-uv run tools/trail_export.py
-```
-
-Run the script, then on the device: **Tools › Trail › Hold Enter ›**
-
-- **Export (live)** — current RAM trail
-- **Export (saved)** — `/trail` file from flash
-
-The script auto-detects the port, waits for the `<?xml` start, captures bytes until `</gpx>`, and writes the file to `tools/gpx/trail_<timestamp>.gpx`.
-
-> If the companion app is connected over BLE the export is safe (USB receive is ignored). If the app is on USB, disconnect it first — the raw GPX stream will otherwise disrupt the app's frame protocol.
+> If the companion app is connected over BLE the GPX export is safe (USB receive is ignored). If the app is on USB, disconnect it first — the raw stream will otherwise disrupt the app's frame protocol.
 
 ---
 
 ## Development
 
-This fork tracks the upstream [MeshCore](https://github.com/ripplebiz/MeshCore) repository. To prevent upstream changes from overwriting this README during merges, `README.md` is protected via `.gitattributes`. After cloning, run once:
+This fork tracks the upstream [MeshCore](https://github.com/meshcore-dev/MeshCore) repository. To prevent upstream changes from overwriting this README during merges, `README.md` is protected via `.gitattributes`. After cloning, run once:
 
 ```sh
 git config merge.ours.driver true
