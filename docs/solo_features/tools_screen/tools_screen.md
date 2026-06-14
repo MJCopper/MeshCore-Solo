@@ -77,31 +77,44 @@ Cycle views with **LEFT / RIGHT**:
 | View        | Content                                                                                                                                                             |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Summary** | Distance, elapsed time, avg speed or pace, point count, tracking status                                                                                             |
-| **Map**     | Auto-fit dot-and-line plot with cos(lat) aspect correction; segment breaks marked; north arrow; scale grid (toggle with **LEFT/RIGHT** on the Grid row in the menu). Your **current GPS position** and all **waypoints** are always drawn — even with no trail recording — so the map is useful standalone |
+| **Map**     | Auto-fit dot-and-line plot with cos(lat) aspect correction; segment breaks marked; north arrow; square scale grid fitted to the map frame (toggle under **Hold Enter → Settings → Grid**, Map view only). Your **current GPS position** and all **waypoints** are always drawn — even with no trail recording — so the map is useful standalone |
 | **List**    | Per-point rows showing local time (HH:MM) and delta distance from the previous point; segment-start rows show `start`; scroll with **UP/DOWN**                      |
 
 |           OLED            |           E-Ink           |
 | :-----------------------: | :-----------------------: |
 | ![](./tls_scr_5_oled.png) | ![](./tls_scr_5_eink.png) |
 
-**Hold Enter** opens the action menu:
+**Hold Enter** opens the **action menu**. It is two-level — a short main menu, plus **Trail file…** and **Settings…** submenus. **Cancel/Back** in a submenu returns to the main menu.
 
-| Item                  | Interaction         | Action                                              |
-| --------------------- | ------------------- | --------------------------------------------------- |
-| Min dist              | LEFT/RIGHT          | Sample gate, 4 levels — metric: 5/10/25/100 m, imperial: 15/30/75/300 ft |
-| Readout               | LEFT/RIGHT or Enter | Summary shows Speed or Pace (in the global unit system) |
-| Grid                  | LEFT/RIGHT or Enter | Toggle scale grid on the map                        |
-| Mark here             | Enter               | Drop a waypoint at the current GPS fix (see below)  |
-| Waypoints             | Enter               | Open the waypoint list / navigation / add-by-coords |
-| Start / Stop tracking | Enter               | Begin or end a recording session                    |
-| Save trail            | Enter               | Write RAM ring to flash (`/trail`)                  |
-| Load trail            | Enter               | Restore flash trail into RAM                        |
-| Export (live)         | Enter               | Stream live RAM trail as GPX 1.1 over USB Serial    |
-| Export (saved)        | Enter               | Stream saved flash trail as GPX 1.1 over USB Serial |
-| Clear waypoints       | Enter               | Delete all saved waypoints (trail untouched)        |
-| Reset trail           | Enter               | Clear RAM ring and elapsed time                     |
+**Main menu:**
 
-(Clear waypoints appears only once at least one waypoint exists. Mark here needs a GPS fix; Waypoints is always available.)
+| Item                  | Action                                              |
+| --------------------- | --------------------------------------------------- |
+| Start / Stop tracking | Begin or end a recording session                    |
+| Mark here             | Drop a waypoint at the current GPS fix (see below)  |
+| Waypoints…            | Open the waypoint list / navigation / add-by-coords |
+| Trail file…           | Open the file submenu (below)                        |
+| Settings…             | Open the settings submenu (below)                    |
+
+**Trail file…** (only the operations that apply right now appear):
+
+| Item           | Action                                          |
+| -------------- | ----------------------------------------------- |
+| Save trail     | Write RAM ring to flash (`/trail`)              |
+| Load trail     | Restore flash trail into RAM                    |
+| Export (live)  | Stream live RAM trail as GPX 1.1 over USB Serial |
+| Export (saved) | Stream saved flash trail as GPX 1.1 over USB Serial |
+| Reset trail    | Clear RAM ring and elapsed time                 |
+
+**Settings…** (values cycle with **LEFT/RIGHT** or **Enter**; shown only where they apply):
+
+| Item     | Available | Action                                                  |
+| -------- | --------- | ------------------------------------------------------- |
+| Min dist | always    | Sample gate, 4 levels — metric: 5/10/25/100 m, imperial: 15/30/75/300 ft |
+| Readout  | Summary view | Summary shows Speed or Pace (in the global unit system) |
+| Grid     | Map view  | Toggle scale grid on the map                            |
+
+(Trail file… appears only when a live or saved trail exists. Mark here needs a GPS fix; Waypoints is always available.)
 
 ### Waypoints
 
@@ -128,7 +141,7 @@ A waypoint is a saved spot — your car, camp, a water source — that you can n
 
 There is no magnetometer, so the screen shows two *absolute* bearings and you compare them: target at 145°, travelling at 90° → bear right. The **Hdg** line is derived from GPS movement (see Compass) and reads `--` until you move.
 
-**Managing** — **Hold Enter** on a waypoint row offers **Rename** / **Delete** / **Send** (the *Trail start* row is navigate-only). **Hold Enter → Clear waypoints** on the Trail screen wipes them all at once.
+**Managing** — **Hold Enter** on a waypoint row offers **Rename** / **Delete** / **Send** (the *Trail start* row is navigate-only). Delete removes one at a time; there is no bulk clear.
 
 **Sharing** — **Send** hands the waypoint to the Messages screen: pick a contact or channel, and the message is pre-filled as `[WAY]<lat>,<lon> <label>` (e.g. `[WAY]37.42123,-122.08456 CAR`) for you to confirm or edit before sending. On the receiving device, opening that message and **Hold Enter → Navigate / Save waypoint** turns it back into a navigable point (see *Messages › Fullscreen message view*). The format is plain text, so it stays readable on other firmware and the phone app.
 

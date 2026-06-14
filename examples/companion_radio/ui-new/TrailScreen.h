@@ -9,6 +9,7 @@
 #include "../GeoUtils.h"
 #include "GfxUtils.h"
 #include "NavView.h"
+#include "WaypointsView.h"
 #include <math.h>
 
 class TrailScreen : public UIScreen {
@@ -22,35 +23,23 @@ class TrailScreen : public UIScreen {
   bool    _cfg_dirty      = false;
   bool    _map_grid       = true;   // show scale grid in map view (Enter to toggle)
 
-  // Waypoint sub-screens layered over the trail views. WP_OFF = normal trail.
-  enum WpMode { WP_OFF, WP_LIST, WP_NAV, WP_ADD };
-  uint8_t   _wp_mode  = WP_OFF;
-  int       _wp_sel   = 0;
-  int       _wp_scroll = 0;
-  PopupMenu _wp_ctx;                 // Rename / Delete on a selected waypoint
-  KeyboardWidget _wp_kb;             // label entry (mark new / rename)
-  bool      _kb_active = false;
-  int       _kb_rename_idx = -1;     // -1 = marking new, ≥0 = renaming that index
-  int32_t   _mark_lat = 0, _mark_lon = 0;   // pending new-mark position
-  uint32_t  _mark_ts  = 0;
-
-  // WP_ADD form — type a waypoint by coordinates. The keyboard has no comma or
-  // minus, so lat/lon are entered as magnitude + a hemisphere toggle (LEFT/RIGHT).
-  char      _add_lat[12] = "", _add_lon[12] = "";   // magnitude strings
-  char      _add_label[WAYPOINT_LABEL_LEN] = "";
-  bool      _add_lat_neg = false;    // true = S
-  bool      _add_lon_neg = false;    // true = W
-  int       _add_sel  = 0;           // 0=Lat 1=Lon 2=Label 3=Save
-  int       _kb_field = -1;          // which WP_ADD field the keyboard edits (-1 = label/rename)
+  // Waypoint management UI (list / nav / add / mark / rename / delete / send)
+  // lives in its own component; TrailScreen delegates to it while it's active.
+  WaypointsView _wp;
 
   // Action popup (Hold Enter / KEY_CONTEXT_MENU). Carries both settings rows
   // (Min dist, Units — cycled with LEFT/RIGHT while focused) and actions
   // (Start/Stop tracking, Reset). PopupMenu stores label pointers verbatim, so
   // the labels live in member buffers that get refreshed in openActionMenu()
   // and after every LEFT/RIGHT cycle.
-  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS, ACT_WP_CLEAR };
+  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS, ACT_FILE, ACT_SETTINGS };
+  // The action popup is two-level: a short main menu, plus "Trail file…" and
+  // "Settings…" submenus. _menu_level tracks which is open so input is routed
+  // correctly (settings rows cycle with LEFT/RIGHT; everything else is Enter).
+  enum MenuLevel { ML_MAIN, ML_FILE, ML_SETTINGS };
   PopupMenu _action_menu;
-  uint8_t   _act_map[16];  // 12 used today; pad so adding an action doesn't OOB
+  uint8_t   _menu_level = ML_MAIN;
+  uint8_t   _act_map[16];  // max rows on any one level; pushAction guards the cap
   uint8_t   _act_count = 0;
   char      _act_min_dist_label[24];
   char      _act_units_label[24];
@@ -60,7 +49,8 @@ class TrailScreen : public UIScreen {
   static const int SUMMARY_ITEM_COUNT = 5;
 
 public:
-  TrailScreen(UITask* task, TrailStore* store) : _task(task), _store(store) {}
+  TrailScreen(UITask* task, TrailStore* store)
+    : _task(task), _store(store), _wp(task, store) {}
 
   void enter() {
     _view = V_SUMMARY;
@@ -68,27 +58,16 @@ public:
     _list_scroll    = 0;
     _cfg_dirty      = false;
     _action_menu.active = false;
-    _wp_mode = WP_OFF;
-    _wp_ctx.active = false;
-    _kb_active = false;
-    _kb_field = -1;
+    _menu_level     = ML_MAIN;
+    _wp.reset();
   }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
 
-    // Label keyboard (mark / rename) owns the whole screen while open.
-    if (_kb_active) return _wp_kb.render(display);
-
-    // Waypoint sub-screens replace the trail views.
-    if (_wp_mode == WP_ADD)  { renderAddForm(display); return 1000; }
-    if (_wp_mode == WP_NAV)  { renderWpNav(display);  return 1000; }
-    if (_wp_mode == WP_LIST) {
-      renderWpList(display);
-      if (_wp_ctx.active) _wp_ctx.render(display);
-      return 1000;
-    }
+    // Waypoint management UI owns the screen while active.
+    if (_wp.active()) return _wp.render(display);
 
     // Title carries the view counter so the bottom hint row can be reclaimed
     // for content.
@@ -109,140 +88,45 @@ public:
   }
 
   bool handleInput(char c) override {
-    // Label keyboard (mark new / rename) takes all input first.
-    if (_kb_active) {
-      auto r = _wp_kb.handleInput(c);
-      if (r == KeyboardWidget::DONE) {
-        if (_kb_field >= 0) applyAddField(_wp_kb.buf);         // WP_ADD field edit
-        else                commitLabel(_wp_kb.buf);           // mark / rename label
-        _kb_active = false; _kb_field = -1;
-      } else if (r == KeyboardWidget::CANCELLED) {
-        _kb_active = false; _kb_field = -1;
-      }
-      return true;
-    }
-
-    // Waypoint Rename/Delete popup. Operates on the saved-waypoint index
-    // (the synthetic Trail-start row, if any, is never editable).
-    if (_wp_ctx.active) {
-      auto res = _wp_ctx.handleInput(c);
-      if (res == PopupMenu::SELECTED) {
-        int sel = _wp_ctx.selectedIndex();
-        int wi  = wpIndex();
-        if (sel == 0) {                                  // Rename
-          if (wi >= 0 && wi < _task->waypoints().count()) {
-            _kb_rename_idx = wi;
-            _wp_kb.begin(_task->waypoints().at(wi).label, WAYPOINT_LABEL_LEN - 1);
-            _kb_active = true;
-          }
-        } else if (sel == 1) {                            // Delete
-          if (wi >= 0 && wi < _task->waypoints().count()) {
-            _task->waypoints().remove(wi);
-            _task->saveWaypoints();
-            if (_wp_sel >= wpListCount()) _wp_sel = wpListCount() - 1;
-            if (_wp_sel < 0) _wp_sel = 0;
-          }
-        } else {                                           // Send (share in a message)
-          if (wi >= 0 && wi < _task->waypoints().count()) {
-            const Waypoint& w = _task->waypoints().at(wi);
-            double lat = w.lat_1e6 / 1000000.0, lon = w.lon_1e6 / 1000000.0;
-            char text[80];
-            if (w.label[0]) snprintf(text, sizeof(text), WAYPOINT_MSG_TAG "%.5f,%.5f %s", lat, lon, w.label);
-            else            snprintf(text, sizeof(text), WAYPOINT_MSG_TAG "%.5f,%.5f", lat, lon);
-            _task->shareToMessage(text);   // hands off to the Messages screen
-          }
-        }
-      }
-      return true;
-    }
-
-    // WP_ADD form: type lat/lon (magnitude) + hemisphere toggle + label.
-    if (_wp_mode == WP_ADD) {
-      if (c == KEY_CANCEL) { _wp_mode = WP_OFF; return true; }
-      if (c == KEY_UP   && _add_sel > 0) { _add_sel--; return true; }
-      if (c == KEY_DOWN && _add_sel < 3) { _add_sel++; return true; }
-      if (c == KEY_LEFT || c == KEY_RIGHT) {
-        if      (_add_sel == 0) _add_lat_neg = !_add_lat_neg;   // N <-> S
-        else if (_add_sel == 1) _add_lon_neg = !_add_lon_neg;   // E <-> W
-        return true;
-      }
-      if (c == KEY_ENTER) {
-        if      (_add_sel == 0) { _kb_field = 0; _wp_kb.begin(_add_lat, 11); _kb_active = true; }
-        else if (_add_sel == 1) { _kb_field = 1; _wp_kb.begin(_add_lon, 11); _kb_active = true; }
-        else if (_add_sel == 2) { _kb_field = 2; _wp_kb.begin(_add_label, WAYPOINT_LABEL_LEN - 1); _kb_active = true; }
-        else                    { commitAddForm(); }
-        return true;
-      }
-      return true;
-    }
-
-    // Waypoint navigation view — any nav key returns to the list.
-    if (_wp_mode == WP_NAV) {
-      if (c == KEY_CANCEL || c == KEY_LEFT || c == KEY_PREV ||
-          c == KEY_RIGHT  || c == KEY_NEXT) { _wp_mode = WP_LIST; }
-      return true;
-    }
-
-    // Waypoint list (row 0 is the synthetic "Trail start" when a trail exists;
-    // the final row is "+ Add by coords").
-    if (_wp_mode == WP_LIST) {
-      int n = wpListCount();
-      int total = n + 1;                       // + the "Add by coords" row
-      if (c == KEY_CANCEL) { _wp_mode = WP_OFF; return true; }
-      if (c == KEY_UP   && _wp_sel > 0)         { _wp_sel--; if (_wp_sel < _wp_scroll) _wp_scroll = _wp_sel; return true; }
-      if (c == KEY_DOWN && _wp_sel < total - 1) { _wp_sel++; return true; }
-      if (c == KEY_ENTER) {
-        if (_wp_sel == n) handleAddByCoords();   // last row → open the add form
-        else              _wp_mode = WP_NAV;     // a waypoint / Trail-start row
-        return true;
-      }
-      // Rename/Delete/Send apply to saved waypoints only — not Trail-start or Add.
-      if (c == KEY_CONTEXT_MENU && !selIsStart() && wpIndex() < _task->waypoints().count()) {
-        _wp_ctx.begin("Waypoint", 3);
-        _wp_ctx.addItem("Rename");
-        _wp_ctx.addItem("Delete");
-        _wp_ctx.addItem("Send");
-        return true;
-      }
-      return true;
-    }
+    // Waypoint management UI consumes all input while active.
+    if (_wp.active()) return _wp.handleInput(c);
 
     // Action popup overrides everything else.
     if (_action_menu.active) {
-      // LEFT/RIGHT on settings rows cycles the value in-place and refreshes
-      // the popup label — the popup stays open so the user can keep tapping.
+      // LEFT/RIGHT cycles the focused value — only meaningful in the Settings
+      // submenu; the popup stays open so the user can keep tapping.
       if (c == KEY_LEFT || c == KEY_RIGHT || c == KEY_PREV || c == KEY_NEXT) {
-        int idx = _action_menu.selectedIndex();
-        if (idx >= 0 && idx < _act_count) {
-          NodePrefs* p = _task->getNodePrefs();
-          int dir = (c == KEY_RIGHT || c == KEY_NEXT) ? 1 : -1;
-          if (_act_map[idx] == ACT_MIN_DIST && p) { cycleMinDelta(p, dir); _cfg_dirty = true; refreshActionLabels(); return true; }
-          if (_act_map[idx] == ACT_UNITS    && p) { cycleUnits(p, dir);    _cfg_dirty = true; refreshActionLabels(); return true; }
-          if (_act_map[idx] == ACT_GRID)          { _map_grid = !_map_grid;                    refreshActionLabels(); return true; }
+        if (_menu_level == ML_SETTINGS) {
+          int idx = _action_menu.selectedIndex();
+          if (idx >= 0 && idx < _act_count)
+            cycleSetting((ActionId)_act_map[idx], (c == KEY_RIGHT || c == KEY_NEXT) ? 1 : -1);
         }
-        return true;  // swallow on action rows
+        return true;  // swallow elsewhere
       }
       auto res = _action_menu.handleInput(c);
       if (res == PopupMenu::SELECTED) {
         int sel = _action_menu.selectedIndex();
-        if (sel >= 0 && sel < _act_count) {
-          ActionId act = (ActionId)_act_map[sel];
-          if (act == ACT_TOGGLE)        { handleToggle(); }
-          else if (act == ACT_SAVE)     { handleSave(); }
-          else if (act == ACT_LOAD)     { handleLoad(); }
-          else if (act == ACT_RESET)    { handleReset(); }
-          else if (act == ACT_GRID)         { _map_grid = !_map_grid; }
-          else if (act == ACT_EXPORT)       { handleExport(); }
-          else if (act == ACT_EXPORT_SAVED) { handleExportSaved(); }
-          else if (act == ACT_MARK)         { handleMarkHere(); }
-          else if (act == ACT_WAYPOINTS)    { _wp_mode = WP_LIST; _wp_sel = 0; _wp_scroll = 0; }
-          else if (act == ACT_WP_CLEAR)     { _task->waypoints().clear(); _task->saveWaypoints();
-                                              _task->showAlert("Waypoints cleared", 800); }
-          else /* MIN_DIST / UNITS */       { reopenAt(sel); return true; }  // re-open keeping focus
+        ActionId act = (sel >= 0 && sel < _act_count) ? (ActionId)_act_map[sel] : ACT_TOGGLE;
+        switch (act) {
+          case ACT_FILE:     buildFileMenu();     return true;   // descend into submenu
+          case ACT_SETTINGS: buildSettingsMenu(); return true;
+          // Settings rows: Enter advances/toggles the value and keeps focus.
+          case ACT_MIN_DIST:
+          case ACT_UNITS:
+          case ACT_GRID:     cycleSetting(act, 1); reopenSettingsAt(sel); return true;
+          case ACT_TOGGLE:        handleToggle();      break;
+          case ACT_MARK:          _wp.markHere();      break;
+          case ACT_WAYPOINTS:     _wp.openList();      break;
+          case ACT_SAVE:          handleSave();        break;
+          case ACT_LOAD:          handleLoad();        break;
+          case ACT_RESET:         handleReset();       break;
+          case ACT_EXPORT:        handleExport();      break;
+          case ACT_EXPORT_SAVED:  handleExportSaved(); break;
         }
         if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
       } else if (res == PopupMenu::CANCELLED) {
         if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
+        if (_menu_level != ML_MAIN) buildMainMenu();   // Cancel backs out of a submenu
       }
       return true;
     }
@@ -360,26 +244,57 @@ private:
     _action_menu.addItem(label);
   }
 
-  void openActionMenu() {
+  bool fileMenuHasItems() const { return !_store->empty() || savedTrailExists(); }
+
+  // Hold-Enter entry point — always opens the short main menu.
+  void openActionMenu() { buildMainMenu(); }
+
+  void buildMainMenu() {
     refreshActionLabels();
-    _act_count = 0;
+    _menu_level = ML_MAIN;
+    _act_count  = 0;
     _action_menu.begin("Trail", 4);
-    pushAction(ACT_MIN_DIST, _act_min_dist_label);
-    pushAction(ACT_UNITS,    _act_units_label);
-    pushAction(ACT_GRID,     _act_grid_label);
-    pushAction(ACT_TOGGLE,   _act_toggle_label);
-    // Waypoints: mark the current spot, and browse/navigate saved ones.
+    pushAction(ACT_TOGGLE,    _act_toggle_label);
     pushAction(ACT_MARK,      "Mark here");
     // "Waypoints" opens the nav list — always available; it hosts the list,
     // backtrack (Trail-start row) and the "+ Add by coords" entry.
-    pushAction(ACT_WAYPOINTS, "Waypoints");
-    if (_task->waypoints().count() > 0) pushAction(ACT_WP_CLEAR, "Clear waypoints");
-    if (!_store->empty())               pushAction(ACT_SAVE,     "Save trail");
+    pushAction(ACT_WAYPOINTS, "Waypoints...");
+    if (fileMenuHasItems()) pushAction(ACT_FILE, "Trail file...");
+    pushAction(ACT_SETTINGS,  "Settings...");
+  }
+
+  // Trail-file submenu — only the operations that make sense right now.
+  void buildFileMenu() {
+    _menu_level = ML_FILE;
+    _act_count  = 0;
+    _action_menu.begin("Trail file", 4);
     bool saved = savedTrailExists();
-    if (saved)                          pushAction(ACT_LOAD,     "Load trail");
-    if (!_store->empty())               pushAction(ACT_EXPORT,   "Export (live)");
-    if (saved)                          pushAction(ACT_EXPORT_SAVED, "Export (saved)");
-    if (!_store->empty())               pushAction(ACT_RESET,    "Reset trail");
+    if (!_store->empty()) pushAction(ACT_SAVE,         "Save trail");
+    if (saved)            pushAction(ACT_LOAD,         "Load trail");
+    if (!_store->empty()) pushAction(ACT_EXPORT,       "Export (live)");
+    if (saved)            pushAction(ACT_EXPORT_SAVED, "Export (saved)");
+    if (!_store->empty()) pushAction(ACT_RESET,        "Reset trail");
+  }
+
+  // Settings submenu — values cycled with LEFT/RIGHT (or Enter). View-aware:
+  // Grid only matters on the Map, Readout only on the Summary.
+  void buildSettingsMenu() {
+    refreshActionLabels();
+    _menu_level = ML_SETTINGS;
+    _act_count  = 0;
+    _action_menu.begin("Settings", 3);
+    pushAction(ACT_MIN_DIST, _act_min_dist_label);
+    if (_view == V_SUMMARY) pushAction(ACT_UNITS, _act_units_label);
+    if (_view == V_MAP)     pushAction(ACT_GRID,  _act_grid_label);
+  }
+
+  // Cycle a settings value. Returns true if `act` was a settings row.
+  bool cycleSetting(ActionId act, int dir) {
+    NodePrefs* p = _task->getNodePrefs();
+    if (act == ACT_MIN_DIST && p) { cycleMinDelta(p, dir); _cfg_dirty = true; refreshActionLabels(); return true; }
+    if (act == ACT_UNITS    && p) { cycleUnits(p, dir);    _cfg_dirty = true; refreshActionLabels(); return true; }
+    if (act == ACT_GRID)          { _map_grid = !_map_grid;                    refreshActionLabels(); return true; }
+    return false;
   }
 
   static bool savedTrailExists() {
@@ -391,195 +306,16 @@ private:
     return ok;
   }
 
-  // ── Waypoints ──────────────────────────────────────────────────────────────
-  // The nav list shows a synthetic "Trail start" row (index 0) whenever a trail
-  // exists, followed by the saved waypoints. These helpers map the combined
-  // row index (_wp_sel) onto that layout.
-  bool hasStart() const { return !_store->empty(); }
-  int  wpListCount() const { return (hasStart() ? 1 : 0) + _task->waypoints().count(); }
-  bool selIsStart() const { return hasStart() && _wp_sel == 0; }
-  int  wpIndex() const { return _wp_sel - (hasStart() ? 1 : 0); }  // index into WaypointStore
-
+  // GPS / unit helpers shared by the trail views and the map. (Waypoint list /
+  // navigation / add / mark / rename / delete / send moved to WaypointsView.)
   bool ownPos(int32_t& lat, int32_t& lon) const { return _task->currentLocation(lat, lon); }
-
   bool useImperial() const { return _task && _task->useImperial(); }
 
-  void handleMarkHere() {
-    int32_t lat, lon;
-    if (!ownPos(lat, lon))            { _task->showAlert("No GPS fix", 1000); return; }
-    if (_task->waypoints().full())    { _task->showAlert("Waypoints full", 1000); return; }
-    _mark_lat = lat; _mark_lon = lon; _mark_ts = (uint32_t)rtc_clock.getCurrentTime();
-    _kb_rename_idx = -1;
-    _wp_kb.begin("", WAYPOINT_LABEL_LEN - 1);
-    _kb_active = true;
-  }
-
-  // Add a waypoint by coordinates (no GPS fix needed). Opens the WP_ADD form.
-  void handleAddByCoords() {
-    if (_task->waypoints().full()) { _task->showAlert("Waypoints full", 1000); return; }
-    _add_lat[0] = _add_lon[0] = _add_label[0] = '\0';
-    _add_lat_neg = _add_lon_neg = false;
-    _add_sel = 0;
-    _wp_mode = WP_ADD;
-  }
-
-  // Store the just-typed value into the focused WP_ADD field.
-  void applyAddField(const char* buf) {
-    char* dst = (_kb_field == 0) ? _add_lat
-              : (_kb_field == 1) ? _add_lon : _add_label;
-    int   cap = (_kb_field == 2) ? WAYPOINT_LABEL_LEN : (int)sizeof(_add_lat);
-    strncpy(dst, buf, cap - 1);
-    dst[cap - 1] = '\0';
-  }
-
-  // Parse a numeric field: true only when the whole string is a number (so a
-  // stray letter from the full keyboard can't silently read as 0).
-  static bool parseNum(const char* s, double& out) {
-    if (!s || !s[0]) return false;
-    char* end = nullptr;
-    out = strtod(s, &end);
-    if (end == s) return false;          // nothing numeric parsed
-    while (*end == ' ') end++;
-    return *end == '\0';                  // no trailing non-numeric chars
-  }
-
-  // Validate the form and save the waypoint.
-  void commitAddForm() {
-    double la, lo;
-    if (!parseNum(_add_lat, la) || !parseNum(_add_lon, lo)) {
-      _task->showAlert("Lat/Lon invalid", 1200); return;
-    }
-    if (_add_lat_neg) la = -la;
-    if (_add_lon_neg) lo = -lo;
-    if (la < -90.0 || la > 90.0 || lo < -180.0 || lo > 180.0) {
-      _task->showAlert("Out of range", 1200); return;
-    }
-    if (_task->waypoints().full()) { _task->showAlert("Waypoints full", 1000); return; }
-    int32_t lat = (int32_t)(la * 1e6 + (la < 0 ? -0.5 : 0.5));
-    int32_t lon = (int32_t)(lo * 1e6 + (lo < 0 ? -0.5 : 0.5));
-    char label[WAYPOINT_LABEL_LEN];
-    if (_add_label[0]) { strncpy(label, _add_label, sizeof(label) - 1); label[sizeof(label) - 1] = '\0'; }
-    else               snprintf(label, sizeof(label), "WP%d", _task->waypoints().count() + 1);
-    if (_task->addWaypoint(lat, lon, label)) { _wp_mode = WP_OFF; }
-  }
-
-  void renderAddForm(DisplayDriver& display) {
-    display.setColor(DisplayDriver::LIGHT);
-    display.drawTextCentered(display.width() / 2, 0, "ADD WAYPOINT");
-    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
-    const int top  = display.listStart();
-    const int step = display.lineStep();
-    const int cw   = display.getCharWidth();
-    for (int i = 0; i < 4; i++) {
-      int y = top + i * step;
-      bool sel = (i == _add_sel);
-      display.drawSelectionRow(0, y - 1, display.width(), step - 1, sel);
-      display.setCursor(0, y); display.print(sel ? ">" : " ");
-      char row[28];
-      if      (i == 0) snprintf(row, sizeof(row), "Lat: %c %s", _add_lat_neg ? 'S' : 'N', _add_lat[0] ? _add_lat : "--");
-      else if (i == 1) snprintf(row, sizeof(row), "Lon: %c %s", _add_lon_neg ? 'W' : 'E', _add_lon[0] ? _add_lon : "--");
-      else if (i == 2) snprintf(row, sizeof(row), "Label: %s",  _add_label[0] ? _add_label : "(auto)");
-      else             snprintf(row, sizeof(row), "[Save]");
-      display.setCursor(cw + 2, y); display.print(row);
-      display.setColor(DisplayDriver::LIGHT);
-    }
-  }
-
-  void commitLabel(const char* buf) {
-    if (_kb_rename_idx >= 0) {
-      _task->waypoints().rename(_kb_rename_idx, buf);
-      _task->saveWaypoints();
-      _kb_rename_idx = -1;
-      return;
-    }
-    char auto_lbl[WAYPOINT_LABEL_LEN];
-    if (!buf || !buf[0]) {
-      snprintf(auto_lbl, sizeof(auto_lbl), "WP%d", _task->waypoints().count() + 1);
-      buf = auto_lbl;
-    }
-    _task->addWaypoint(_mark_lat, _mark_lon, _mark_ts, buf);
-  }
-
-  void renderWpList(DisplayDriver& display) {
-    display.setColor(DisplayDriver::LIGHT);
-    char title[24];
-    snprintf(title, sizeof(title), "WAYPOINTS %d/%d",
-             _task->waypoints().count(), WaypointStore::CAPACITY);
-    display.drawTextCentered(display.width() / 2, 0, title);
-    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
-
-    int n     = wpListCount();
-    int total = n + 1;                    // final row = "+ Add by coords"
-    const int top  = display.listStart();
-    const int step = display.lineStep();
-    const int cw   = display.getCharWidth();
-    int vis = display.listVisible();
-    if (vis < 1) vis = 1;
-    if (_wp_sel < _wp_scroll)            _wp_scroll = _wp_sel;
-    if (_wp_sel >= _wp_scroll + vis)     _wp_scroll = _wp_sel - vis + 1;
-
-    int32_t mylat, mylon; bool have = ownPos(mylat, mylon);
-
-    for (int i = 0; i < vis && (_wp_scroll + i) < total; i++) {
-      int row = _wp_scroll + i;
-      int y = top + i * step;
-      bool sel = (row == _wp_sel);
-      display.drawSelectionRow(0, y - 1, display.width(), step - 1, sel);
-      display.setCursor(0, y); display.print(sel ? ">" : " ");
-
-      if (row == n) {                     // the synthetic "Add" row
-        display.setCursor(cw + 2, y); display.print("+ Add by coords");
-        display.setColor(DisplayDriver::LIGHT);
-        continue;
-      }
-
-      int32_t tlat, tlon; const char* label;
-      if (!rowTarget(row, tlat, tlon, label)) continue;
-      char dist[12] = ""; int bw = 0;
-      if (have) {
-        geo::fmtDist(dist, sizeof(dist), geo::haversineKm(mylat, mylon, tlat, tlon), useImperial());
-        bw = display.getTextWidth(dist) + 2;
-      }
-      char nm[24];
-      display.translateUTF8ToBlocks(nm, label, sizeof(nm));
-      display.drawTextEllipsized(cw + 2, y, display.width() - cw - 2 - bw, nm);
-      if (dist[0]) { display.setCursor(display.width() - bw + 1, y); display.print(dist); }
-      display.setColor(DisplayDriver::LIGHT);
-    }
-  }
-
-  void renderWpNav(DisplayDriver& display) {
-    int32_t tlat, tlon; const char* label;
-    if (!rowTarget(_wp_sel, tlat, tlon, label)) { _wp_mode = WP_LIST; return; }
-    int32_t mylat, mylon; bool have = ownPos(mylat, mylon);
-    int cog; bool cogv = _task->currentCourse(cog);
-    navview::draw(display, have, mylat, mylon, tlat, tlon, label, cogv, cog, useImperial());
-  }
-
-  // Resolve a combined-list row to a nav target. Row 0 is the trail start when
-  // a trail exists; the rest are saved waypoints.
-  bool rowTarget(int row, int32_t& lat, int32_t& lon, const char*& label) {
-    if (hasStart() && row == 0) {
-      const TrailPoint& s = _store->first();
-      lat = s.lat_1e6; lon = s.lon_1e6; label = "Trail start";
-      return true;
-    }
-    int wi = row - (hasStart() ? 1 : 0);
-    WaypointStore& wp = _task->waypoints();
-    if (wi >= 0 && wi < wp.count()) {
-      const Waypoint& w = wp.at(wi);
-      lat = w.lat_1e6; lon = w.lon_1e6;
-      label = w.label[0] ? w.label : "(unnamed)";
-      return true;
-    }
-    return false;
-  }
-
   // After Enter on a settings row, the popup auto-closes per PopupMenu's
-  // semantics. Re-open it with focus restored to that row so the user can
-  // continue cycling.
-  void reopenAt(int sel) {
-    openActionMenu();
+  // semantics. Re-open the Settings submenu with focus restored to that row so
+  // the user can continue cycling.
+  void reopenSettingsAt(int sel) {
+    buildSettingsMenu();
     _action_menu.setSelected(sel);
   }
 
@@ -734,6 +470,71 @@ private:
                              _list_scroll > 0, _list_scroll + visible < total);
   }
 
+  // Shared map projection: geographic (1e-6 deg) → screen pixels. The scale is
+  // isotropic (cos(lat) folded into lon), so a metre maps to the same pixel
+  // count on both axes. Built once in renderMap and handed to renderGrid and
+  // the marker drawing so the projection equation lives in exactly one place.
+  struct MapProjection {
+    int32_t min_lat, max_lat, min_lon;
+    float   lon_scale_geo, scale;
+    int     off_x, off_y, area_x, area_y, area_w, area_h;
+    void project(int32_t lat, int32_t lon, int& px, int& py) const {
+      px = off_x + (int)((float)(lon - min_lon) * lon_scale_geo * scale);
+      py = off_y + (int)((float)(max_lat - lat) * scale);
+    }
+  };
+
+  // Fold the trail / waypoints / live position into a bounding box. With a trail,
+  // only the route + live position define the box (far waypoints clamp to the
+  // edge when drawn); without one, the waypoints do. Returns false if empty.
+  bool computeBounds(bool have_trail, bool have_gps, int32_t my_lat, int32_t my_lon,
+                     int32_t& min_lat, int32_t& min_lon,
+                     int32_t& max_lat, int32_t& max_lon) const {
+    bool init = false;
+    auto fold = [&](int32_t lat, int32_t lon) {
+      if (!init) { min_lat = max_lat = lat; min_lon = max_lon = lon; init = true; }
+      else {
+        if (lat < min_lat) min_lat = lat;  if (lat > max_lat) max_lat = lat;
+        if (lon < min_lon) min_lon = lon;  if (lon > max_lon) max_lon = lon;
+      }
+    };
+    if (have_trail) {
+      int32_t a, b, c, d; _store->boundingBox(a, b, c, d);
+      fold(a, b); fold(c, d);
+    } else {
+      WaypointStore& wp = _task->waypoints();
+      for (int i = 0; i < wp.count(); i++) fold(wp.at(i).lat_1e6, wp.at(i).lon_1e6);
+    }
+    if (have_gps) fold(my_lat, my_lon);
+    return init;
+  }
+
+  // Draw the saved waypoints (label's first two chars beside each, clamped to the
+  // frame) and the current-position marker (live GPS, else last trail point).
+  void drawMarkers(DisplayDriver& display, const MapProjection& proj,
+                   bool have_gps, int32_t my_lat, int32_t my_lon, bool have_trail) {
+    const int area_x = proj.area_x, area_y = proj.area_y;
+    const int area_w = proj.area_w, area_h = proj.area_h;
+    WaypointStore& wp = _task->waypoints();
+    const int wp_x_max = area_x + area_w - 1, wp_y_max = area_y + area_h - 1;
+    for (int i = 0; i < wp.count(); i++) {
+      const Waypoint& w = wp.at(i);
+      int wx, wy; proj.project(w.lat_1e6, w.lon_1e6, wx, wy);
+      if (wx < area_x) wx = area_x;  else if (wx > wp_x_max) wx = wp_x_max;
+      if (wy < area_y) wy = area_y;  else if (wy > wp_y_max) wy = wp_y_max;
+      drawWaypointMarker(display, wx, wy);
+      char s[3] = { w.label[0], w.label[0] ? w.label[1] : (char)0, 0 };
+      drawWaypointLabel(display, s, wx, wy, area_x, area_y, area_w, area_h);
+    }
+    if (have_gps) {
+      int mx, my; proj.project(my_lat, my_lon, mx, my);
+      drawCurrentMarker(display, mx, my);
+    } else if (have_trail) {
+      int ex, ey; proj.project(_store->last().lat_1e6, _store->last().lon_1e6, ex, ey);
+      drawCurrentMarker(display, ex, ey);
+    }
+  }
+
   void renderMap(DisplayDriver& display) {
     const int top    = display.listStart();
     const int bottom = display.height() - 2;
@@ -761,24 +562,7 @@ private:
     // Bounding box spans the trail, every waypoint, and the live position, so
     // everything of interest stays in frame.
     int32_t min_lat = 0, min_lon = 0, max_lat = 0, max_lon = 0;
-    bool init = false;
-    auto fold = [&](int32_t lat, int32_t lon) {
-      if (!init) { min_lat = max_lat = lat; min_lon = max_lon = lon; init = true; }
-      else {
-        if (lat < min_lat) min_lat = lat;  if (lat > max_lat) max_lat = lat;
-        if (lon < min_lon) min_lon = lon;  if (lon > max_lon) max_lon = lon;
-      }
-    };
-    // With a trail, frame the recorded route (and live position) and let far
-    // waypoints clamp to the map edge — they must not blow up the scale. Only
-    // when there's no trail do waypoints define the view.
-    if (have_trail) {
-      int32_t a, b, c, d; _store->boundingBox(a, b, c, d);
-      fold(a, b); fold(c, d);
-    } else {
-      for (int i = 0; i < nwp; i++) fold(wp.at(i).lat_1e6, wp.at(i).lon_1e6);
-    }
-    if (have_gps) fold(my_lat, my_lon);
+    computeBounds(have_trail, have_gps, my_lat, my_lon, min_lat, min_lon, max_lat, max_lon);
 
     // Degenerate: everything at one coordinate — just centre the markers.
     if (min_lat == max_lat && min_lon == max_lon) {
@@ -810,29 +594,26 @@ private:
 
     int used_w = (int)(lon_span * scale);
     int used_h = (int)(lat_span * scale);
-    int off_x  = area_x + (area_w - used_w) / 2;
-    int off_y  = area_y + (area_h - used_h) / 2;
 
-    auto projectLL = [&](int32_t lat, int32_t lon, int& px, int& py) {
-      px = off_x + (int)((float)(lon - min_lon) * lon_scale_geo * scale);
-      py = off_y + (int)((float)(max_lat - lat) * scale);
-    };
-    auto project = [&](const TrailPoint& p, int& px, int& py) {
-      projectLL(p.lat_1e6, p.lon_1e6, px, py);
-    };
+    MapProjection proj;
+    proj.min_lat = min_lat;  proj.max_lat = max_lat;  proj.min_lon = min_lon;
+    proj.lon_scale_geo = lon_scale_geo;  proj.scale = scale;
+    proj.off_x  = area_x + (area_w - used_w) / 2;
+    proj.off_y  = area_y + (area_h - used_h) / 2;
+    proj.area_x = area_x;  proj.area_y = area_y;
+    proj.area_w = area_w;  proj.area_h = area_h;
 
-    if (_map_grid)
-      renderGrid(display, area_x, area_y, area_w, area_h,
-                 min_lat, max_lat, min_lon, lon_scale_geo, scale, off_x, off_y);
+    if (_map_grid) renderGrid(display, proj);
 
     if (have_trail) {
       int x0, y0;
-      project(_store->at(0), x0, y0);
+      proj.project(_store->at(0).lat_1e6, _store->at(0).lon_1e6, x0, y0);
       display.fillRect(x0, y0, 1, 1);
       for (int i = 1; i < _store->count(); i++) {
+        const TrailPoint& pt = _store->at(i);
         int x1, y1;
-        project(_store->at(i), x1, y1);
-        if (_store->at(i).flags & TRAIL_FLAG_SEG_START) {
+        proj.project(pt.lat_1e6, pt.lon_1e6, x1, y1);
+        if (pt.flags & TRAIL_FLAG_SEG_START) {
           drawFilledDot(display, x0, y0);
           drawOpenDot(display, x1, y1);
         } else {
@@ -842,51 +623,25 @@ private:
         y0 = y1;
       }
       int sx, sy;
-      project(_store->first(), sx, sy);
+      proj.project(_store->first().lat_1e6, _store->first().lon_1e6, sx, sy);
       drawStartMarker(display, sx, sy);
     }
 
-    // Waypoints, with the first two label characters beside the marker so
-    // nearby waypoints can be told apart. A waypoint that falls outside the
-    // (trail-framed) view is clamped to the nearest edge instead of being lost.
-    const int wp_x_max = area_x + area_w - 1, wp_y_max = area_y + area_h - 1;
-    for (int i = 0; i < nwp; i++) {
-      const Waypoint& w = wp.at(i);
-      int wx, wy; projectLL(w.lat_1e6, w.lon_1e6, wx, wy);
-      if (wx < area_x) wx = area_x;  else if (wx > wp_x_max) wx = wp_x_max;
-      if (wy < area_y) wy = area_y;  else if (wy > wp_y_max) wy = wp_y_max;
-      drawWaypointMarker(display, wx, wy);
-      char s[3] = { w.label[0], w.label[0] ? w.label[1] : (char)0, 0 };
-      drawWaypointLabel(display, s, wx, wy, area_x, area_y, area_w, area_h);
-    }
-
-    // Current position marker on top — live GPS if we have a fix, otherwise the
-    // last recorded trail point.
-    if (have_gps) {
-      int mx, my; projectLL(my_lat, my_lon, mx, my);
-      drawCurrentMarker(display, mx, my);
-    } else if (have_trail) {
-      int ex, ey; project(_store->last(), ex, ey);
-      drawCurrentMarker(display, ex, ey);
-    }
+    drawMarkers(display, proj, have_gps, my_lat, my_lon, have_trail);
 
     drawNorthArrow(display, area_x + area_w - 4, area_y + display.getLineHeight() + 1);
   }
 
-  void renderGrid(DisplayDriver& display,
-                  int area_x, int area_y, int area_w, int area_h,
-                  int32_t min_lat, int32_t max_lat, int32_t min_lon,
-                  float lon_scale_geo, float scale, int off_x, int off_y) {
+  void renderGrid(DisplayDriver& display, const MapProjection& proj) {
+    const int area_x = proj.area_x, area_y = proj.area_y;
+    const int area_w = proj.area_w, area_h = proj.area_h;
     static constexpr float M_PER_1E6 = 0.11132f;  // metres per 1e-6 deg lat
-    float ppm = scale / M_PER_1E6;
+    float ppm = proj.scale / M_PER_1E6;            // pixels per metre (isotropic)
     if (ppm <= 0.0f) return;
 
-    float shorter_m = (float)(area_w < area_h ? area_w : area_h) / ppm;
-    float target_m  = shorter_m / 3.0f;
-
-    // Round scale steps with matching labels. The grid geometry works in metres,
-    // so imperial steps are stored as their metre equivalents but labelled with
-    // their exact round ft/mi value. Both tables are parallel (step ↔ label).
+    // Round scale steps with matching labels. Imperial steps are stored as their
+    // metre equivalents but labelled with their exact round ft/mi value. Both
+    // tables are parallel (step ↔ label).
     static const float METRIC_STEPS[] = {
       1, 2, 5, 10, 20, 50, 100, 200, 500,
       1000, 2000, 5000, 10000, 20000, 50000, 100000
@@ -909,95 +664,67 @@ private:
     const int N_STEPS = imp ? (int)(sizeof(IMPERIAL_STEPS)/sizeof(IMPERIAL_STEPS[0]))
                             : (int)(sizeof(METRIC_STEPS)/sizeof(METRIC_STEPS[0]));
 
-    // Pick largest step ≤ target_m (gives ~3 intervals across shorter dim).
-    int sel = 0;
-    for (int si = N_STEPS - 1; si >= 0; si--) {
-      if (STEPS[si] <= target_m) { sel = si; break; }
-    }
-    // Bump up until pixel spacing between intersections is at least MIN_GRID_PX.
-    // This keeps OLED grids sparse even when target_m selects a fine step.
+    // Pick the round step nearest ~1/3 of the shorter side, then keep it sparse
+    // enough to read on an OLED (≥ MIN_GRID_PX between intersections).
     static const float MIN_GRID_PX = 22.0f;
-    while (sel < N_STEPS - 1 && STEPS[sel] / M_PER_1E6 * scale < MIN_GRID_PX)
-      sel++;
-    // Clamp back down: ensure at least 2 intervals (3 visible lines) across
-    // the shorter dimension. MIN_GRID_PX must not leave only 1 interval.
-    float shorter_px = (float)(area_w < area_h ? area_w : area_h);
-    while (sel > 0 && STEPS[sel] / M_PER_1E6 * scale > shorter_px / 2.0f)
-      sel--;
+    int shorter_px = area_w < area_h ? area_w : area_h;
+    float target_m = (shorter_px / ppm) / 3.0f;
+    int sel = 0;
+    for (int si = N_STEPS - 1; si >= 0; si--) { if (STEPS[si] <= target_m) { sel = si; break; } }
+    while (sel < N_STEPS - 1 && STEPS[sel] * ppm < MIN_GRID_PX) sel++;
 
-    float vis_lat_max = (float)max_lat + (float)(off_y - area_y) / scale;
-    float vis_lat_min = (float)max_lat - (float)(area_y + area_h - off_y) / scale;
-    float vis_lon_min = (float)min_lon - (float)(off_x - area_x) / (lon_scale_geo * scale);
-    float vis_lon_max = (float)min_lon + (float)(area_x + area_w - off_x) / (lon_scale_geo * scale);
+    // Square cells, snapped to the shorter side: divide the shorter dimension
+    // into a whole number of equal cells (so the grid touches that pair of
+    // borders), use that exact size as the square cell, and centre the whole
+    // number of cells that fit along the longer dimension. Result: square grid,
+    // reaches the frame top↔bottom (landscape), symmetric left↔right — no
+    // one-sided drift, no rectangular cells. Cap so spacing stays ≥ MIN_GRID_PX.
+    float step_px   = STEPS[sel] * ppm;
+    bool  h_shorter = (area_h <= area_w);
+    int   short_px  = h_shorter ? area_h : area_w;
+    int   long_px   = h_shorter ? area_w : area_h;
+    int   max_short = (int)(short_px / MIN_GRID_PX); if (max_short < 1) max_short = 1;
+    int   n_short   = (int)((float)short_px / step_px + 0.5f);
+    if (n_short < 1) n_short = 1;  if (n_short > max_short) n_short = max_short;
+    float cell      = (float)short_px / (float)n_short;          // exact square size
+    int   n_long    = (int)((float)long_px / cell);              // whole cells that fit
+    if (n_long < 1) n_long = 1;
+    int   off_long  = (int)(((float)long_px - (float)n_long * cell) / 2.0f + 0.5f);
 
-    // Final guard: a very elongated trail (lat_span ≪ lon_span or vice-versa)
-    // shares a single isotropic scale, so the visible window in the *short*
-    // direction can span many grid_m. Bump the step up until the resulting
-    // line count fits the static buffers (40×40 = ~1600 intersections, plenty
-    // for any sane display).
-    static const int MAX_GRID_LINES = 40;
-    float grid_m = STEPS[sel];
-    float gs_lat = grid_m / M_PER_1E6;
-    float gs_lon = grid_m / (M_PER_1E6 * lon_scale_geo);
-    int lat_n = (int)((vis_lat_max - vis_lat_min) / gs_lat) + 2;
-    int lon_n = (int)((vis_lon_max - vis_lon_min) / gs_lon) + 2;
-    while ((lat_n > MAX_GRID_LINES || lon_n > MAX_GRID_LINES) && sel < N_STEPS - 1) {
-      sel++;
-      grid_m = STEPS[sel];
-      gs_lat = grid_m / M_PER_1E6;
-      gs_lon = grid_m / (M_PER_1E6 * lon_scale_geo);
-      lat_n  = (int)((vis_lat_max - vis_lat_min) / gs_lat) + 2;
-      lon_n  = (int)((vis_lon_max - vis_lon_min) / gs_lon) + 2;
-    }
-    if (lat_n > MAX_GRID_LINES || lon_n > MAX_GRID_LINES) return;  // huge step still won't fit — give up
+    // Map the short/long axes back to screen x/y.
+    int x0 = h_shorter ? area_x + off_long : area_x;
+    int y0 = h_shorter ? area_y            : area_y + off_long;
+    int cx = h_shorter ? n_long : n_short;   // cell count along x
+    int cy = h_shorter ? n_short : n_long;   // cell count along y
 
-    // Anchor to display edges so lines always start at the border and space inward.
-    float first_lat = vis_lat_min;
-    float first_lon = vis_lon_min;
+    const char* lbl = LABELS[sel];
+    int lh = display.getLineHeight();
+    int cw = display.getCharWidth();
+    int x_max = area_x + area_w - 1, y_max = area_y + area_h - 1;
 
-    int x_max = area_x + area_w - 1;
-    int y_max = area_y + area_h - 1;
-
-    auto fillSafe = [&](int x, int y) {
-      if (x >= area_x && x <= x_max && y >= area_y && y <= y_max)
-        display.fillRect(x, y, 1, 1);
-    };
-
-    // Label is the exact round step value for the selected unit system.
-    char lbl[12];
-    snprintf(lbl, sizeof(lbl), "%s", LABELS[sel]);
-    int lh  = display.getLineHeight();
-    int cw  = display.getCharWidth();
-
-    // Scale label bbox (bottom-left corner)
-    int lbl_x1 = area_x;
+    // Exclusion boxes so grid dots don't smear the scale label (bottom-left) or
+    // the north arrow (top-right, mirrors drawNorthArrow).
     int lbl_x2 = area_x + (int)strlen(lbl) * cw + 1;
     int lbl_y1 = area_y + area_h - lh - 1;
-    int lbl_y2 = area_y + area_h;
+    int arr_x1 = area_x + area_w - 4 - cw - 1;
+    int arr_y2 = area_y + lh + 1 + 7;
 
-    // North-arrow bbox — mirrors drawNorthArrow(cx = area_x+area_w-4, cy = area_y+lh+1)
-    int arr_cx  = area_x + area_w - 4;
-    int arr_cy  = area_y + lh + 1;
-    int arr_x1  = arr_cx - cw - 1;
-    int arr_x2  = x_max;
-    int arr_y1  = area_y;
-    int arr_y2  = arr_cy + 7;
+    auto fillSafe = [&](int x, int y) {
+      if (x < area_x || x > x_max || y < area_y || y > y_max) return;
+      if (x <= lbl_x2 && y >= lbl_y1) return;   // under the scale label
+      if (x >= arr_x1 && y <= arr_y2) return;   // under the north arrow
+      display.fillRect(x, y, 1, 1);
+    };
 
-    for (int i = 0; i < lat_n; i++) {
-      float lat_val = first_lat + (float)i * gs_lat;
-      int py = off_y + (int)(((float)max_lat - lat_val) * scale);
-      if (py < area_y - 1 || py > y_max + 1) continue;
-      for (int j = 0; j < lon_n; j++) {
-        float lon_val = first_lon + (float)j * gs_lon;
-        int px = off_x + (int)((lon_val - (float)min_lon) * lon_scale_geo * scale);
-        if (px < area_x - 1 || px > x_max + 1) continue;
-        if (px >= lbl_x1 && px <= lbl_x2 && py >= lbl_y1 && py <= lbl_y2) continue;
-        if (px >= arr_x1 && px <= arr_x2 && py >= arr_y1 && py <= arr_y2) continue;
-        fillSafe(px,     py);
-        fillSafe(px - 1, py);
-        fillSafe(px + 1, py);
-        fillSafe(px,     py - 1);
-        fillSafe(px,     py + 1);
+    // A single dot per intersection — cleaner and more legible on an OLED than
+    // a 5-pixel cross (whose arms also clipped at the frame edges).
+    for (int i = 0; i <= cx; i++) {
+      int px = x0 + (int)((float)i * cell + 0.5f);
+      if (px > x_max) px = x_max;
+      for (int j = 0; j <= cy; j++) {
+        int py = y0 + (int)((float)j * cell + 0.5f);
+        if (py > y_max) py = y_max;
+        fillSafe(px, py);
       }
     }
 
