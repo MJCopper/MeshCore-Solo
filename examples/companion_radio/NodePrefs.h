@@ -131,11 +131,16 @@ struct NodePrefs {  // persisted to file
   // below the ceiling, so disabling restores the user's configured power.
   uint8_t  tx_apc;
 
+  // Auto-resend for on-device DMs: number of extra send attempts (0..5) made when
+  // no end-to-end ACK arrives before the deadline, before the delivery marker
+  // shows ✗. 0 = no auto-resend (single attempt). Default 2.
+  uint8_t  dm_resend_count;
+
   // Tail sentinel written at the end of /new_prefs. Bump the low byte when
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0009;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE000A;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage

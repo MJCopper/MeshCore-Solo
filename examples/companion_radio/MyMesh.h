@@ -201,6 +201,12 @@ protected:
   void apcSampleSnr(float snr);
   void apcOnFailure();
   void apcTrackFloodSend(const mesh::Packet* pkt);
+  void trackRelaySend(const mesh::Packet* pkt);   // arm the UI relayed-into-mesh tracker
+public:
+  // Seq of the most recently tracked channel send — the UI records it on the
+  // outgoing history entry so a heard echo (onChannelRelayed) can match it back.
+  uint32_t lastChannelRelaySeq() const { return _last_relay_seq; }
+private:
 
   // DataStoreHost methods
   bool onContactLoaded(const ContactInfo& contact) override { return addContact(contact); }
@@ -291,6 +297,23 @@ private:
   uint16_t _apc_flood_len;                 // its payload length — cheap pre-filter before hashing
   uint32_t _apc_flood_deadline;            // echo-wait deadline for that send
   bool _apc_flood_pending;                 // a tracked flood send is awaiting its echo
+  // UI "relayed into mesh" tracker for channel sends — independent of APC. A small
+  // ring so a quick burst of channel sends are each tracked (not just the latest).
+  // Hashing on receive only runs while at least one slot is pending, so the hot
+  // flood-recv path is untouched otherwise.
+  static const int RELAY_RING = 4;
+  struct RelaySlot {
+    uint8_t  hash[MAX_HASH_SIZE];
+    uint16_t len;
+    uint32_t deadline;
+    uint32_t seq;
+    bool     pending;
+  };
+  RelaySlot _relay[RELAY_RING];
+  int      _relay_head;        // next ring slot to overwrite
+  int      _relay_active;      // number of slots currently pending (cheap gate)
+  uint32_t _relay_seq;         // monotonic id counter for tracked sends
+  uint32_t _last_relay_seq;    // seq of the most recent tracked send (for the UI to record)
   bool send_unscoped;   // force un-scoped flood (instead of using send_scope)
   char cli_command[80];
   uint8_t app_target_ver;

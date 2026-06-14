@@ -65,6 +65,7 @@ class SettingsScreen : public UIScreen {
     SECTION_CONTACTS, DM_FILTER, CH_FILTER, ROOM_FILTER,
     // Messages section
     SECTION_MESSAGES,
+    DM_RESEND,
     MSG_SLOT_0, MSG_SLOT_1, MSG_SLOT_2, MSG_SLOT_3, MSG_SLOT_4,
     MSG_SLOT_5, MSG_SLOT_6, MSG_SLOT_7, MSG_SLOT_8, MSG_SLOT_9,
     Count
@@ -570,6 +571,12 @@ class SettingsScreen : public UIScreen {
       display.print("Rooms");
       display.setCursor(display.valCol(), y);
       display.print((p && p->room_fav_only) ? "fav" : "all");
+    } else if (item == DM_RESEND) {
+      display.print("Resend");
+      display.setCursor(display.valCol(), y);
+      uint8_t n = p ? p->dm_resend_count : 0;
+      if (n == 0) display.print("OFF");
+      else { char buf[6]; snprintf(buf, sizeof(buf), "%ux", (unsigned)n); display.print(buf); }
     } else if (isMsgSlot(item)) {
       int slot = msgSlotIndex(item);
       char label[5];
@@ -776,6 +783,12 @@ public:
       p->units_imperial ^= 1;
       _dirty = true;
       return true;
+    }
+    if (_selected == DM_RESEND && p) {
+      int n = p->dm_resend_count;
+      if (right || enter) n = (n + 1) % 6;          // 0..5, wraps
+      else if (left)      n = (n + 5) % 6;
+      if (left || right || enter) { p->dm_resend_count = (uint8_t)n; _dirty = true; return true; }
     }
     if (_selected == BATT_DISPLAY && p) {
       int idx = p->batt_display_mode < BATT_DISPLAY_COUNT ? p->batt_display_mode : 0;

@@ -1,6 +1,52 @@
 #pragma once
 
 #include <stdint.h>
+#include <helpers/ui/DisplayDriver.h>
+
+// ── Scalable mini-icons ──────────────────────────────────────────────────────
+// Small procedural glyphs (delivery markers, etc.) authored on a 1× pixel grid
+// and scaled to the current font, so they stay legible on large-font layouts
+// (e.g. landscape e-ink renders text at 2×). Distinct from the XBM page icons
+// further down, which are fixed-size full bitmaps drawn via drawXbm().
+//
+// To add a mini-icon:
+//   1. Define a bitmap: H rows top→bottom, one byte per row, bit (1<<col) set =
+//      filled pixel (width must be ≤ 8).
+//   2. Draw it with miniIconDraw(display, x, topY, BITMAP, width, height).
+// Scaling is automatic — no per-display handling needed.
+
+// Pixel scale from the font: 1× on an 8px OLED line, 2× on a 16px landscape
+// e-ink line, etc. Bitmaps are authored on the 1× grid.
+inline int miniIconScale(DisplayDriver& d) {
+  int s = d.getLineHeight() / 8;
+  return s < 1 ? 1 : s;
+}
+
+// Draw a w×h (w ≤ 8) bitmap with the current ink colour, scaled by the font and
+// vertically centred in the text line that starts at top_y.
+inline void miniIconDraw(DisplayDriver& d, int x, int top_y,
+                         const uint8_t* rows, int w, int h) {
+  const int s = miniIconScale(d);
+  int y = top_y + (d.getLineHeight() - h * s) / 2;
+  if (y < top_y) y = top_y;
+  for (int r = 0; r < h; r++)
+    for (int c = 0; c < w; c++)
+      if (rows[r] & (1 << c)) d.fillRect(x + c * s, y + r * s, s, s);
+}
+
+// Horizontal row of `count` square dots (scaled, vertically centred). Used by
+// the "awaiting ACK" marker, where the dot count = number of send attempts.
+inline void miniIconDotRow(DisplayDriver& d, int x, int top_y, int count) {
+  const int s = miniIconScale(d);
+  const int dot = 2 * s, pitch = 3 * s;   // 2px dot + 1px gap, scaled
+  int y = top_y + (d.getLineHeight() - dot) / 2;
+  if (y < top_y) y = top_y;
+  for (int i = 0; i < count; i++) d.fillRect(x + i * pitch, y, dot, dot);
+}
+
+// Mini-icon bitmaps (authored on the 1× grid).
+static const uint8_t ICON_CHECK[4] = { 0x10, 0x08, 0x05, 0x02 };  // ✓  5×4
+static const uint8_t ICON_CROSS[4] = { 0x09, 0x06, 0x06, 0x09 };  // ✗  4×4
 
 // 'meshcore', 128x13px
 static const uint8_t meshcore_logo [] = {

@@ -3,6 +3,7 @@
 // Included by UITask.cpp after SettingsScreen.h is defined.
 
 #include "NavView.h"   // navigate to a location shared inside a message
+#include "icons.h"     // scalable mini-icons (delivery markers)
 
 class QuickMsgScreen : public UIScreen {
   UITask* _task;
@@ -27,6 +28,12 @@ class QuickMsgScreen : public UIScreen {
   uint8_t _ch_unread[MAX_GROUP_CHANNELS];
   int _sel_channel_idx;
   bool _sending_to_channel;
+
+  // Carries the just-sent DM's ACK tag + deadline + send timestamp from
+  // sendText() to afterSend().
+  uint32_t _last_ack_tag = 0;
+  uint32_t _last_ack_deadline_ms = 0;
+  uint32_t _last_send_ts = 0;
 
   // MSG_PICK (shared)
   int _msg_sel, _msg_scroll;
@@ -85,12 +92,37 @@ class QuickMsgScreen : public UIScreen {
   // UTF-8 bytes) get their tail clipped.
   static const int MSG_TEXT_BUF = MAX_TEXT_LEN + 1;
 
-  struct ChHistEntry { uint8_t ch_idx; char text[MSG_TEXT_BUF]; uint32_t timestamp; };
+  // Outgoing-message delivery state. DM: a real end-to-end ACK (✓ delivered to
+  // the recipient). Channel: only a "relayed into mesh" echo from a repeater (no
+  // recipient ACK exists for floods), so a missing echo is NOT shown as failure.
+  enum AckState : uint8_t { ACK_NONE = 0, ACK_PENDING, ACK_OK, ACK_FAIL };
+
+  struct ChHistEntry {
+    uint8_t  ch_idx;
+    char     text[MSG_TEXT_BUF];
+    uint32_t timestamp;
+    uint8_t  relay_status;   // AckState; only PENDING/OK used (no failure for floods)
+    uint32_t relay_seq;      // MyMesh relay seq to match against onChannelRelayed()
+  };
   ChHistEntry _hist[CH_HIST_MAX];
   int _hist_head, _hist_count;
 
   // DM_HIST
-  struct DmHistEntry { uint8_t prefix[4]; uint8_t outgoing; char text[MSG_TEXT_BUF]; uint32_t timestamp; };
+  struct DmHistEntry {
+    uint8_t  prefix[4];
+    uint8_t  outgoing;
+    char     text[MSG_TEXT_BUF];
+    uint32_t timestamp;
+    uint8_t  ack_status;       // AckState; meaningful only when outgoing
+    uint32_t ack_tag;          // expected_ack CRC to match against onMsgAck()
+    uint32_t ack_deadline_ms;  // millis() by which a pending ACK must arrive
+    // Sender-perspective message timestamp: the send timestamp for outgoing
+    // (reused verbatim on resend so the recipient treats it as a retry), or the
+    // sender_timestamp for incoming (used to dedup retried copies). 0 = unknown.
+    uint32_t msg_ts;
+    uint8_t  attempt;          // last attempt number sent (outgoing); next resend = attempt+1
+    uint8_t  resends_left;     // remaining auto-resends before the marker shows ✗
+  };
   static const int DM_HIST_MAX = 64;
   DmHistEntry _dm_hist[DM_HIST_MAX];
   int _dm_hist_head, _dm_hist_count;
@@ -252,7 +284,25 @@ class QuickMsgScreen : public UIScreen {
     return -1;
   }
 
-  void storeDMMsg(const uint8_t* pub_key, bool outgoing, const char* text) {
+  // Delivery marker, drawn with the current ink colour and auto-scaled to the
+  // font (see icons.h). Pending = a row of dots, one per send (so it grows with
+  // each auto-resend); delivered = ✓; failed = ✗; ACK_NONE = nothing.
+  static void drawAckGlyph(DisplayDriver& d, int x, int top_y, AckState s, int sends = 1) {
+    switch (s) {
+      case ACK_PENDING: miniIconDotRow(d, x, top_y, sends);          break;
+      case ACK_OK:      miniIconDraw(d, x, top_y, ICON_CHECK, 5, 4); break;
+      case ACK_FAIL:    miniIconDraw(d, x, top_y, ICON_CROSS, 4, 4); break;
+      default: break;                          // ACK_NONE → nothing
+    }
+  }
+
+  // ack_tag != 0 marks an outgoing DM as awaiting an end-to-end ACK by
+  // ack_deadline_ms; 0 means "sent, no confirmation possible" (no path / incoming).
+  // msg_ts = sender-perspective timestamp (send ts for outgoing / sender_timestamp
+  // for incoming); resends = remaining auto-resends for an outgoing pending DM.
+  void storeDMMsg(const uint8_t* pub_key, bool outgoing, const char* text,
+                  uint32_t ack_tag = 0, uint32_t ack_deadline_ms = 0,
+                  uint32_t msg_ts = 0, uint8_t resends = 0) {
     int pos;
     if (_dm_hist_count < DM_HIST_MAX) {
       pos = (_dm_hist_head + _dm_hist_count) % DM_HIST_MAX;
@@ -266,6 +316,23 @@ class QuickMsgScreen : public UIScreen {
     _dm_hist[pos].timestamp = rtc_clock.getCurrentTime();
     strncpy(_dm_hist[pos].text, text, sizeof(DmHistEntry::text) - 1);
     _dm_hist[pos].text[sizeof(DmHistEntry::text) - 1] = '\0';
+    _dm_hist[pos].ack_status      = (outgoing && ack_tag) ? ACK_PENDING : ACK_NONE;
+    _dm_hist[pos].ack_tag         = ack_tag;
+    _dm_hist[pos].ack_deadline_ms = ack_deadline_ms;
+    _dm_hist[pos].msg_ts          = msg_ts;
+    _dm_hist[pos].attempt         = 0;
+    _dm_hist[pos].resends_left    = (outgoing && ack_tag) ? resends : 0;
+  }
+
+  // Effective status for display. A pending ACK only reads as failed once its
+  // deadline has passed AND no auto-resends remain — while resends_left > 0 the
+  // entry stays pending (tickDmResends() retries / finalises it). Safety net for
+  // when the tick hasn't run yet; the tick is the authority that writes ACK_FAIL.
+  AckState dmEffectiveStatus(const DmHistEntry& e) const {
+    if (e.ack_status == ACK_PENDING && e.resends_left == 0 &&
+        (int32_t)(millis() - e.ack_deadline_ms) >= 0)
+      return ACK_FAIL;
+    return (AckState)e.ack_status;
   }
 
   int dmHistCountForContact(const uint8_t* prefix) const {
@@ -296,7 +363,13 @@ class QuickMsgScreen : public UIScreen {
       _phase = CHANNEL_HIST;  // set before addChannelMsg so viewing=true, no unread bump
       char entry[sizeof(ChHistEntry::text)];
       snprintf(entry, sizeof(entry), "Me: %s", msg);
-      addChannelMsg(_sel_channel_idx, entry);
+      int pos = addChannelMsg(_sel_channel_idx, entry);
+      // Arm the "relayed into mesh" marker on this exact entry — MyMesh tracked
+      // the flood it just originated and reports a heard repeater echo by seq.
+      if (pos >= 0) {
+        _hist[pos].relay_status = ACK_PENDING;
+        _hist[pos].relay_seq    = the_mesh.lastChannelRelaySeq();
+      }
       // After inserting sent msg at index 0, the unread index range is stale.
       // User is active in this channel — treat as fully read.
       _ch_unread[_sel_channel_idx] = 0;
@@ -304,7 +377,10 @@ class QuickMsgScreen : public UIScreen {
       _viewing_max_seen = 0;
       _task->showAlert("Sent!", 600);
     } else if (ok) {
-      storeDMMsg(_sel_contact.id.pub_key, true, msg);
+      NodePrefs* np = _task->getNodePrefs();
+      uint8_t resends = np ? np->dm_resend_count : 0;
+      storeDMMsg(_sel_contact.id.pub_key, true, msg, _last_ack_tag,
+                 _last_ack_deadline_ms, _last_send_ts, resends);
       _dm_hist_sel = 0;
       _dm_hist_scroll = 0;
       _phase = DM_HIST;
@@ -316,15 +392,27 @@ class QuickMsgScreen : public UIScreen {
   }
 
   bool sendText(const char* msg) {
+    _last_ack_tag = 0;
+    _last_ack_deadline_ms = 0;
+    _last_send_ts = 0;
     if (_sending_to_channel) {
       ChannelDetails ch;
       if (!the_mesh.getChannel(_sel_channel_idx, ch)) return false;
       return the_mesh.sendGroupMessage(rtc_clock.getCurrentTime(), ch.channel,
                                        the_mesh.getNodeName(), msg, strlen(msg));
     } else {
+      uint32_t send_ts = rtc_clock.getCurrentTime();
       uint32_t expected_ack = 0, est_timeout = 0;
-      return the_mesh.sendMessage(_sel_contact, rtc_clock.getCurrentTime(), 0,
-                                  msg, expected_ack, est_timeout) > 0;
+      bool ok = the_mesh.sendMessage(_sel_contact, send_ts, 0,
+                                     msg, expected_ack, est_timeout) > 0;
+      if (ok && expected_ack) {
+        _last_send_ts = send_ts;
+        _last_ack_tag = expected_ack;
+        // Generous margin over the base estimate so a slow multi-hop ACK isn't
+        // prematurely shown as failed.
+        _last_ack_deadline_ms = millis() + est_timeout + 4000;
+      }
+      return ok;
     }
   }
 
@@ -503,11 +591,13 @@ public:
     memset(_ch_unread, 0, sizeof(_ch_unread));
   }
 
-  void addChannelMsg(uint8_t ch_idx, const char* text) {
+  // Returns the ring position the message was stored at, or -1 if rejected, so
+  // the outgoing path can attach a relay seq to that exact entry.
+  int addChannelMsg(uint8_t ch_idx, const char* text) {
     // Guard against bogus channel indices (e.g. findChannelIdx() returned -1
     // and was cast to uint8_t → 255). Storing such an entry would burn a ring
     // slot for a message that no visible channel can ever surface.
-    if (ch_idx >= MAX_GROUP_CHANNELS) return;
+    if (ch_idx >= MAX_GROUP_CHANNELS) return -1;
     int pos;
     if (_hist_count < CH_HIST_MAX) {
       pos = (_hist_head + _hist_count) % CH_HIST_MAX;
@@ -526,13 +616,93 @@ public:
     _hist[pos].timestamp = rtc_clock.getCurrentTime();
     strncpy(_hist[pos].text, text, sizeof(_hist[pos].text) - 1);
     _hist[pos].text[sizeof(_hist[pos].text) - 1] = '\0';
+    _hist[pos].relay_status = ACK_NONE;
+    _hist[pos].relay_seq = 0;
 
     bool viewing = (_phase == CHANNEL_HIST && _sel_channel_idx == (int)ch_idx);
     if (!viewing && _ch_unread[ch_idx] < 99) _ch_unread[ch_idx]++;
+    return pos;
   }
 
-  void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text) {
-    storeDMMsg(pub_key, outgoing, text);
+  // Called when a repeater echo of one of our channel sends is heard.
+  void markChannelRelayed(uint32_t seq) {
+    if (seq == 0) return;
+    for (int i = 0; i < _hist_count; i++) {
+      ChHistEntry& e = _hist[(_hist_head + i) % CH_HIST_MAX];
+      if (e.relay_status == ACK_PENDING && e.relay_seq == seq) {
+        e.relay_status = ACK_OK;
+        return;
+      }
+    }
+  }
+
+  void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text,
+                uint32_t sender_timestamp = 0) {
+    // Drop retried copies of an incoming DM: a resend reuses the sender's
+    // timestamp and text but carries a fresh packet hash, so the mesh dup-filter
+    // lets it through. Match on prefix + sender_timestamp + text to suppress it.
+    if (!outgoing && sender_timestamp != 0) {
+      for (int i = 0; i < _dm_hist_count; i++) {
+        const DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
+        if (!e.outgoing && e.msg_ts == sender_timestamp &&
+            memcmp(e.prefix, pub_key, 4) == 0 && strcmp(e.text, text) == 0)
+          return;  // duplicate retry — already in history
+      }
+    }
+    storeDMMsg(pub_key, outgoing, text, 0, 0, outgoing ? 0 : sender_timestamp, 0);
+  }
+
+  // Called when an end-to-end ACK arrives (routed from MyMesh::onAckRecv).
+  // Marks the matching pending outgoing DM as delivered.
+  void markDmDelivered(uint32_t ack_crc) {
+    if (ack_crc == 0) return;
+    for (int i = 0; i < _dm_hist_count; i++) {
+      DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
+      if (e.outgoing && e.ack_status == ACK_PENDING && e.ack_tag == ack_crc) {
+        e.ack_status = ACK_OK;
+        return;
+      }
+    }
+  }
+
+  // Look up a contact by 4-byte pub_key prefix (as stored in DmHistEntry).
+  bool contactByPrefix(const uint8_t* prefix, ContactInfo& out) const {
+    int total = the_mesh.getNumContacts();
+    for (int i = 0; i < total; i++) {
+      ContactInfo c;
+      if (the_mesh.getContactByIdx(i, c) && memcmp(c.id.pub_key, prefix, 4) == 0) {
+        out = c;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Background tick (called every UI loop, regardless of the active screen) that
+  // drives auto-resend of on-device DMs. When a pending DM passes its deadline
+  // with no ACK: resend with the next attempt# (reusing the original timestamp so
+  // the recipient dedups) while resends remain, else mark it failed (✗).
+  void tickDmResends() {
+    uint32_t now = millis();
+    for (int i = 0; i < _dm_hist_count; i++) {
+      DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
+      if (!e.outgoing || e.ack_status != ACK_PENDING) continue;
+      if ((int32_t)(now - e.ack_deadline_ms) < 0) continue;   // still waiting
+      if (e.resends_left == 0) { e.ack_status = ACK_FAIL; continue; }
+      ContactInfo c;
+      if (!contactByPrefix(e.prefix, c)) { e.ack_status = ACK_FAIL; continue; }
+      uint32_t expected_ack = 0, est_timeout = 0;
+      uint8_t next_attempt = e.attempt + 1;
+      if (the_mesh.sendMessage(c, e.msg_ts, next_attempt, e.text,
+                               expected_ack, est_timeout) > 0 && expected_ack) {
+        e.attempt         = next_attempt;
+        e.ack_tag         = expected_ack;   // each attempt has a distinct ACK CRC
+        e.ack_deadline_ms = now + est_timeout + 4000;
+        e.resends_left--;
+      } else {
+        e.ack_status = ACK_FAIL;            // couldn't compose/send — give up
+      }
+    }
   }
 
   int getDMUnreadTotal() const {
@@ -775,6 +945,12 @@ public:
           int ret = _dm_fs.render(display, sender, e.text,
                                   _dm_hist_sel < dm_count - 1,
                                   _dm_hist_sel > 0);
+          if (e.outgoing) {  // delivery marker in the (inverted) header bar
+            display.setColor(DisplayDriver::DARK);
+            drawAckGlyph(display, 2 + display.getTextWidth(sender) + 3, 1,
+                         dmEffectiveStatus(e), e.attempt + 1);
+            display.setColor(DisplayDriver::LIGHT);
+          }
           if (_ctx_menu.active) _ctx_menu.render(display);
           return ret;
         }
@@ -846,6 +1022,10 @@ public:
           display.setColor(DisplayDriver::DARK);
         }
         display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
+        if (e.outgoing) {                       // delivery marker after "Me"
+          int gx = 3 + display.getTextWidth(sender) + 3;
+          drawAckGlyph(display, gx, y + 1, dmEffectiveStatus(e), e.attempt + 1);
+        }
         if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
         if (!sel) display.setColor(DisplayDriver::LIGHT);
         if (portrait_expand) {
@@ -903,6 +1083,12 @@ public:
           int ret = _fs.render(display, fsender, fmsg,
                                _hist_sel < fs_hist_count - 1,
                                _hist_sel > 0);
+          // Channels: ✓ only once a repeater echo confirms relay (see list view).
+          if (strcmp(fsender, "Me") == 0 && _hist[ring_pos].relay_status == ACK_OK) {
+            display.setColor(DisplayDriver::DARK);
+            drawAckGlyph(display, 2 + display.getTextWidth(fsender) + 3, 1, ACK_OK);
+            display.setColor(DisplayDriver::LIGHT);
+          }
           if (_ctx_menu.active) _ctx_menu.render(display);
           return ret;
         }
@@ -989,6 +1175,13 @@ public:
           display.setColor(DisplayDriver::DARK);
         }
         display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
+        // Channels have no recipient ACK — only show ✓ once a repeater echo
+        // confirms the send was relayed into the mesh; otherwise no marker
+        // (absence is normal, not a failure).
+        if (strcmp(sender, "Me") == 0 && _hist[ring_pos].relay_status == ACK_OK) {
+          int gx = 3 + display.getTextWidth(sender) + 3;
+          drawAckGlyph(display, gx, y + 1, ACK_OK);
+        }
         if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
         if (!sel) display.setColor(DisplayDriver::LIGHT);
         if (portrait_expand) {

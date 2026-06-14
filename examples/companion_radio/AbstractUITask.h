@@ -41,6 +41,12 @@ public:
   }
   bool hasConnection() const { return _connected; }
   virtual void onBLEDisconnected() {}
+  // An end-to-end ACK (CRC) arrived for one of our sent messages — drives the
+  // DM delivery-status marker. Default no-op for UIs that don't track it.
+  virtual void onMsgAck(uint32_t ack_crc) { (void)ack_crc; }
+  // A repeater rebroadcast of one of our channel sends was heard (seq from
+  // lastChannelRelaySeq()) — drives the channel "relayed into mesh" marker.
+  virtual void onChannelRelayed(uint32_t seq) { (void)seq; }
   // True only when a BLE central is actually bonded/connected. On a dual
   // (BLE+USB) interface hasConnection() is always true (USB counts), so use
   // this for BLE-specific UI like the pairing-PIN prompt.
@@ -56,6 +62,6 @@ public:
   virtual void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount, uint8_t contact_type = 0, const uint8_t* pub_key = nullptr) = 0;
   virtual void notify(UIEventType t = UIEventType::none) = 0;
   virtual void addChannelMsg(uint8_t channel_idx, const char* text) {}
-  virtual void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text) {}
+  virtual void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) {}
   virtual void loop() = 0;
 };
