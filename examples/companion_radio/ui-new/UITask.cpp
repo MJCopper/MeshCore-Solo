@@ -1519,6 +1519,13 @@ void UITask::shutdown(bool restart){
   } else {
     _display->turnOff();
     radio_driver.powerOff();
+#ifdef PIN_GPS_EN
+    // Power off GPS before SYSTEMOFF — GPIO pins retain state in NRF52 SYSTEMOFF,
+    // so without this the GPS stays powered and drains the battery.
+    // gps_enabled is already persisted to flash; applyGpsPrefs() restores it on next boot.
+    pinMode(PIN_GPS_EN, OUTPUT);
+    digitalWrite(PIN_GPS_EN, LOW);
+#endif
     _board->powerOff();
   }
 }
