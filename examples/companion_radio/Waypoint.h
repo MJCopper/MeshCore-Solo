@@ -74,9 +74,9 @@ public:
     if (magic != SAVE_MAGIC) return false;
     uint8_t ver = 0, res = 0;
     uint16_t cnt = 0;
-    file.read(&ver, 1);
-    file.read(&res, 1);
-    file.read((uint8_t*)&cnt, sizeof(cnt));
+    if (file.read(&ver, 1) != 1) return false;
+    if (file.read(&res, 1) != 1) return false;
+    if (file.read((uint8_t*)&cnt, sizeof(cnt)) != (int)sizeof(cnt)) return false;
     if (ver != SAVE_VERSION) return false;
     if (cnt > CAPACITY) cnt = CAPACITY;
     _count = 0;

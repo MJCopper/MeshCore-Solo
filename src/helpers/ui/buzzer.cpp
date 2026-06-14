@@ -41,7 +41,7 @@ uint16_t genericBuzzer::_noteFreq(char letter, bool sharp, uint8_t octave) {
     uint8_t idx = NOTE_IDX[letter - 'a'];
     if (sharp) { if (++idx >= 12) { idx = 0; octave++; } }
     if (octave < 4) octave = 4;
-    if (octave > 7) octave = 7;
+    if (octave > 8) octave = 8;   // parser accepts octaves 4-8; B8 (~7.9 kHz) is within range
     uint32_t f = (uint32_t)CHROM4[idx] << (octave - 4);
     return (uint16_t)(f > 25000 ? 25000 : f);
 }

@@ -1523,8 +1523,12 @@ void UITask::shutdown(bool restart){
     // Power off GPS before SYSTEMOFF — GPIO pins retain state in NRF52 SYSTEMOFF,
     // so without this the GPS stays powered and drains the battery.
     // gps_enabled is already persisted to flash; applyGpsPrefs() restores it on next boot.
+    // Use the same active level as MicroNMEALocationProvider::stop() (default active-high).
+    #ifndef PIN_GPS_EN_ACTIVE
+      #define PIN_GPS_EN_ACTIVE HIGH
+    #endif
     pinMode(PIN_GPS_EN, OUTPUT);
-    digitalWrite(PIN_GPS_EN, LOW);
+    digitalWrite(PIN_GPS_EN, !PIN_GPS_EN_ACTIVE);
 #endif
     _board->powerOff();
   }
