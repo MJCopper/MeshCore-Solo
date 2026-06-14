@@ -24,14 +24,7 @@ inline void draw(DisplayDriver& d,
   const int hdr = d.headerH();
 
   // Title bar: label, inverted (matches the Nearby/discover detail style).
-  char title[24];
-  d.translateUTF8ToBlocks(title, (label && label[0]) ? label : "Navigate", sizeof(title));
-  d.setColor(DisplayDriver::LIGHT);
-  d.fillRect(0, 0, d.width(), hdr - 1);
-  d.setColor(DisplayDriver::DARK);
-  d.drawTextEllipsized(2, 1, d.width() - 4, title);
-  d.setColor(DisplayDriver::LIGHT);
-  d.fillRect(0, hdr - 1, d.width(), d.sepH());
+  d.drawInvertedHeader((label && label[0]) ? label : "Navigate");
 
   if (!own_valid) {
     d.drawTextCentered(cx, hdr + (d.height() - hdr) / 2 - d.getLineHeight(), "No GPS fix");

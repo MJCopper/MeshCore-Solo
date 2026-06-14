@@ -162,6 +162,29 @@ public:
     }
   }
 
+  // Up/down scroll indicators in the right-edge column. top_y is the first
+  // row's y, bottom_y the last visible row's y. Replaces the 4-line
+  // setCursor/print("^")/setCursor/print("v") block in every scrollable list.
+  void drawScrollArrows(int top_y, int bottom_y, bool more_up, bool more_down) {
+    int x = width() - getCharWidth();
+    setColor(LIGHT);
+    if (more_up)   { setCursor(x, top_y);    print("^"); }
+    if (more_down) { setCursor(x, bottom_y); print("v"); }
+  }
+
+  // Inverted title bar: light background, dark ellipsized label, then the
+  // standard separator line. The label is UTF-8 translated by
+  // drawTextEllipsized. Leaves ink colour LIGHT for following content.
+  void drawInvertedHeader(const char* label) {
+    int hdr = headerH();
+    setColor(LIGHT);
+    fillRect(0, 0, width(), hdr - 1);
+    setColor(DARK);
+    drawTextEllipsized(2, 1, width() - 4, (label && label[0]) ? label : "");
+    setColor(LIGHT);
+    fillRect(0, hdr - 1, width(), sepH());
+  }
+
   // Advance a UTF-8 pointer by one codepoint, returning the decoded value.
   // Invalid sequences return 0xFFFD and consume trailing continuation bytes.
   static uint32_t decodeCodepoint(const uint8_t*& p) {

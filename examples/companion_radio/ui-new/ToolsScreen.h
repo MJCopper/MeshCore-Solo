@@ -39,11 +39,8 @@ public:
       display.setCursor(cw + 2, y);
       display.print(ITEMS[idx]);
     }
-    display.setColor(DisplayDriver::LIGHT);
-    if (_scroll > 0)
-      { display.setCursor(display.width() - cw, start_y); display.print("^"); }
-    if (_scroll + vis < ITEM_COUNT)
-      { display.setCursor(display.width() - cw, start_y + (vis - 1) * item_h); display.print("v"); }
+    display.drawScrollArrows(start_y, start_y + (vis - 1) * item_h,
+                             _scroll > 0, _scroll + vis < ITEM_COUNT);
     return 500;
   }
 

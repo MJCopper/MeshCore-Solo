@@ -1519,17 +1519,15 @@ void UITask::shutdown(bool restart){
   } else {
     _display->turnOff();
     radio_driver.powerOff();
-#ifdef PIN_GPS_EN
-    // Power off GPS before SYSTEMOFF — GPIO pins retain state in NRF52 SYSTEMOFF,
-    // so without this the GPS stays powered and drains the battery.
-    // gps_enabled is already persisted to flash; applyGpsPrefs() restores it on next boot.
-    // Use the same active level as MicroNMEALocationProvider::stop() (default active-high).
-    #ifndef PIN_GPS_EN_ACTIVE
-      #define PIN_GPS_EN_ACTIVE HIGH
-    #endif
-    pinMode(PIN_GPS_EN, OUTPUT);
-    digitalWrite(PIN_GPS_EN, !PIN_GPS_EN_ACTIVE);
-#endif
+    // Power GPS down through its provider before SYSTEMOFF — GPIO pins retain
+    // state in NRF52 SYSTEMOFF, so otherwise the module keeps draining the
+    // battery. The provider handles the enable + reset pins and the correct
+    // active level. gps_enabled is persisted; applyGpsPrefs() restores it on
+    // the next boot.
+    if (_sensors) {
+      LocationProvider* loc = _sensors->getLocationProvider();
+      if (loc) loc->stop();
+    }
     _board->powerOff();
   }
 }

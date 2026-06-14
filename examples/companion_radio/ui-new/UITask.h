@@ -135,6 +135,8 @@ public:
   void onBLEDisconnected() override { _next_refresh = 0; }
 
   NodePrefs* getNodePrefs() const { return _node_prefs; }
+  // Global metric/imperial preference for distance/speed display.
+  bool useImperial() const { return _node_prefs && _node_prefs->units_imperial; }
   uint16_t getBattMilliVolts() const { return _batt_mv > 0 ? _batt_mv : AbstractUITask::getBattMilliVolts(); }
   void gotoHomeScreen() { setCurrScreen(home); }
   void gotoSettingsScreen();

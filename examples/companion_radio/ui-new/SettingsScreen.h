@@ -619,17 +619,8 @@ public:
       renderItem(display, _vis[_scroll + i], start_y + i * item_h);
     }
 
-    // scroll indicators
-    if (_scroll > 0) {
-      display.setColor(DisplayDriver::LIGHT);
-      display.setCursor(display.width() - display.getCharWidth(), start_y);
-      display.print("^");
-    }
-    if (_scroll + _visible < _vis_count) {
-      display.setColor(DisplayDriver::LIGHT);
-      display.setCursor(display.width() - display.getCharWidth(), start_y + (_visible - 1) * item_h);
-      display.print("v");
-    }
+    display.drawScrollArrows(start_y, start_y + (_visible - 1) * item_h,
+                             _scroll > 0, _scroll + _visible < _vis_count);
 
     return 2000;
   }

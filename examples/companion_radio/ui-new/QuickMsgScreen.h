@@ -715,9 +715,8 @@ public:
           }
         }
       }
-      display.setColor(DisplayDriver::LIGHT);
-      if (_contact_scroll > 0) { display.setCursor(display.width() - cw, start_y); display.print("^"); }
-      if (_contact_scroll + _visible < _num_contacts) { display.setCursor(display.width() - cw, start_y + (_visible-1)*item_h); display.print("v"); }
+      display.drawScrollArrows(start_y, start_y + (_visible-1)*item_h,
+                               _contact_scroll > 0, _contact_scroll + _visible < _num_contacts);
 
       // Context menu overlay
       if (_ctx_menu.active) _ctx_menu.render(display);
@@ -755,9 +754,8 @@ public:
           }
         }
       }
-      display.setColor(DisplayDriver::LIGHT);
-      if (_channel_scroll > 0) { display.setCursor(display.width() - cw, start_y); display.print("^"); }
-      if (_channel_scroll + _visible < _num_channels) { display.setCursor(display.width() - cw, start_y + (_visible-1)*item_h); display.print("v"); }
+      display.drawScrollArrows(start_y, start_y + (_visible-1)*item_h,
+                               _channel_scroll > 0, _channel_scroll + _visible < _num_channels);
 
       // Context menu overlay
       if (_ctx_menu.active) _ctx_menu.render(display);
@@ -865,15 +863,10 @@ public:
         display.drawTextCentered(display.width()/2, display.height()/2, "No messages yet");
       }
 
-      display.setColor(DisplayDriver::LIGHT);
-      if (_dm_hist_scroll > 0) {
-        display.setCursor(display.width() - cw, hist_start_y + 1);
-        display.print("^");
-      }
-      if (_dm_hist_scroll + _hist_visible < dm_count) {
+      {
         int arrow_y = (n_vis > 0) ? box_ys[n_vis - 1] + box_hs[n_vis - 1] - lh : hist_start_y;
-        display.setCursor(display.width() - cw, arrow_y);
-        display.print("v");
+        display.drawScrollArrows(hist_start_y + 1, arrow_y,
+                                 _dm_hist_scroll > 0, _dm_hist_scroll + _hist_visible < dm_count);
       }
 
       bool compose_sel = (_dm_hist_sel == -1);
@@ -1014,15 +1007,10 @@ public:
       }
 
       // scroll hints
-      display.setColor(DisplayDriver::LIGHT);
-      if (_hist_scroll > 0) {
-        display.setCursor(display.width() - cw, hist_start_y + 1);
-        display.print("^");
-      }
-      if (_hist_scroll + _hist_visible < ch_hist_count) {
+      {
         int arrow_y = (n_vis > 0) ? box_ys[n_vis - 1] + box_hs[n_vis - 1] - lh : hist_start_y;
-        display.setCursor(display.width() - cw, arrow_y);
-        display.print("v");
+        display.drawScrollArrows(hist_start_y + 1, arrow_y,
+                                 _hist_scroll > 0, _hist_scroll + _hist_visible < ch_hist_count);
       }
 
       // small compose button (bottom-left, always bordered, inverted when selected)
@@ -1086,9 +1074,8 @@ public:
           display.drawTextEllipsized(cw + 2, y, display.width() - cw - 4, tmpl);
         }
       }
-      display.setColor(DisplayDriver::LIGHT);
-      if (_msg_scroll > 0) { display.setCursor(display.width() - cw, start_y); display.print("^"); }
-      if (_msg_scroll + _visible < total_msg_items) { display.setCursor(display.width() - cw, start_y + (_visible-1)*item_h); display.print("v"); }
+      display.drawScrollArrows(start_y, start_y + (_visible-1)*item_h,
+                               _msg_scroll > 0, _msg_scroll + _visible < total_msg_items);
     }
     return 2000;
   }

@@ -87,10 +87,15 @@ class NearbyScreen : public UIScreen {
   // Geographic helpers live in GeoUtils.h (geo::) — shared with Waypoints /
   // trail course-over-ground. Call sites use geo:: directly.
 
-  // Global metric/imperial preference for distance display.
-  bool useImperial() const {
-    NodePrefs* p = _task ? _task->getNodePrefs() : nullptr;
-    return p && p->units_imperial;
+  bool useImperial() const { return _task && _task->useImperial(); }
+
+  // Save the currently-selected list entry as a waypoint (its name as label).
+  // Shared by the list context menu and the detail Options menu.
+  void saveSelectedWaypoint() {
+    if (_sel >= _count) return;
+    const Entry& e = _entries[_sel];
+    if (e.lat_e6 == 0 && e.lon_e6 == 0) { _task->showAlert("No node GPS", 1000); return; }
+    _task->addWaypoint(e.lat_e6, e.lon_e6, e.name);   // WaypointStore truncates the label
   }
 
   static void fmtAge(char* buf, int n, uint32_t lastmod) {
@@ -310,14 +315,7 @@ class NearbyScreen : public UIScreen {
     char label[32];
     if (r.name[0]) { strncpy(label, r.name, 31); label[31] = '\0'; }
     else           { snprintf(label, sizeof(label), "[%s]", fullType); }
-    char filtered[32];
-    display.translateUTF8ToBlocks(filtered, label, sizeof(filtered));
-    display.setColor(DisplayDriver::LIGHT);
-    display.fillRect(0, 0, display.width(), hdr - 1);
-    display.setColor(DisplayDriver::DARK);
-    display.drawTextEllipsized(2, 1, display.width() - 4, filtered);
-    display.setColor(DisplayDriver::LIGHT);
-    display.fillRect(0, hdr - 1, display.width(), 1);
+    display.drawInvertedHeader(label);
 
     char b64[48];
     pubKeyToBase64(r.pub_key, b64, sizeof(b64));
@@ -365,13 +363,7 @@ class NearbyScreen : public UIScreen {
     const Entry& e = _entries[_sel];
     const int hdr  = display.headerH();
 
-    display.setColor(DisplayDriver::LIGHT);
-    display.fillRect(0, 0, display.width(), hdr - 1);
-    display.setColor(DisplayDriver::DARK);
-    char filtered[32];
-    display.translateUTF8ToBlocks(filtered, e.name, sizeof(filtered));
-    display.drawTextEllipsized(2, 1, display.width() - 4, filtered);
-    display.setColor(DisplayDriver::LIGHT);
+    display.drawInvertedHeader(e.name);
 
     int step = display.lineStep();
     if (step * 5 > display.height() - hdr) step = (display.height() - hdr) / 5;
@@ -486,12 +478,8 @@ class NearbyScreen : public UIScreen {
         display.drawTextEllipsized(3, y + lh + 2, display.width() - 6, sig);
       }
 
-      display.setColor(DisplayDriver::LIGHT);
-      int cw = display.getCharWidth();
-      if (_dscroll > 0)
-        { display.setCursor(display.width() - cw, d_start_y); display.print("^"); }
-      if (_dscroll + _d_visible < _dresult_count)
-        { display.setCursor(display.width() - cw, d_start_y + (_d_visible - 1) * d_item_h); display.print("v"); }
+      display.drawScrollArrows(d_start_y, d_start_y + (_d_visible - 1) * d_item_h,
+                               _dscroll > 0, _dscroll + _d_visible < _dresult_count);
     }
 
     updatePingMenuState();
@@ -665,12 +653,8 @@ public:
         display.print(right);
       }
 
-      display.setColor(DisplayDriver::LIGHT);
-      int cw = display.getCharWidth();
-      if (_scroll > 0)
-        { display.setCursor(display.width() - cw, start_y); display.print("^"); }
-      if (_scroll + _visible < _count)
-        { display.setCursor(display.width() - cw, start_y + (_visible - 1) * item_h); display.print("v"); }
+      display.drawScrollArrows(start_y, start_y + (_visible - 1) * item_h,
+                               _scroll > 0, _scroll + _visible < _count);
     }
 
     if (_ctx_menu.active) {
@@ -709,16 +693,8 @@ public:
             uint8_t pk[PUB_KEY_SIZE];
             openPingMenu();
             if (selectedStoredPubKey(pk)) startPingForKey(pk);
-          } else if (idx == 2 && _sel < _count) {      // Save waypoint
-            const Entry& e = _entries[_sel];
-            if (e.lat_e6 == 0 && e.lon_e6 == 0) {
-              _task->showAlert("No node GPS", 1000);
-            } else {
-              char label[WAYPOINT_LABEL_LEN];
-              strncpy(label, e.name, WAYPOINT_LABEL_LEN - 1);
-              label[WAYPOINT_LABEL_LEN - 1] = '\0';
-              _task->addWaypoint(e.lat_e6, e.lon_e6, label);
-            }
+          } else if (idx == 2) {                       // Save waypoint
+            saveSelectedWaypoint();
           }
         }
         return true;
@@ -754,16 +730,8 @@ public:
           const Entry& e = _entries[_sel];
           if (e.lat_e6 != 0 || e.lon_e6 != 0) _nav = true;
           else _task->showAlert("No node GPS", 1000);
-        } else if (sel == 2 && _sel < _count) {
-          const Entry& e = _entries[_sel];
-          if (e.lat_e6 == 0 && e.lon_e6 == 0) {
-            _task->showAlert("No node GPS", 1000);
-          } else {
-            char label[WAYPOINT_LABEL_LEN];
-            strncpy(label, e.name, WAYPOINT_LABEL_LEN - 1);
-            label[WAYPOINT_LABEL_LEN - 1] = '\0';
-            _task->addWaypoint(e.lat_e6, e.lon_e6, label);
-          }
+        } else if (sel == 2) {                          // Save waypoint
+          saveSelectedWaypoint();
         }
       }
       return true;

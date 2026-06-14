@@ -406,11 +406,7 @@ private:
 
   bool ownPos(int32_t& lat, int32_t& lon) const { return _task->currentLocation(lat, lon); }
 
-  // Global metric/imperial preference for distance display.
-  bool useImperial() const {
-    NodePrefs* p = _task->getNodePrefs();
-    return p && p->units_imperial;
-  }
+  bool useImperial() const { return _task && _task->useImperial(); }
 
   void handleMarkHere() {
     int32_t lat, lon;
@@ -683,15 +679,9 @@ private:
       display.print(buf);
     }
 
-    int cw = display.getCharWidth();
-    if (_summary_scroll > 0) {
-      display.setCursor(display.width() - cw, y0);
-      display.print("^");
-    }
-    if (_summary_scroll + visible < SUMMARY_ITEM_COUNT) {
-      display.setCursor(display.width() - cw, y0 + (visible - 1) * step);
-      display.print("v");
-    }
+    display.drawScrollArrows(y0, y0 + (visible - 1) * step,
+                             _summary_scroll > 0,
+                             _summary_scroll + visible < SUMMARY_ITEM_COUNT);
   }
 
   void renderList(DisplayDriver& display) {
@@ -743,15 +733,8 @@ private:
       display.print(row);
     }
 
-    int cw = display.getCharWidth();
-    if (_list_scroll > 0) {
-      display.setCursor(display.width() - cw, top);
-      display.print("^");
-    }
-    if (_list_scroll + visible < total) {
-      display.setCursor(display.width() - cw, top + (visible - 1) * step);
-      display.print("v");
-    }
+    display.drawScrollArrows(top, top + (visible - 1) * step,
+                             _list_scroll > 0, _list_scroll + visible < total);
   }
 
   void renderMap(DisplayDriver& display) {
