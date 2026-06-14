@@ -272,7 +272,6 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.bot_channel_enabled,       sizeof(_prefs.bot_channel_enabled));
   rd(&_prefs.bot_channel_idx,           sizeof(_prefs.bot_channel_idx));
   rd(_prefs.bot_trigger,                sizeof(_prefs.bot_trigger));
-  for (char* p = _prefs.bot_trigger; *p; p++) *p = (char)tolower((uint8_t)*p);
   rd(_prefs.bot_reply_dm,               sizeof(_prefs.bot_reply_dm));
   rd(_prefs.bot_reply_ch,               sizeof(_prefs.bot_reply_ch));
   rd(&_prefs.clock_hide_seconds,        sizeof(_prefs.clock_hide_seconds));

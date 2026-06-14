@@ -8,13 +8,17 @@ void MyMesh::tryBotReplyDM(const ContactInfo& from, const char* text) {
         millis() - _bot_last_dm_reply_ms > 10000UL))
     return;
 
-  // Lower-case the body once, then a single strstr — avoids O(n*m) tolower per offset.
+  // Lower-case both body and trigger for case-insensitive matching.
   char low[200];
   size_t n = strlen(text);
   if (n >= sizeof(low)) n = sizeof(low) - 1;
   for (size_t i = 0; i < n; i++) low[i] = (char)tolower((uint8_t)text[i]);
   low[n] = '\0';
-  if (!strstr(low, _prefs.bot_trigger)) return;
+  char low_trigger[sizeof(_prefs.bot_trigger)];
+  size_t tlen = strnlen(_prefs.bot_trigger, sizeof(low_trigger) - 1);
+  for (size_t i = 0; i < tlen; i++) low_trigger[i] = (char)tolower((uint8_t)_prefs.bot_trigger[i]);
+  low_trigger[tlen] = '\0';
+  if (!strstr(low, low_trigger)) return;
 
   uint32_t ts = getRTCClock()->getCurrentTime();
   char expanded[200];
@@ -48,7 +52,11 @@ void MyMesh::tryBotReplyChannel(uint8_t channel_idx, const char* text) {
   if (n >= sizeof(low)) n = sizeof(low) - 1;
   for (size_t i = 0; i < n; i++) low[i] = (char)tolower((uint8_t)msg[i]);
   low[n] = '\0';
-  if (!strstr(low, _prefs.bot_trigger)) return;
+  char low_trigger[sizeof(_prefs.bot_trigger)];
+  size_t tlen = strnlen(_prefs.bot_trigger, sizeof(low_trigger) - 1);
+  for (size_t i = 0; i < tlen; i++) low_trigger[i] = (char)tolower((uint8_t)_prefs.bot_trigger[i]);
+  low_trigger[tlen] = '\0';
+  if (!strstr(low, low_trigger)) return;
 
   ChannelDetails ch;
   if (!getChannel(channel_idx, ch)) return;
