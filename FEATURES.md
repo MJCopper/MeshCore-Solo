@@ -534,6 +534,98 @@ From channel view, Hold Enter → "Who's online?". Sends 0-hop discovery to chan
 
 ---
 
+## New ideas (unprioritised)
+
+Captured for later triage. None designed in detail yet except DM delivery status.
+
+### 📋 DM delivery status
+
+Show whether an outgoing direct message reached the recipient, using the ACK
+that MeshCore already produces (no protocol change). `sendMessage()` returns
+`expected_ack` + `est_timeout`; the ACK arrives via `onAckRecv` / `isAckPending`
+— the same mechanism APC and ping already consume.
+
+Per-message status glyph at the end of each outgoing DM row in the history:
+- `·` / `…` — sent, awaiting ACK (pending)
+- `✓` — delivered to the recipient (ACK matched)
+- `✗` / `!` — timed out, no confirmation
+
+Data model (RAM only, no schema bump — DM history already lives in RAM):
+- `DmHistEntry` gains `uint8_t ack_status` (0=incoming/none, 1=pending,
+  2=delivered, 3=failed) and `uint32_t ack_tag` (the `expected_ack` CRC).
+
+Wiring:
+- On send: store `ack_tag = expected_ack`, `ack_status = pending`, record the
+  send time + `est_timeout`.
+- On ACK: route `onAckRecv(ack_crc)` to the UI; find the entry whose `ack_tag`
+  matches and set it delivered (single shared callback, like `onPingResult`).
+- Timeout: in the UI loop, a pending entry older than `est_timeout` → failed.
+
+Edge cases:
+- Sends with no path / `expected_ack == 0` (and channel messages, which have no
+  ACK) can't be confirmed → show plain "sent" (`→`) and no delivery state.
+- Glyph rendering: prefer a Lemon-font check; on the plain ASCII font fall back
+  to drawn 1-px marks or letters so it reads on the OLED.
+
+### 📋 Periodic location beacon ("live share")
+
+Auto-send `{loc}` every N minutes to a chosen channel or DM contact — group
+trip tracking. Builds on the existing auto-advert cadence pattern and `{loc}`
+expansion. A status-bar indicator (like `A`/`G`) while active; off by default.
+
+### 📋 Arrival / proximity alert
+
+Buzzer + alert when within X m of the active nav target (waypoint / node /
+backtrack). Closes the loop on the navigator — you no longer have to stare at
+the distance readout. Radius configurable (e.g. 20/50/100 m).
+
+### 📋 "Where am I" location screen
+
+Tools entry showing current lat/lon (optionally MGRS/UTM grid ref), fix quality
+(sats / HDOP if the provider exposes it), altitude, and a one-press share to a
+channel/DM. Complements the nav suite with an at-a-glance position readout.
+
+### 📋 On-screen QR — share own contact / channel
+
+Render the device's own contact (or a channel) as a QR on the display so a
+phone can import it without the companion app. The QR payload format already
+exists (`docs/qr_codes.md`); this is the on-device render side.
+
+### 📋 Sunrise / sunset + golden hour
+
+Computed from GPS position + RTC date — pure math, no extra hardware. A Clock
+dashboard field or a small Tools readout. Useful for planning outdoor activity.
+
+### 📋 "Find my device" — remote buzzer
+
+A received command (from a paired contact, or a dedicated channel keyword) makes
+the node play a locator tone for a few seconds. Helps find a dropped/misplaced
+device. Gate behind a setting to avoid abuse.
+
+### 📋 Trail auto-pause
+
+Stop counting elapsed/avg-speed (and optionally skip sampling) when stationary,
+so "moving time" and average speed reflect actual travel. Reuses the COG ring's
+min-displacement gate to detect standing still.
+
+### 📋 Night mode
+
+Quick toggle for an inverted / minimum-brightness scheme for night use, separate
+from the brightness levels. On e-ink flag as degraded (inversion ghosts).
+
+### 📋 Stopwatch / timer
+
+Simple Tools utility — count-up stopwatch and a count-down timer with a buzzer
+at zero. Joystick: Enter start/stop, Hold Enter reset.
+
+### 📋 Trail elevation / ascent
+
+If the GPS provider exposes altitude, add total ascent + current elevation to
+the trail Summary and `<ele>` tags to the GPX export. Skip cleanly when no
+altitude is available.
+
+---
+
 ## Deferred
 
 ### ❌ Morse keyboard
