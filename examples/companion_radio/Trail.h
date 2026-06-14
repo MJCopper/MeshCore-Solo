@@ -4,6 +4,8 @@
 #include <math.h>
 #include <stdint.h>
 #include <time.h>
+#include "Persist.h"
+#include "GeoUtils.h"
 
 // RAM-only GPS trail ring buffer.
 // Storage cost: CAPACITY(512) × sizeof(TrailPoint)(16 B, padded) = 8 KB,
@@ -177,16 +179,9 @@ public:
   // cleanly. The file is left open for the caller to close.
   template <typename F>
   bool writeTo(F& file) {
-    uint32_t magic = SAVE_MAGIC;
-    uint8_t  ver = SAVE_VERSION;
-    uint8_t  res = 0;
-    uint16_t cnt = (uint16_t)_count;
+    if (!persist::writeHeader(file, SAVE_MAGIC, SAVE_VERSION, (uint16_t)_count)) return false;
     uint32_t accum = currentAccumulatedMs();
-    if (file.write((uint8_t*)&magic, sizeof(magic)) != sizeof(magic)) return false;
-    if (file.write(&ver, 1)                          != 1)             return false;
-    if (file.write(&res, 1)                          != 1)             return false;
-    if (file.write((uint8_t*)&cnt,   sizeof(cnt))    != sizeof(cnt))   return false;
-    if (file.write((uint8_t*)&accum, sizeof(accum))  != sizeof(accum)) return false;
+    if (file.write((uint8_t*)&accum, sizeof(accum)) != sizeof(accum)) return false;
     for (int i = 0; i < _count; i++) {
       if (file.write((uint8_t*)&at(i), sizeof(TrailPoint)) != sizeof(TrailPoint)) return false;
     }
@@ -195,17 +190,11 @@ public:
 
   template <typename F>
   bool readFrom(F& file) {
-    uint32_t magic = 0;
-    if (file.read((uint8_t*)&magic, sizeof(magic)) != (int)sizeof(magic)) return false;
-    if (magic != SAVE_MAGIC) return false;
-    uint8_t  ver = 0, res = 0;
     uint16_t cnt = 0;
     uint32_t accum = 0;
-    if (file.read(&ver, 1)                         != 1)             return false;
-    if (file.read(&res, 1)                         != 1)             return false;
-    if (file.read((uint8_t*)&cnt,   sizeof(cnt))   != (int)sizeof(cnt))   return false;
+    if (!persist::readHeader(file, SAVE_MAGIC, SAVE_VERSION, cnt)) return false;
     if (file.read((uint8_t*)&accum, sizeof(accum)) != (int)sizeof(accum)) return false;
-    if (ver != SAVE_VERSION || cnt > CAPACITY) return false;
+    if (cnt > CAPACITY) return false;
     if (_active) {
       _active = false;
       _session_start_ms = 0;
@@ -338,17 +327,11 @@ public:
   // touching the live RAM ring. Returns 0 on format mismatch.
   template <typename F, typename S, typename WP>
   static size_t exportGpxFromFile(F& file, S& out, WP& wpts, const char* trk_name = "MeshCore Trail") {
-    uint32_t magic = 0;
-    if (file.read((uint8_t*)&magic, sizeof(magic)) != (int)sizeof(magic)) return 0;
-    if (magic != SAVE_MAGIC) return 0;
-    uint8_t  ver = 0, res = 0;
     uint16_t cnt = 0;
     uint32_t accum = 0;
-    if (file.read(&ver, 1)                         != 1)             return 0;
-    if (file.read(&res, 1)                         != 1)             return 0;
-    if (file.read((uint8_t*)&cnt,   sizeof(cnt))   != (int)sizeof(cnt))   return 0;
+    if (!persist::readHeader(file, SAVE_MAGIC, SAVE_VERSION, cnt)) return 0;
     if (file.read((uint8_t*)&accum, sizeof(accum)) != (int)sizeof(accum)) return 0;
-    if (ver != SAVE_VERSION || cnt > CAPACITY) return 0;
+    if (cnt > CAPACITY) return 0;
 
     size_t total = gpxHeader(out);
     total += gpxWaypoints(out, wpts);
@@ -370,19 +353,10 @@ public:
     return ms;
   }
 
-  // Approximate great-circle distance in metres (Haversine).
+  // Approximate great-circle distance in metres. Delegates to the shared
+  // geo:: Haversine (km) so there is a single implementation.
   static float haversineMeters(int32_t la1, int32_t lo1, int32_t la2, int32_t lo2) {
-    const float R   = 6371000.0f;
-    const float D2R = (float)M_PI / 180.0f;
-    float lat1 = (la1 / 1.0e6f) * D2R;
-    float lat2 = (la2 / 1.0e6f) * D2R;
-    float dlat = ((la2 - la1) / 1.0e6f) * D2R;
-    float dlon = ((lo2 - lo1) / 1.0e6f) * D2R;
-    float sdl  = sinf(dlat * 0.5f);
-    float sdo  = sinf(dlon * 0.5f);
-    float a    = sdl * sdl + cosf(lat1) * cosf(lat2) * sdo * sdo;
-    float c    = 2.0f * atan2f(sqrtf(a), sqrtf(1.0f - a));
-    return R * c;
+    return geo::haversineKm(la1, lo1, la2, lo2) * 1000.0f;
   }
 
 private:

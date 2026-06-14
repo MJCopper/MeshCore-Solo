@@ -94,4 +94,6 @@ struct PopupMenu {
   }
 
   int selectedIndex() const { return _sel; }
+  int count() const { return _count; }
+  void setSelected(int i) { if (i >= 0 && i < _count) _sel = i; }
 };

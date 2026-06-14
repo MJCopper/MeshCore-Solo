@@ -6,6 +6,7 @@
 
 #include <Arduino.h>
 #include <string.h>
+#include "Persist.h"
 
 static const uint8_t WAYPOINT_LABEL_LEN = 12;   // incl. NUL → 11 visible chars
 
@@ -54,13 +55,7 @@ public:
 
   template <typename F>
   bool writeTo(F& file) {
-    uint32_t magic = SAVE_MAGIC;
-    uint8_t  ver = SAVE_VERSION, res = 0;
-    uint16_t cnt = (uint16_t)_count;
-    if (file.write((uint8_t*)&magic, sizeof(magic)) != sizeof(magic)) return false;
-    if (file.write(&ver, 1) != 1) return false;
-    if (file.write(&res, 1) != 1) return false;
-    if (file.write((uint8_t*)&cnt, sizeof(cnt)) != sizeof(cnt)) return false;
+    if (!persist::writeHeader(file, SAVE_MAGIC, SAVE_VERSION, (uint16_t)_count)) return false;
     for (int i = 0; i < _count; i++) {
       if (file.write((uint8_t*)&_wp[i], sizeof(Waypoint)) != sizeof(Waypoint)) return false;
     }
@@ -69,15 +64,8 @@ public:
 
   template <typename F>
   bool readFrom(F& file) {
-    uint32_t magic = 0;
-    if (file.read((uint8_t*)&magic, sizeof(magic)) != (int)sizeof(magic)) return false;
-    if (magic != SAVE_MAGIC) return false;
-    uint8_t ver = 0, res = 0;
     uint16_t cnt = 0;
-    if (file.read(&ver, 1) != 1) return false;
-    if (file.read(&res, 1) != 1) return false;
-    if (file.read((uint8_t*)&cnt, sizeof(cnt)) != (int)sizeof(cnt)) return false;
-    if (ver != SAVE_VERSION) return false;
+    if (!persist::readHeader(file, SAVE_MAGIC, SAVE_VERSION, cnt)) return false;
     if (cnt > CAPACITY) cnt = CAPACITY;
     _count = 0;
     for (uint16_t i = 0; i < cnt; i++) {

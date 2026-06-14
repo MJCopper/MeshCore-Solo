@@ -352,38 +352,34 @@ private:
               "%s tracking",  _store->isActive() ? "Stop" : "Start");
   }
 
+  // Append an action row, guarding both the id map and the popup capacity so
+  // adding a new action can never silently overrun _act_map / PopupMenu.
+  void pushAction(ActionId id, const char* label) {
+    if (_act_count >= (int)sizeof(_act_map)) return;
+    _act_map[_act_count++] = (uint8_t)id;
+    _action_menu.addItem(label);
+  }
+
   void openActionMenu() {
     refreshActionLabels();
     _act_count = 0;
     _action_menu.begin("Trail", 4);
-    _act_map[_act_count++] = ACT_MIN_DIST; _action_menu.addItem(_act_min_dist_label);
-    _act_map[_act_count++] = ACT_UNITS;    _action_menu.addItem(_act_units_label);
-    _act_map[_act_count++] = ACT_GRID;     _action_menu.addItem(_act_grid_label);
-    _act_map[_act_count++] = ACT_TOGGLE;   _action_menu.addItem(_act_toggle_label);
+    pushAction(ACT_MIN_DIST, _act_min_dist_label);
+    pushAction(ACT_UNITS,    _act_units_label);
+    pushAction(ACT_GRID,     _act_grid_label);
+    pushAction(ACT_TOGGLE,   _act_toggle_label);
     // Waypoints: mark the current spot, and browse/navigate saved ones.
-    _act_map[_act_count++] = ACT_MARK;     _action_menu.addItem("Mark here");
+    pushAction(ACT_MARK,      "Mark here");
     // "Waypoints" opens the nav list — always available; it hosts the list,
     // backtrack (Trail-start row) and the "+ Add by coords" entry.
-    _act_map[_act_count++] = ACT_WAYPOINTS; _action_menu.addItem("Waypoints");
-    if (_task->waypoints().count() > 0) {
-      _act_map[_act_count++] = ACT_WP_CLEAR;  _action_menu.addItem("Clear waypoints");
-    }
-    if (!_store->empty()) {
-      _act_map[_act_count++] = ACT_SAVE;   _action_menu.addItem("Save trail");
-    }
+    pushAction(ACT_WAYPOINTS, "Waypoints");
+    if (_task->waypoints().count() > 0) pushAction(ACT_WP_CLEAR, "Clear waypoints");
+    if (!_store->empty())               pushAction(ACT_SAVE,     "Save trail");
     bool saved = savedTrailExists();
-    if (saved) {
-      _act_map[_act_count++] = ACT_LOAD;          _action_menu.addItem("Load trail");
-    }
-    if (!_store->empty()) {
-      _act_map[_act_count++] = ACT_EXPORT;        _action_menu.addItem("Export (live)");
-    }
-    if (saved) {
-      _act_map[_act_count++] = ACT_EXPORT_SAVED;  _action_menu.addItem("Export (saved)");
-    }
-    if (!_store->empty()) {
-      _act_map[_act_count++] = ACT_RESET;         _action_menu.addItem("Reset trail");
-    }
+    if (saved)                          pushAction(ACT_LOAD,     "Load trail");
+    if (!_store->empty())               pushAction(ACT_EXPORT,   "Export (live)");
+    if (saved)                          pushAction(ACT_EXPORT_SAVED, "Export (saved)");
+    if (!_store->empty())               pushAction(ACT_RESET,    "Reset trail");
   }
 
   static bool savedTrailExists() {
@@ -584,7 +580,7 @@ private:
   // continue cycling.
   void reopenAt(int sel) {
     openActionMenu();
-    if (sel >= 0 && sel < _act_count) _action_menu._sel = sel;
+    _action_menu.setSelected(sel);
   }
 
   void cycleMinDelta(NodePrefs* p, int dir) {
@@ -644,9 +640,10 @@ private:
       }
       case 3: {
         uint32_t es = _store->elapsedSeconds();
-        if (es < 3600) snprintf(buf, n, "Time: %lu:%02lu",
+        // Unit-suffixed so "1h 05m" can't be misread as "1m 05s".
+        if (es < 3600) snprintf(buf, n, "Time: %lum %02lus",
                                   (unsigned long)(es / 60), (unsigned long)(es % 60));
-        else           snprintf(buf, n, "Time: %lu:%02lu",
+        else           snprintf(buf, n, "Time: %luh %02lum",
                                   (unsigned long)(es / 3600), (unsigned long)((es % 3600) / 60));
         break;
       }

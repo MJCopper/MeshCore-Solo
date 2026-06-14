@@ -196,13 +196,13 @@ class NearbyScreen : public UIScreen {
   }
 
   void rebuildPingMenu() {
-    int keep = _ping_menu._sel;            // preserve selection across a rebuild
+    int keep = _ping_menu.selectedIndex();  // preserve selection across a rebuild
     _ping_menu.begin("Ping", 4);
     _ping_menu.addItem("Send");
     if (_ping_time_str[0])     _ping_menu.addItem(_ping_time_str);
     if (_ping_snr_out_str[0])  _ping_menu.addItem(_ping_snr_out_str);
     if (_ping_snr_back_str[0])  _ping_menu.addItem(_ping_snr_back_str);
-    if (keep > 0 && keep < _ping_menu._count) _ping_menu._sel = keep;
+    _ping_menu.setSelected(keep);
   }
 
   void openPingMenu() { rebuildPingMenu(); }
@@ -261,7 +261,7 @@ class NearbyScreen : public UIScreen {
     }
     // Keep the menu in sync with the populated result lines (grows as the
     // reply arrives; never shows blank rows).
-    if (pingRowCount() != _ping_menu._count) rebuildPingMenu();
+    if (pingRowCount() != _ping_menu.count()) rebuildPingMenu();
   }
 
   bool handlePingMenuInput(char c, const uint8_t* pub_key, bool allow_enter_to_open = false) {

@@ -174,7 +174,8 @@ class QuickMsgScreen : public UIScreen {
   // Dispatch the selected fullscreen-options row. `channel` picks which
   // fullscreen view to close when starting a reply.
   void dispatchFsAction(bool channel) {
-    FsAct a = (FsAct)_fs_act[(_ctx_menu._sel >= 0 && _ctx_menu._sel < _fs_act_n) ? _ctx_menu._sel : 0];
+    int csel = _ctx_menu.selectedIndex();
+    FsAct a = (FsAct)_fs_act[(csel >= 0 && csel < _fs_act_n) ? csel : 0];
     _ctx_menu.active = false;
     if (a == FS_REPLY) {
       (channel ? _fs : _dm_fs).active = false;
