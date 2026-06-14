@@ -201,10 +201,10 @@ public:
     uint8_t  ver = 0, res = 0;
     uint16_t cnt = 0;
     uint32_t accum = 0;
-    file.read(&ver, 1);
-    file.read(&res, 1);
-    file.read((uint8_t*)&cnt, sizeof(cnt));
-    file.read((uint8_t*)&accum, sizeof(accum));
+    if (file.read(&ver, 1)                         != 1)             return false;
+    if (file.read(&res, 1)                         != 1)             return false;
+    if (file.read((uint8_t*)&cnt,   sizeof(cnt))   != (int)sizeof(cnt))   return false;
+    if (file.read((uint8_t*)&accum, sizeof(accum)) != (int)sizeof(accum)) return false;
     if (ver != SAVE_VERSION || cnt > CAPACITY) return false;
     if (_active) {
       _active = false;
@@ -344,10 +344,10 @@ public:
     uint8_t  ver = 0, res = 0;
     uint16_t cnt = 0;
     uint32_t accum = 0;
-    file.read(&ver, 1);
-    file.read(&res, 1);
-    file.read((uint8_t*)&cnt, sizeof(cnt));
-    file.read((uint8_t*)&accum, sizeof(accum));
+    if (file.read(&ver, 1)                         != 1)             return 0;
+    if (file.read(&res, 1)                         != 1)             return 0;
+    if (file.read((uint8_t*)&cnt,   sizeof(cnt))   != (int)sizeof(cnt))   return 0;
+    if (file.read((uint8_t*)&accum, sizeof(accum)) != (int)sizeof(accum)) return 0;
     if (ver != SAVE_VERSION || cnt > CAPACITY) return 0;
 
     size_t total = gpxHeader(out);
