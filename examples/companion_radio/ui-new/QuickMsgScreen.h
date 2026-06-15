@@ -290,8 +290,8 @@ class QuickMsgScreen : public UIScreen {
   static void drawAckGlyph(DisplayDriver& d, int x, int top_y, AckState s, int sends = 1) {
     switch (s) {
       case ACK_PENDING: miniIconDotRow(d, x, top_y, sends);          break;
-      case ACK_OK:      miniIconDraw(d, x, top_y, ICON_CHECK, 5, 4); break;
-      case ACK_FAIL:    miniIconDraw(d, x, top_y, ICON_CROSS, 4, 4); break;
+      case ACK_OK:      miniIconDraw(d, x, top_y, ICON_CHECK);       break;
+      case ACK_FAIL:    miniIconDraw(d, x, top_y, ICON_CROSS);       break;
       default: break;                          // ACK_NONE → nothing
     }
   }

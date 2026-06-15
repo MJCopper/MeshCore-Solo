@@ -10,10 +10,36 @@
 // further down, which are fixed-size full bitmaps drawn via drawXbm().
 //
 // To add a mini-icon:
-//   1. Define a bitmap: H rows top→bottom, one byte per row, bit (1<<col) set =
-//      filled pixel (width must be ≤ 8).
-//   2. Draw it with miniIconDraw(display, x, topY, BITMAP, width, height).
+//   1. Draw it as ASCII-art rows, one string per row (width ≤ 8): any char
+//      other than ' ' or '.' is a filled pixel. packRow() packs each string
+//      into one byte at compile time, so the strings never reach flash — the
+//      binary holds only the packed bytes, identical to hand-written hex.
+//   2. Wrap the rows in a MINI_ICON(name, width, ...) — width and row count are
+//      bundled with the data, so the draw site carries no magic numbers.
+//   3. Draw it with miniIconDraw(display, x, topY, name).
 // Scaling is automatic — no per-display handling needed.
+//
+// packRow() is written as a single-expression recursion so it stays a valid
+// constant expression on any C++ standard the firmware targets (≥ C++11), not
+// just the relaxed C++14 constexpr with loops. It packs up to the string's NUL
+// (capped at 8 cols), so width lives once in MINI_ICON, not in every row.
+constexpr uint8_t packBit(const char* s, int x) {
+  return (s[x] && s[x] != ' ' && s[x] != '.') ? (uint8_t)(1u << x) : 0;
+}
+constexpr uint8_t packRow(const char* s, int x = 0) {
+  return (!s[x] || x >= 8) ? 0 : (uint8_t)(packBit(s, x) | packRow(s, x + 1));
+}
+
+// A mini-icon bundles its pixel data with its dimensions, so call sites can't
+// pass a stale width/height. Built via the MINI_ICON macro below.
+struct MiniIcon { uint8_t w, h; const uint8_t* rows; };
+
+// Define a mini-icon: the row count (height) is derived from the initializer,
+// the width is stated once. Emits a packed byte array plus a MiniIcon view.
+#define MINI_ICON(name, width, ...)                                            \
+  static constexpr uint8_t name##_rows[] = { __VA_ARGS__ };                    \
+  static constexpr MiniIcon name = { (uint8_t)(width),                         \
+                                     (uint8_t)sizeof(name##_rows), name##_rows }
 
 // Pixel scale from the font: 1× on an 8px OLED line, 2× on a 16px landscape
 // e-ink line, etc. Bitmaps are authored on the 1× grid.
@@ -34,6 +60,11 @@ inline void miniIconDraw(DisplayDriver& d, int x, int top_y,
       if (rows[r] & (1 << c)) d.fillRect(x + c * s, y + r * s, s, s);
 }
 
+// Preferred overload: dimensions travel with the icon — no magic numbers.
+inline void miniIconDraw(DisplayDriver& d, int x, int top_y, const MiniIcon& ic) {
+  miniIconDraw(d, x, top_y, ic.rows, ic.w, ic.h);
+}
+
 // Horizontal row of `count` square dots (scaled, vertically centred). Used by
 // the "awaiting ACK" marker, where the dot count = number of send attempts.
 inline void miniIconDotRow(DisplayDriver& d, int x, int top_y, int count) {
@@ -44,9 +75,51 @@ inline void miniIconDotRow(DisplayDriver& d, int x, int top_y, int count) {
   for (int i = 0; i < count; i++) d.fillRect(x + i * pitch, y, dot, dot);
 }
 
-// Mini-icon bitmaps (authored on the 1× grid).
-static const uint8_t ICON_CHECK[4] = { 0x10, 0x08, 0x05, 0x02 };  // ✓  5×4
-static const uint8_t ICON_CROSS[4] = { 0x09, 0x06, 0x06, 0x09 };  // ✗  4×4
+// Mini-icon bitmaps (authored on the 1× grid as ASCII-art; see packRow above).
+MINI_ICON(ICON_CHECK, 5,   // ✓
+  packRow("....#"),
+  packRow("...#."),
+  packRow("#.#.."),
+  packRow(".#..."));
+MINI_ICON(ICON_CROSS, 4,   // ✗
+  packRow("#..#"),
+  packRow(".##."),
+  packRow(".##."),
+  packRow("#..#"));
+
+// ── Big ASCII-art icons (skeleton, not yet used) ─────────────────────────────
+// Same authoring idea as the mini-icons but for full page glyphs up to 32 px
+// wide: one uint32_t per row. The existing XBM bitmaps below (logo/bluetooth/…)
+// stay hand-encoded; reach for this when adding a *new* big icon so it's
+// readable in source. Drawn at 1× (page icons aren't font-scaled).
+//
+// To add one:
+//   BIG_ICON(MY_ICON, 16,
+//     packRow32("......####......"),
+//     packRow32(".....######....."),
+//     ...);
+//   bigIconDraw(display, x, y, MY_ICON);
+constexpr uint32_t packBit32(const char* s, int x) {
+  return (s[x] && s[x] != ' ' && s[x] != '.') ? (1u << x) : 0u;
+}
+constexpr uint32_t packRow32(const char* s, int x = 0) {
+  return (!s[x] || x >= 32) ? 0u : (packBit32(s, x) | packRow32(s, x + 1));
+}
+
+struct BigIcon { uint8_t w, h; const uint32_t* rows; };
+
+#define BIG_ICON(name, width, ...)                                             \
+  static constexpr uint32_t name##_rows[] = { __VA_ARGS__ };                   \
+  static constexpr BigIcon name = {                                            \
+      (uint8_t)(width),                                                        \
+      (uint8_t)(sizeof(name##_rows) / sizeof(uint32_t)), name##_rows }
+
+// Draw a packed big icon at 1× with the current ink colour, top-left at (x, y).
+inline void bigIconDraw(DisplayDriver& d, int x, int y, const BigIcon& ic) {
+  for (int r = 0; r < ic.h; r++)
+    for (int c = 0; c < ic.w; c++)
+      if (ic.rows[r] & (1u << c)) d.fillRect(x + c, y + r, 1, 1);
+}
 
 // 'meshcore', 128x13px
 static const uint8_t meshcore_logo [] = {
