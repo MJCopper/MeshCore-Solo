@@ -42,6 +42,16 @@ struct PopupMenu {
     if (max_by_height < 1) max_by_height = 1;
     _cap = max_by_height;
     int vis = (_count < _cap) ? _count : _cap;
+    // render() is the single source of truth for _scroll: using the cap just
+    // computed from the live display height, keep the selection inside the
+    // visible window. handleInput() therefore never has to touch _scroll (and
+    // can't act on a stale _cap from before the first render).
+    if (_sel < _scroll)             _scroll = _sel;
+    else if (_sel >= _scroll + vis) _scroll = _sel - vis + 1;
+    int max_scroll = _count - vis;
+    if (max_scroll < 0)       max_scroll = 0;
+    if (_scroll > max_scroll) _scroll = max_scroll;
+    if (_scroll < 0)          _scroll = 0;
     int bh  = 12 + vis * PM_ITEM_H;
 
     display.setColor(DisplayDriver::DARK);
@@ -76,18 +86,9 @@ struct PopupMenu {
 
   Result handleInput(char c) {
     if (_count == 0) { active = false; return CANCELLED; }
-    if (c == KEY_UP) {
-      _sel = (_sel > 0) ? _sel - 1 : _count - 1;
-      if (_sel < _scroll)                               _scroll = _sel;
-      else if (_sel == _count - 1 && _count > _cap)    _scroll = _count - _cap;
-      return NONE;
-    }
-    if (c == KEY_DOWN) {
-      _sel = (_sel < _count - 1) ? _sel + 1 : 0;
-      if (_sel >= _scroll + _cap)  _scroll = _sel - _cap + 1;
-      else if (_sel == 0)          _scroll = 0;
-      return NONE;
-    }
+    // Selection only moves here; render() keeps it scrolled into view.
+    if (c == KEY_UP)   { _sel = (_sel > 0) ? _sel - 1 : _count - 1; return NONE; }
+    if (c == KEY_DOWN) { _sel = (_sel < _count - 1) ? _sel + 1 : 0; return NONE; }
     if (c == KEY_ENTER)                           { active = false; return SELECTED;  }
     if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) { active = false; return CANCELLED; }
     return NONE;

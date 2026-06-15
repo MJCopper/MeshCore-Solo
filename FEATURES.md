@@ -766,11 +766,11 @@ The 31-byte name slot in `CMD_SET_DEFAULT_FLOOD_SCOPE` doesn't have to be NUL-te
 
 Left as-is: the framework always renders before forwarding input, so the fragile invariant doesn't fire in practice. Worth a refactor only if the call order ever changes.
 
-### ✅ `renderDiscoverDetail` guarded against narrow displays
+### ✅ Scan detail guarded against narrow displays
 
-[`NearbyScreen.h:325-348`](examples/companion_radio/ui-new/NearbyScreen.h#L325-L348)
+[`NearbyScreen.h:448-451`](examples/companion_radio/ui-new/NearbyScreen.h#L448-L451)
 
-Pub-key line is now skipped entirely when `max_chars < 4` instead of feeding a negative length to `strncpy`.
+Pub-key line is skipped entirely when `max_chars < 4` instead of feeding a negative length to `strncpy`. (Lived in `renderDiscoverDetail` before the one-list refactor; now in `renderScanDetail`.)
 
 ### 📋 `expandMsg` GPS validity test treats (0, 0) as invalid
 
@@ -786,9 +786,9 @@ Point (0, 0) is a legitimate location (Gulf of Guinea). Corner case but a logic 
 
 ### ✅ SNR division by 4 — now uses `%.1f`
 
-[`NearbyScreen.h:355-357, 487`](examples/companion_radio/ui-new/NearbyScreen.h#L355-L487)
+[`NearbyScreen.h:467-470`](examples/companion_radio/ui-new/NearbyScreen.h#L467-L470), [`330-332`](examples/companion_radio/ui-new/NearbyScreen.h#L330-L332)
 
-Detail view (`SNR: %.1f dB`, `Rem: %.1f dB`) and discover list cards (`SNR:%.1f`) both keep the 0.25 dB resolution. Stays consistent with the ping popup, which already used `%.1f`.
+Scan detail view (`SNR: %.1f dB`, `Rem: %.1f dB`) and the ping popup keep the 0.25 dB resolution. (After the one-list refactor the scan list cards show **RSSI** in the right column, not SNR.)
 
 ### 📋 Trail `_count` cast to `uint16_t`
 
@@ -824,7 +824,7 @@ Fix status after this pass:
 - ✅ M4 — `renderDiscoverDetail` skips pub-key line on very narrow displays
 - ✅ L1 — SNR shown with 0.25 dB precision everywhere
 - ✅ L4 — fallback `"?"` sender no longer memsets through `strncpy`
-- ✅ Trail map grid silent loss — when a very elongated trail makes `lat_n` or `lon_n` exceed 40, the renderer now bumps the step up instead of dropping the grid entirely. Comment fixed to match the `/ 3.0f` divisor ("~3 intervals", not 4). [`TrailScreen.h:505-565`](examples/companion_radio/ui-new/TrailScreen.h#L505-L565)
+- ✅ Trail map grid silent loss — superseded by the Trail refactor: `renderGrid` now picks a round labelled step (`1m…100km` / `10ft…100mi`) nearest ~1/3 of the shorter side and enforces a `MIN_GRID_PX` floor, so the grid can never silently vanish on an elongated trail. [`TrailScreen.h:635`](examples/companion_radio/ui-new/TrailScreen.h#L635)
 - ❌ M1 — re-checked, not a bug (`default_scope_name[31]`)
 - 📋 H1 + H2 — still open; need coordinated fix in upstream `BaseChatMesh` (`findChannelIdx` should iterate `num_channels`, not `MAX_GROUP_CHANNELS`; `saveChannels` should stop at the first uninitialised slot) or a local override
 - 📋 H3 — left as known limitation pending UX call
