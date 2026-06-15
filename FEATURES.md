@@ -536,9 +536,22 @@ From channel view, Hold Enter → "Who's online?". Sends 0-hop discovery to chan
 
 ## New ideas (unprioritised)
 
-Captured for later triage. None designed in detail yet except DM delivery status.
+Captured for later triage. None designed in detail yet (DM delivery status has since shipped — see below).
 
-### 📋 DM delivery status
+### ✅ DM delivery status
+
+**✅ Shipped** (in `main`). A per-message marker sits at the end of each outgoing
+DM row in the history and in the fullscreen message view. Deltas from the spec
+that follows:
+- **Pending** isn't a single `·/…` — it draws **one square dot per send attempt**,
+  so an auto-resent message shows its retry count at a glance.
+- **Delivered / failed** use drawn **scalable mini-icons** (`✓` / `✗`) that scale
+  with the font, not glyph-font characters — legible on every layout (see
+  `icons.h`, authored as compile-time ASCII-art).
+- Adds **DM auto-resend + incoming dedup**, plus a channel **"relayed into mesh"**
+  marker (`✓` when a repeater echo confirms the channel message went out).
+
+Original spec:
 
 Show whether an outgoing direct message reached the recipient, using the ACK
 that MeshCore already produces (no protocol change). `sendMessage()` returns

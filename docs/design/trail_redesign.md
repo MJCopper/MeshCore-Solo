@@ -1,8 +1,9 @@
 # Trail (Tools › Trail) — analiza i propozycja uporządkowania
 
-> Branch: `refactor/trail-screen`
-> Plik źródłowy: [TrailScreen.h](../../examples/companion_radio/ui-new/TrailScreen.h) (1065 linii)
-> Status: **propozycja** (do akceptacji przed implementacją)
+> Branch: `refactor/trail-screen` (zmergowany do `main`)
+> Plik źródłowy: [TrailScreen.h](../../examples/companion_radio/ui-new/TrailScreen.h)
+> Status: **zaimplementowane** — dokument zachowany jako zapis analizy/decyzji.
+> Aktualny opis funkcji od strony użytkownika: [tools_screen.md › GPS Trail](../solo_features/tools_screen/tools_screen.md).
 
 ---
 

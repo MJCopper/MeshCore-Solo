@@ -1,8 +1,16 @@
 # Nearby Nodes — analiza i propozycja uporządkowania
 
-> Branch: `refactor/nearby-nodes`
+> Branch: `refactor/nearby-nodes` (zmergowany do `main`)
 > Plik źródłowy: [NearbyScreen.h](../../examples/companion_radio/ui-new/NearbyScreen.h)
-> Status: **propozycja** (do akceptacji przed implementacją)
+> Status: **zaimplementowane** — dokument zachowany jako zapis analizy/decyzji.
+>
+> **Odchylenia od propozycji (stan faktyczny):**
+> - Akcji **Filter…** w menu nie ma — duplikowała cykl `LEFT/RIGHT` po typie, więc
+>   filtr został wyłącznie na liście (sekcja 3.1 zakładała Filter… też w menu).
+> - **Sort** nie jest togglem przez Enter, lecz zmienia się **in-place przez
+>   `LEFT/RIGHT` na podświetlonym wierszu** w popupie (wzorzec ustawień Trail),
+>   a wiersz pojawia się tylko dla źródła Zapisane (skan nie ma dystansu).
+> - Filtr i sort **utrzymują się** między wejściami na ekran (nie są resetowane).
 
 ---
 

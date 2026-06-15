@@ -33,18 +33,17 @@ Filter by category with **LEFT/RIGHT** (one coherent axis — type only):
 
 Select a node to see its coordinates, distance, bearing with cardinal direction, type, and last-heard time.
 
-**Hold Enter** opens the same **Options** menu everywhere (list and detail), with a fixed set of actions — only the unavailable ones are omitted:
+**Hold Enter** opens the same **Options** menu everywhere (list and detail), in a fixed order — only the actions that apply appear:
 
-| Action          | Available when                          |
-| --------------- | --------------------------------------- |
-| Navigate        | selected node has GPS                    |
-| Ping            | a public key is known for the node       |
-| Save waypoint   | selected node has GPS                    |
-| Filter…         | always (full filter list in one popup)   |
-| Sort: Dist/Recent | always (toggles distance ↔ last-heard) |
-| Discover scan   | always (live `NODE_DISCOVER_REQ` scan)   |
+| Action                 | Available when                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------- |
+| Navigate               | selected node has GPS                                                                   |
+| Ping                   | a public key is known for the node                                                     |
+| Save waypoint          | selected node has GPS                                                                   |
+| Sort: Dist/Recent      | browsing stored nodes — **LEFT/RIGHT** on the row flips distance ↔ last-heard in place |
+| Discover scan / Rescan | always (live `NODE_DISCOVER_REQ` scan)                                                  |
 
-The sort toggle switches the list (and the right-hand column) between **distance** and **last-heard**, independent of the active filter.
+Filtering stays on the list itself (**LEFT/RIGHT** cycles the type), so there is no separate Filter action in the menu. **Sort** is adjusted in place: highlight the **Sort** row and tap **LEFT/RIGHT** to flip the list (and its right-hand column) between **distance** and **last-heard** without closing the menu — the same in-popup pattern as Trail's settings. The row appears only while browsing stored nodes (live-scan rows carry signal, not distance). Filter and sort are independent and **persist** across re-entry to the screen.
 
 Selecting **Ping** opens the Ping popup:
 
