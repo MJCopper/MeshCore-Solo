@@ -1825,7 +1825,12 @@ void UITask::loop() {
         _display->setColor(DisplayDriver::LIGHT);
         _display->drawRect(box_x, box_y, box_w, box_h);
         _display->drawTextCentered(_display->width() / 2, box_y + pad, _alert);
-        _next_refresh = _alert_expiry;   // will need refresh when alert is dismissed
+        // Keep refreshing the underlying screen at its own cadence (capped at the
+        // alert's expiry) so layouts that settle over a frame — e.g. the message-
+        // history scrollbar reserve — don't stay stuck behind the alert. Unchanged
+        // frames are skipped by the display CRC, so e-ink isn't thrashed.
+        _next_refresh = millis() + delay_millis;
+        if (_next_refresh > _alert_expiry) _next_refresh = _alert_expiry;
       } else {
         _next_refresh = millis() + delay_millis;
       }
