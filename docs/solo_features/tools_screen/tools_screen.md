@@ -18,12 +18,14 @@ The Tools screen is a hub for GPS trail recording, nearby node browsing, rington
 | :-----------------------: | :-----------------------: |
 | ![](./tls_scr_2_oled.png) | ![](./tls_scr_2_eink.png) |
 
-Browse nodes that have recently advertised on the mesh. Filter by category with **LEFT/RIGHT**:
+Browse nodes that have recently advertised on the mesh. **Filter** (which nodes) and **sort** (in what order) are independent axes and combine freely.
+
+Filter by category with **LEFT/RIGHT** (one coherent axis — type only):
 
 | Filter | Shows                          |
 | ------ | ------------------------------ |
+| All    | All known nodes                |
 | Fav    | Upstream-starred contacts only |
-| ALL    | All known nodes                |
 | Comp   | Companion (chat) nodes         |
 | Rpt    | Repeaters                      |
 | Room   | Room servers                   |
@@ -31,9 +33,20 @@ Browse nodes that have recently advertised on the mesh. Filter by category with 
 
 Select a node to see its coordinates, distance, bearing with cardinal direction, type, and last-heard time.
 
-From the list view, **Hold Enter** opens the context menu, where **Discover nearby** sends a live `NODE_DISCOVER_REQ` scan.
+**Hold Enter** opens the same **Options** menu everywhere (list and detail), with a fixed set of actions — only the unavailable ones are omitted:
 
-From either node detail view, **Hold Enter** opens the Ping popup:
+| Action          | Available when                          |
+| --------------- | --------------------------------------- |
+| Navigate        | selected node has GPS                    |
+| Ping            | a public key is known for the node       |
+| Save waypoint   | selected node has GPS                    |
+| Filter…         | always (full filter list in one popup)   |
+| Sort: Dist/Recent | always (toggles distance ↔ last-heard) |
+| Discover scan   | always (live `NODE_DISCOVER_REQ` scan)   |
+
+The sort toggle switches the list (and the right-hand column) between **distance** and **last-heard**, independent of the active filter.
+
+Selecting **Ping** opens the Ping popup:
 
 |              OLED              |             E-Ink              |
 | :----------------------------: | :----------------------------: |
@@ -46,21 +59,17 @@ Use **Enter** on the popup’s `Ping` row to send a direct mesh ping to that nod
 
 ---
 
-### Active Discovery
+### Active Discovery (live scan)
 
 |           OLED            |           E-Ink           |
 | :-----------------------: | :-----------------------: |
 | ![](./tls_scr_3_oled.png) | ![](./tls_scr_3_eink.png) |
 
-Sends a `NODE_DISCOVER_REQ` ping. Repeaters, sensors and room servers within zero-hop range respond immediately with name, type and signal data.
+**Options → Discover scan** sends a `NODE_DISCOVER_REQ`. Repeaters, sensors and room servers within zero-hop range respond immediately with name, type and signal data. This is not a separate screen — it is the **same list switched to a live-scan source**: the right-hand column shows **RSSI** instead of distance, and node detail shows the public key, signal data and contact status.
 
-Results show as 2-line cards: node name + type, then RSSI / SNR / remote SNR.
+Because it is the same list, all the same keys apply — **UP/DOWN** to navigate, **Enter** for detail, **Hold Enter** for the Options menu (where **Rescan** repeats the scan and **Ping** works exactly as on stored nodes).
 
-- **UP/DOWN** — navigate results
-- **Enter** — open full-screen detail (public key, signal data, contact status)
-- **Hold Enter** — rescan
-- **Hold Enter** in full-screen detail — open the Ping popup for the selected node
-- **Cancel / Back** — return to nearby list
+- **Cancel / Back** — return to the stored-nodes list
 
 ---
 

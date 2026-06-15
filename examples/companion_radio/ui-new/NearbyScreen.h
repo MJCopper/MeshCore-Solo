@@ -7,23 +7,45 @@
   #define M_PI 3.14159265358979323846
 #endif
 
+// ── Nearby Nodes ──────────────────────────────────────────────────────────────
+// One list / detail / action-menu interaction path over two sources:
+//   SRC_STORED — contacts known to the mesh (distance / bearing / last-heard)
+//   SRC_SCAN   — live NODE_DISCOVER_REQ results (RSSI / SNR / status)
+// Filter (type) and sort are independent axes and combine freely. The action
+// menu (Hold Enter) is identical everywhere; only the per-row column and the
+// detail fields differ between sources.
 class NearbyScreen : public UIScreen {
   UITask* _task;
 
-  int _visible   = 4;   // updated each render; used by handleInput for scroll clamping
+  int _visible = 4;   // updated each render; used by handleInput for scroll clamping
 
-  static const int FILTER_COUNT = 7;
-  static const char*    FILTER_LABELS[FILTER_COUNT];
-  static const uint8_t  FILTER_TYPES[FILTER_COUNT];
+  // ── filter (type axis) ──────────────────────────────────────────────────────
+  enum Filter : uint8_t { F_ALL, F_FAV, F_COMP, F_RPT, F_ROOM, F_SNSR, F_COUNT };
+  static const char* FILTER_LABELS[F_COUNT];
 
-  // ── nearby list state ────────────────────────────────────────────────────────
+  // ── sort axis ───────────────────────────────────────────────────────────────
+  enum Sort : uint8_t { SORT_DIST, SORT_TIME };
+
+  // ── source ──────────────────────────────────────────────────────────────────
+  enum Source : uint8_t { SRC_STORED, SRC_SCAN };
+
+  // ── action-menu actions (matched by id, not by row index) ────────────────────
+  enum Action : uint8_t { ACT_NAV, ACT_PING, ACT_WAYPOINT, ACT_SORT, ACT_SCAN };
+
+  // ── unified list entry ───────────────────────────────────────────────────────
   struct Entry {
     char     name[32];
+    uint8_t  type;
+    uint8_t  pub_key[PUB_KEY_SIZE];
+    bool     has_key;
+    // stored-source fields
     int32_t  lat_e6, lon_e6;
     float    dist_km;
-    uint8_t  type;
-    int      contact_idx;
     uint32_t lastmod;
+    int      contact_idx;
+    // scan-source fields
+    int8_t   rssi, snr_x4, remote_snr_x4;
+    bool     is_known;
   };
 
   static const int MAX_NEARBY = 32;
@@ -35,38 +57,36 @@ class NearbyScreen : public UIScreen {
   bool    _nav = false;     // full-screen navigate-to-node view (over detail)
   int32_t _own_lat, _own_lon;
   bool    _own_gps;
+
+  Source  _source;
   uint8_t _filter;
+  uint8_t _sort;
 
   unsigned long _detail_refresh_ms;
   unsigned long _list_refresh_ms = 0;
-  static const unsigned long DETAIL_REFRESH_MS = 10000UL;
+  static const unsigned long DETAIL_REFRESH_MS    = 10000UL;
   static const unsigned long TIME_LIST_REFRESH_MS = 3000UL;
 
-  PopupMenu _ctx_menu;
-  PopupMenu _opts;            // detail-view Options: Navigate / Ping
-  PopupMenu _ping_menu;
-  char _ping_time_str[24];    // For storing ping RTT result
-  char _ping_snr_out_str[24]; // For storing ping SNR out result
-  char _ping_snr_back_str[24];// For storing ping SNR back result
+  // ── live-scan state ──────────────────────────────────────────────────────────
+  bool          _scanning;
+  unsigned long _scan_started_ms;
+  static const unsigned long SCAN_DURATION_MS = 8000UL;
 
-  // ── ping state ─────────────────────────────────────────────────────────────
+  // ── popups ────────────────────────────────────────────────────────────────────
+  PopupMenu _menu;            // unified action menu (Hold Enter), list + detail
+  PopupMenu _ping_menu;       // ping (special: read-only result rows)
+
+  Action  _menu_actions[8];   // parallel to _menu rows — stable action ids
+  int     _menu_action_count;
+  char    _sort_label[16];    // dynamic label for the Sort row
+
+  // ── ping state ───────────────────────────────────────────────────────────────
+  char _ping_time_str[24];
+  char _ping_snr_out_str[24];
+  char _ping_snr_back_str[24];
   bool _pinging;
   unsigned long _ping_started_ms;
   static const unsigned long PING_TIMEOUT_MS = 3000UL;
-
-  // ── discover sub-screen state ────────────────────────────────────────────────
-  bool          _discover_mode;
-  bool          _discovering;
-  unsigned long _discover_started_ms;
-  static const unsigned long DISCOVER_DURATION_MS = 8000UL;
-
-  DiscoverResult _dresults[DISCOVER_RESULTS_MAX];
-  int            _dresult_count;
-  int            _dscroll;
-  int            _dsel;
-  bool           _ddetail;
-
-  int _d_visible = 2;  // updated each render; used by handleInputDiscover
 
   // ── helpers ──────────────────────────────────────────────────────────────────
   static void pubKeyToBase64(const uint8_t* key, char* out, int out_len) {
@@ -84,19 +104,7 @@ class NearbyScreen : public UIScreen {
     out[j] = '\0';
   }
 
-  // Geographic helpers live in GeoUtils.h (geo::) — shared with Waypoints /
-  // trail course-over-ground. Call sites use geo:: directly.
-
   bool useImperial() const { return _task && _task->useImperial(); }
-
-  // Save the currently-selected list entry as a waypoint (its name as label).
-  // Shared by the list context menu and the detail Options menu.
-  void saveSelectedWaypoint() {
-    if (_sel >= _count) return;
-    const Entry& e = _entries[_sel];
-    if (e.lat_e6 == 0 && e.lon_e6 == 0) { _task->showAlert("No node GPS", 1000); return; }
-    _task->addWaypoint(e.lat_e6, e.lon_e6, e.name);   // WaypointStore truncates the label
-  }
 
   static void fmtAge(char* buf, int n, uint32_t lastmod) {
     uint32_t now = rtc_clock.getCurrentTime();
@@ -118,7 +126,35 @@ class NearbyScreen : public UIScreen {
     }
   }
 
-  void refresh() {
+  static const char* typeShort(uint8_t t) {
+    switch (t) {
+      case ADV_TYPE_REPEATER: return "Rpt";
+      case ADV_TYPE_SENSOR:   return "Snsr";
+      case ADV_TYPE_ROOM:     return "Room";
+      case ADV_TYPE_CHAT:     return "Comp";
+      default:                return "?";
+    }
+  }
+
+  // The selected entry, or nullptr when the list is empty.
+  const Entry* selected() const {
+    return (_count > 0 && _sel < _count) ? &_entries[_sel] : nullptr;
+  }
+
+  bool typeMatchesFilter(uint8_t type, uint8_t flags, bool have_flags) const {
+    switch (_filter) {
+      case F_FAV:  return have_flags && (flags & 0x01);
+      case F_COMP: return type == ADV_TYPE_CHAT;
+      case F_RPT:  return type == ADV_TYPE_REPEATER;
+      case F_ROOM: return type == ADV_TYPE_ROOM;
+      case F_SNSR: return type == ADV_TYPE_SENSOR;
+      case F_ALL:
+      default:     return true;
+    }
+  }
+
+  // ── data refresh ──────────────────────────────────────────────────────────────
+  void refreshStored() {
     _count = 0;
     _own_lat = _own_lon = 0;
     _own_gps = _task->currentLocation(_own_lat, _own_lon);
@@ -127,12 +163,13 @@ class NearbyScreen : public UIScreen {
     for (int i = 0; i < nc && _count < MAX_NEARBY; i++) {
       ContactInfo ci;
       if (!the_mesh.getContactByIdx(i, ci)) continue;
-      if (_filter == 0 && !(ci.flags & 1)) continue;
-      if (_filter >= 2 && _filter < FILTER_COUNT - 1 && ci.type != FILTER_TYPES[_filter]) continue;
+      if (!typeMatchesFilter(ci.type, ci.flags, true)) continue;
 
       Entry& e = _entries[_count++];
       strncpy(e.name, ci.name, sizeof(e.name) - 1);
       e.name[sizeof(e.name) - 1] = '\0';
+      memcpy(e.pub_key, ci.id.pub_key, PUB_KEY_SIZE);
+      e.has_key = true;
       e.lat_e6  = ci.gps_lat;
       e.lon_e6  = ci.gps_lon;
       bool remote_gps = (ci.gps_lat != 0 || ci.gps_lon != 0);
@@ -142,16 +179,22 @@ class NearbyScreen : public UIScreen {
       e.type        = ci.type;
       e.contact_idx = i;
       e.lastmod     = ci.lastmod;
+      e.is_known    = true;
     }
 
-    uint32_t _now_ts = rtc_clock.getCurrentTime();
+    sortStored();
+    clampSelection();
+  }
+
+  void sortStored() {
+    uint32_t now_ts = rtc_clock.getCurrentTime();
     for (int i = 0; i < _count - 1; i++) {
       int best = i;
       for (int j = i + 1; j < _count; j++) {
-        if (_filter == FILTER_COUNT - 1) {
-          // Treat lastmod=0 or lastmod>now (RTC not synced) as "unknown" → sort to bottom.
-          uint32_t tj = (_entries[j].lastmod > 0 && _now_ts >= _entries[j].lastmod) ? _entries[j].lastmod : 0;
-          uint32_t tb = (_entries[best].lastmod > 0 && _now_ts >= _entries[best].lastmod) ? _entries[best].lastmod : 0;
+        if (_sort == SORT_TIME) {
+          // lastmod=0 or lastmod>now (RTC not synced) → "unknown" → sort to bottom.
+          uint32_t tj = (_entries[j].lastmod > 0 && now_ts >= _entries[j].lastmod) ? _entries[j].lastmod : 0;
+          uint32_t tb = (_entries[best].lastmod > 0 && now_ts >= _entries[best].lastmod) ? _entries[best].lastmod : 0;
           if (tj > 0 && (tb == 0 || tj > tb)) best = j;  // descending — most recent first
         } else {
           float dj = _entries[j].dist_km, db = _entries[best].dist_km;
@@ -160,35 +203,81 @@ class NearbyScreen : public UIScreen {
       }
       if (best != i) { Entry tmp = _entries[i]; _entries[i] = _entries[best]; _entries[best] = tmp; }
     }
+  }
 
-    if (_count == 0) {
-      _sel = _scroll = 0;
-    } else if (_sel >= _count) {
-      _sel = _count - 1;
-      if (_scroll > _sel) _scroll = _sel;
+  void refreshScan() {
+    static DiscoverResult dr[DISCOVER_RESULTS_MAX];  // scratch — refresh isn't reentrant
+    int n = the_mesh.getDiscoverResults(dr, DISCOVER_RESULTS_MAX);
+    _count = 0;
+    for (int i = 0; i < n && _count < MAX_NEARBY; i++) {
+      if (!typeMatchesFilter(dr[i].type, 0, false)) continue;
+      Entry& e = _entries[_count++];
+      strncpy(e.name, dr[i].name, sizeof(e.name) - 1);
+      e.name[sizeof(e.name) - 1] = '\0';
+      e.type          = dr[i].type;
+      memcpy(e.pub_key, dr[i].pub_key, PUB_KEY_SIZE);
+      e.has_key       = true;
+      e.rssi          = dr[i].rssi;
+      e.snr_x4        = dr[i].snr_x4;
+      e.remote_snr_x4 = dr[i].remote_snr_x4;
+      e.is_known      = dr[i].is_known;
+      e.lat_e6 = e.lon_e6 = 0;
+      e.dist_km = -1.0f;
+      e.lastmod = 0;
+      e.contact_idx = -1;
     }
+    // strongest first
+    for (int i = 0; i < _count - 1; i++) {
+      int best = i;
+      for (int j = i + 1; j < _count; j++)
+        if (_entries[j].rssi > _entries[best].rssi) best = j;
+      if (best != i) { Entry tmp = _entries[i]; _entries[i] = _entries[best]; _entries[best] = tmp; }
+    }
+    clampSelection();
   }
 
-  // ── discover sub-screen ──────────────────────────────────────────────────────
-  void enterDiscoverMode() {
-    _discover_mode = true;
-    _discovering   = true;
-    _ddetail       = false;
-    _discover_started_ms = millis();
-    _dresult_count = 0;
-    _dscroll = 0;
-    _dsel    = 0;
+  void refresh() { if (_source == SRC_SCAN) refreshScan(); else refreshStored(); }
+
+  void clampSelection() {
+    if (_count == 0)            { _sel = _scroll = 0; }
+    else if (_sel >= _count)    { _sel = _count - 1; if (_scroll > _sel) _scroll = _sel; }
+  }
+
+  // ── live scan ────────────────────────────────────────────────────────────────
+  void enterScan() {
+    _source        = SRC_SCAN;
+    _detail        = false;
+    _nav           = false;
+    _scanning      = true;
+    _scan_started_ms = millis();
+    _sel = _scroll = 0;
     the_mesh.sendNodeDiscoverReq();
+    refreshScan();
   }
 
+  void leaveScan() {
+    _source = SRC_STORED;
+    _detail = false;
+    _nav    = false;
+    _sel = _scroll = 0;
+    refreshStored();
+  }
+
+  // Save the currently-selected entry as a waypoint (its name as label).
+  void saveSelectedWaypoint() {
+    const Entry* e = selected();
+    if (!e) return;
+    if (e->lat_e6 == 0 && e->lon_e6 == 0) { _task->showAlert("No node GPS", 1000); return; }
+    _task->addWaypoint(e->lat_e6, e->lon_e6, e->name);   // WaypointStore truncates the label
+  }
+
+  // ── ping ──────────────────────────────────────────────────────────────────────
   void resetPingLines() {
     _ping_time_str[0] = '\0';
     _ping_snr_out_str[0] = '\0';
     _ping_snr_back_str[0] = '\0';
   }
 
-  // Number of rows the ping menu should currently show: "Send" plus only the
-  // result lines that are populated (avoids blank scrollable rows).
   int pingRowCount() const {
     return 1 + (_ping_time_str[0] ? 1 : 0)
              + (_ping_snr_out_str[0] ? 1 : 0)
@@ -199,18 +288,10 @@ class NearbyScreen : public UIScreen {
     int keep = _ping_menu.selectedIndex();  // preserve selection across a rebuild
     _ping_menu.begin("Ping", 4);
     _ping_menu.addItem("Send");
-    if (_ping_time_str[0])     _ping_menu.addItem(_ping_time_str);
-    if (_ping_snr_out_str[0])  _ping_menu.addItem(_ping_snr_out_str);
+    if (_ping_time_str[0])      _ping_menu.addItem(_ping_time_str);
+    if (_ping_snr_out_str[0])   _ping_menu.addItem(_ping_snr_out_str);
     if (_ping_snr_back_str[0])  _ping_menu.addItem(_ping_snr_back_str);
     _ping_menu.setSelected(keep);
-  }
-
-  void openPingMenu() { rebuildPingMenu(); }
-
-  bool renderPingMenuIfActive(DisplayDriver& display) {
-    if (!_ping_menu.active) return false;
-    _ping_menu.render(display);
-    return true;
   }
 
   void closePingMenu(bool clear_task = true) {
@@ -245,12 +326,10 @@ class NearbyScreen : public UIScreen {
       } else {
         snprintf(_ping_time_str, sizeof(_ping_time_str), "RTT: timeout");
       }
-      if (snr_out != 0) {
+      if (snr_out != 0)
         snprintf(_ping_snr_out_str, sizeof(_ping_snr_out_str), "SNR out: %.1f", snr_out / 4.0f);
-      }
-      if (snr_back != 0) {
+      if (snr_back != 0)
         snprintf(_ping_snr_back_str, sizeof(_ping_snr_back_str), "SNR back: %.1f", snr_back / 4.0f);
-      }
       _pinging = false;
     } else if (_pinging && millis() - _ping_started_ms >= PING_TIMEOUT_MS) {
       snprintf(_ping_time_str, sizeof(_ping_time_str), "RTT: timeout");
@@ -259,110 +338,75 @@ class NearbyScreen : public UIScreen {
       _pinging = false;
       if (_task) _task->clearPing();
     }
-    // Keep the menu in sync with the populated result lines (grows as the
-    // reply arrives; never shows blank rows).
     if (pingRowCount() != _ping_menu.count()) rebuildPingMenu();
   }
 
-  bool handlePingMenuInput(char c, const uint8_t* pub_key, bool allow_enter_to_open = false) {
-    if (!_ping_menu.active) {
-      if (c == KEY_CONTEXT_MENU || (allow_enter_to_open && c == KEY_ENTER)) {
-        openPingMenu();
-        return true;
-      }
-      return false;
-    }
-
-    // Rows 1-3 are read-only result fields (RTT, SNR out, SNR back) — swallow
-    // UP/DOWN so the highlight stays on the "Ping" action and the user can't
-    // ENTER on a result row by accident.
-    if (c == KEY_UP || c == KEY_DOWN) return true;
-
+  // Ping popup input. Result rows are read-only, so UP/DOWN are swallowed to keep
+  // the highlight on "Send".
+  void handlePingMenuInput(char c) {
+    if (c == KEY_UP || c == KEY_DOWN) return;
     auto res = _ping_menu.handleInput(c);
     if (res == PopupMenu::SELECTED) {
-      if (!_pinging && pub_key) {
-        startPingForKey(pub_key);
-      }
-      // Keep the popup open so Ping stays available after completion.
-      _ping_menu.active = true;
+      const Entry* e = selected();
+      if (!_pinging && e && e->has_key) startPingForKey(e->pub_key);
+      _ping_menu.active = true;   // stay open so Ping can be repeated
     } else if (res == PopupMenu::CANCELLED) {
       closePingMenu();
     }
-    return true;
   }
 
-  bool selectedStoredPubKey(uint8_t* out_pub_key) const {
-    ContactInfo ci;
-    if (_task && _sel < _count && _entries[_sel].contact_idx >= 0 &&
-        the_mesh.getContactByIdx(_entries[_sel].contact_idx, ci)) {
-      memcpy(out_pub_key, ci.id.pub_key, PUB_KEY_SIZE);
-      return true;
-    }
-    return false;
+  // ── action menu (Hold Enter) — same everywhere ──────────────────────────────
+  void buildSortLabel() {
+    snprintf(_sort_label, sizeof(_sort_label),
+             "Sort: %s", _sort == SORT_TIME ? "Recent" : "Dist");
   }
 
-  const uint8_t* selectedDiscoverPubKey() const {
-    return (_dsel < _dresult_count) ? _dresults[_dsel].pub_key : nullptr;
+  void openActionMenu() {
+    const Entry* e = selected();
+    bool stored  = (_source == SRC_STORED);
+    bool has_gps = e && stored && (e->lat_e6 != 0 || e->lon_e6 != 0);
+    bool has_key = e && e->has_key;
+
+    buildSortLabel();
+    _menu_action_count = 0;
+    _menu.begin("Options", 5);
+    auto add = [&](const char* label, Action a) {
+      _menu.addItem(label);
+      _menu_actions[_menu_action_count++] = a;
+    };
+
+    if (has_gps) add("Navigate",      ACT_NAV);
+    if (has_key) add("Ping",          ACT_PING);
+    if (has_gps) add("Save waypoint", ACT_WAYPOINT);
+    if (stored) add(_sort_label, ACT_SORT);   // sort is meaningless for live-scan rows
+    add(stored ? "Discover scan" : "Rescan", ACT_SCAN);
   }
 
-  bool renderDiscoverDetail(DisplayDriver& display) {
-    const DiscoverResult& r = _dresults[_dsel];
-    const int hdr = display.headerH();
-    const char* fullType = (r.type == ADV_TYPE_REPEATER) ? "Repeater" :
-                           (r.type == ADV_TYPE_SENSOR)   ? "Sensor"   :
-                           (r.type == ADV_TYPE_ROOM)     ? "Room"     : "Node";
-
-    char label[32];
-    if (r.name[0]) { strncpy(label, r.name, 31); label[31] = '\0'; }
-    else           { snprintf(label, sizeof(label), "[%s]", fullType); }
-    display.drawInvertedHeader(label);
-
-    char b64[48];
-    pubKeyToBase64(r.pub_key, b64, sizeof(b64));
-    {
-      int max_chars = (display.width() - 4) / display.getCharWidth();
-      int b64_len   = strlen(b64);
-      char b64_line[48];
-      // Need at least 4 chars (one char + "..." ellipsis) to display anything
-      // meaningful; on a very narrow display skip the pubkey line entirely
-      // rather than risk a negative strncpy length.
-      if (max_chars < 4) {
-        b64_line[0] = '\0';
-      } else if (b64_len > max_chars) {
-        strncpy(b64_line, b64, max_chars - 3);
-        b64_line[max_chars - 3] = '\0';
-        strcat(b64_line, "...");
-      } else {
-        strncpy(b64_line, b64, sizeof(b64_line) - 1);
-        b64_line[sizeof(b64_line) - 1] = '\0';
+  void runAction(Action a) {
+    switch (a) {
+      case ACT_NAV: {
+        const Entry* e = selected();
+        if (e && (e->lat_e6 != 0 || e->lon_e6 != 0)) _nav = true;
+        else _task->showAlert("No node GPS", 1000);
+        break;
       }
-      if (b64_line[0]) {
-        display.setCursor(2, hdr);
-        display.print(b64_line);
+      case ACT_PING: {
+        const Entry* e = selected();
+        rebuildPingMenu();
+        _ping_menu.active = true;
+        if (e && e->has_key) startPingForKey(e->pub_key);
+        break;
       }
+      case ACT_WAYPOINT: saveSelectedWaypoint(); break;
+      case ACT_SORT:     break;  // adjusted in-place via LEFT/RIGHT, not ENTER
+      case ACT_SCAN:     enterScan();            break;
     }
-
-    int step = display.lineStep();
-    if (step * 5 > display.height() - hdr) step = (display.height() - hdr) / 5;
-    char buf[32];
-    snprintf(buf, sizeof(buf), "RSSI: %d dBm", (int)r.rssi);
-    display.setCursor(2, hdr + step);     display.print(buf);
-    snprintf(buf, sizeof(buf), "SNR:  %.1f dB", r.snr_x4 / 4.0f);
-    display.setCursor(2, hdr + step * 2); display.print(buf);
-    snprintf(buf, sizeof(buf), "Rem:  %.1f dB", r.remote_snr_x4 / 4.0f);
-    display.setCursor(2, hdr + step * 3); display.print(buf);
-    display.setCursor(2, hdr + step * 4);
-    display.print(r.is_known ? "Status: known" : "Status: new");
-
-    updatePingMenuState();
-    if (renderPingMenuIfActive(display)) return true;
-    return true;
   }
 
-  bool renderStoredDetail(DisplayDriver& display) {
+  // ── detail rendering ──────────────────────────────────────────────────────────
+  void renderStoredDetail(DisplayDriver& display) {
     const Entry& e = _entries[_sel];
     const int hdr  = display.headerH();
-
     display.drawInvertedHeader(e.name);
 
     int step = display.lineStep();
@@ -388,196 +432,92 @@ class NearbyScreen : public UIScreen {
     fmtAge(age, sizeof(age), e.lastmod);
     snprintf(buf, sizeof(buf), "Seen: %s", age);
     display.drawTextEllipsized(2, hdr + step * 4, display.width() - 4, buf);
-
-    updatePingMenuState();
-    if (_opts.active) { _opts.render(display); return true; }
-    if (renderPingMenuIfActive(display)) return true;
-    return true;
   }
 
-  int renderDiscover(DisplayDriver& display) {
-    int lh      = display.getLineHeight();
-    int hdr     = display.headerH();
-    int d_box_h = 2 * lh + 3;   // two text rows + padding
-    int d_item_h = d_box_h + 2;
-    int d_start_y = hdr;
-    _d_visible  = display.listVisible(d_item_h);
-    if (_d_visible < 1) _d_visible = 1;
+  void renderScanDetail(DisplayDriver& display) {
+    const Entry& e = _entries[_sel];
+    const int hdr = display.headerH();
 
-    if (_ddetail) {
-      renderDiscoverDetail(display);
-      return _ping_menu.active ? 50 : 5000;
-    }
+    char label[32];
+    if (e.name[0]) { strncpy(label, e.name, 31); label[31] = '\0'; }
+    else           { snprintf(label, sizeof(label), "[%s]", typeName(e.type)); }
+    display.drawInvertedHeader(label);
 
-    // ── list view ─────────────────────────────────────────────────────────────
-    _dresult_count = the_mesh.getDiscoverResults(_dresults, DISCOVER_RESULTS_MAX);
-
-    if (_discovering && millis() - _discover_started_ms >= DISCOVER_DURATION_MS)
-      _discovering = false;
-
-    display.setColor(DisplayDriver::LIGHT);
-    char title[28];
-    if (_discovering)
-      snprintf(title, sizeof(title), "SCANNING... (%d)", _dresult_count);
-    else if (_dresult_count == 0)
-      snprintf(title, sizeof(title), "DISCOVER: none");
-    else
-      snprintf(title, sizeof(title), "DISCOVER (%d found)", _dresult_count);
-    display.drawTextCentered(display.width() / 2, 0, title);
-    display.fillRect(0, hdr - 1, display.width(), 1);
-
-    if (_dresult_count == 0) {
-      display.drawTextCentered(display.width() / 2, display.height() / 2,
-        _discovering ? "Waiting for replies..." : "No nodes found");
+    char b64[48];
+    pubKeyToBase64(e.pub_key, b64, sizeof(b64));
+    int max_chars = (display.width() - 4) / display.getCharWidth();
+    char b64_line[48];
+    if (max_chars < 4) {
+      b64_line[0] = '\0';
+    } else if ((int)strlen(b64) > max_chars) {
+      strncpy(b64_line, b64, max_chars - 3);
+      b64_line[max_chars - 3] = '\0';
+      strcat(b64_line, "...");
     } else {
-      if (_dsel >= _dresult_count) _dsel = _dresult_count - 1;
-      if (_dscroll > _dresult_count - _d_visible)
-        _dscroll = _dresult_count > _d_visible ? _dresult_count - _d_visible : 0;
-      if (_dscroll < 0) _dscroll = 0;
-
-      for (int i = 0; i < _d_visible && (_dscroll + i) < _dresult_count; i++) {
-        int idx = _dscroll + i;
-        bool sel = (idx == _dsel);
-        const DiscoverResult& r = _dresults[idx];
-        int y = d_start_y + i * d_item_h;
-
-        const char* typeStr = (r.type == ADV_TYPE_REPEATER) ? "Rpt"  :
-                              (r.type == ADV_TYPE_SENSOR)   ? "Snsr" :
-                              (r.type == ADV_TYPE_ROOM)     ? "Room" : "?";
-
-        display.setColor(DisplayDriver::LIGHT);
-        if (sel) {
-          display.fillRect(0, y, display.width(), d_box_h);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.drawRect(0, y, display.width(), d_box_h);
-          display.fillRect(1, y + 1, display.width() - 2, lh);
-          display.setColor(DisplayDriver::DARK);
-        }
-
-        // header: name left, type right
-        char label[32];
-        if (r.name[0]) { strncpy(label, r.name, 31); label[31] = '\0'; }
-        else {
-          const char* ft = (r.type == ADV_TYPE_REPEATER) ? "Repeater" :
-                           (r.type == ADV_TYPE_SENSOR)   ? "Sensor"   :
-                           (r.type == ADV_TYPE_ROOM)     ? "Room"     : "Node";
-          snprintf(label, sizeof(label), "[%s]", ft);
-        }
-        char filtered[32];
-        display.translateUTF8ToBlocks(filtered, label, sizeof(filtered));
-        int tw = display.getTextWidth(typeStr);
-        display.drawTextEllipsized(3, y + 1, display.width() - 6 - tw, filtered);
-        display.setCursor(display.width() - 3 - tw, y + 1);
-        display.print(typeStr);
-
-        // body: RSSI + SNR
-        display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
-        char sig[24];
-        snprintf(sig, sizeof(sig), "RSSI:%d SNR:%.1f", (int)r.rssi, r.snr_x4 / 4.0f);
-        display.drawTextEllipsized(3, y + lh + 2, display.width() - 6, sig);
-      }
-
-      display.drawScrollArrows(d_start_y, d_start_y + (_d_visible - 1) * d_item_h,
-                               _dscroll > 0, _dscroll + _d_visible < _dresult_count);
+      strncpy(b64_line, b64, sizeof(b64_line) - 1);
+      b64_line[sizeof(b64_line) - 1] = '\0';
     }
+    if (b64_line[0]) { display.setCursor(2, hdr); display.print(b64_line); }
 
-    updatePingMenuState();
-
-    // Show ping popup menu if active
-    if (_ping_menu.active) {
-      _ping_menu.render(display);
-      return 50;
-    }
-
-    return _discovering ? 200 : 2000;
+    int step = display.lineStep();
+    if (step * 5 > display.height() - hdr) step = (display.height() - hdr) / 5;
+    char buf[32];
+    snprintf(buf, sizeof(buf), "RSSI: %d dBm", (int)e.rssi);
+    display.setCursor(2, hdr + step);     display.print(buf);
+    snprintf(buf, sizeof(buf), "SNR:  %.1f dB", e.snr_x4 / 4.0f);
+    display.setCursor(2, hdr + step * 2); display.print(buf);
+    snprintf(buf, sizeof(buf), "Rem:  %.1f dB", e.remote_snr_x4 / 4.0f);
+    display.setCursor(2, hdr + step * 3); display.print(buf);
+    display.setCursor(2, hdr + step * 4);
+    display.print(e.is_known ? "Status: known" : "Status: new");
   }
 
-  bool handleInputDiscover(char c) {
-    if (_ddetail) {
-      if (c == KEY_CANCEL) { 
-        _ddetail = false; 
-        closePingMenu();
-        return true; 
-      }
-
-      if (handlePingMenuInput(c, selectedDiscoverPubKey())) return true;
-      return true;
-    }
-    if (c == KEY_CANCEL) {
-      _discover_mode = false;
-      refresh();
-      return true;
-    }
-    if (c == KEY_ENTER && _dresult_count > 0) {
-      _ddetail = true;
-      return true;
-    }
-    if (c == KEY_CONTEXT_MENU) {
-      enterDiscoverMode();  // re-scan
-      return true;
-    }
-    if (c == KEY_UP && _dsel > 0) {
-      _dsel--;
-      if (_dsel < _dscroll) _dscroll = _dsel;
-      return true;
-    }
-    if (c == KEY_DOWN && _dsel < _dresult_count - 1) {
-      _dsel++;
-      if (_dsel >= _dscroll + _d_visible) _dscroll = _dsel - _d_visible + 1;
-      return true;
-    }
-    return true;
+  // Draw whichever popup is active over the current view. Returns true if one was.
+  bool renderActivePopup(DisplayDriver& display) {
+    updatePingMenuState();
+    if (_ping_menu.active)   { _ping_menu.render(display);   return true; }
+    if (_menu.active)        { _menu.render(display);        return true; }
+    return false;
   }
 
 public:
   NearbyScreen(UITask* task)
     : _task(task), _count(0), _sel(0), _scroll(0), _detail(false),
-      _own_lat(0), _own_lon(0), _own_gps(false), _filter(0),
-      _detail_refresh_ms(0),
-      _discover_mode(false), _discovering(false), _discover_started_ms(0),
-      _dresult_count(0), _dscroll(0), _dsel(0), _ddetail(false),
-      _pinging(false), _ping_started_ms(0) {
-    _ping_time_str[0] = '\0';
-    _ping_snr_out_str[0] = '\0';
-    _ping_snr_back_str[0] = '\0';
+      _own_lat(0), _own_lon(0), _own_gps(false),
+      _source(SRC_STORED), _filter(F_ALL), _sort(SORT_DIST),
+      _detail_refresh_ms(0), _scanning(false), _scan_started_ms(0),
+      _menu_action_count(0), _pinging(false), _ping_started_ms(0) {
+    resetPingLines();
+    _sort_label[0] = '\0';
   }
 
   void enter() {
     _sel = _scroll = 0;
     _detail = false;
     _nav = false;
-    _filter = 0;
-    _discover_mode = false;
-    _ddetail = false;
-    _dsel    = 0;
-    _ctx_menu.active = false;
-    _opts.active = false;
+    _source = SRC_STORED;
+    // _filter / _sort persist across enter() — set once in the constructor
+    _scanning = false;
+    _menu.active = false;
     _ping_menu.active = false;
     _pinging = false;
-    _ping_time_str[0] = '\0';
-    _ping_snr_out_str[0] = '\0';
-    _ping_snr_back_str[0] = '\0';
+    resetPingLines();
     _task->clearPing();
-    refresh();
+    refreshStored();
   }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
 
-    // ── discover sub-screen ──────────────────────────────────────────────────
-    if (_discover_mode) return renderDiscover(display);
-
-    // periodic refresh in detail view — preserve selected contact by idx
-    if (_detail && millis() - _detail_refresh_ms >= DETAIL_REFRESH_MS) {
-      int saved_contact_idx = (_sel < _count) ? _entries[_sel].contact_idx : -1;
-      refresh();
+    // periodic refresh in stored-detail — preserve selected contact by idx
+    if (_detail && _source == SRC_STORED &&
+        millis() - _detail_refresh_ms >= DETAIL_REFRESH_MS) {
+      int saved = (_sel < _count) ? _entries[_sel].contact_idx : -1;
+      refreshStored();
       bool found = false;
-      if (saved_contact_idx >= 0) {
-        for (int i = 0; i < _count; i++) {
-          if (_entries[i].contact_idx == saved_contact_idx) { _sel = i; found = true; break; }
-        }
-      }
+      if (saved >= 0)
+        for (int i = 0; i < _count; i++)
+          if (_entries[i].contact_idx == saved) { _sel = i; found = true; break; }
       if (!found) { _detail = false; _nav = false; }  // contact gone — drop both views
       _detail_refresh_ms = millis();
     }
@@ -593,15 +533,19 @@ public:
 
     // ── detail view ──────────────────────────────────────────────────────────
     if (_detail && _sel < _count) {
-      renderStoredDetail(display);
+      if (_source == SRC_SCAN) renderScanDetail(display);
+      else                     renderStoredDetail(display);
+      renderActivePopup(display);
       return _ping_menu.active ? 50 : 2000;
     }
 
     // ── list view ────────────────────────────────────────────────────────────
-    // In TIME mode re-sort periodically so newly-heard contacts bubble up.
-    if (_filter == FILTER_COUNT - 1 &&
-        millis() - _list_refresh_ms >= TIME_LIST_REFRESH_MS) {
-      refresh();
+    if (_source == SRC_SCAN) {
+      refreshScan();
+      if (_scanning && millis() - _scan_started_ms >= SCAN_DURATION_MS) _scanning = false;
+    } else if (_sort == SORT_TIME && millis() - _list_refresh_ms >= TIME_LIST_REFRESH_MS) {
+      // re-sort periodically so newly-heard contacts bubble up
+      refreshStored();
       _list_refresh_ms = millis();
     }
 
@@ -611,14 +555,38 @@ public:
     _visible     = display.listVisible(item_h);
 
     display.setColor(DisplayDriver::LIGHT);
-    char title[22];
-    snprintf(title, sizeof(title), "NEARBY[%s]", FILTER_LABELS[_filter]);
+    char title[28];
+    const char* flt = (_filter != F_ALL) ? FILTER_LABELS[_filter] : nullptr;
+    if (_source == SRC_SCAN) {
+      const char* base = _scanning ? "SCANNING" : "SCAN";
+      if (flt) {
+        if (!_scanning && _count == 0) snprintf(title, sizeof(title), "SCAN %s: none", flt);
+        else                           snprintf(title, sizeof(title), "%s %s (%d)", base, flt, _count);
+      } else if (_scanning)            snprintf(title, sizeof(title), "SCANNING (%d)", _count);
+      else if (_count == 0)            snprintf(title, sizeof(title), "SCAN: none");
+      else                             snprintf(title, sizeof(title), "SCAN (%d)", _count);
+    } else {
+      snprintf(title, sizeof(title), "NEARBY %s %s",
+               FILTER_LABELS[_filter], _sort == SORT_TIME ? "recent" : "dist");
+    }
     display.drawTextCentered(display.width() / 2, 0, title);
     display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
     if (_count == 0) {
-      display.drawTextCentered(display.width() / 2, display.height() / 2 - display.lineStep() / 2, "No contacts found");
-      display.drawTextCentered(display.width() / 2, display.height() / 2 + display.lineStep() / 2, "[Enter]=Discover");
+      char empty[24];
+      if (_source == SRC_SCAN) {
+        const char* msg;
+        if (_scanning)   msg = "Waiting for replies...";
+        else if (flt)  { snprintf(empty, sizeof(empty), "No %s nodes", flt); msg = empty; }
+        else             msg = "No nodes found";
+        display.drawTextCentered(display.width() / 2, display.height() / 2, msg);
+      } else {
+        const char* hint;
+        if (flt) { snprintf(empty, sizeof(empty), "No %s contacts", flt); hint = "[<>] change filter"; }
+        else     { snprintf(empty, sizeof(empty), "No contacts found");   hint = "[Enter]=Discover";   }
+        display.drawTextCentered(display.width() / 2, display.height() / 2 - display.lineStep() / 2, empty);
+        display.drawTextCentered(display.width() / 2, display.height() / 2 + display.lineStep() / 2, hint);
+      }
     } else {
       for (int i = 0; i < _visible && (_scroll + i) < _count; i++) {
         int idx = _scroll + i;
@@ -630,15 +598,19 @@ public:
 
         char filt[32];
         display.translateUTF8ToBlocks(filt, e.name, sizeof(filt));
+        if (_source == SRC_SCAN && !e.name[0]) {  // unknown node → "[Type]"
+          snprintf(filt, sizeof(filt), "[%s]", typeName(e.type));
+        }
         display.drawTextEllipsized(2, y, dist_col - 4, filt);
 
         display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
         char right[10];
-        if (_filter == FILTER_COUNT - 1) {
+        if (_source == SRC_SCAN) {
+          snprintf(right, sizeof(right), "%d", (int)e.rssi);
+        } else if (_sort == SORT_TIME) {
           uint32_t now = rtc_clock.getCurrentTime();
-          if (e.lastmod == 0 || now < e.lastmod) {
-            snprintf(right, sizeof(right), "?");
-          } else {
+          if (e.lastmod == 0 || now < e.lastmod)  snprintf(right, sizeof(right), "?");
+          else {
             uint32_t age = now - e.lastmod;
             if      (age < 60)   snprintf(right, sizeof(right), "%us", age);
             else if (age < 3600) snprintf(right, sizeof(right), "%um", age / 60);
@@ -648,7 +620,6 @@ public:
           if (e.dist_km >= 0.0f) geo::fmtDist(right, sizeof(right), e.dist_km, useImperial());
           else                   strncpy(right, "?GPS", sizeof(right));
         }
-        // Right-align within the right column (2 px margin from edge).
         display.setCursor(display.width() - display.getTextWidth(right) - 2, y);
         display.print(right);
       }
@@ -657,98 +628,57 @@ public:
                                _scroll > 0, _scroll + _visible < _count);
     }
 
-    if (_ctx_menu.active) {
-      _ctx_menu.render(display);
-      return 50;
-    }
-
+    if (renderActivePopup(display)) return 50;
+    if (_source == SRC_SCAN) return _scanning ? 200 : 2000;
     return _count == 0 ? 3000 : 2000;
   }
 
   bool handleInput(char c) override {
-    // ── discover sub-screen ──────────────────────────────────────────────────
-    if (_discover_mode) return handleInputDiscover(c);
-
     // ── navigate-to-node view — any nav key returns to detail ─────────────────
     if (_nav) {
       if (c == KEY_CANCEL || c == KEY_LEFT || c == KEY_PREV ||
-          c == KEY_RIGHT  || c == KEY_NEXT) { _nav = false; }
+          c == KEY_RIGHT  || c == KEY_NEXT) _nav = false;
       return true;
     }
 
-    // ── detail view ─────────────────────────────────────────────────────────
-    if (_detail) {
-      // Options popup (Hold Enter) — Navigate / Ping.
-      if (_opts.active) {
-        auto res = _opts.handleInput(c);
-        if (res == PopupMenu::SELECTED) {
-          int idx = _opts.selectedIndex();
-          if (idx == 0) {                              // Navigate
-            if (_sel < _count) {
-              const Entry& e = _entries[_sel];
-              if (e.lat_e6 != 0 || e.lon_e6 != 0) _nav = true;
-              else _task->showAlert("No node GPS", 1000);
-            }
-          } else if (idx == 1) {                       // Ping
-            uint8_t pk[PUB_KEY_SIZE];
-            openPingMenu();
-            if (selectedStoredPubKey(pk)) startPingForKey(pk);
-          } else if (idx == 2) {                       // Save waypoint
-            saveSelectedWaypoint();
-          }
+    // ── popups (same handling in list and detail) ─────────────────────────────
+    if (_ping_menu.active)   { handlePingMenuInput(c); return true; }
+    if (_menu.active) {
+      // LEFT/RIGHT on the Sort row toggles the value in-place and rebuilds the
+      // label; the popup stays open so the user can keep tapping. Other rows
+      // swallow L/R. ENTER on Sort just closes (value changes via L/R only).
+      if (c == KEY_LEFT || c == KEY_RIGHT || c == KEY_PREV || c == KEY_NEXT) {
+        int i = _menu.selectedIndex();
+        if (i >= 0 && i < _menu_action_count && _menu_actions[i] == ACT_SORT) {
+          _sort = (_sort == SORT_DIST) ? SORT_TIME : SORT_DIST;
+          buildSortLabel();
+          refresh();
         }
         return true;
       }
-
-      // Ping popup (opened from Options) consumes input while active.
-      if (_ping_menu.active) {
-        uint8_t pk[PUB_KEY_SIZE];
-        if (selectedStoredPubKey(pk)) handlePingMenuInput(c, pk);  // guard: never send to a stale/garbage key
-        else                          closePingMenu();
-        return true;
-      }
-
-      if (c == KEY_CANCEL) { _detail = false; closePingMenu(); return true; }
-      if (c == KEY_CONTEXT_MENU) {
-        _opts.begin("Options", 3);
-        _opts.addItem("Navigate");
-        _opts.addItem("Ping");
-        _opts.addItem("Save waypoint");
-        return true;
-      }
-      return true;
-    }
-
-    // ── context menu ─────────────────────────────────────────────────────────
-    if (_ctx_menu.active) {
-      auto res = _ctx_menu.handleInput(c);
+      auto res = _menu.handleInput(c);
       if (res == PopupMenu::SELECTED) {
-        int sel = _ctx_menu.selectedIndex();
-        if (sel == 0) {
-          enterDiscoverMode();
-        } else if (sel == 1 && _sel < _count) {
-          const Entry& e = _entries[_sel];
-          if (e.lat_e6 != 0 || e.lon_e6 != 0) _nav = true;
-          else _task->showAlert("No node GPS", 1000);
-        } else if (sel == 2) {                          // Save waypoint
-          saveSelectedWaypoint();
-        }
+        int i = _menu.selectedIndex();
+        if (i >= 0 && i < _menu_action_count && _menu_actions[i] != ACT_SORT)
+          runAction(_menu_actions[i]);
       }
       return true;
     }
 
-    // ── list view ────────────────────────────────────────────────────────────
-    if (c == KEY_CANCEL) { _task->gotoToolsScreen(); return true; }
-    if (c == KEY_CONTEXT_MENU) {
-      bool has_node = (_count > 0 && _sel < _count);
-      _ctx_menu.begin("Options", has_node ? 3 : 1);
-      _ctx_menu.addItem("Discover nearby");
-      if (has_node) {
-        _ctx_menu.addItem("Navigate");
-        _ctx_menu.addItem("Save waypoint");
-      }
+    // ── detail view ───────────────────────────────────────────────────────────
+    if (_detail) {
+      if (c == KEY_CANCEL)            { _detail = false; closePingMenu(); return true; }
+      if (c == KEY_CONTEXT_MENU)      { openActionMenu(); return true; }
       return true;
     }
+
+    // ── list view ───────────────────────────────────────────────────────────
+    if (c == KEY_CANCEL) {
+      if (_source == SRC_SCAN) leaveScan();
+      else                     _task->gotoToolsScreen();
+      return true;
+    }
+    if (c == KEY_CONTEXT_MENU) { openActionMenu(); return true; }
     if (c == KEY_UP && _sel > 0) {
       _sel--;
       if (_sel < _scroll) _scroll = _sel;
@@ -759,25 +689,16 @@ public:
       if (_sel >= _scroll + _visible) _scroll = _sel - _visible + 1;
       return true;
     }
-    if (c == KEY_ENTER && _count == 0) { enterDiscoverMode(); return true; }
-    if (c == KEY_ENTER && _count > 0) {
+    if (c == KEY_ENTER) {
+      if (_count == 0) { if (_source == SRC_STORED) enterScan(); return true; }
       _detail = true;
       _detail_refresh_ms = millis();
       return true;
     }
-    if (c == KEY_LEFT) {
-      _filter = (_filter + FILTER_COUNT - 1) % FILTER_COUNT;
-      refresh();
-      return true;
-    }
-    if (c == KEY_RIGHT) {
-      _filter = (_filter + 1) % FILTER_COUNT;
-      refresh();
-      return true;
-    }
+    if (c == KEY_LEFT)  { _filter = (_filter + F_COUNT - 1) % F_COUNT; refresh(); return true; }
+    if (c == KEY_RIGHT) { _filter = (_filter + 1) % F_COUNT;          refresh(); return true; }
     return false;
   }
 };
 
-const char*   NearbyScreen::FILTER_LABELS[7] = { "Fav", "ALL", "Comp", "Rpt", "Room", "Snsr", "TIME" };
-const uint8_t NearbyScreen::FILTER_TYPES[7]  = { 0, 0, ADV_TYPE_CHAT, ADV_TYPE_REPEATER, ADV_TYPE_ROOM, ADV_TYPE_SENSOR, 0 };
+const char* NearbyScreen::FILTER_LABELS[F_COUNT] = { "All", "Fav", "Comp", "Rpt", "Room", "Snsr" };
