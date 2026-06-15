@@ -154,6 +154,8 @@ public:
   void gotoCompassScreen();
   TrailStore& trail() { return _trail; }
   WaypointStore& waypoints() { return _waypoints; }
+  // Shared on-screen keyboard — only one screen drives it at a time.
+  KeyboardWidget& keyboard() { return _kb; }
   void saveWaypoints();
   // Add a waypoint, persist, and show the standard "Waypoint saved" / "Waypoints
   // full" alert. Returns true on success. The ts-less overload uses current RTC time.

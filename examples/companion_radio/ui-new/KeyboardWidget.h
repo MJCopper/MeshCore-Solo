@@ -3,21 +3,38 @@
 #include <helpers/ui/DisplayDriver.h>
 #include <Arduino.h>
 #include "PopupMenu.h"
+#include "icons.h"   // mini-icons for the special-key row (⇧ ⌫ ⎵ ✓)
 
-// Layout constants shared by all keyboard users
-static const char KB_CHARS[4][10] = {
-  {'a','b','c','d','e','f','g','h','i','j'},
-  {'k','l','m','n','o','p','q','r','s','t'},
-  {'u','v','w','x','y','z','.',' ','!','?'},
-  {'1','2','3','4','5','6','7','8','9','0'},
+// Layout constants shared by all keyboard users.
+// Two pages: letters (page 0) and symbols (page 1), toggled by the "#@"/"abc"
+// special key. Space lives only on the ⎵ special key now, so the freed grid
+// slot on page 0 holds the comma; punctuation is grouped as . , ! ?
+static const int KB_PAGES      = 2;
+static const char KB_CHARS[KB_PAGES][4][10] = {
+  { // page 0 — letters + digits
+    {'a','b','c','d','e','f','g','h','i','j'},
+    {'k','l','m','n','o','p','q','r','s','t'},
+    {'u','v','w','x','y','z','.',',','!','?'},
+    {'1','2','3','4','5','6','7','8','9','0'},
+  },
+  { // page 1 — symbols + digits (ASCII only — one byte per key)
+    {'@','#','&','*','(',')','-','_','+','='},
+    {'/','\\',':',';','\'','"','<','>','[',']'},
+    {'{','}','|','~','^','$','%','`',',','.'},
+    {'1','2','3','4','5','6','7','8','9','0'},
+  },
 };
 static const int KB_ROWS_CHAR  = 4;
 static const int KB_COLS_CHAR  = 10;
-static const int KB_SPECIAL    = 5;   // [^] [Sp] [De] [{}] [OK]
+static const int KB_SPECIAL    = 6;   // ⇧ ⎵ ⌫ {} #@/abc ✓
 // Buffer cap for typed text, in bytes. Matches MeshCore's MAX_TEXT_LEN
 // (10*CIPHER_BLOCK_SIZE = 160) so a full-length message can be composed; each
 // field passes its own smaller max to begin() where its store is smaller.
 static const int KB_MAX_LEN    = 160;
+
+// Longest preview line we render per row. Caps the per-line stack buffers so a
+// very wide display (small font → many chars per line) can't overrun them.
+static const int KB_PREVIEW_CAP = 46;
 
 static const int KB_PH_MAX     = 12;  // max placeholders in list
 static const int KB_PH_LEN     = 9;   // max placeholder string length incl. null
@@ -28,6 +45,7 @@ struct KeyboardWidget {
   int  len;
   int  max_len;
   int  row, col;
+  int  page;        // 0 = letters, 1 = symbols
   bool caps;
   char _ph_buf[KB_PH_MAX][KB_PH_LEN];
   int  _ph_count;
@@ -41,6 +59,7 @@ struct KeyboardWidget {
     buf[max_len] = '\0';
     len = strlen(buf);
     row = col = 0;
+    page = 0;
     caps = false;
     _ph_menu.active = false;
     // default placeholders — always available
@@ -79,6 +98,7 @@ struct KeyboardWidget {
     // multi-line text preview: cursor always on last preview line
     int cpl = display.width() / cw;  // chars per preview line
     if (cpl < 1) cpl = 1;
+    if (cpl > KB_PREVIEW_CAP) cpl = KB_PREVIEW_CAP;  // never overrun linebuf below
     int cursor_line = len / cpl;
     int first_line  = (cursor_line >= prev_lines) ? (cursor_line - prev_lines + 1) : 0;
     int start = first_line * cpl;
@@ -86,7 +106,7 @@ struct KeyboardWidget {
       int ps = start + pl * cpl;
       int pe = ps + cpl;
       bool cursor_here = (ps <= len && (len < pe || pl == prev_lines - 1));
-      char linebuf[32];
+      char linebuf[KB_PREVIEW_CAP + 2];   // cpl chars + cursor '_' + NUL
       if (cursor_here) {
         int nc = len - ps; if (nc < 0) nc = 0; if (nc > cpl - 1) nc = cpl - 1;
         snprintf(linebuf, sizeof(linebuf), "%.*s_", nc, buf + ps);
@@ -96,7 +116,7 @@ struct KeyboardWidget {
       } else {
         linebuf[0] = '\0';
       }
-      char linebuf_t[32];
+      char linebuf_t[KB_PREVIEW_CAP + 2];
       display.translateUTF8ToBlocks(linebuf_t, linebuf, sizeof(linebuf_t));
       display.setCursor(0, pl * lh);
       display.print(linebuf_t);
@@ -108,7 +128,7 @@ struct KeyboardWidget {
       int y = chars_y + r * cell_h;
       for (int c = 0; c < KB_COLS_CHAR; c++) {
         bool sel = (row == r && col == c);
-        char ch = KB_CHARS[r][c];
+        char ch = KB_CHARS[page][r][c];
         if (caps && ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
         char ch_buf[2] = { ch == ' ' ? '_' : ch, '\0' };
         int cx = c * cell_w;
@@ -118,16 +138,31 @@ struct KeyboardWidget {
       }
     }
 
-    // special row: [^] [Sp] [Dl] [{}] [OK]
-    const char* spec[] = { "[^]", "[Sp]", "[Dl]", "[{}]", "[OK]" };
+    // special row: caps ⇧ · space ⎵ · delete ⌫ · placeholders {} (text) · OK ✓
+    const int s   = miniIconScale(display);
+    const int icy = spec_y + (cell_h - lh) / 2;   // centre icons within the cell
     for (int i = 0; i < KB_SPECIAL; i++) {
       bool sel    = (row == KB_ROWS_CHAR && col == i);
       bool active = (i == 0 && caps);
       int sx = i * spec_w;
       display.drawSelectionRow(sx, spec_y - 1, spec_w - 1, cell_h, sel || active);
-      int tw = display.getTextWidth(spec[i]);
-      display.setCursor(sx + (spec_w - tw) / 2, spec_y);
-      display.print(spec[i]);
+      if (i == 3 || i == 4) {               // text keys: {} picker, page toggle
+        const char* lbl = (i == 3) ? "{}" : (page == 0 ? "#@" : "abc");
+        int tw = display.getTextWidth(lbl);
+        display.setCursor(sx + (spec_w - tw) / 2, spec_y);
+        display.print(lbl);
+      } else if (i == 1) {                  // space ⎵ — two halves side by side
+        int icw = (ICON_SPACE_L.w + ICON_SPACE_R.w) * s;
+        int ix  = sx + (spec_w - icw) / 2;
+        miniIconDraw(display, ix, icy, ICON_SPACE_L);
+        miniIconDraw(display, ix + ICON_SPACE_L.w * s, icy, ICON_SPACE_R);
+      } else {
+        const MiniIcon& ic = (i == 0) ? ICON_SHIFT
+                           : (i == 2) ? ICON_BACKSPACE
+                                      : ICON_CHECK;   // i == 5 → OK
+        int ix = sx + (spec_w - ic.w * s) / 2;
+        miniIconDraw(display, ix, icy, ic);
+      }
       display.setColor(DisplayDriver::LIGHT);
     }
 
@@ -184,7 +219,7 @@ struct KeyboardWidget {
     if (c == KEY_ENTER) {
       if (row < KB_ROWS_CHAR) {
         if (len < max_len) {
-          char ch = KB_CHARS[row][col];
+          char ch = KB_CHARS[page][row][col];
           if (caps && ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
           buf[len++] = ch;
           buf[len] = '\0';
@@ -203,6 +238,9 @@ struct KeyboardWidget {
             for (int i = 0; i < _ph_count; i++) _ph_menu.addItem(_ph_buf[i]);
             break;
           case 4:
+            page ^= 1;   // toggle letters ⇄ symbols
+            break;
+          case 5:
             return DONE;
         }
       }

@@ -87,6 +87,36 @@ MINI_ICON(ICON_CROSS, 4,   // ✗
   packRow(".##."),
   packRow("#..#"));
 
+// Keyboard special-key glyphs.
+MINI_ICON(ICON_SHIFT, 7,   // ⇧  caps
+  packRow("...#..."),
+  packRow("..###.."),
+  packRow(".#####."),
+  packRow("#######"),
+  packRow("..###.."),
+  packRow("..###.."),
+  packRow("..###.."));
+MINI_ICON(ICON_BACKSPACE, 8,   // ⌫  delete-left (× knocked out of the arrow body)
+  packRow("...#####"),
+  packRow("..######"),
+  packRow(".###.#.#"),
+  packRow("#####.##"),
+  packRow(".###.#.#"),
+  packRow("..######"),
+  packRow("...#####"));
+// Space ⎵ is wider than the 8-px mini-icon limit, so it is two halves drawn
+// side by side (offset by ICON_SPACE_L.w * scale): ticks at both far ends + bar.
+MINI_ICON(ICON_SPACE_L, 8,
+  packRow("#......."),
+  packRow("#......."),
+  packRow("#......."),
+  packRow("########"));
+MINI_ICON(ICON_SPACE_R, 8,
+  packRow(".......#"),
+  packRow(".......#"),
+  packRow(".......#"),
+  packRow("########"));
+
 // ── Big ASCII-art icons (skeleton, not yet used) ─────────────────────────────
 // Same authoring idea as the mini-icons but for full page glyphs up to 32 px
 // wide: one uint32_t per row. The existing XBM bitmaps below (logo/bluetooth/…)

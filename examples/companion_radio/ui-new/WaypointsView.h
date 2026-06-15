@@ -25,7 +25,6 @@ class WaypointsView {
   int     _scroll = 0;
 
   PopupMenu      _ctx;               // Rename / Delete / Send on a selected waypoint
-  KeyboardWidget _kb;                // label entry (mark new / rename)
   bool      _kb_active = false;
   int       _kb_rename_idx = -1;     // -1 = marking new, ≥0 = renaming that index
   int32_t   _mark_lat = 0, _mark_lon = 0;   // pending new-mark position
@@ -98,6 +97,16 @@ class WaypointsView {
     if (_add_label[0]) { strncpy(label, _add_label, sizeof(label) - 1); label[sizeof(label) - 1] = '\0'; }
     else               snprintf(label, sizeof(label), "WP%d", _task->waypoints().count() + 1);
     if (_task->addWaypoint(lat, lon, label)) { _mode = OFF; }
+  }
+
+  // Open the shared keyboard for a literal field. Waypoint labels and the
+  // lat/lon magnitudes are never placeholder-expanded, so {loc}/{time} are
+  // cleared (same intent as the bot's literal trigger field).
+  void openKb(const char* initial, int max) {
+    KeyboardWidget& kb = _task->keyboard();
+    kb.begin(initial, max);
+    kb.clearPlaceholders();
+    _kb_active = true;
   }
 
   // Commit a mark-here / rename label from the keyboard.
@@ -229,15 +238,14 @@ public:
     if (_task->waypoints().full()) { _task->showAlert("Waypoints full", 1000); return; }
     _mark_lat = lat; _mark_lon = lon; _mark_ts = (uint32_t)rtc_clock.getCurrentTime();
     _kb_rename_idx = -1;
-    _kb.begin("", WAYPOINT_LABEL_LEN - 1);
-    _kb_active = true;
+    openKb("", WAYPOINT_LABEL_LEN - 1);
   }
 
   // Only called while active().
   int render(DisplayDriver& display) {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
-    if (_kb_active) return _kb.render(display);     // keyboard owns the screen
+    if (_kb_active) return _task->keyboard().render(display);  // keyboard owns the screen
     if (_mode == ADD) { renderAddForm(display); return 1000; }
     if (_mode == NAV) { renderWpNav(display);   return 1000; }
     renderWpList(display);                          // LIST
@@ -249,10 +257,11 @@ public:
   bool handleInput(char c) {
     // Label keyboard (mark new / rename / ADD field) takes all input first.
     if (_kb_active) {
-      auto r = _kb.handleInput(c);
+      KeyboardWidget& kb = _task->keyboard();
+      auto r = kb.handleInput(c);
       if (r == KeyboardWidget::DONE) {
-        if (_kb_field >= 0) applyAddField(_kb.buf);   // ADD field edit
-        else                commitLabel(_kb.buf);     // mark / rename label
+        if (_kb_field >= 0) applyAddField(kb.buf);    // ADD field edit
+        else                commitLabel(kb.buf);      // mark / rename label
         _kb_active = false; _kb_field = -1;
       } else if (r == KeyboardWidget::CANCELLED) {
         _kb_active = false; _kb_field = -1;
@@ -270,8 +279,7 @@ public:
         if (sel == 0) {                                  // Rename
           if (wi >= 0 && wi < _task->waypoints().count()) {
             _kb_rename_idx = wi;
-            _kb.begin(_task->waypoints().at(wi).label, WAYPOINT_LABEL_LEN - 1);
-            _kb_active = true;
+            openKb(_task->waypoints().at(wi).label, WAYPOINT_LABEL_LEN - 1);
           }
         } else if (sel == 1) {                            // Delete
           if (wi >= 0 && wi < _task->waypoints().count()) {
@@ -305,9 +313,9 @@ public:
         return true;
       }
       if (c == KEY_ENTER) {
-        if      (_add_sel == 0) { _kb_field = 0; _kb.begin(_add_lat, 11); _kb_active = true; }
-        else if (_add_sel == 1) { _kb_field = 1; _kb.begin(_add_lon, 11); _kb_active = true; }
-        else if (_add_sel == 2) { _kb_field = 2; _kb.begin(_add_label, WAYPOINT_LABEL_LEN - 1); _kb_active = true; }
+        if      (_add_sel == 0) { _kb_field = 0; openKb(_add_lat, 11); }
+        else if (_add_sel == 1) { _kb_field = 1; openKb(_add_lon, 11); }
+        else if (_add_sel == 2) { _kb_field = 2; openKb(_add_label, WAYPOINT_LABEL_LEN - 1); }
         else                    { commitAddForm(); }
         return true;
       }
