@@ -35,6 +35,12 @@
 
 #include "icons.h"
 
+// Blinking status indicators: on for the first half of a 4 s cycle, but e-ink
+// can't repaint fast enough to blink, so it shows them steadily.
+static inline bool blinkOn() {
+  return Features::BLINK_INDICATORS ? ((millis() % 4000) < 2000) : true;
+}
+
 class SplashScreen : public UIScreen {
   UITask* _task;
   unsigned long dismiss_after;
@@ -441,12 +447,8 @@ class HomeScreen : public UIScreen {
 
 #ifdef PIN_BUZZER
     if (_task->isBuzzerQuiet()) {
-      display.setColor(DisplayDriver::LIGHT);
       int mx = battLeftX - ind - ind_gap;
-      display.fillRect(mx, 0, ind, ind_h);
-      display.setColor(DisplayDriver::DARK);
-      miniIconDraw(display, mx + (ind - ICON_MUTE.w * miniIconScale(display)) / 2, 0, ICON_MUTE);
-      display.setColor(DisplayDriver::LIGHT);
+      drawBoxedIcon(display, mx, ind, ind_h, ICON_MUTE);
       battLeftX = mx;
     }
 #endif
@@ -455,43 +457,23 @@ class HomeScreen : public UIScreen {
     int leftmostX = battLeftX;
     if (_task->isSerialEnabled()) {
       int btX = battLeftX - ind - ind_gap;
-      int btIconX = btX + (ind - ICON_BLUETOOTH.w * miniIconScale(display)) / 2;
-      if (_task->isBLEConnected()) {   // BT icon reflects BLE link, not USB
-        display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(btX, 0, ind, ind_h);
-        display.setColor(DisplayDriver::DARK);
-        miniIconDraw(display, btIconX, 0, ICON_BLUETOOTH);
-        display.setColor(DisplayDriver::LIGHT);
-      } else {
-        miniIconDraw(display, btIconX, 0, ICON_BLUETOOTH);   // plain glyph: available, not linked
-      }
+      if (_task->isBLEConnected())                              // BT icon reflects BLE link, not USB
+        drawBoxedIcon(display, btX, ind, ind_h, ICON_BLUETOOTH);
+      else
+        drawSlotIcon(display, btX, ind, ind_h, ICON_BLUETOOTH); // plain glyph: available, not linked
       leftmostX = btX - ind_gap;
 
       // "A" indicator — left of BT; blinks on OLED, always shown on e-ink
       if (_node_prefs && _node_prefs->advert_auto_interval_sec > 0) {
         int aX = leftmostX - ind;
-        bool show_a = Features::BLINK_INDICATORS ? ((millis() % 4000) < 2000) : true;
-        if (show_a) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(aX, 0, ind, ind_h);
-          display.setColor(DisplayDriver::DARK);
-          miniIconDraw(display, aX + (ind - ICON_ADVERT.w * miniIconScale(display)) / 2, 0, ICON_ADVERT);
-          display.setColor(DisplayDriver::LIGHT);
-        }
+        if (blinkOn()) drawBoxedIcon(display, aX, ind, ind_h, ICON_ADVERT);
         leftmostX = aX - 1;
       }
 
-      // "G" indicator — GPS trail logging active. Same blink convention.
+      // GPS trail logging active. Same blink convention.
       if (_task->trail().isActive()) {
         int gX = leftmostX - ind;
-        bool show_g = Features::BLINK_INDICATORS ? ((millis() % 4000) < 2000) : true;
-        if (show_g) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(gX, 0, ind, ind_h);
-          display.setColor(DisplayDriver::DARK);
-          miniIconDraw(display, gX + (ind - ICON_TRAIL.w * miniIconScale(display)) / 2, 0, ICON_TRAIL);
-          display.setColor(DisplayDriver::LIGHT);
-        }
+        if (blinkOn()) drawBoxedIcon(display, gX, ind, ind_h, ICON_TRAIL);
         leftmostX = gX - 1;
       }
     }

@@ -96,6 +96,28 @@ inline void miniIconDrawHalo(DisplayDriver& d, int x, int y, const MiniIcon& ic,
       if (ic.rows[r] & (1 << c)) d.fillRect(x + c * s, y + r * s, s, s);
 }
 
+// Centre a mini-icon inside the slot [x, 0, box_w, box_h] using the current ink
+// colour (no background). Centres on the box itself, not the text line, so the
+// glyph sits dead-centre regardless of font line height.
+inline void drawSlotIcon(DisplayDriver& d, int x, int box_w, int box_h, const MiniIcon& ic) {
+  const int s = miniIconScale(d);
+  int ix = x + (box_w - ic.w * s) / 2;
+  int iy = (box_h - ic.h * s) / 2;
+  if (ix < x) ix = x;
+  if (iy < 0) iy = 0;
+  miniIconDrawTop(d, ix, iy, ic);
+}
+
+// Inverted status indicator: fill the box [x, 0, box_w, box_h] LIGHT, draw the
+// glyph DARK and centred, then restore ink to LIGHT.
+inline void drawBoxedIcon(DisplayDriver& d, int x, int box_w, int box_h, const MiniIcon& ic) {
+  d.setColor(DisplayDriver::LIGHT);
+  d.fillRect(x, 0, box_w, box_h);
+  d.setColor(DisplayDriver::DARK);
+  drawSlotIcon(d, x, box_w, box_h, ic);
+  d.setColor(DisplayDriver::LIGHT);
+}
+
 // Horizontal row of `count` square dots (scaled, vertically centred). Used by
 // the "awaiting ACK" marker, where the dot count = number of send attempts.
 inline void miniIconDotRow(DisplayDriver& d, int x, int top_y, int count) {
