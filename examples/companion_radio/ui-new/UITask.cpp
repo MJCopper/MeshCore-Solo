@@ -445,8 +445,7 @@ class HomeScreen : public UIScreen {
       int mx = battLeftX - ind - ind_gap;
       display.fillRect(mx, 0, ind, ind_h);
       display.setColor(DisplayDriver::DARK);
-      display.setCursor(mx + 1, 0);
-      display.print("M");
+      miniIconDraw(display, mx + (ind - ICON_MUTE.w * miniIconScale(display)) / 2, 0, ICON_MUTE);
       display.setColor(DisplayDriver::LIGHT);
       battLeftX = mx;
     }
@@ -456,16 +455,15 @@ class HomeScreen : public UIScreen {
     int leftmostX = battLeftX;
     if (_task->isSerialEnabled()) {
       int btX = battLeftX - ind - ind_gap;
+      int btIconX = btX + (ind - ICON_BLUETOOTH.w * miniIconScale(display)) / 2;
       if (_task->isBLEConnected()) {   // BT icon reflects BLE link, not USB
         display.setColor(DisplayDriver::LIGHT);
         display.fillRect(btX, 0, ind, ind_h);
         display.setColor(DisplayDriver::DARK);
-        display.setCursor(btX + 1, 0);
-        display.print("B");
+        miniIconDraw(display, btIconX, 0, ICON_BLUETOOTH);
         display.setColor(DisplayDriver::LIGHT);
       } else {
-        display.setCursor(btX + 1, 0);
-        display.print("b");
+        miniIconDraw(display, btIconX, 0, ICON_BLUETOOTH);   // plain glyph: available, not linked
       }
       leftmostX = btX - ind_gap;
 
@@ -477,8 +475,7 @@ class HomeScreen : public UIScreen {
           display.setColor(DisplayDriver::LIGHT);
           display.fillRect(aX, 0, ind, ind_h);
           display.setColor(DisplayDriver::DARK);
-          display.setCursor(aX + 1, 0);
-          display.print("A");
+          miniIconDraw(display, aX + (ind - ICON_ADVERT.w * miniIconScale(display)) / 2, 0, ICON_ADVERT);
           display.setColor(DisplayDriver::LIGHT);
         }
         leftmostX = aX - 1;
@@ -492,8 +489,7 @@ class HomeScreen : public UIScreen {
           display.setColor(DisplayDriver::LIGHT);
           display.fillRect(gX, 0, ind, ind_h);
           display.setColor(DisplayDriver::DARK);
-          display.setCursor(gX + 1, 0);
-          display.print("G");
+          miniIconDraw(display, gX + (ind - ICON_TRAIL.w * miniIconScale(display)) / 2, 0, ICON_TRAIL);
           display.setColor(DisplayDriver::LIGHT);
         }
         leftmostX = gX - 1;

@@ -93,4 +93,8 @@ Lists all available home screen pages. For each entry:
 
 ### Messages
 
+| Setting | Options        | Notes                                                                                          |
+| ------- | -------------- | ---------------------------------------------------------------------------------------------- |
+| Resend  | off / 1×–5×    | Auto-resend an on-device direct message this many times when no delivery ACK is received (default 2×) |
+
 Up to 10 quick reply templates (Q1–Q10). Press **Enter** on a slot to open the keyboard editor. Supports the same placeholders as the main keyboard (`{time}`, `{loc}`, and sensor placeholders when connected).

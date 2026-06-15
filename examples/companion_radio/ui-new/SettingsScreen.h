@@ -111,6 +111,10 @@ class SettingsScreen : public UIScreen {
     return 0;
   }
 
+  // Value column start, pulled left by the scrollbar gutter so right-side
+  // values never render under the indicator when the list scrolls.
+  int valCol(DisplayDriver& display) const { return display.valCol() - _reserve; }
+
   void renderBar(DisplayDriver& display, int x, int y, int value, int max_val) {
     const int gap     = 2;
     const int avail   = display.width() - x - _reserve;
@@ -419,12 +423,12 @@ class SettingsScreen : public UIScreen {
 #if FEAT_BRIGHTNESS_SETTING
     if (item == BRIGHTNESS) {
       display.print("Bright");
-      renderBar(display, display.valCol(), y, (p ? p->display_brightness : 2) + 1, 5);
+      renderBar(display, valCol(display), y, (p ? p->display_brightness : 2) + 1, 5);
     } else
 #endif
     if (item == BUZZER) {
       display.print("Buzzer");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
 #ifdef PIN_BUZZER
       { static const char* labels[] = { "ON", "OFF", "Auto" };
         int m = _task->getBuzzerMode();
@@ -435,29 +439,29 @@ class SettingsScreen : public UIScreen {
     } else if (item == BUZZER_VOLUME) {
       display.print("BzrVol");
 #ifdef PIN_BUZZER
-      renderBar(display, display.valCol(), y, _task->getBuzzerVolume() + 1, 5);
+      renderBar(display, valCol(display), y, _task->getBuzzerVolume() + 1, 5);
 #else
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print("N/A");
 #endif
     } else if (item == DM_MELODY) {
       display.print("DM sound");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       { uint8_t v = p ? p->notif_melody_dm : 0;
         display.print(SOUND_LABELS[v < SOUND_COUNT ? v : 0]); }
     } else if (item == CH_MELODY) {
       display.print("Ch sound");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       { uint8_t v = p ? p->notif_melody_ch : 0;
         display.print(SOUND_LABELS[v < SOUND_COUNT ? v : 0]); }
     } else if (item == AD_SOUND) {
       display.print("AD sound");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       { uint8_t v = p ? p->notif_melody_ad : 0;
         display.print(SOUND_LABELS[v < SOUND_COUNT ? v : 0]); }
     } else if (item == AD_SOUND_SCOPE) {
       display.print("AD scope");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       { uint8_t v = p ? p->advert_sound_scope : ADVERT_SOUND_SCOPE_ALL;
         display.print(AD_SCOPE_LABELS[v < AD_SCOPE_COUNT ? v : 0]); }
     } else if (isHomePage(item)) {
@@ -477,25 +481,25 @@ class SettingsScreen : public UIScreen {
       display.print("TX Pwr");
       char buf[8];
       snprintf(buf, sizeof(buf),"%ddBm", p ? p->tx_power_dbm : 0);
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print(buf);
     } else if (item == POWER_SAVE) {
       display.print("Pwr save");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print((p && p->rx_powersave) ? "ON" : "OFF");
     } else if (item == TX_APC) {
       display.print("Auto pwr");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print((p && p->tx_apc) ? "ON" : "OFF");
 #if AUTO_OFF_MILLIS > 0
     } else if (item == AUTO_OFF) {
       display.print("AutoOff");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print(AUTO_OFF_LABELS[autoOffIndex()]);
 #endif
     } else if (item == AUTO_LOCK) {
       display.print("AutoLock");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print((p && p->auto_lock) ? "ON" : "OFF");
     } else if (item == TIMEZONE) {
       display.print("TimeZone");
@@ -503,39 +507,39 @@ class SettingsScreen : public UIScreen {
       int8_t tz = p ? p->tz_offset_hours : 0;
       if (tz >= 0) snprintf(buf, sizeof(buf),"UTC+%d", (int)tz);
       else         snprintf(buf, sizeof(buf),"UTC%d",  (int)tz);
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print(buf);
     } else if (item == LOW_BAT) {
       display.print("LowBat");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print(LOW_BAT_LABELS[lowBatIndex()]);
     } else if (item == UNITS) {
       display.print("Units");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print((p && p->units_imperial) ? "Imperial" : "Metric");
     } else if (item == BATT_DISPLAY) {
       display.print("BattDisp");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       uint8_t mode = p ? p->batt_display_mode : 0;
       display.print(BATT_DISPLAY_LABELS[mode < BATT_DISPLAY_COUNT ? mode : 0]);
 #if FEAT_CLOCK_SECONDS_SETTING
     } else if (item == CLOCK_SECONDS) {
       display.print("Seconds");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print((p && p->clock_hide_seconds) ? "OFF" : "ON");
 #endif
     } else if (item == CLOCK_FORMAT) {
       display.print("Format");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print((p && p->clock_12h) ? "12h" : "24h");
     } else if (item == FONT) {
       display.print("Font");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print((p && p->use_lemon_font) ? "Lemon" : "Default");
 #if FEAT_DISPLAY_ROTATION_SETTING
     } else if (item == ROTATION) {
       display.print("Rotation");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       { static const char* ROT_LABELS[] = { "0 deg", "90 deg", "180 deg", "270 deg" };
         uint8_t r = p ? (p->display_rotation & 3) : 0;
         display.print(ROT_LABELS[r]); }
@@ -543,7 +547,7 @@ class SettingsScreen : public UIScreen {
 #if FEAT_JOYSTICK_ROTATION_SETTING
     } else if (item == JOY_ROTATION) {
       display.print("Joystick");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       { static const char* ROT_LABELS[] = { "0 deg", "90 deg", "180 deg", "270 deg" };
         uint8_t r = p ? (p->joystick_rotation & 3) : 0;
         display.print(ROT_LABELS[r]); }
@@ -551,26 +555,26 @@ class SettingsScreen : public UIScreen {
 #if FEAT_FULL_REFRESH_SETTING
     } else if (item == EINK_FULL_REFRESH) {
       display.print("Full rfsh");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       { uint8_t idx = p ? p->eink_full_refresh_every : 0;
         if (idx >= EINK_FULL_REFRESH_COUNT) idx = 0;
         display.print(EINK_FULL_REFRESH_LABELS[idx]); }
 #endif
     } else if (item == DM_FILTER) {
       display.print("DM");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print((p && p->dm_show_all) ? "all" : "fav");
     } else if (item == CH_FILTER) {
       display.print("Channels");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print((p && p->ch_fav_only) ? "fav" : "all");
     } else if (item == ROOM_FILTER) {
       display.print("Rooms");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       display.print((p && p->room_fav_only) ? "fav" : "all");
     } else if (item == DM_RESEND) {
       display.print("Resend");
-      display.setCursor(display.valCol(), y);
+      display.setCursor(valCol(display), y);
       uint8_t n = p ? p->dm_resend_count : 0;
       if (n == 0) display.print("OFF");
       else { char buf[6]; snprintf(buf, sizeof(buf), "%ux", (unsigned)n); display.print(buf); }
@@ -806,7 +810,9 @@ public:
       return true;
     }
     if (_selected == FONT && p && (left || right || enter)) {
-      p->use_lemon_font ^= 1;
+      // Normalise (not ^=1): a stale value >1 from an older build with extra
+      // font modes would otherwise toggle 2<->3 and stay stuck on Lemon.
+      p->use_lemon_font = p->use_lemon_font ? 0 : 1;
       _task->applyFont();
       _dirty = true;
       return true;

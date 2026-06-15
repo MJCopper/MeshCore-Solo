@@ -118,6 +118,39 @@ MINI_ICON(ICON_CROSS, 4,   // ✗
   packRow(".##."),
   packRow("#..#"));
 
+// Top-bar status glyphs (replace the single-letter M / B / A indicators).
+MINI_ICON(ICON_MUTE, 6,   // speaker + cross (sound off)
+  packRow("..#..."),
+  packRow(".##..."),
+  packRow("####.#"),
+  packRow("###.#."),
+  packRow("####.#"),
+  packRow(".##..."),
+  packRow("..#..."));
+MINI_ICON(ICON_BLUETOOTH, 5,   // ᛒ bluetooth rune
+  packRow("..#.."),
+  packRow("..##."),
+  packRow("#.#.#"),
+  packRow(".###."),
+  packRow("#.#.#"),
+  packRow("..##."),
+  packRow("..#.."));
+MINI_ICON(ICON_ADVERT, 6,   // broadcast mast + radiating waves (auto-advert)
+  packRow("#....#"),
+  packRow(".#..#."),
+  packRow("..##.."),
+  packRow("..##.."),
+  packRow(".####."),
+  packRow(".####."));
+
+MINI_ICON(ICON_TRAIL, 6,   // map pin / location marker (GPS trail logging)
+  packRow(".####."),
+  packRow("######"),
+  packRow("##..##"),
+  packRow("######"),
+  packRow(".####."),
+  packRow("..##.."));
+
 // Keyboard special-key glyphs.
 MINI_ICON(ICON_SHIFT, 7,   // ⇧  caps
   packRow("...#..."),
