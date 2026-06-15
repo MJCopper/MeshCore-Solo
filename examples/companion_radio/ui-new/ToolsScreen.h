@@ -21,7 +21,6 @@ public:
 
     int item_h  = display.lineStep();
     int start_y = display.listStart();
-    int cw      = display.getCharWidth();
     int vis     = display.listVisible(item_h);
     if (vis < 1) vis = 1;
 
@@ -29,18 +28,16 @@ public:
     if (_sel < _scroll)            _scroll = _sel;
     if (_sel >= _scroll + vis)     _scroll = _sel - vis + 1;
 
+    int reserve = scrollIndicatorReserve(display, ITEM_COUNT, vis);
     for (int i = 0; i < vis && (_scroll + i) < ITEM_COUNT; i++) {
       int idx = _scroll + i;
       int y   = start_y + i * item_h;
       bool sel = (idx == _sel);
-      display.drawSelectionRow(0, y - 1, display.width(), item_h, sel);
-      display.setCursor(0, y);
-      display.print(sel ? ">" : " ");
-      display.setCursor(cw + 2, y);
+      display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h, sel);
+      display.setCursor(2, y);
       display.print(ITEMS[idx]);
     }
-    display.drawScrollArrows(start_y, start_y + (vis - 1) * item_h,
-                             _scroll > 0, _scroll + vis < ITEM_COUNT);
+    drawScrollIndicator(display, start_y, vis * item_h, ITEM_COUNT, vis, _scroll);
     return 500;
   }
 

@@ -71,6 +71,7 @@ public:
     int val_x   = display.valCol();
     _visible    = display.listVisible(item_h);
     if (_visible < 1) _visible = 1;
+    int reserve = scrollIndicatorReserve(display, ITEM_COUNT, _visible);
 
     display.drawTextCentered(display.width() / 2, 0, "AUTO-REPLY BOT");
     // reply counter, right-aligned in the header
@@ -91,7 +92,7 @@ public:
       int i = _scroll + vi;
       int y = start_y + vi * item_h;
       bool sel = (i == _sel);
-      display.drawSelectionRow(0, y - 1, display.width(), item_h, sel);
+      display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h, sel);
       display.setCursor(2, y);
       display.print(labels[i]);
       display.setCursor(val_x, y);
@@ -104,7 +105,7 @@ public:
         } else {
           ChannelDetails ch;
           if (the_mesh.getChannel(_prefs->bot_channel_idx, ch) && ch.name[0])
-            display.drawTextEllipsized(val_x, y, display.width() - val_x - 1, ch.name);
+            display.drawTextEllipsized(val_x, y, display.width() - val_x - 1 - reserve,ch.name);
           else
             display.print("?");
         }
@@ -113,10 +114,10 @@ public:
         const char* shown = !tr[0] ? "(none)"
                           : (tr[0] == '*' && !tr[1]) ? "(any msg)"   // wildcard / away mode
                                                      : tr;
-        display.drawTextEllipsized(val_x, y, display.width() - val_x - 1, shown);
+        display.drawTextEllipsized(val_x, y, display.width() - val_x - 1 - reserve,shown);
       } else if (i == 3 || i == 5) {
         const char* rp = (i == 3) ? _prefs->bot_reply_dm : _prefs->bot_reply_ch;
-        display.drawTextEllipsized(val_x, y, display.width() - val_x - 1, rp[0] ? rp : "(none)");
+        display.drawTextEllipsized(val_x, y, display.width() - val_x - 1 - reserve,rp[0] ? rp : "(none)");
       } else if (i == 6) {
         display.print(_prefs->bot_commands_enabled ? "ON" : "OFF");
       } else {  // i == 7 (quiet from) or i == 8 (quiet to)
@@ -131,8 +132,7 @@ public:
       }
       display.setColor(DisplayDriver::LIGHT);
     }
-    display.drawScrollArrows(start_y, start_y + (_visible - 1) * item_h,
-                             _scroll > 0, _scroll + _visible < ITEM_COUNT);
+    drawScrollIndicator(display, start_y, _visible * item_h, ITEM_COUNT, _visible, _scroll);
     return 2000;
   }
 

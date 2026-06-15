@@ -131,18 +131,16 @@ class WaypointsView {
     display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
     const int top  = display.listStart();
     const int step = display.lineStep();
-    const int cw   = display.getCharWidth();
     for (int i = 0; i < 4; i++) {
       int y = top + i * step;
       bool sel = (i == _add_sel);
       display.drawSelectionRow(0, y - 1, display.width(), step - 1, sel);
-      display.setCursor(0, y); display.print(sel ? ">" : " ");
       char row[28];
       if      (i == 0) snprintf(row, sizeof(row), "Lat: %c %s", _add_lat_neg ? 'S' : 'N', _add_lat[0] ? _add_lat : "--");
       else if (i == 1) snprintf(row, sizeof(row), "Lon: %c %s", _add_lon_neg ? 'W' : 'E', _add_lon[0] ? _add_lon : "--");
       else if (i == 2) snprintf(row, sizeof(row), "Label: %s",  _add_label[0] ? _add_label : "(auto)");
       else             snprintf(row, sizeof(row), "[Save]");
-      display.setCursor(cw + 2, y); display.print(row);
+      display.setCursor(2, y); display.print(row);
       display.setColor(DisplayDriver::LIGHT);
     }
   }
@@ -159,7 +157,6 @@ class WaypointsView {
     int total = n + 1;                    // final row = "+ Add by coords"
     const int top  = display.listStart();
     const int step = display.lineStep();
-    const int cw   = display.getCharWidth();
     int vis = display.listVisible();
     if (vis < 1) vis = 1;
     if (_sel < _scroll)            _scroll = _sel;
@@ -167,15 +164,15 @@ class WaypointsView {
 
     int32_t mylat, mylon; bool have = ownPos(mylat, mylon);
 
+    int reserve = scrollIndicatorReserve(display, total, vis);
     for (int i = 0; i < vis && (_scroll + i) < total; i++) {
       int row = _scroll + i;
       int y = top + i * step;
       bool sel = (row == _sel);
-      display.drawSelectionRow(0, y - 1, display.width(), step - 1, sel);
-      display.setCursor(0, y); display.print(sel ? ">" : " ");
+      display.drawSelectionRow(0, y - 1, display.width() - reserve, step - 1, sel);
 
       if (row == n) {                     // the synthetic "Add" row
-        display.setCursor(cw + 2, y); display.print("+ Add by coords");
+        display.setCursor(2, y); display.print("+ Add by coords");
         display.setColor(DisplayDriver::LIGHT);
         continue;
       }
@@ -189,10 +186,11 @@ class WaypointsView {
       }
       char nm[24];
       display.translateUTF8ToBlocks(nm, label, sizeof(nm));
-      display.drawTextEllipsized(cw + 2, y, display.width() - cw - 2 - bw, nm);
-      if (dist[0]) { display.setCursor(display.width() - bw + 1, y); display.print(dist); }
+      display.drawTextEllipsized(2, y, display.width() - 2 - bw - reserve, nm);
+      if (dist[0]) { display.setCursor(display.width() - bw + 1 - reserve, y); display.print(dist); }
       display.setColor(DisplayDriver::LIGHT);
     }
+    drawScrollIndicator(display, top, vis * step, total, vis, _scroll);
   }
 
   void renderWpNav(DisplayDriver& display) {

@@ -834,9 +834,7 @@ public:
         int y = start_y + i * item_h;
         bool sel = (i == _mode_sel);
         display.drawSelectionRow(0, y - 1, display.width(), item_h - 1, sel);
-        display.setCursor(0, y);
-        display.print(sel ? ">" : " ");
-        display.setCursor(cw + 2, y);
+        display.setCursor(2, y);
         display.print(opts[i]);
         if (badges[i] > 0) {
           char badge[5];
@@ -858,18 +856,17 @@ public:
         return 5000;
       }
 
+      int reserve = scrollIndicatorReserve(display, _num_contacts, _visible);
       for (int i = 0; i < _visible && (_contact_scroll+i) < _num_contacts; i++) {
         int list_idx = _contact_scroll + i;
         int mesh_idx = _sorted[list_idx];
         bool sel = (list_idx == _contact_sel);
         int y = start_y + i * item_h;
 
-        display.drawSelectionRow(0, y - 1, display.width(), item_h - 1, sel);
+        display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
 
         ContactInfo c;
         if (the_mesh.getContactByIdx(mesh_idx, c)) {
-          display.setCursor(0, y);
-          display.print(sel ? ">" : " ");
           char filtered[sizeof(c.name)];
           display.translateUTF8ToBlocks(filtered, c.name, sizeof(filtered));
           uint8_t dm_unread = _task->getDMUnread(c.id.pub_key);
@@ -879,15 +876,14 @@ public:
             snprintf(badge, sizeof(badge), "%d", (int)dm_unread);
             bw = display.getTextWidth(badge) + 2;
           }
-          display.drawTextEllipsized(cw + 2, y, display.width() - cw - 2 - bw - 1, filtered);
+          display.drawTextEllipsized(2, y, display.width() - 2 - bw - 1 - reserve, filtered);
           if (dm_unread > 0) {
-            display.setCursor(display.width() - bw + 1, y);
+            display.setCursor(display.width() - bw + 1 - reserve, y);
             display.print(badge);
           }
         }
       }
-      display.drawScrollArrows(start_y, start_y + (_visible-1)*item_h,
-                               _contact_scroll > 0, _contact_scroll + _visible < _num_contacts);
+      drawScrollIndicator(display, start_y, _visible * item_h, _num_contacts, _visible, _contact_scroll);
 
       // Context menu overlay
       if (_ctx_menu.active) _ctx_menu.render(display);
@@ -901,14 +897,13 @@ public:
         return 5000;
       }
 
+      int reserve = scrollIndicatorReserve(display, _num_channels, _visible);
       for (int i = 0; i < _visible && (_channel_scroll+i) < _num_channels; i++) {
         int list_idx = _channel_scroll + i;
         bool sel = (list_idx == _channel_sel);
         int y = start_y + i * item_h;
 
-        display.drawSelectionRow(0, y - 1, display.width(), item_h - 1, sel);
-        display.setCursor(0, y);
-        display.print(sel ? ">" : " ");
+        display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
         ChannelDetails ch;
         if (the_mesh.getChannel(_channel_indices[list_idx], ch)) {
           uint8_t unread = _ch_unread[_channel_indices[list_idx]];
@@ -918,15 +913,14 @@ public:
             snprintf(badge, sizeof(badge), "%d", (int)unread);
             bw = display.getTextWidth(badge) + 2;
           }
-          display.drawTextEllipsized(cw + 2, y, display.width() - cw - 4 - bw, ch.name);
+          display.drawTextEllipsized(2, y, display.width() - 4 - bw - reserve, ch.name);
           if (unread > 0) {
-            display.setCursor(display.width() - bw, y);
+            display.setCursor(display.width() - bw - reserve, y);
             display.print(badge);
           }
         }
       }
-      display.drawScrollArrows(start_y, start_y + (_visible-1)*item_h,
-                               _channel_scroll > 0, _channel_scroll + _visible < _num_channels);
+      drawScrollIndicator(display, start_y, _visible * item_h, _num_channels, _visible, _channel_scroll);
 
       // Context menu overlay
       if (_ctx_menu.active) _ctx_menu.render(display);
@@ -974,6 +968,10 @@ public:
       bool portrait_expand = (display.height() > display.width());
       const int MAX_VIS_BOXES = 8;
       int box_ys[MAX_VIS_BOXES], box_hs[MAX_VIS_BOXES], n_vis = 0;
+      // Scrollbar gutter, from last frame's visible count (this frame's isn't
+      // known until the layout loop runs); keeps portrait wrap width and the box
+      // width consistent so wrapped text never spills under the scrollbar.
+      int reserve = scrollIndicatorReserve(display, dm_count, _hist_visible);
       {
         const int fixed_bh = 2 * lh + 1;
         int cur_y = hist_start_y;
@@ -985,7 +983,7 @@ public:
               char trans[160];
               display.translateUTF8ToBlocks(trans, skipReplyPrefix(_dm_hist[rp].text), sizeof(trans));
               char wl[8][FS_CHARS_MAX];
-              int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6, wl, 8);
+              int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6 - reserve, wl, 8);
               bh = (1 + (nl > 0 ? nl : 1)) * lh + 1;
             }
           }
@@ -995,7 +993,6 @@ public:
         }
       }
       _hist_visible = n_vis;
-
       for (int i = 0; i < n_vis && (_dm_hist_scroll + i) < dm_count; i++) {
         int item = _dm_hist_scroll + i;
         bool sel = (item == _dm_hist_sel);
@@ -1013,26 +1010,26 @@ public:
 
         if (sel) {
           display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y, display.width(), bh);
+          display.fillRect(0, y, display.width() - reserve, bh);
           display.setColor(DisplayDriver::DARK);
         } else {
           display.setColor(DisplayDriver::LIGHT);
-          display.drawRect(0, y, display.width(), bh);
-          display.fillRect(1, y + 1, display.width() - 2, lh);
+          display.drawRect(0, y, display.width() - reserve, bh);
+          display.fillRect(1, y + 1, display.width() - 2 - reserve, lh);
           display.setColor(DisplayDriver::DARK);
         }
-        display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
+        display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w - reserve, sender);
         if (e.outgoing) {                       // delivery marker after "Me"
           int gx = 3 + display.getTextWidth(sender) + 3;
           drawAckGlyph(display, gx, y + 1, dmEffectiveStatus(e), e.attempt + 1);
         }
-        if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
+        if (age[0]) { display.setCursor(display.width() - age_w - reserve, y + 1); display.print(age); }
         if (!sel) display.setColor(DisplayDriver::LIGHT);
         if (portrait_expand) {
           char trans[160];
           display.translateUTF8ToBlocks(trans, skipReplyPrefix(e.text), sizeof(trans));
           char wl[8][FS_CHARS_MAX];
-          int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6, wl, 8);
+          int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6 - reserve, wl, 8);
           for (int li = 0; li < nl; li++) { display.setCursor(3, y + (li + 1) * lh + 1); display.print(wl[li]); }
         } else {
           display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(e.text));
@@ -1046,8 +1043,8 @@ public:
 
       {
         int arrow_y = (n_vis > 0) ? box_ys[n_vis - 1] + box_hs[n_vis - 1] - lh : hist_start_y;
-        display.drawScrollArrows(hist_start_y + 1, arrow_y,
-                                 _dm_hist_scroll > 0, _dm_hist_scroll + _hist_visible < dm_count);
+        drawScrollIndicator(display, hist_start_y + 1, arrow_y + lh - (hist_start_y + 1),
+                            dm_count, _hist_visible, _dm_hist_scroll);
       }
 
       bool compose_sel = (_dm_hist_sel == -1);
@@ -1113,6 +1110,8 @@ public:
       bool portrait_expand = (display.height() > display.width());
       const int MAX_VIS_BOXES = 8;
       int box_ys[MAX_VIS_BOXES], box_hs[MAX_VIS_BOXES], n_vis = 0;
+      // Scrollbar gutter, from last frame's visible count (see DM history above).
+      int reserve = scrollIndicatorReserve(display, ch_hist_count, _hist_visible);
       {
         const int fixed_bh = 2 * lh + 1;
         int cur_y = hist_start_y;
@@ -1127,7 +1126,7 @@ public:
               char trans[160];
               display.translateUTF8ToBlocks(trans, skipReplyPrefix(rbody), sizeof(trans));
               char wl[8][FS_CHARS_MAX];
-              int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6, wl, 8);
+              int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6 - reserve, wl, 8);
               bh = (1 + (nl > 0 ? nl : 1)) * lh + 1;
             }
           }
@@ -1166,15 +1165,15 @@ public:
 
         if (sel) {
           display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y, display.width(), bh);
+          display.fillRect(0, y, display.width() - reserve, bh);
           display.setColor(DisplayDriver::DARK);
         } else {
           display.setColor(DisplayDriver::LIGHT);
-          display.drawRect(0, y, display.width(), bh);
-          display.fillRect(1, y + 1, display.width() - 2, lh);
+          display.drawRect(0, y, display.width() - reserve, bh);
+          display.fillRect(1, y + 1, display.width() - 2 - reserve, lh);
           display.setColor(DisplayDriver::DARK);
         }
-        display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w, sender);
+        display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w - reserve, sender);
         // Channels have no recipient ACK — only show ✓ once a repeater echo
         // confirms the send was relayed into the mesh; otherwise no marker
         // (absence is normal, not a failure).
@@ -1182,13 +1181,13 @@ public:
           int gx = 3 + display.getTextWidth(sender) + 3;
           drawAckGlyph(display, gx, y + 1, ACK_OK);
         }
-        if (age[0]) { display.setCursor(display.width() - age_w, y + 1); display.print(age); }
+        if (age[0]) { display.setCursor(display.width() - age_w - reserve, y + 1); display.print(age); }
         if (!sel) display.setColor(DisplayDriver::LIGHT);
         if (portrait_expand) {
           char trans[160];
           display.translateUTF8ToBlocks(trans, skipReplyPrefix(msg_part), sizeof(trans));
           char wl[8][FS_CHARS_MAX];
-          int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6, wl, 8);
+          int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6 - reserve, wl, 8);
           for (int li = 0; li < nl; li++) { display.setCursor(3, y + (li + 1) * lh + 1); display.print(wl[li]); }
         } else {
           display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(msg_part));
@@ -1203,8 +1202,8 @@ public:
       // scroll hints
       {
         int arrow_y = (n_vis > 0) ? box_ys[n_vis - 1] + box_hs[n_vis - 1] - lh : hist_start_y;
-        display.drawScrollArrows(hist_start_y + 1, arrow_y,
-                                 _hist_scroll > 0, _hist_scroll + _hist_visible < ch_hist_count);
+        drawScrollIndicator(display, hist_start_y + 1, arrow_y + lh - (hist_start_y + 1),
+                            ch_hist_count, _hist_visible, _hist_scroll);
       }
 
       // small compose button (bottom-left, always bordered, inverted when selected)
@@ -1249,27 +1248,25 @@ public:
       display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
       int total_msg_items = 1 + _active_msg_count;
+      int reserve = scrollIndicatorReserve(display, total_msg_items, _visible);
       for (int i = 0; i < _visible && (_msg_scroll+i) < total_msg_items; i++) {
         int idx = _msg_scroll + i;
         bool sel = (idx == _msg_sel);
         int y = start_y + i * item_h;
 
-        display.drawSelectionRow(0, y - 1, display.width(), item_h - 1, sel);
-        display.setCursor(0, y);
-        display.print(sel ? ">" : " ");
+        display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
 
         if (idx == 0) {
-          display.setCursor(cw + 2, y);
+          display.setCursor(2, y);
           display.print("Custom message...");
         } else {
           NodePrefs* p = _task->getNodePrefs();
           int slot = _active_msgs[idx - 1];
           const char* tmpl = p ? p->custom_msgs[slot] : "";
-          display.drawTextEllipsized(cw + 2, y, display.width() - cw - 4, tmpl);
+          display.drawTextEllipsized(2, y, display.width() - 4 - reserve, tmpl);
         }
       }
-      display.drawScrollArrows(start_y, start_y + (_visible-1)*item_h,
-                               _msg_scroll > 0, _msg_scroll + _visible < total_msg_items);
+      drawScrollIndicator(display, start_y, _visible * item_h, total_msg_items, _visible, _msg_scroll);
     }
     return 2000;
   }

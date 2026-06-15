@@ -74,6 +74,7 @@ class SettingsScreen : public UIScreen {
   int _selected;
   int _scroll;
   int _visible;   // items fitting on screen; updated each render, used by handleInput
+  int _reserve = 0;  // right-edge px reserved for the scrollbar (0 when list fits)
   bool _dirty;
   uint8_t _collapsed = 0x7F; // bit N set = section N collapsed (Display=0..Messages=6)
   static const int MAX_VIS = 60;
@@ -112,7 +113,7 @@ class SettingsScreen : public UIScreen {
 
   void renderBar(DisplayDriver& display, int x, int y, int value, int max_val) {
     const int gap     = 2;
-    const int avail   = display.width() - x;
+    const int avail   = display.width() - x - _reserve;
     const int raw     = (avail - (max_val - 1) * gap) / max_val;
     const int cap     = display.getLineHeight() - 2;
     const int box_h   = raw < cap ? (raw < 2 ? 2 : raw) : cap;
@@ -402,10 +403,8 @@ class SettingsScreen : public UIScreen {
       bool collapsed = (_collapsed >> si) & 1;
       bool sel = (item == _selected);
       display.setColor(DisplayDriver::LIGHT);
-      display.drawSelectionRow(0, y - 1, display.width(), display.lineStep(), sel);
-      display.setCursor(0, y);
-      display.print(sel ? ">" : " ");
-      display.setCursor(display.getCharWidth() + 2, y);
+      display.drawSelectionRow(0, y - 1, display.width() - _reserve, display.lineStep(), sel);
+      display.setCursor(2, y);
       display.print(collapsed ? "+" : "-");
       display.print(" ");
       display.print(sectionName(item));
@@ -413,11 +412,9 @@ class SettingsScreen : public UIScreen {
     }
 
     bool sel = (item == _selected);
-    display.drawSelectionRow(0, y - 1, display.width(), display.lineStep(), sel);
+    display.drawSelectionRow(0, y - 1, display.width() - _reserve, display.lineStep(), sel);
 
-    display.setCursor(0, y);
-    display.print(sel ? ">" : " ");
-    display.setCursor(display.getCharWidth() + 2, y);
+    display.setCursor(2, y);
 
 #if FEAT_BRIGHTNESS_SETTING
     if (item == BRIGHTNESS) {
@@ -471,7 +468,7 @@ class SettingsScreen : public UIScreen {
         display.print(pb);
       }
       display.print(homePageLabel(item));
-      display.setCursor(display.width() - 6 * display.getCharWidth(), y);
+      display.setCursor(display.width() - 6 * display.getCharWidth() - _reserve, y);
       if (!homePageToggleable(item))
         display.print("always");
       else
@@ -584,7 +581,7 @@ class SettingsScreen : public UIScreen {
       display.print(label);
       const char* tmpl = (p && p->custom_msgs[slot][0]) ? p->custom_msgs[slot] : "(empty)";
       int xm = 8 + display.getCharWidth() * 4;
-      display.drawTextEllipsized(xm, y, display.width() - xm, tmpl);
+      display.drawTextEllipsized(xm, y, display.width() - xm - _reserve, tmpl);
     }
   }
 
@@ -617,6 +614,7 @@ public:
     int item_h  = display.lineStep();
     int start_y = display.listStart();
     _visible    = display.listVisible(item_h);
+    _reserve    = scrollIndicatorReserve(display, _vis_count, _visible);
 
     display.setColor(DisplayDriver::LIGHT);
     display.drawTextCentered(display.width() / 2, 0, "SETTINGS");
@@ -626,8 +624,7 @@ public:
       renderItem(display, _vis[_scroll + i], start_y + i * item_h);
     }
 
-    display.drawScrollArrows(start_y, start_y + (_visible - 1) * item_h,
-                             _scroll > 0, _scroll + _visible < _vis_count);
+    drawScrollIndicator(display, start_y, _visible * item_h, _vis_count, _visible, _scroll);
 
     return 2000;
   }

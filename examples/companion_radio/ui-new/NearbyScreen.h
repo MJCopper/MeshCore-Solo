@@ -588,13 +588,14 @@ public:
         display.drawTextCentered(display.width() / 2, display.height() / 2 + display.lineStep() / 2, hint);
       }
     } else {
+      int reserve = scrollIndicatorReserve(display, _count, _visible);
       for (int i = 0; i < _visible && (_scroll + i) < _count; i++) {
         int idx = _scroll + i;
         bool sel = (idx == _sel);
         int y = start_y + i * item_h;
         const Entry& e = _entries[idx];
 
-        display.drawSelectionRow(0, y - 1, display.width(), item_h - 1, sel);
+        display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
 
         char filt[32];
         display.translateUTF8ToBlocks(filt, e.name, sizeof(filt));
@@ -620,12 +621,11 @@ public:
           if (e.dist_km >= 0.0f) geo::fmtDist(right, sizeof(right), e.dist_km, useImperial());
           else                   strncpy(right, "?GPS", sizeof(right));
         }
-        display.setCursor(display.width() - display.getTextWidth(right) - 2, y);
+        display.setCursor(display.width() - display.getTextWidth(right) - 2 - reserve, y);
         display.print(right);
       }
 
-      display.drawScrollArrows(start_y, start_y + (_visible - 1) * item_h,
-                               _scroll > 0, _scroll + _visible < _count);
+      drawScrollIndicator(display, start_y, _visible * item_h, _count, _visible, _scroll);
     }
 
     if (renderActivePopup(display)) return 50;

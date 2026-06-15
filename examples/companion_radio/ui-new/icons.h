@@ -65,6 +65,37 @@ inline void miniIconDraw(DisplayDriver& d, int x, int top_y, const MiniIcon& ic)
   miniIconDraw(d, x, top_y, ic.rows, ic.w, ic.h);
 }
 
+// Draw a mini-icon at an exact top-left (no vertical centring). Used where the
+// caller controls placement, e.g. flush to the top/bottom of a scroll track.
+inline void miniIconDrawTop(DisplayDriver& d, int x, int y, const MiniIcon& ic) {
+  const int s = miniIconScale(d);
+  for (int r = 0; r < ic.h; r++)
+    for (int c = 0; c < ic.w; c++)
+      if (ic.rows[r] & (1 << c)) d.fillRect(x + c * s, y + r * s, s, s);
+}
+
+// Like miniIconDrawTop, but first lays down a 1px DARK halo that hugs the icon's
+// shape (each pixel dilated by 1px), then the icon in LIGHT. Invisible on a dark
+// row; on the LIGHT selection bar it outlines just the glyph — no boxed-in
+// rectangle around it. Restores ink to LIGHT. clip_top bounds the halo so it
+// can't bleed above a given y (e.g. onto a header separator just above the icon).
+inline void miniIconDrawHalo(DisplayDriver& d, int x, int y, const MiniIcon& ic,
+                             int clip_top = -100000) {
+  const int s = miniIconScale(d);
+  d.setColor(DisplayDriver::DARK);
+  for (int r = 0; r < ic.h; r++)
+    for (int c = 0; c < ic.w; c++)
+      if (ic.rows[r] & (1 << c)) {
+        int hy = y + r * s - 1, hh = s + 2;
+        if (hy < clip_top) { hh -= clip_top - hy; hy = clip_top; }
+        if (hh > 0) d.fillRect(x + c * s - 1, hy, s + 2, hh);
+      }
+  d.setColor(DisplayDriver::LIGHT);
+  for (int r = 0; r < ic.h; r++)
+    for (int c = 0; c < ic.w; c++)
+      if (ic.rows[r] & (1 << c)) d.fillRect(x + c * s, y + r * s, s, s);
+}
+
 // Horizontal row of `count` square dots (scaled, vertically centred). Used by
 // the "awaiting ACK" marker, where the dot count = number of send attempts.
 inline void miniIconDotRow(DisplayDriver& d, int x, int top_y, int count) {
@@ -116,6 +147,79 @@ MINI_ICON(ICON_SPACE_R, 8,
   packRow(".......#"),
   packRow(".......#"),
   packRow("########"));
+
+// Scroll-indicator caps — small up/down triangles (authored on the 1× grid).
+MINI_ICON(ICON_SCROLL_UP, 5,   // ▲
+  packRow("..#.."),
+  packRow(".###."),
+  packRow("#####"));
+MINI_ICON(ICON_SCROLL_DOWN, 5, // ▼
+  packRow("#####"),
+  packRow(".###."),
+  packRow("..#.."));
+
+// Width of the right-edge column drawScrollIndicator occupies, or 0 when the
+// list fits and no indicator is drawn. Subtract from a row's content width so
+// text never runs under the scrollbar. Mirrors the column math below (5*scale
+// triangle + 1px gap).
+inline int scrollIndicatorReserve(DisplayDriver& d, int total, int visible) {
+  return (total > visible) ? 5 * miniIconScale(d) + 1 : 0;
+}
+
+// Right-edge scroll indicator: a proportional track + thumb topped/tailed with
+// up/down triangle mini-icon caps. Drop-in replacement for
+// DisplayDriver::drawScrollArrows that also shows how much of the list is on
+// screen and where you are within it. Everything lives in a ~5px column at the
+// right edge and scales with the font (mini-icon scale).
+//   top_y   : y of the first visible row (top of the viewport)
+//   track_h : pixel height of the viewport (e.g. visible_rows * row_pitch)
+//   total   : total number of items
+//   visible : items shown at once
+//   first   : index of the first visible item (scroll offset)
+inline void drawScrollIndicator(DisplayDriver& d, int top_y, int track_h,
+                                int total, int visible, int first) {
+  if (total <= visible || track_h <= 0) return;   // whole list fits — no indicator
+  if (first < 0) first = 0;
+  if (first > total - visible) first = total - visible;
+
+  const int s    = miniIconScale(d);
+  const int col  = 5 * s;                  // triangle / column width
+  const int th   = 3 * s;                  // triangle height
+  const int x    = d.width() - col;        // indicator column origin
+
+  // Caps are static end-markers, always drawn flush at the very top / bottom of
+  // the track; the thumb travels in the fixed band between them. (They mark the
+  // track ends, not "more above/below", so they never vanish at the extremes.)
+  const int cap = th + 2;                  // triangle height + 2px gap
+  const int band_t = top_y + cap;
+  const int band_b = top_y + track_h - cap;
+  int band = band_b - band_t;
+  if (band < s) band = s;
+
+  const int bar_w = 3 * s;                  // odd width → centres exactly in the 5*s column
+  const int bar_x = x + (col - bar_w) / 2;
+
+  int thumb_h = (int)((long)band * visible / total);
+  if (thumb_h < th) thumb_h = th;
+  if (thumb_h > band)  thumb_h = band;
+  const int span    = total - visible;     // > 0 here (total > visible)
+  const int thumb_y = band_t + (int)((long)(band - thumb_h) * first / span);
+
+  // Each marker is drawn with a 1px DARK halo: invisible on a normal (dark) row,
+  // but on the LIGHT selection bar it carves out contrast so the LIGHT marker
+  // stays visible. Avoids having to know which row is currently selected.
+  // Thumb: a rectangle, so a plain box halo matches its shape.
+  d.setColor(DisplayDriver::DARK);
+  d.fillRect(bar_x - 1, thumb_y - 1, bar_w + 2, thumb_h + 2);
+  d.setColor(DisplayDriver::LIGHT);
+  d.fillRect(bar_x, thumb_y, bar_w, thumb_h);
+
+  // Arrows: shape-hugging halo so they aren't boxed in on the selection bar.
+  // The top arrow clips its halo at top_y so it can't bite into the header
+  // separator sitting one pixel above the list area.
+  miniIconDrawHalo(d, x, top_y, ICON_SCROLL_UP, top_y);
+  miniIconDrawHalo(d, x, top_y + track_h - th, ICON_SCROLL_DOWN);
+}
 
 // ── Big ASCII-art icons (skeleton, not yet used) ─────────────────────────────
 // Same authoring idea as the mini-icons but for full page glyphs up to 32 px

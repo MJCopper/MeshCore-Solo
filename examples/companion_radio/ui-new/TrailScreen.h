@@ -412,9 +412,7 @@ private:
       display.print(buf);
     }
 
-    display.drawScrollArrows(y0, y0 + (visible - 1) * step,
-                             _summary_scroll > 0,
-                             _summary_scroll + visible < SUMMARY_ITEM_COUNT);
+    drawScrollIndicator(display, y0, visible * step, SUMMARY_ITEM_COUNT, visible, _summary_scroll);
   }
 
   void renderList(DisplayDriver& display) {
@@ -466,8 +464,7 @@ private:
       display.print(row);
     }
 
-    display.drawScrollArrows(top, top + (visible - 1) * step,
-                             _list_scroll > 0, _list_scroll + visible < total);
+    drawScrollIndicator(display, top, visible * step, total, visible, _list_scroll);
   }
 
   // Shared map projection: geographic (1e-6 deg) → screen pixels. The scale is
