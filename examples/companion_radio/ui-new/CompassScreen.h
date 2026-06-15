@@ -31,8 +31,7 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
-    display.drawTextCentered(display.width() / 2, 0, "COMPASS");
-    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+    display.drawCenteredHeader("COMPASS");
 
     const int hdr = display.headerH();
     const int cx  = display.width() / 2;

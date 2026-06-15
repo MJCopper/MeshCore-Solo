@@ -115,6 +115,12 @@ class SettingsScreen : public UIScreen {
   // values never render under the indicator when the list scrolls.
   int valCol(DisplayDriver& display) const { return display.valCol() - _reserve; }
 
+  // Shared 0/90/180/270 labels for display + joystick rotation.
+  static const char* rotLabel(uint8_t r) {
+    static const char* const L[] = { "0 deg", "90 deg", "180 deg", "270 deg" };
+    return L[r & 3];
+  }
+
   void renderBar(DisplayDriver& display, int x, int y, int value, int max_val) {
     const int gap     = 2;
     const int avail   = display.width() - x - _reserve;
@@ -540,17 +546,13 @@ class SettingsScreen : public UIScreen {
     } else if (item == ROTATION) {
       display.print("Rotation");
       display.setCursor(valCol(display), y);
-      { static const char* ROT_LABELS[] = { "0 deg", "90 deg", "180 deg", "270 deg" };
-        uint8_t r = p ? (p->display_rotation & 3) : 0;
-        display.print(ROT_LABELS[r]); }
+      display.print(rotLabel(p ? p->display_rotation : 0));
 #endif
 #if FEAT_JOYSTICK_ROTATION_SETTING
     } else if (item == JOY_ROTATION) {
       display.print("Joystick");
       display.setCursor(valCol(display), y);
-      { static const char* ROT_LABELS[] = { "0 deg", "90 deg", "180 deg", "270 deg" };
-        uint8_t r = p ? (p->joystick_rotation & 3) : 0;
-        display.print(ROT_LABELS[r]); }
+      display.print(rotLabel(p ? p->joystick_rotation : 0));
 #endif
 #if FEAT_FULL_REFRESH_SETTING
     } else if (item == EINK_FULL_REFRESH) {
@@ -620,9 +622,7 @@ public:
     _visible    = display.listVisible(item_h);
     _reserve    = scrollIndicatorReserve(display, _vis_count, _visible);
 
-    display.setColor(DisplayDriver::LIGHT);
-    display.drawTextCentered(display.width() / 2, 0, "SETTINGS");
-    display.fillRect(0, display.headerH() - display.sepH(), display.width(), display.sepH());
+    display.drawCenteredHeader("SETTINGS");
 
     for (int i = 0; i < _visible && (_scroll + i) < _vis_count; i++) {
       renderItem(display, _vis[_scroll + i], start_y + i * item_h);
@@ -676,8 +676,8 @@ public:
       return true;
     }
 
-    bool right = (c == KEY_RIGHT || c == KEY_NEXT);
-    bool left  = (c == KEY_LEFT  || c == KEY_PREV);
+    bool right = keyIsNext(c);
+    bool left  = keyIsPrev(c);
     bool enter = (c == KEY_ENTER);
 
     if (enter && isSection(_selected)) {

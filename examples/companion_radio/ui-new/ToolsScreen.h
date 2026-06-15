@@ -16,28 +16,13 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
-    display.drawTextCentered(display.width() / 2, 0, "TOOLS");
-    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+    display.drawCenteredHeader("TOOLS");
 
-    int item_h  = display.lineStep();
-    int start_y = display.listStart();
-    int vis     = display.listVisible(item_h);
-    if (vis < 1) vis = 1;
-
-    // Keep the selection in view (short OLED panel can't show all 6 items).
-    if (_sel < _scroll)            _scroll = _sel;
-    if (_sel >= _scroll + vis)     _scroll = _sel - vis + 1;
-
-    int reserve = scrollIndicatorReserve(display, ITEM_COUNT, vis);
-    for (int i = 0; i < vis && (_scroll + i) < ITEM_COUNT; i++) {
-      int idx = _scroll + i;
-      int y   = start_y + i * item_h;
-      bool sel = (idx == _sel);
-      display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h, sel);
+    drawList(display, ITEM_COUNT, _sel, _scroll, [&](int idx, int y, bool sel, int reserve) {
+      display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
       display.setCursor(2, y);
       display.print(ITEMS[idx]);
-    }
-    drawScrollIndicator(display, start_y, vis * item_h, ITEM_COUNT, vis, _scroll);
+    });
     return 500;
   }
 

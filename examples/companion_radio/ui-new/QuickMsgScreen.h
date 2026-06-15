@@ -822,8 +822,7 @@ public:
     _visible    = display.listVisible(item_h);
 
     if (_phase == MODE_SELECT) {
-      display.drawTextCentered(display.width()/2, 0, "MESSAGE");
-      display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+      display.drawCenteredHeader("MESSAGE");
       const char* opts[] = { "Direct message", "Channels", "Room Servers" };
       int badges[3] = {
         getDMUnreadTotal(),
@@ -848,20 +847,15 @@ public:
       if (_ctx_menu.active) _ctx_menu.render(display);
 
     } else if (_phase == CONTACT_PICK) {
-      display.drawTextCentered(display.width()/2, 0, _room_mode ? "SELECT ROOM" : "SELECT CONTACT");
-      display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+      display.drawCenteredHeader(_room_mode ? "SELECT ROOM" : "SELECT CONTACT");
 
       if (_num_contacts == 0) {
         display.drawTextCentered(display.width()/2, display.height()/2, _room_mode ? "No room servers" : "No favourites");
         return 5000;
       }
 
-      int reserve = scrollIndicatorReserve(display, _num_contacts, _visible);
-      for (int i = 0; i < _visible && (_contact_scroll+i) < _num_contacts; i++) {
-        int list_idx = _contact_scroll + i;
+      _visible = drawList(display, _num_contacts, _contact_sel, _contact_scroll, [&](int list_idx, int y, bool sel, int reserve) {
         int mesh_idx = _sorted[list_idx];
-        bool sel = (list_idx == _contact_sel);
-        int y = start_y + i * item_h;
 
         display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
 
@@ -882,27 +876,20 @@ public:
             display.print(badge);
           }
         }
-      }
-      drawScrollIndicator(display, start_y, _visible * item_h, _num_contacts, _visible, _contact_scroll);
+      });
 
       // Context menu overlay
       if (_ctx_menu.active) _ctx_menu.render(display);
 
     } else if (_phase == CHANNEL_PICK) {
-      display.drawTextCentered(display.width()/2, 0, "SELECT CHANNEL");
-      display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+      display.drawCenteredHeader("SELECT CHANNEL");
 
       if (_num_channels == 0) {
         display.drawTextCentered(display.width()/2, display.height()/2, "No channels");
         return 5000;
       }
 
-      int reserve = scrollIndicatorReserve(display, _num_channels, _visible);
-      for (int i = 0; i < _visible && (_channel_scroll+i) < _num_channels; i++) {
-        int list_idx = _channel_scroll + i;
-        bool sel = (list_idx == _channel_sel);
-        int y = start_y + i * item_h;
-
+      _visible = drawList(display, _num_channels, _channel_sel, _channel_scroll, [&](int list_idx, int y, bool sel, int reserve) {
         display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
         ChannelDetails ch;
         if (the_mesh.getChannel(_channel_indices[list_idx], ch)) {
@@ -919,8 +906,7 @@ public:
             display.print(badge);
           }
         }
-      }
-      drawScrollIndicator(display, start_y, _visible * item_h, _num_channels, _visible, _channel_scroll);
+      });
 
       // Context menu overlay
       if (_ctx_menu.active) _ctx_menu.render(display);
@@ -1244,16 +1230,10 @@ public:
       } else {
         snprintf(title, sizeof(title), "TO:%.14s", _sel_contact.name);
       }
-      display.drawTextCentered(display.width()/2, 0, title);
-      display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+      display.drawCenteredHeader(title);
 
       int total_msg_items = 1 + _active_msg_count;
-      int reserve = scrollIndicatorReserve(display, total_msg_items, _visible);
-      for (int i = 0; i < _visible && (_msg_scroll+i) < total_msg_items; i++) {
-        int idx = _msg_scroll + i;
-        bool sel = (idx == _msg_sel);
-        int y = start_y + i * item_h;
-
+      _visible = drawList(display, total_msg_items, _msg_sel, _msg_scroll, [&](int idx, int y, bool sel, int reserve) {
         display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
 
         if (idx == 0) {
@@ -1265,8 +1245,7 @@ public:
           const char* tmpl = p ? p->custom_msgs[slot] : "";
           display.drawTextEllipsized(2, y, display.width() - 4 - reserve, tmpl);
         }
-      }
-      drawScrollIndicator(display, start_y, _visible * item_h, total_msg_items, _visible, _msg_scroll);
+      });
     }
     return 2000;
   }

@@ -14,6 +14,12 @@
 #define KEY_PREV           0xF2
 #define KEY_CONTEXT_MENU   0xF3
 
+// "Previous"/"Next" navigation keys: the directional key and its rotary-encoder
+// twin. Decrement / increment a value, or step a selection. (Cancel and the
+// context-menu key stay screen-specific — they mean different things per screen.)
+static inline bool keyIsPrev(char c) { return c == KEY_LEFT  || c == KEY_PREV; }
+static inline bool keyIsNext(char c) { return c == KEY_RIGHT || c == KEY_NEXT; }
+
 #ifndef JOYSTICK_ROTATION
   #define JOYSTICK_ROTATION 0
 #endif

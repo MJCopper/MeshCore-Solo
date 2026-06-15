@@ -185,6 +185,15 @@ public:
     fillRect(0, hdr - 1, width(), sepH());
   }
 
+  // Centred screen title + bottom separator line — the standard top bar for
+  // full-screen list/detail views. Leaves ink LIGHT; callers can draw extra
+  // header content (counters, etc.) afterwards.
+  void drawCenteredHeader(const char* title) {
+    setColor(LIGHT);
+    drawTextCentered(width() / 2, 0, title);
+    fillRect(0, headerH() - sepH(), width(), sepH());
+  }
+
   // Advance a UTF-8 pointer by one codepoint, returning the decoded value.
   // Invalid sequences return 0xFFFD and consume trailing continuation bytes.
   static uint32_t decodeCodepoint(const uint8_t*& p) {

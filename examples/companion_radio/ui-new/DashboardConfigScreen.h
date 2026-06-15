@@ -46,8 +46,7 @@ public:
     int start_y = display.listStart();
     int val_x   = display.valCol();
 
-    display.drawTextCentered(display.width() / 2, 0, "CLOCK FIELDS");
-    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+    display.drawCenteredHeader("CLOCK FIELDS");
 
     static const char* labels[] = { "Field 1", "Field 2", "Field 3" };
     for (int i = 0; i < FIELD_SLOTS; i++) {
@@ -72,8 +71,8 @@ public:
     }
     if (c == KEY_UP   && _sel > 0)              { _sel--; return true; }
     if (c == KEY_DOWN && _sel < FIELD_SLOTS - 1){ _sel++; return true; }
-    if (c == KEY_LEFT  || c == KEY_PREV)  { cycle(_sel, -1); return true; }
-    if (c == KEY_RIGHT || c == KEY_NEXT)  { cycle(_sel,  1); return true; }
+    if (keyIsPrev(c))  { cycle(_sel, -1); return true; }
+    if (keyIsNext(c))  { cycle(_sel,  1); return true; }
     if (c == KEY_ENTER)                   { cycle(_sel,  1); return true; }
     return false;
   }

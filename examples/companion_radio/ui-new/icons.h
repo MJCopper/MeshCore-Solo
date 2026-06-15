@@ -276,6 +276,28 @@ inline void drawScrollIndicator(DisplayDriver& d, int top_y, int track_h,
   miniIconDrawHalo(d, x, top_y + track_h - th, ICON_SCROLL_DOWN);
 }
 
+// Scrollable item-list skeleton shared by the list screens. Computes the visible
+// window from the font metrics, keeps `sel` in view, reserves the scroll-column,
+// draws each visible row through `row`, then the indicator. The callback
+// `row(idx, y, sel, reserve)` draws one item — including its own selection bar —
+// using `reserve` to keep right-aligned content clear of the indicator. Returns
+// the visible row count (callers cache it for input handling).
+template <class RenderRow>
+inline int drawList(DisplayDriver& d, int total, int sel, int& scroll, RenderRow row) {
+  const int item_h  = d.lineStep();
+  const int start_y = d.listStart();
+  int visible = d.listVisible(item_h);
+  if (visible < 1) visible = 1;
+  if (sel < scroll)            scroll = sel;
+  if (sel >= scroll + visible) scroll = sel - visible + 1;
+  if (scroll < 0) scroll = 0;
+  const int reserve = scrollIndicatorReserve(d, total, visible);
+  for (int i = 0; i < visible && (scroll + i) < total; i++)
+    row(scroll + i, start_y + i * item_h, scroll + i == sel, reserve);
+  drawScrollIndicator(d, start_y, visible * item_h, total, visible, scroll);
+  return visible;
+}
+
 // ── Big ASCII-art icons (skeleton, not yet used) ─────────────────────────────
 // Same authoring idea as the mini-icons but for full page glyphs up to 32 px
 // wide: one uint32_t per row. The existing XBM bitmaps below (logo/bluetooth/…)

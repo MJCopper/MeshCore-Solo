@@ -66,14 +66,9 @@ public:
       return _kb->render(display);
     }
 
-    int item_h  = display.lineStep();
-    int start_y = display.listStart();
-    int val_x   = display.valCol();
-    _visible    = display.listVisible(item_h);
-    if (_visible < 1) _visible = 1;
-    int reserve = scrollIndicatorReserve(display, ITEM_COUNT, _visible);
+    int val_x = display.valCol();
 
-    display.drawTextCentered(display.width() / 2, 0, "AUTO-REPLY BOT");
+    display.drawCenteredHeader("AUTO-REPLY BOT");
     // reply counter, right-aligned in the header
     uint16_t sent = the_mesh.botReplyCount();
     if (sent > 0) {
@@ -83,16 +78,12 @@ public:
       display.setCursor(display.width() - cw - 1, 0);
       display.print(cbuf);
     }
-    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
     static const char* labels[] = { "Enable", "Channel", "Trigger DM", "Reply DM",
                                     "Trigger Ch", "Reply Ch", "Commands",
                                     "Quiet from", "Quiet to" };
-    for (int vi = 0; vi < _visible && (_scroll + vi) < ITEM_COUNT; vi++) {
-      int i = _scroll + vi;
-      int y = start_y + vi * item_h;
-      bool sel = (i == _sel);
-      display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h, sel);
+    _visible = drawList(display, ITEM_COUNT, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
+      display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
       display.setCursor(2, y);
       display.print(labels[i]);
       display.setCursor(val_x, y);
@@ -131,16 +122,15 @@ public:
         }
       }
       display.setColor(DisplayDriver::LIGHT);
-    }
-    drawScrollIndicator(display, start_y, _visible * item_h, ITEM_COUNT, _visible, _scroll);
+    });
     return 2000;
   }
 
   bool handleInput(char c) override {
     bool up    = (c == KEY_UP);
     bool down  = (c == KEY_DOWN);
-    bool left  = (c == KEY_LEFT  || c == KEY_PREV);
-    bool right = (c == KEY_RIGHT || c == KEY_NEXT);
+    bool left  = keyIsPrev(c);
+    bool right = keyIsNext(c);
     bool enter = (c == KEY_ENTER);
     bool cancel = (c == KEY_CANCEL || c == KEY_CONTEXT_MENU);
 

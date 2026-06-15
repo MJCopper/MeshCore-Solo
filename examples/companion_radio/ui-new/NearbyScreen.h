@@ -569,8 +569,7 @@ public:
       snprintf(title, sizeof(title), "NEARBY %s %s",
                FILTER_LABELS[_filter], _sort == SORT_TIME ? "recent" : "dist");
     }
-    display.drawTextCentered(display.width() / 2, 0, title);
-    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+    display.drawCenteredHeader(title);
 
     if (_count == 0) {
       char empty[24];
@@ -588,11 +587,7 @@ public:
         display.drawTextCentered(display.width() / 2, display.height() / 2 + display.lineStep() / 2, hint);
       }
     } else {
-      int reserve = scrollIndicatorReserve(display, _count, _visible);
-      for (int i = 0; i < _visible && (_scroll + i) < _count; i++) {
-        int idx = _scroll + i;
-        bool sel = (idx == _sel);
-        int y = start_y + i * item_h;
+      _visible = drawList(display, _count, _sel, _scroll, [&](int idx, int y, bool sel, int reserve) {
         const Entry& e = _entries[idx];
 
         display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
@@ -623,9 +618,7 @@ public:
         }
         display.setCursor(display.width() - display.getTextWidth(right) - 2 - reserve, y);
         display.print(right);
-      }
-
-      drawScrollIndicator(display, start_y, _visible * item_h, _count, _visible, _scroll);
+      });
     }
 
     if (renderActivePopup(display)) return 50;
@@ -636,8 +629,7 @@ public:
   bool handleInput(char c) override {
     // ── navigate-to-node view — any nav key returns to detail ─────────────────
     if (_nav) {
-      if (c == KEY_CANCEL || c == KEY_LEFT || c == KEY_PREV ||
-          c == KEY_RIGHT  || c == KEY_NEXT) _nav = false;
+      if (c == KEY_CANCEL || keyIsPrev(c) || keyIsNext(c)) _nav = false;
       return true;
     }
 
@@ -647,7 +639,7 @@ public:
       // LEFT/RIGHT on the Sort row toggles the value in-place and rebuilds the
       // label; the popup stays open so the user can keep tapping. Other rows
       // swallow L/R. ENTER on Sort just closes (value changes via L/R only).
-      if (c == KEY_LEFT || c == KEY_RIGHT || c == KEY_PREV || c == KEY_NEXT) {
+      if (keyIsPrev(c) || keyIsNext(c)) {
         int i = _menu.selectedIndex();
         if (i >= 0 && i < _menu_action_count && _menu_actions[i] == ACT_SORT) {
           _sort = (_sort == SORT_DIST) ? SORT_TIME : SORT_DIST;

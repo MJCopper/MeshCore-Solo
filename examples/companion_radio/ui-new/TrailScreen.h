@@ -76,8 +76,7 @@ public:
                      :                      "TRAIL";
     char title[20];
     snprintf(title, sizeof(title), "%s %d/%d", base, (int)_view + 1, (int)V_COUNT);
-    display.drawTextCentered(display.width() / 2, 0, title);
-    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+    display.drawCenteredHeader(title);
 
     if      (_view == V_MAP)  renderMap(display);
     else if (_view == V_LIST) renderList(display);

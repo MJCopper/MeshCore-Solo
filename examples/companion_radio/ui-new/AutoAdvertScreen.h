@@ -30,8 +30,7 @@ public:
     int bar_h   = display.lineStep();
     int tip_y   = bar_y + bar_h + 4;
 
-    display.drawTextCentered(display.width() / 2, 0, "AUTO-ADVERT");
-    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+    display.drawCenteredHeader("AUTO-ADVERT");
 
     display.setCursor(2, label_y);
     display.print("Interval:");
@@ -56,8 +55,8 @@ public:
       _task->gotoToolsScreen();
       return true;
     }
-    bool right = (c == KEY_RIGHT || c == KEY_NEXT || c == KEY_ENTER);
-    bool left  = (c == KEY_LEFT  || c == KEY_PREV);
+    bool right = keyIsNext(c) || c == KEY_ENTER;
+    bool left  = keyIsPrev(c);
     if (right || left) {
       int idx = currentIdx();
       idx = right ? (idx + 1) % OPT_COUNT : (idx + OPT_COUNT - 1) % OPT_COUNT;

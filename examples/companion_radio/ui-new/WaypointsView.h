@@ -127,8 +127,7 @@ class WaypointsView {
 
   void renderAddForm(DisplayDriver& display) {
     display.setColor(DisplayDriver::LIGHT);
-    display.drawTextCentered(display.width() / 2, 0, "ADD WAYPOINT");
-    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+    display.drawCenteredHeader("ADD WAYPOINT");
     const int top  = display.listStart();
     const int step = display.lineStep();
     for (int i = 0; i < 4; i++) {
@@ -150,35 +149,25 @@ class WaypointsView {
     char title[24];
     snprintf(title, sizeof(title), "WAYPOINTS %d/%d",
              _task->waypoints().count(), WaypointStore::CAPACITY);
-    display.drawTextCentered(display.width() / 2, 0, title);
-    display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
+    display.drawCenteredHeader(title);
 
     int n     = wpListCount();
     int total = n + 1;                    // final row = "+ Add by coords"
-    const int top  = display.listStart();
     const int step = display.lineStep();
-    int vis = display.listVisible();
-    if (vis < 1) vis = 1;
-    if (_sel < _scroll)            _scroll = _sel;
-    if (_sel >= _scroll + vis)     _scroll = _sel - vis + 1;
 
     int32_t mylat, mylon; bool have = ownPos(mylat, mylon);
 
-    int reserve = scrollIndicatorReserve(display, total, vis);
-    for (int i = 0; i < vis && (_scroll + i) < total; i++) {
-      int row = _scroll + i;
-      int y = top + i * step;
-      bool sel = (row == _sel);
+    drawList(display, total, _sel, _scroll, [&](int row, int y, bool sel, int reserve) {
       display.drawSelectionRow(0, y - 1, display.width() - reserve, step - 1, sel);
 
       if (row == n) {                     // the synthetic "Add" row
         display.setCursor(2, y); display.print("+ Add by coords");
         display.setColor(DisplayDriver::LIGHT);
-        continue;
+        return;
       }
 
       int32_t tlat, tlon; const char* label;
-      if (!rowTarget(row, tlat, tlon, label)) continue;
+      if (!rowTarget(row, tlat, tlon, label)) return;
       char dist[12] = ""; int bw = 0;
       if (have) {
         geo::fmtDist(dist, sizeof(dist), geo::haversineKm(mylat, mylon, tlat, tlon), useImperial());
@@ -189,8 +178,7 @@ class WaypointsView {
       display.drawTextEllipsized(2, y, display.width() - 2 - bw - reserve, nm);
       if (dist[0]) { display.setCursor(display.width() - bw + 1 - reserve, y); display.print(dist); }
       display.setColor(DisplayDriver::LIGHT);
-    }
-    drawScrollIndicator(display, top, vis * step, total, vis, _scroll);
+    });
   }
 
   void renderWpNav(DisplayDriver& display) {
@@ -322,8 +310,7 @@ public:
 
     // Navigation view — any nav key returns to the list.
     if (_mode == NAV) {
-      if (c == KEY_CANCEL || c == KEY_LEFT || c == KEY_PREV ||
-          c == KEY_RIGHT  || c == KEY_NEXT) { _mode = LIST; }
+      if (c == KEY_CANCEL || keyIsPrev(c) || keyIsNext(c)) { _mode = LIST; }
       return true;
     }
 
