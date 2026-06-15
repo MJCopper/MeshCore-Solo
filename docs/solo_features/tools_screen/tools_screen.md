@@ -252,11 +252,38 @@ When the bot is enabled it listens to DMs by default. Channel monitoring is an o
 
 | Setting       | Description                                                                      |
 | ------------- | -------------------------------------------------------------------------------- |
-| Bot           | ON / OFF — enables DM listening                                                  |
-| Channel mode  | ON / OFF — additionally monitors a selected channel                              |
-| Channel       | Which channel to monitor (only relevant when channel mode is ON)                 |
-| Trigger       | Word or phrase that activates the reply (shared by both modes, case-insensitive) |
-| DM reply      | Reply text for DMs; supports `{time}` and `{loc}` placeholders                   |
-| Channel reply | Reply text for channel messages; supports `{time}` and `{loc}` placeholders      |
+| Enable        | ON / OFF — enables DM listening                                                  |
+| Channel       | OFF, or which channel to additionally monitor (cycles through your channels)     |
+| Trigger DM    | Word or phrase that activates the DM reply (case-insensitive). A lone `*` means **reply to every DM** (away mode) and is shown as `(any msg)`. |
+| Reply DM      | Reply text for DMs; supports `{time}`, `{loc}` and sensor placeholders           |
+| Trigger Ch    | Independent trigger for the monitored channel. `*` means **reply to every channel message** — bounded by the per-channel cooldown, but use sparingly on a busy channel. |
+| Reply Ch      | Reply text for channel messages; supports the same placeholders                  |
+| Commands      | ON / OFF — answer `!` query commands (see below)                                 |
+| Quiet from/to | Local-time window during which auto-replies stay silent; set both equal (`OFF`) to disable |
 
-A 10-second cooldown prevents repeated replies in quick succession.
+The DM and channel triggers are independent, so you can run e.g. an away-message (`*`) in DMs while the channel reacts only to a specific keyword (or vice-versa).
+
+The header shows a running count of auto-replies sent since boot.
+
+**Throttle.** Auto-replies are rate-limited **per contact** (10 s), so a second sender is never starved while one contact is on cooldown. The channel bot keeps a single 10 s cooldown and won't echo a message identical to its own reply (so two bots running the same reply text on one channel can't ping-pong); the cooldown caps any residual back-and-forth.
+
+**Quiet hours** suppress the push (trigger) replies between the configured local hours; a window where *from* is later than *to* wraps past midnight. Commands are a pull (explicitly requested), so they answer even during quiet hours.
+
+### Commands
+
+With **Commands** ON, a DM beginning with `!` is answered with live node data, independent of the trigger:
+
+| Command   | Reply                                   |
+| --------- | --------------------------------------- |
+| `!ping`   | `pong`                                  |
+| `!batt`   | battery voltage                         |
+| `!loc`    | GPS coordinates (or `no GPS`)           |
+| `!time`   | local time `HH:MM`                      |
+| `!temp`   | temperature (or `n/a` if no sensor)     |
+| `!hops`   | how many hops the command message took to reach the node (`direct` if heard directly) |
+| `!status` | combined battery / location / time      |
+| `!help`   | list of available commands              |
+
+Several commands can be combined in one message — `!batt !time !hops` is answered with a single `4.10V | 14:30 | 3 hops` reply (one transmission). A message with no recognised command falls through to the trigger bot.
+
+Commands also work on the **monitored channel** (the one selected for channel mode) — anyone there can query the node. Channel replies are broadcast to everyone, so unlike DM commands they respect quiet hours and use the shared per-channel cooldown. DM commands use the per-contact throttle.

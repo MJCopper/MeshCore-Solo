@@ -57,9 +57,13 @@ struct NodePrefs {  // persisted to file
   uint8_t  bot_enabled;         // 0=disabled, 1=DM bot active (responds to all DMs)
   uint8_t  bot_channel_enabled; // 0=disabled, 1=channel bot active for bot_channel_idx
   uint8_t  bot_channel_idx;     // channel index for channel bot
-  char     bot_trigger[64];     // trigger phrase (case-insensitive contains match)
+  char     bot_trigger[64];     // DM trigger phrase (case-insensitive contains; "*" = any DM)
   char     bot_reply_dm[140];   // auto-reply text for DM
   char     bot_reply_ch[140];   // auto-reply text for channel
+  char     bot_trigger_ch[64];  // channel trigger phrase (independent of DM; "*" = any channel msg)
+  uint8_t  bot_commands_enabled; // 0=off, 1=answer !ping/!batt/!loc/!time/!help DM commands
+  uint8_t  bot_quiet_start;     // quiet-hours start hour, local 0-23 (start==end → disabled)
+  uint8_t  bot_quiet_end;       // quiet-hours end hour, local 0-23
   uint8_t  clock_hide_seconds; // 0=show HH:MM:SS/refresh 1s (default), 1=hide/refresh 60s
   uint8_t  clock_12h;          // 0=24h (default), 1=12h with AM/PM
   uint8_t  buzzer_auto;        // 0=manual (default), 1=auto-mute when BT connected
@@ -140,7 +144,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE000A;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE000C;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage

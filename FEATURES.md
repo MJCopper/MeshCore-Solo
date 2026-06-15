@@ -493,14 +493,9 @@ Tools › Stats:
 
 Read-only. UP/DOWN switches between metrics. Bottom shows current value as text.
 
-### Auto-reply trigger words with sensor placeholders
+### ✅ Auto-reply query commands with live data
 
-Bot already has a single trigger word. Extend to a small table of (trigger, reply-with-placeholder) pairs:
-- "temp?" → replies with `{temp}`
-- "loc?" → replies with `{loc}`
-- "batt?" → replies with `{batt}`
-
-Stored in NodePrefs as fixed-size table (say 4 pairs × 16 B). UI: edit pairs in Tools › Auto-Reply Bot.
+Realised as a **command bot** rather than a trigger/reply table: with **Commands** ON, a DM is scanned for `!word` tokens and answered with live node data via `expandMsg` — `!batt`/`!loc`/`!time`/`!temp`/`!status`/`!ping`/`!help`, plus `!hops` (per-message hop count via `getPathHashCount()`, `direct` if heard directly). Multiple commands in one message are merged into a single ` | `-joined reply (one transmission/throttle/counter tick) via the shared `botScanCommands`. Works in DMs (per-contact throttle, ignores quiet hours — a pull) and on the bot's **monitored channel** (broadcast: per-channel cooldown, respects quiet hours). Toggled independently of the trigger bot. See [`MyMeshBot.h`](examples/companion_radio/MyMeshBot.h) `tryBotCommand` / `tryBotChannelCommand` / `botCommandReply`.
 
 ### ✅ Lock-screen unread count
 
@@ -774,7 +769,7 @@ Pub-key line is skipped entirely when `max_chars < 4` instead of feeding a negat
 
 ### 📋 `expandMsg` GPS validity test treats (0, 0) as invalid
 
-[`MyMeshBot.h:23, 60`](examples/companion_radio/MyMeshBot.h#L23)
+[`MyMeshBot.h:95, 132, 182`](examples/companion_radio/MyMeshBot.h#L95)
 
 ```cpp
 sensors.node_lat != 0.0 || sensors.node_lon != 0.0  // proxy for "valid GPS"
@@ -798,9 +793,9 @@ Safe today (CAPACITY=512 fits), fragile if CAPACITY grows past 65535.
 
 ### 📋 Bot `strstr` on truncated 199-char buffer
 
-[`MyMeshBot.h:14-17`](examples/companion_radio/MyMeshBot.h#L14-L17)
+[`MyMeshBot.h:22-25`](examples/companion_radio/MyMeshBot.h#L22-L25)
 
-Trigger word near the end of a >199-character message will not match.
+Trigger word near the end of a >199-character message will not match. Matching is now centralised in `botTriggerMatches()` (single `BOT_SCRATCH`-sized buffer), so a fix would land in one place.
 
 ### ✅ `strncpy("?", buf, sizeof(buf))` replaced with `strcpy`
 

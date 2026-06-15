@@ -569,7 +569,13 @@ void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t 
   markConnectionActive(from); // in case this is from a server, and we have a connection
   queueMessage(from, TXT_TYPE_PLAIN, pkt, sender_timestamp, NULL, 0, text);
 
-  tryBotReplyDM(from, text);
+  // hop count of the received message. getPathHashCount() (low 6 bits of path_len)
+  // is the number of repeaters traversed — the same value the mesh uses for flood
+  // retransmit priority. 0 = heard directly. (Raw path_len is a size/count
+  // bitfield for transport packets, so it must not be used directly.)
+  uint8_t hops = pkt ? pkt->getPathHashCount() : 0;
+  if (!tryBotCommand(from, text, hops))  // commands take priority; fall through to trigger reply
+    tryBotReplyDM(from, text);
 }
 
 void MyMesh::onCommandDataRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
@@ -639,7 +645,9 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   if (_ui) _ui->newMsg(path_len, channel_name, text, offline_queue_len, 0);
 #endif
 
-  tryBotReplyChannel(channel_idx, text);
+  // hop count for !hops (see onMessageRecv); not the wire path_len above.
+  if (!tryBotChannelCommand(channel_idx, text, pkt->getPathHashCount()))  // commands take priority
+    tryBotReplyChannel(channel_idx, text);
 }
 
 void MyMesh::onChannelDataRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint16_t data_type,
@@ -1217,8 +1225,9 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _last_relay_seq = 0;
   offline_queue_len = 0;
   app_target_ver = 0;
-  _bot_last_dm_reply_ms = 0;
   _bot_last_ch_reply_ms = 0;
+  memset(_bot_dm_log, 0, sizeof(_bot_dm_log));
+  _bot_reply_count = 0;
   _next_auto_advert_ms = 0;
   clearPendingReqs();
   next_ack_idx = 0;
@@ -1262,6 +1271,10 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.bot_trigger[0] = '\0';
   _prefs.bot_reply_dm[0] = '\0';
   _prefs.bot_reply_ch[0] = '\0';
+  _prefs.bot_trigger_ch[0] = '\0';
+  _prefs.bot_commands_enabled = 0;
+  _prefs.bot_quiet_start = 0;
+  _prefs.bot_quiet_end = 0;       // start==end → quiet hours disabled
   _prefs.dm_show_all = 1;        // show all contacts by default
   _prefs.dm_resend_count = 2;    // auto-resend on-device DMs twice by default
   memset(_prefs.dm_notif, 0, sizeof(_prefs.dm_notif));

@@ -325,6 +325,15 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.rx_powersave,        sizeof(_prefs.rx_powersave));
   rd(&_prefs.tx_apc,              sizeof(_prefs.tx_apc));
   rd(&_prefs.dm_resend_count,     sizeof(_prefs.dm_resend_count));
+  rd(&_prefs.bot_commands_enabled, sizeof(_prefs.bot_commands_enabled));
+  rd(&_prefs.bot_quiet_start,     sizeof(_prefs.bot_quiet_start));
+  rd(&_prefs.bot_quiet_end,       sizeof(_prefs.bot_quiet_end));
+  rd(_prefs.bot_trigger_ch,       sizeof(_prefs.bot_trigger_ch));
+  // → 0xC0DE000B: append bot_commands_enabled + quiet-hours. Older files leave
+  // stray bytes here; clamp so upgraders fall back to off / no quiet hours.
+  if (_prefs.bot_commands_enabled > 1)  _prefs.bot_commands_enabled = 0;
+  if (_prefs.bot_quiet_start > 23)      _prefs.bot_quiet_start = 0;
+  if (_prefs.bot_quiet_end   > 23)      _prefs.bot_quiet_end   = 0;
   // These fields were appended over successive schema bumps; an older file
   // can leave stray bytes here, so clamp out-of-range values back to defaults.
   // Values for notif_melody_ad: 0=built-in, 1=melody1, 2=melody2, 3=none.
@@ -366,6 +375,11 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     // upgraders fall back to built-in advert sound + metric + speed + All.
     // → 0xC0DE0009: append tx_apc after rx_powersave. Clamped above, so
     // upgraders fall back to APC off (fixed tx power).
+    // → 0xC0DE000C: split out a per-channel trigger (was shared with the DM
+    // trigger). Pre-0x0C files have no bot_trigger_ch; seed it from bot_trigger
+    // so an existing channel bot keeps reacting to the same word after upgrade.
+    if (_prefs.bot_trigger_ch[0] == '\0')
+      strncpy(_prefs.bot_trigger_ch, _prefs.bot_trigger, sizeof(_prefs.bot_trigger_ch) - 1);
   }
 
   file.close();
@@ -461,6 +475,10 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.rx_powersave,        sizeof(_prefs.rx_powersave));
     file.write((uint8_t *)&_prefs.tx_apc,              sizeof(_prefs.tx_apc));
     file.write((uint8_t *)&_prefs.dm_resend_count,     sizeof(_prefs.dm_resend_count));
+    file.write((uint8_t *)&_prefs.bot_commands_enabled, sizeof(_prefs.bot_commands_enabled));
+    file.write((uint8_t *)&_prefs.bot_quiet_start,     sizeof(_prefs.bot_quiet_start));
+    file.write((uint8_t *)&_prefs.bot_quiet_end,       sizeof(_prefs.bot_quiet_end));
+    file.write((uint8_t *)_prefs.bot_trigger_ch,       sizeof(_prefs.bot_trigger_ch));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL.
     uint32_t sentinel = NodePrefs::SCHEMA_SENTINEL;

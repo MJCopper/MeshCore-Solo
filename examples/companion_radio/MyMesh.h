@@ -245,9 +245,20 @@ public:
   // To check if there is pending work
   bool hasPendingWork() const;
 
+  // Number of auto-replies sent since boot (DM + channel). Shown on BotScreen.
+  uint16_t botReplyCount() const { return _bot_reply_count; }
+
 private:
   void tryBotReplyDM(const ContactInfo& from, const char* text);
   void tryBotReplyChannel(uint8_t channel_idx, const char* text);
+  bool tryBotCommand(const ContactInfo& from, const char* text, uint8_t hops);          // DM commands
+  bool tryBotChannelCommand(uint8_t channel_idx, const char* text, uint8_t hops);       // channel commands
+  bool botCommandReply(const char* cmd, uint8_t hops, uint32_t ts, char* out, int out_len);  // one command → reply text
+  int  botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* out, int out_len); // scan "!word"s → combined reply, returns count
+  bool botTriggerMatches(const char* trigger, const char* body, bool allow_wildcard) const;
+  bool botInQuietHours() const;               // true when auto-replies should stay silent
+  bool botDmAllowed(const uint8_t* pubkey);   // per-contact DM throttle: ok to reply?
+  void botDmRecord(const uint8_t* pubkey);    // remember we just replied to this contact
 
   void writeOKFrame();
   void writeErrFrame(uint8_t err_code);
@@ -320,9 +331,15 @@ private:
   uint8_t *sign_data;
   uint32_t sign_data_len;
   unsigned long dirty_contacts_expiry;
-  unsigned long _bot_last_dm_reply_ms;
   unsigned long _bot_last_ch_reply_ms;
   unsigned long _next_auto_advert_ms;
+
+  // Per-contact DM reply throttle: a small ring of the most recent recipients so
+  // one chatty contact can't be spammed while a different sender is still served.
+  struct BotReplyLog { uint8_t key[4]; unsigned long t_ms; bool used; };
+  static const int BOT_DM_LOG_SIZE = 8;
+  BotReplyLog _bot_dm_log[BOT_DM_LOG_SIZE];
+  uint16_t    _bot_reply_count;   // total auto-replies sent since boot
 
   TransportKey send_scope;
 

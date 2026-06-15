@@ -6,14 +6,17 @@ class BotScreen : public UIScreen {
   UITask*    _task;
   NodePrefs* _prefs;
 
-  // Items: 0=Enable(DM), 1=Channel, 2=Trigger, 3=Reply DM, 4=Reply Ch
-  static const int ITEM_COUNT = 5;
+  // Items: 0=Enable(DM), 1=Channel, 2=Trigger DM, 3=Reply DM, 4=Trigger Ch,
+  //        5=Reply Ch, 6=Commands, 7=Quiet from, 8=Quiet to
+  static const int ITEM_COUNT = 9;
 
   int  _sel;
+  int  _scroll;    // index of first visible item
+  int  _visible;   // items fitting on screen; updated each render, used by handleInput
   bool _dirty;
 
   // keyboard state (reused for trigger and reply fields)
-  int             _kb_field;   // -1=off, 2=trigger, 3=reply DM, 4=reply Ch
+  int             _kb_field;   // -1=off, else the item index being edited (2..5)
   KeyboardWidget* _kb;
 
   // channel cache (refreshed on enter)
@@ -29,6 +32,12 @@ class BotScreen : public UIScreen {
     }
   }
 
+  // Keep the selected row inside the visible window (_visible set by render()).
+  void scrollToSel() {
+    if (_sel < _scroll) _scroll = _sel;
+    else if (_sel >= _scroll + _visible) _scroll = _sel - _visible + 1;
+  }
+
   // Returns index into _channel_indices[] for current bot_channel_idx, or -1 if not found/disabled.
   int currentChannelListIdx() const {
     if (!_prefs->bot_channel_enabled) return -1;
@@ -42,6 +51,8 @@ public:
 
   void enter() {
     _sel      = 0;
+    _scroll   = 0;
+    _visible  = 1;
     _kb_field = -1;
     _dirty    = false;
     refreshChannels();
@@ -55,18 +66,30 @@ public:
       return _kb->render(display);
     }
 
-    int avail_h = display.height() - display.listStart();
     int item_h  = display.lineStep();
-    if (item_h * ITEM_COUNT > avail_h) item_h = avail_h / ITEM_COUNT;
     int start_y = display.listStart();
     int val_x   = display.valCol();
+    _visible    = display.listVisible(item_h);
+    if (_visible < 1) _visible = 1;
 
     display.drawTextCentered(display.width() / 2, 0, "AUTO-REPLY BOT");
+    // reply counter, right-aligned in the header
+    uint16_t sent = the_mesh.botReplyCount();
+    if (sent > 0) {
+      char cbuf[12];
+      snprintf(cbuf, sizeof(cbuf), "%u", (unsigned)sent);
+      int cw = display.getTextWidth(cbuf);
+      display.setCursor(display.width() - cw - 1, 0);
+      display.print(cbuf);
+    }
     display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
 
-    static const char* labels[] = { "Enable", "Channel", "Trigger", "Reply DM", "Reply Ch" };
-    for (int i = 0; i < ITEM_COUNT; i++) {
-      int y = start_y + i * item_h;
+    static const char* labels[] = { "Enable", "Channel", "Trigger DM", "Reply DM",
+                                    "Trigger Ch", "Reply Ch", "Commands",
+                                    "Quiet from", "Quiet to" };
+    for (int vi = 0; vi < _visible && (_scroll + vi) < ITEM_COUNT; vi++) {
+      int i = _scroll + vi;
+      int y = start_y + vi * item_h;
       bool sel = (i == _sel);
       display.drawSelectionRow(0, y - 1, display.width(), item_h, sel);
       display.setCursor(2, y);
@@ -85,18 +108,31 @@ public:
           else
             display.print("?");
         }
-      } else if (i == 2) {
-        const char* tr = _prefs->bot_trigger;
-        display.drawTextEllipsized(val_x, y, display.width() - val_x - 1, tr[0] ? tr : "(none)");
-      } else if (i == 3) {
-        const char* rp = _prefs->bot_reply_dm;
+      } else if (i == 2 || i == 4) {
+        const char* tr = (i == 2) ? _prefs->bot_trigger : _prefs->bot_trigger_ch;
+        const char* shown = !tr[0] ? "(none)"
+                          : (tr[0] == '*' && !tr[1]) ? "(any msg)"   // wildcard / away mode
+                                                     : tr;
+        display.drawTextEllipsized(val_x, y, display.width() - val_x - 1, shown);
+      } else if (i == 3 || i == 5) {
+        const char* rp = (i == 3) ? _prefs->bot_reply_dm : _prefs->bot_reply_ch;
         display.drawTextEllipsized(val_x, y, display.width() - val_x - 1, rp[0] ? rp : "(none)");
-      } else {
-        const char* rp = _prefs->bot_reply_ch;
-        display.drawTextEllipsized(val_x, y, display.width() - val_x - 1, rp[0] ? rp : "(none)");
+      } else if (i == 6) {
+        display.print(_prefs->bot_commands_enabled ? "ON" : "OFF");
+      } else {  // i == 7 (quiet from) or i == 8 (quiet to)
+        bool off = (_prefs->bot_quiet_start == _prefs->bot_quiet_end);
+        if (off) {
+          display.print("OFF");
+        } else {
+          char hb[8];
+          snprintf(hb, sizeof(hb), "%02d:00", i == 7 ? _prefs->bot_quiet_start : _prefs->bot_quiet_end);
+          display.print(hb);
+        }
       }
       display.setColor(DisplayDriver::LIGHT);
     }
+    display.drawScrollArrows(start_y, start_y + (_visible - 1) * item_h,
+                             _scroll > 0, _scroll + _visible < ITEM_COUNT);
     return 2000;
   }
 
@@ -111,16 +147,9 @@ public:
     if (_kb_field >= 0) {
       auto res = _kb->handleInput(c);
       if (res == KeyboardWidget::DONE) {
-        if (_kb_field == 2) {
-          strncpy(_prefs->bot_trigger, _kb->buf, sizeof(_prefs->bot_trigger) - 1);
-          _prefs->bot_trigger[sizeof(_prefs->bot_trigger) - 1] = '\0';
-        } else if (_kb_field == 3) {
-          strncpy(_prefs->bot_reply_dm, _kb->buf, sizeof(_prefs->bot_reply_dm) - 1);
-          _prefs->bot_reply_dm[sizeof(_prefs->bot_reply_dm) - 1] = '\0';
-        } else {
-          strncpy(_prefs->bot_reply_ch, _kb->buf, sizeof(_prefs->bot_reply_ch) - 1);
-          _prefs->bot_reply_ch[sizeof(_prefs->bot_reply_ch) - 1] = '\0';
-        }
+        char* dst = fieldBuf(_kb_field);
+        int   cap = fieldCap(_kb_field);
+        if (dst) { strncpy(dst, _kb->buf, cap - 1); dst[cap - 1] = '\0'; }
         _dirty    = true;
         _kb_field = -1;
       } else if (res == KeyboardWidget::CANCELLED) {
@@ -134,8 +163,8 @@ public:
       _task->gotoToolsScreen();
       return true;
     }
-    if (up   && _sel > 0) { _sel--; return true; }
-    if (down && _sel < ITEM_COUNT - 1) { _sel++; return true; }
+    if (up   && _sel > 0)              { _sel--; scrollToSel(); return true; }
+    if (down && _sel < ITEM_COUNT - 1) { _sel++; scrollToSel(); return true; }
 
     if (_sel == 0 && (enter || left || right)) {
       _prefs->bot_enabled ^= 1;
@@ -165,28 +194,46 @@ public:
         return true;
       }
     }
-    if ((_sel == 2 || _sel == 3 || _sel == 4) && enter) {
+    if (_sel == 6 && (enter || left || right)) {
+      _prefs->bot_commands_enabled ^= 1;
+      _dirty = true;
+      return true;
+    }
+    if ((_sel == 7 || _sel == 8) && (left || right)) {
+      uint8_t& h = (_sel == 7) ? _prefs->bot_quiet_start : _prefs->bot_quiet_end;
+      h = right ? (h + 1) % 24 : (h + 23) % 24;
+      _dirty = true;
+      return true;
+    }
+    if ((_sel == 2 || _sel == 3 || _sel == 4 || _sel == 5) && enter) {
       _kb_field = _sel;
-      const char* initial;
-      int max;
-      if (_sel == 2) {
-        initial = _prefs->bot_trigger;
-        max     = sizeof(_prefs->bot_trigger) - 1;
-      } else if (_sel == 3) {
-        initial = _prefs->bot_reply_dm;
-        max     = sizeof(_prefs->bot_reply_dm) - 1;
-      } else {
-        initial = _prefs->bot_reply_ch;
-        max     = sizeof(_prefs->bot_reply_ch) - 1;
-      }
-      _kb->begin(initial, max);
-      if (_sel == 2) {
-        _kb->clearPlaceholders();  // trigger is literal text — placeholders never match incoming msgs
-      } else {
-        kbAddSensorPlaceholders(*_kb, &sensors);
-      }
+      _kb->begin(fieldBuf(_sel), fieldCap(_sel) - 1);
+      bool is_trigger = (_sel == 2 || _sel == 4);
+      if (is_trigger) _kb->clearPlaceholders();  // trigger is literal — placeholders never match
+      else            kbAddSensorPlaceholders(*_kb, &sensors);
       return true;
     }
     return false;
+  }
+
+private:
+  // Maps a keyboard-editable item index to its backing string + capacity.
+  char* fieldBuf(int item) {
+    switch (item) {
+      case 2: return _prefs->bot_trigger;
+      case 3: return _prefs->bot_reply_dm;
+      case 4: return _prefs->bot_trigger_ch;
+      case 5: return _prefs->bot_reply_ch;
+      default: return nullptr;
+    }
+  }
+  int fieldCap(int item) {
+    switch (item) {
+      case 2: return sizeof(_prefs->bot_trigger);
+      case 3: return sizeof(_prefs->bot_reply_dm);
+      case 4: return sizeof(_prefs->bot_trigger_ch);
+      case 5: return sizeof(_prefs->bot_reply_ch);
+      default: return 0;
+    }
   }
 };
