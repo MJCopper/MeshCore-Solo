@@ -2,6 +2,7 @@
 
 #include <helpers/ui/DisplayDriver.h>
 #include <Arduino.h>
+#include "icons.h"
 
 static const int FS_CHARS_MAX = 80;  // max bytes per wrapped line
 
@@ -103,6 +104,12 @@ struct FullscreenMsgView {
     display.translateUTF8ToBlocks(trans_text, body, sizeof(trans_text));
     char lines[12][FS_CHARS_MAX];
     int lcount = wrapLines(display, trans_text, max_px, lines, 12);
+    // Reserve the right-edge column for the scroll indicator and re-wrap so text
+    // can't run under it. Reserve appears only once the list overflows, and a
+    // narrower second pass only ever yields more lines — so it stays overflowing.
+    int reserve = scrollIndicatorReserve(display, lcount, visible);
+    if (reserve > 0)
+      lcount = wrapLines(display, trans_text, max_px - reserve, lines, 12);
     int max_scroll = lcount > visible ? lcount - visible : 0;
     if (scroll > max_scroll) scroll = max_scroll;
 
@@ -110,20 +117,7 @@ struct FullscreenMsgView {
       display.setCursor(0, startY + i * lineH);
       display.print(lines[scroll + i]);
     }
-    if (scroll > 0) {
-      display.setColor(DisplayDriver::DARK);
-      display.fillRect(display.width() - cw, startY, cw, lineH);
-      display.setColor(DisplayDriver::LIGHT);
-      display.setCursor(display.width() - cw, startY);
-      display.print("^");
-    }
-    if (scroll < max_scroll) {
-      display.setColor(DisplayDriver::DARK);
-      display.fillRect(display.width() - cw, startY + (visible - 1) * lineH, cw, lineH);
-      display.setColor(DisplayDriver::LIGHT);
-      display.setCursor(display.width() - cw, startY + (visible - 1) * lineH);
-      display.print("v");
-    }
+    drawScrollIndicator(display, startY, visible * lineH, lcount, visible, scroll);
     const int nav_y = display.height() - lineH;
     if (has_next) {
       display.setCursor(0, nav_y);
