@@ -217,8 +217,11 @@ MINI_ICON(ICON_SCROLL_DOWN, 5, // ▼
 // list fits and no indicator is drawn. Subtract from a row's content width so
 // text never runs under the scrollbar. Mirrors the column math below (5*scale
 // triangle + 1px gap).
+inline int scrollIndicatorColWidth(DisplayDriver& d) {
+  return 5 * miniIconScale(d) + 1;            // triangle (5*scale) + 1px gap
+}
 inline int scrollIndicatorReserve(DisplayDriver& d, int total, int visible) {
-  return (total > visible) ? 5 * miniIconScale(d) + 1 : 0;
+  return (total > visible) ? scrollIndicatorColWidth(d) : 0;
 }
 
 // Right-edge scroll indicator: a proportional track + thumb topped/tailed with
@@ -228,14 +231,22 @@ inline int scrollIndicatorReserve(DisplayDriver& d, int total, int visible) {
 // right edge and scales with the font (mini-icon scale).
 //   top_y   : y of the first visible row (top of the viewport)
 //   track_h : pixel height of the viewport (e.g. visible_rows * row_pitch)
-//   total   : total number of items
-//   visible : items shown at once
-//   first   : index of the first visible item (scroll offset)
-inline void drawScrollIndicator(DisplayDriver& d, int top_y, int track_h,
-                                int total, int visible, int first) {
-  if (total <= visible || track_h <= 0) return;   // whole list fits — no indicator
-  if (first < 0) first = 0;
-  if (first > total - visible) first = total - visible;
+//
+// Core takes the proportions in arbitrary units. For uniform-height lists pass
+// item counts (see the item wrapper below). For variable-height lists (e.g. the
+// portrait DM history, where each message box wraps to a different height) pass
+// pixel sums — total_px = Σ all box heights, view_px = pixels currently on
+// screen, scroll_px = pixels above the first visible box — so the thumb size and
+// position track real content extent instead of jumping as box counts fluctuate.
+//   total_px  : total extent of the whole list (items or pixels)
+//   view_px   : extent currently visible
+//   scroll_px : extent scrolled past (offset of the first visible item)
+inline void drawScrollIndicatorPx(DisplayDriver& d, int top_y, int track_h,
+                                  long total_px, long view_px, long scroll_px) {
+  if (total_px <= view_px || track_h <= 0) return;  // whole list fits — no indicator
+  const long span = total_px - view_px;             // > 0 here
+  if (scroll_px < 0) scroll_px = 0;
+  if (scroll_px > span) scroll_px = span;
 
   const int s    = miniIconScale(d);
   const int col  = 5 * s;                  // triangle / column width
@@ -254,11 +265,10 @@ inline void drawScrollIndicator(DisplayDriver& d, int top_y, int track_h,
   const int bar_w = 3 * s;                  // odd width → centres exactly in the 5*s column
   const int bar_x = x + (col - bar_w) / 2;
 
-  int thumb_h = (int)((long)band * visible / total);
+  int thumb_h = (int)((long)band * view_px / total_px);
   if (thumb_h < th) thumb_h = th;
   if (thumb_h > band)  thumb_h = band;
-  const int span    = total - visible;     // > 0 here (total > visible)
-  const int thumb_y = band_t + (int)((long)(band - thumb_h) * first / span);
+  const int thumb_y = band_t + (int)((long)(band - thumb_h) * scroll_px / span);
 
   // Each marker is drawn with a 1px DARK halo: invisible on a normal (dark) row,
   // but on the LIGHT selection bar it carves out contrast so the LIGHT marker
@@ -274,6 +284,16 @@ inline void drawScrollIndicator(DisplayDriver& d, int top_y, int track_h,
   // separator sitting one pixel above the list area.
   miniIconDrawHalo(d, x, top_y, ICON_SCROLL_UP, top_y);
   miniIconDrawHalo(d, x, top_y + track_h - th, ICON_SCROLL_DOWN);
+}
+
+// Uniform-height wrapper: one item = one unit. Drop-in replacement for
+// DisplayDriver::drawScrollArrows.
+//   total   : total number of items
+//   visible : items shown at once
+//   first   : index of the first visible item (scroll offset)
+inline void drawScrollIndicator(DisplayDriver& d, int top_y, int track_h,
+                                int total, int visible, int first) {
+  drawScrollIndicatorPx(d, top_y, track_h, total, visible, first);
 }
 
 // Scrollable item-list skeleton shared by the list screens. Computes the visible

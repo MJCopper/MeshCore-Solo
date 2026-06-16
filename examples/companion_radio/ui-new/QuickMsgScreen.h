@@ -150,6 +150,59 @@ class QuickMsgScreen : public UIScreen {
                 &sensors, batt);
   }
 
+  // Scrollbar metrics for a history list. The track is pinned to the full list
+  // area (top_y..cby) so it never resizes with content; only the thumb sizes and
+  // moves. `need` also drives the gutter reserve so wide message boxes don't
+  // reflow as messages arrive.
+  struct HistScroll { bool need; int reserve; long total_px, scroll_px; int view_px; };
+
+  // `getBody(idx)` returns the body text for list item idx (the part that wraps),
+  // or nullptr to fall back to a fixed 2-line box.
+  template <class GetBody>
+  HistScroll computeHistScroll(DisplayDriver& display, bool portrait, int count, int scroll,
+                               int hist_start_y, int cby, int lh, GetBody getBody) {
+    HistScroll r{};
+    const int fixed_bh = 2 * lh + 1;
+    const int top_y    = hist_start_y + 1;
+    r.view_px = cby - top_y;                  // fixed track height = full list area
+    if (r.view_px < 1) r.view_px = 1;
+    const int col = scrollIndicatorColWidth(display);
+
+    if (!portrait) {                          // uniform 2-line boxes → exact pixel math
+      const int box = fixed_bh + 1;
+      r.total_px  = (long)count * box;
+      r.scroll_px = (long)scroll * box;
+      r.need      = r.total_px > r.view_px;
+      r.reserve   = r.need ? col : 0;
+      if (!r.need) r.scroll_px = 0;
+      return r;
+    }
+
+    const int sp = 2;                         // portrait inter-box spacing
+    auto boxH = [&](int idx, int rsv) -> int {
+      const char* body = getBody(idx);
+      if (!body) return fixed_bh;
+      display.translateUTF8ToBlocks(s_wrap_trans, skipReplyPrefix(body), sizeof(s_wrap_trans));
+      int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - rsv, s_wrap_lines, 8);
+      return (1 + (nl > 0 ? nl : 1)) * lh + 1;
+    };
+    // Scrollbar-needed test at the WIDEST layout (reserve 0 → fewest wrap lines →
+    // shortest total). If even this overflows the list area the gutter is truly
+    // needed, so it stays put and can't flicker in/out as messages arrive.
+    int cur = hist_start_y, fit = 0;
+    for (int i = 0; i < count; i++) { int bh = boxH(i, 0); if (cur + bh > cby) break; fit++; cur += bh + sp; }
+    r.need    = fit < count;
+    r.reserve = r.need ? col : 0;
+    if (r.need) {                             // sum real box heights at the final width
+      for (int i = 0; i < count; i++) {
+        long ext = boxH(i, r.reserve) + sp;
+        r.total_px += ext;
+        if (i < scroll) r.scroll_px += ext;
+      }
+    }
+    return r;
+  }
+
   // Strip "@[nick] " reply prefix from a message body for compact list display.
   static const char* skipReplyPrefix(const char* text) {
     if (text[0] == '@' && text[1] == '[') {
@@ -952,10 +1005,16 @@ public:
       bool portrait_expand = (display.height() > display.width());
       const int MAX_VIS_BOXES = 8;
       int box_ys[MAX_VIS_BOXES], box_hs[MAX_VIS_BOXES], n_vis = 0;
-      // Scrollbar gutter, from last frame's visible count (this frame's isn't
-      // known until the layout loop runs); keeps portrait wrap width and the box
-      // width consistent so wrapped text never spills under the scrollbar.
-      int reserve = scrollIndicatorReserve(display, dm_count, _hist_visible);
+      // Fixed-track scrollbar metrics + a stable gutter reserve (decided by a
+      // whole-list fit test, not last frame's visible count) so message boxes
+      // don't reflow their width as messages arrive.
+      HistScroll hs = computeHistScroll(display, portrait_expand, dm_count, _dm_hist_scroll,
+          hist_start_y, cby, lh,
+          [&](int idx) -> const char* {
+            int rp = dmHistEntryForContact(_sel_contact.id.pub_key, idx);
+            return rp >= 0 ? _dm_hist[rp].text : nullptr;
+          });
+      int reserve = hs.reserve;
       {
         const int fixed_bh = 2 * lh + 1;
         int cur_y = hist_start_y;
@@ -1021,11 +1080,11 @@ public:
         display.drawTextCentered(display.width()/2, display.height()/2, "No messages yet");
       }
 
-      {
-        int arrow_y = (n_vis > 0) ? box_ys[n_vis - 1] + box_hs[n_vis - 1] - lh : hist_start_y;
-        drawScrollIndicator(display, hist_start_y + 1, arrow_y + lh - (hist_start_y + 1),
-                            dm_count, _hist_visible, _dm_hist_scroll);
-      }
+      // Scrollbar: track pinned to the full list area; thumb sized/positioned
+      // from hs's pixel metrics (stable while scrolling the same list).
+      if (hs.need)
+        drawScrollIndicatorPx(display, hist_start_y + 1, hs.view_px,
+                              hs.total_px, hs.view_px, hs.scroll_px);
 
       bool compose_sel = (_dm_hist_sel == -1);
       const char* ctxt = "[+ send]";
@@ -1090,8 +1149,17 @@ public:
       bool portrait_expand = (display.height() > display.width());
       const int MAX_VIS_BOXES = 8;
       int box_ys[MAX_VIS_BOXES], box_hs[MAX_VIS_BOXES], n_vis = 0;
-      // Scrollbar gutter, from last frame's visible count (see DM history above).
-      int reserve = scrollIndicatorReserve(display, ch_hist_count, _hist_visible);
+      // Fixed-track scrollbar metrics + stable gutter reserve (see DM history above).
+      HistScroll hs = computeHistScroll(display, portrait_expand, ch_hist_count, _hist_scroll,
+          hist_start_y, cby, lh,
+          [&](int idx) -> const char* {
+            int rp = histEntryForChannel(_sel_channel_idx, idx);
+            if (rp < 0) return nullptr;
+            const char* t = _hist[rp].text;
+            const char* s = strstr(t, ": ");
+            return s ? s + 2 : t;
+          });
+      int reserve = hs.reserve;
       {
         const int fixed_bh = 2 * lh + 1;
         int cur_y = hist_start_y;
@@ -1175,12 +1243,10 @@ public:
         display.drawTextCentered(display.width()/2, display.height()/2, "No messages yet");
       }
 
-      // scroll hints
-      {
-        int arrow_y = (n_vis > 0) ? box_ys[n_vis - 1] + box_hs[n_vis - 1] - lh : hist_start_y;
-        drawScrollIndicator(display, hist_start_y + 1, arrow_y + lh - (hist_start_y + 1),
-                            ch_hist_count, _hist_visible, _hist_scroll);
-      }
+      // Scrollbar: track pinned to the full list area; thumb from hs metrics.
+      if (hs.need)
+        drawScrollIndicatorPx(display, hist_start_y + 1, hs.view_px,
+                              hs.total_px, hs.view_px, hs.scroll_px);
 
       // small compose button (bottom-left, always bordered, inverted when selected)
       bool compose_sel = (_hist_sel == -1);
