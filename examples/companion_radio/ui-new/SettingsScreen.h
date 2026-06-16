@@ -413,7 +413,7 @@ class SettingsScreen : public UIScreen {
       bool collapsed = (_collapsed >> si) & 1;
       bool sel = (item == _selected);
       display.setColor(DisplayDriver::LIGHT);
-      display.drawSelectionRow(0, y - 1, display.width() - _reserve, display.lineStep(), sel);
+      display.drawSelectionRow(0, y - 1, display.width() - _reserve, display.lineStep() - 1, sel);
       display.setCursor(2, y);
       display.print(collapsed ? "+" : "-");
       display.print(" ");
@@ -422,7 +422,7 @@ class SettingsScreen : public UIScreen {
     }
 
     bool sel = (item == _selected);
-    display.drawSelectionRow(0, y - 1, display.width() - _reserve, display.lineStep(), sel);
+    display.drawSelectionRow(0, y - 1, display.width() - _reserve, display.lineStep() - 1, sel);
 
     display.setCursor(2, y);
 

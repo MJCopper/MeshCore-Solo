@@ -338,6 +338,9 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   // can leave stray bytes here, so clamp out-of-range values back to defaults.
   // Values for notif_melody_ad: 0=built-in, 1=melody1, 2=melody2, 3=none.
   if (_prefs.notif_melody_ad > 3) _prefs.notif_melody_ad = 0;
+  // A stale value >1 from an older multi-font build would read as "Lemon" (all
+  // sites test != 0) until the user toggles Font; clamp it to default here.
+  if (_prefs.use_lemon_font  > 1) _prefs.use_lemon_font  = 0;
   if (_prefs.units_imperial  > 1) _prefs.units_imperial  = 0;
   if (_prefs.trail_show_pace > 1) _prefs.trail_show_pace = 0;
   if (_prefs.advert_sound_scope > 1) _prefs.advert_sound_scope = ADVERT_SOUND_SCOPE_ALL;

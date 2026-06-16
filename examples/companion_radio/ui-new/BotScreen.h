@@ -11,8 +11,7 @@ class BotScreen : public UIScreen {
   static const int ITEM_COUNT = 9;
 
   int  _sel;
-  int  _scroll;    // index of first visible item
-  int  _visible;   // items fitting on screen; updated each render, used by handleInput
+  int  _scroll;    // index of first visible item (managed by drawList in render)
   bool _dirty;
 
   // keyboard state (reused for trigger and reply fields)
@@ -32,12 +31,6 @@ class BotScreen : public UIScreen {
     }
   }
 
-  // Keep the selected row inside the visible window (_visible set by render()).
-  void scrollToSel() {
-    if (_sel < _scroll) _scroll = _sel;
-    else if (_sel >= _scroll + _visible) _scroll = _sel - _visible + 1;
-  }
-
   // Returns index into _channel_indices[] for current bot_channel_idx, or -1 if not found/disabled.
   int currentChannelListIdx() const {
     if (!_prefs->bot_channel_enabled) return -1;
@@ -52,7 +45,6 @@ public:
   void enter() {
     _sel      = 0;
     _scroll   = 0;
-    _visible  = 1;
     _kb_field = -1;
     _dirty    = false;
     refreshChannels();
@@ -82,7 +74,7 @@ public:
     static const char* labels[] = { "Enable", "Channel", "Trigger DM", "Reply DM",
                                     "Trigger Ch", "Reply Ch", "Commands",
                                     "Quiet from", "Quiet to" };
-    _visible = drawList(display, ITEM_COUNT, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
+    drawList(display, ITEM_COUNT, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
       display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
       display.setCursor(2, y);
       display.print(labels[i]);
@@ -153,8 +145,9 @@ public:
       _task->gotoToolsScreen();
       return true;
     }
-    if (up   && _sel > 0)              { _sel--; scrollToSel(); return true; }
-    if (down && _sel < ITEM_COUNT - 1) { _sel++; scrollToSel(); return true; }
+    // drawList() reclamps _scroll from _sel every render.
+    if (up   && _sel > 0)              { _sel--; return true; }
+    if (down && _sel < ITEM_COUNT - 1) { _sel++; return true; }
 
     if (_sel == 0 && (enter || left || right)) {
       _prefs->bot_enabled ^= 1;

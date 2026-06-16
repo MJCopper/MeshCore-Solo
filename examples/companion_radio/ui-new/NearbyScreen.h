@@ -17,8 +17,6 @@
 class NearbyScreen : public UIScreen {
   UITask* _task;
 
-  int _visible = 4;   // updated each render; used by handleInput for scroll clamping
-
   // ── filter (type axis) ──────────────────────────────────────────────────────
   enum Filter : uint8_t { F_ALL, F_FAV, F_COMP, F_RPT, F_ROOM, F_SNSR, F_COUNT };
   static const char* FILTER_LABELS[F_COUNT];
@@ -550,9 +548,7 @@ public:
     }
 
     int item_h   = display.lineStep();
-    int start_y  = display.listStart();
     int dist_col = display.width() - display.getCharWidth() * 7;
-    _visible     = display.listVisible(item_h);
 
     display.setColor(DisplayDriver::LIGHT);
     char title[28];
@@ -587,7 +583,7 @@ public:
         display.drawTextCentered(display.width() / 2, display.height() / 2 + display.lineStep() / 2, hint);
       }
     } else {
-      _visible = drawList(display, _count, _sel, _scroll, [&](int idx, int y, bool sel, int reserve) {
+      drawList(display, _count, _sel, _scroll, [&](int idx, int y, bool sel, int reserve) {
         const Entry& e = _entries[idx];
 
         display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
@@ -671,16 +667,9 @@ public:
       return true;
     }
     if (c == KEY_CONTEXT_MENU) { openActionMenu(); return true; }
-    if (c == KEY_UP && _sel > 0) {
-      _sel--;
-      if (_sel < _scroll) _scroll = _sel;
-      return true;
-    }
-    if (c == KEY_DOWN && _sel < _count - 1) {
-      _sel++;
-      if (_sel >= _scroll + _visible) _scroll = _sel - _visible + 1;
-      return true;
-    }
+    // drawList() reclamps _scroll from _sel every render.
+    if (c == KEY_UP   && _sel > 0)          { _sel--; return true; }
+    if (c == KEY_DOWN && _sel < _count - 1) { _sel++; return true; }
     if (c == KEY_ENTER) {
       if (_count == 0) { if (_source == SRC_STORED) enterScan(); return true; }
       _detail = true;

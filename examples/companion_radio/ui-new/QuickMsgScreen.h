@@ -129,7 +129,6 @@ class QuickMsgScreen : public UIScreen {
   int _dm_hist_sel, _dm_hist_scroll;
   FullscreenMsgView _dm_fs;
 
-  int _visible      = 4;  // updated in render(); used by handleInput() for scroll clamping
   int _hist_visible = 2;  // updated in render(); for history list scroll clamping
 
   void expandMsg(const char* tmpl, char* out, int out_len) const {
@@ -819,7 +818,6 @@ public:
     int item_h  = display.lineStep();
     int start_y = display.listStart();
     int cw      = display.getCharWidth();
-    _visible    = display.listVisible(item_h);
 
     if (_phase == MODE_SELECT) {
       display.drawCenteredHeader("MESSAGE");
@@ -854,7 +852,7 @@ public:
         return 5000;
       }
 
-      _visible = drawList(display, _num_contacts, _contact_sel, _contact_scroll, [&](int list_idx, int y, bool sel, int reserve) {
+      drawList(display, _num_contacts, _contact_sel, _contact_scroll, [&](int list_idx, int y, bool sel, int reserve) {
         int mesh_idx = _sorted[list_idx];
 
         display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
@@ -889,7 +887,7 @@ public:
         return 5000;
       }
 
-      _visible = drawList(display, _num_channels, _channel_sel, _channel_scroll, [&](int list_idx, int y, bool sel, int reserve) {
+      drawList(display, _num_channels, _channel_sel, _channel_scroll, [&](int list_idx, int y, bool sel, int reserve) {
         display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
         ChannelDetails ch;
         if (the_mesh.getChannel(_channel_indices[list_idx], ch)) {
@@ -966,10 +964,8 @@ public:
           if (portrait_expand) {
             int rp = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_scroll + ii);
             if (rp >= 0) {
-              char trans[160];
-              display.translateUTF8ToBlocks(trans, skipReplyPrefix(_dm_hist[rp].text), sizeof(trans));
-              char wl[8][FS_CHARS_MAX];
-              int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6 - reserve, wl, 8);
+              display.translateUTF8ToBlocks(s_wrap_trans, skipReplyPrefix(_dm_hist[rp].text), sizeof(s_wrap_trans));
+              int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 8);
               bh = (1 + (nl > 0 ? nl : 1)) * lh + 1;
             }
           }
@@ -1012,11 +1008,9 @@ public:
         if (age[0]) { display.setCursor(display.width() - age_w - reserve, y + 1); display.print(age); }
         if (!sel) display.setColor(DisplayDriver::LIGHT);
         if (portrait_expand) {
-          char trans[160];
-          display.translateUTF8ToBlocks(trans, skipReplyPrefix(e.text), sizeof(trans));
-          char wl[8][FS_CHARS_MAX];
-          int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6 - reserve, wl, 8);
-          for (int li = 0; li < nl; li++) { display.setCursor(3, y + (li + 1) * lh + 1); display.print(wl[li]); }
+          display.translateUTF8ToBlocks(s_wrap_trans, skipReplyPrefix(e.text), sizeof(s_wrap_trans));
+          int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 8);
+          for (int li = 0; li < nl; li++) { display.setCursor(3, y + (li + 1) * lh + 1); display.print(s_wrap_lines[li]); }
         } else {
           display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(e.text));
         }
@@ -1109,10 +1103,8 @@ public:
               const char* rtext = _hist[rp].text;
               const char* rsep = strstr(rtext, ": ");
               const char* rbody = rsep ? rsep + 2 : rtext;
-              char trans[160];
-              display.translateUTF8ToBlocks(trans, skipReplyPrefix(rbody), sizeof(trans));
-              char wl[8][FS_CHARS_MAX];
-              int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6 - reserve, wl, 8);
+              display.translateUTF8ToBlocks(s_wrap_trans, skipReplyPrefix(rbody), sizeof(s_wrap_trans));
+              int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 8);
               bh = (1 + (nl > 0 ? nl : 1)) * lh + 1;
             }
           }
@@ -1170,11 +1162,9 @@ public:
         if (age[0]) { display.setCursor(display.width() - age_w - reserve, y + 1); display.print(age); }
         if (!sel) display.setColor(DisplayDriver::LIGHT);
         if (portrait_expand) {
-          char trans[160];
-          display.translateUTF8ToBlocks(trans, skipReplyPrefix(msg_part), sizeof(trans));
-          char wl[8][FS_CHARS_MAX];
-          int nl = FullscreenMsgView::wrapLines(display, trans, display.width() - 6 - reserve, wl, 8);
-          for (int li = 0; li < nl; li++) { display.setCursor(3, y + (li + 1) * lh + 1); display.print(wl[li]); }
+          display.translateUTF8ToBlocks(s_wrap_trans, skipReplyPrefix(msg_part), sizeof(s_wrap_trans));
+          int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 8);
+          for (int li = 0; li < nl; li++) { display.setCursor(3, y + (li + 1) * lh + 1); display.print(s_wrap_lines[li]); }
         } else {
           display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(msg_part));
         }
@@ -1233,7 +1223,7 @@ public:
       display.drawCenteredHeader(title);
 
       int total_msg_items = 1 + _active_msg_count;
-      _visible = drawList(display, total_msg_items, _msg_sel, _msg_scroll, [&](int idx, int y, bool sel, int reserve) {
+      drawList(display, total_msg_items, _msg_sel, _msg_scroll, [&](int idx, int y, bool sel, int reserve) {
         display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
 
         if (idx == 0) {
@@ -1398,16 +1388,9 @@ public:
         return true;
       }
       if (c == KEY_CANCEL) { _room_mode = false; _phase = MODE_SELECT; return true; }
-      if (c == KEY_UP && _contact_sel > 0) {
-        _contact_sel--;
-        if (_contact_sel < _contact_scroll) _contact_scroll = _contact_sel;
-        return true;
-      }
-      if (c == KEY_DOWN && _contact_sel < _num_contacts - 1) {
-        _contact_sel++;
-        if (_contact_sel >= _contact_scroll + _visible) _contact_scroll = _contact_sel - _visible + 1;
-        return true;
-      }
+      // drawList() reclamps _contact_scroll from _contact_sel every render.
+      if (c == KEY_UP   && _contact_sel > 0)                 { _contact_sel--; return true; }
+      if (c == KEY_DOWN && _contact_sel < _num_contacts - 1) { _contact_sel++; return true; }
       if (c == KEY_ENTER && _num_contacts > 0) {
         if (the_mesh.getContactByIdx(_sorted[_contact_sel], _sel_contact)) {
           _task->clearDMUnread(_sel_contact.id.pub_key);
@@ -1495,16 +1478,9 @@ public:
         return true;
       }
       if (c == KEY_CANCEL) { _phase = MODE_SELECT; return true; }
-      if (c == KEY_UP && _channel_sel > 0) {
-        _channel_sel--;
-        if (_channel_sel < _channel_scroll) _channel_scroll = _channel_sel;
-        return true;
-      }
-      if (c == KEY_DOWN && _channel_sel < _num_channels - 1) {
-        _channel_sel++;
-        if (_channel_sel >= _channel_scroll + _visible) _channel_scroll = _channel_sel - _visible + 1;
-        return true;
-      }
+      // drawList() reclamps _channel_scroll from _channel_sel every render.
+      if (c == KEY_UP   && _channel_sel > 0)                 { _channel_sel--; return true; }
+      if (c == KEY_DOWN && _channel_sel < _num_channels - 1) { _channel_sel++; return true; }
       if (c == KEY_ENTER && _num_channels > 0) {
         _sel_channel_idx = _channel_indices[_channel_sel];
         int hc = histCountForChannel(_sel_channel_idx);
@@ -1727,16 +1703,9 @@ public:
         _phase = _sending_to_channel ? CHANNEL_HIST : DM_HIST;
         return true;
       }
-      if (c == KEY_UP && _msg_sel > 0) {
-        _msg_sel--;
-        if (_msg_sel < _msg_scroll) _msg_scroll = _msg_sel;
-        return true;
-      }
-      if (c == KEY_DOWN && _msg_sel < total_msg_items - 1) {
-        _msg_sel++;
-        if (_msg_sel >= _msg_scroll + _visible) _msg_scroll = _msg_sel - _visible + 1;
-        return true;
-      }
+      // drawList() reclamps _msg_scroll from _msg_sel every render.
+      if (c == KEY_UP   && _msg_sel > 0)                    { _msg_sel--; return true; }
+      if (c == KEY_DOWN && _msg_sel < total_msg_items - 1)  { _msg_sel++; return true; }
       if (c == KEY_ENTER) {
         if (_msg_sel == 0) {
           _kb->begin(_reply_mode ? _reply_prefix : "");

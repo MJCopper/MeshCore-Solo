@@ -482,7 +482,6 @@ class HomeScreen : public UIScreen {
 
   CayenneLPP sensors_lpp;
   int sensors_nb = 0;
-  bool sensors_scroll = false;
   int sensors_scroll_offset = 0;
   int next_sensors_refresh = 0;
 
@@ -498,7 +497,6 @@ class HomeScreen : public UIScreen {
         reader.skipData(type);
         sensors_nb ++;
       }
-      sensors_scroll = sensors_nb > UI_RECENT_LIST_SIZE;
 #if AUTO_OFF_MILLIS > 0
       next_sensors_refresh = millis() + 5000; // refresh sensor values every 5 sec
 #else
@@ -992,8 +990,10 @@ public:
       }
     }
     bool auto_adv = _node_prefs && _node_prefs->advert_auto_interval_sec > 0;
-    // Any blinking status-bar indicator needs a 1 s refresh to animate evenly.
-    bool need_blink = auto_adv || _task->trail().isActive();
+    // Any blinking status-bar indicator needs a 1 s refresh to animate evenly —
+    // but the status bar (and its icons) is hidden on the CLOCK page, so don't
+    // pay the 1 s cadence there for icons that aren't drawn.
+    bool need_blink = (_page != HomePage::CLOCK) && (auto_adv || _task->trail().isActive());
     if (Features::IS_EINK) {
       // slow display: poll every 30 s; inbound msgs force immediate refresh via notify()
       return Features::HOME_REFRESH_MS;

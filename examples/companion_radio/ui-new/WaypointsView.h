@@ -319,7 +319,8 @@ public:
     int n = wpListCount();
     int total = n + 1;                       // + the "Add by coords" row
     if (c == KEY_CANCEL) { _mode = OFF; return true; }
-    if (c == KEY_UP   && _sel > 0)         { _sel--; if (_sel < _scroll) _scroll = _sel; return true; }
+    // drawList() reclamps _scroll from _sel every render.
+    if (c == KEY_UP   && _sel > 0)         { _sel--; return true; }
     if (c == KEY_DOWN && _sel < total - 1) { _sel++; return true; }
     if (c == KEY_ENTER) {
       if (_sel == n) openAddForm();          // last row → open the add form

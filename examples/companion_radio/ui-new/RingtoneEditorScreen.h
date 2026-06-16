@@ -14,7 +14,6 @@ class RingtoneEditorScreen : public UIScreen {
   int _visible_notes = 7;  // updated in render(); used by clampScroll()
 
   static const uint16_t BPM_OPTS[5];
-  static const uint8_t  DUR_VALS[4];
   static const char*    DUR_LABELS[4];
   static const char     PITCH_NAMES[8];  // lowercase rtttl names
 
@@ -293,6 +292,5 @@ public:
 };
 
 const uint16_t RingtoneEditorScreen::BPM_OPTS[5]   = { 60, 90, 120, 150, 180 };
-const uint8_t  RingtoneEditorScreen::DUR_VALS[4]    = { 4, 8, 16, 32 };
 const char*    RingtoneEditorScreen::DUR_LABELS[4]  = { "1/4", "1/8", "1/16", "1/32" };
 const char     RingtoneEditorScreen::PITCH_NAMES[8] = { 'p', 'c', 'd', 'e', 'f', 'g', 'a', 'b' };
