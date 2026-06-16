@@ -63,6 +63,8 @@ jobs:
         run: |
           DEVICE_NAME=$(echo "${{ matrix.env }}" | sed 's/_solo_dual$//;s/_companion$//' | tr '_' '-')
           mv out/*.uf2 "out/solo-${{ env.BUILD_VERSION }}-${DEVICE_NAME}.uf2" 2>/dev/null || true
+          # nRF52 DFU package (adafruit-nrfutil) — used for OTA / BLE-DFU updates.
+          mv out/*.zip "out/solo-${{ env.BUILD_VERSION }}-${DEVICE_NAME}-ota.zip" 2>/dev/null || true
 
       - name: Upload Firmware
         uses: actions/upload-artifact@v4
@@ -92,4 +94,6 @@ jobs:
           name: Solo ${{ env.GIT_TAG_VERSION }}
           body: ""
           draft: true
-          files: out/*.uf2
+          files: |
+            out/*.uf2
+            out/*.zip
