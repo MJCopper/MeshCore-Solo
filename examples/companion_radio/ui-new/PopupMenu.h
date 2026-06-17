@@ -7,10 +7,6 @@
 // Navigation wraps around: up from first item goes to last, and vice versa.
 struct PopupMenu {
   static const int PM_MAX_ITEMS = 16;
-  static const int PM_BX        = 12;
-  static const int PM_BY        = 10;
-  static const int PM_BW        = 104;
-  static const int PM_ITEM_H    = 10;
 
   const char* _items[PM_MAX_ITEMS];
   int         _count;
@@ -35,10 +31,22 @@ struct PopupMenu {
   }
 
   int render(DisplayDriver& display) {
-    // Hard ceiling: never show more items than physically fit on screen.
-    // On tall displays (portrait e-ink) this expands beyond _visible;
-    // on small displays (OLED 64px) it clamps below _visible.
-    int max_by_height = (display.height() - PM_BY - 12) / PM_ITEM_H;
+    // Everything is derived from the live font metrics so the box fits its
+    // content on every display — including landscape e-ink, where the font (and
+    // line height) is ~2x the OLED. Fixed pixel constants used to clip the text
+    // and leave the box the wrong size there.
+    const int lh      = display.getLineHeight();
+    const int cw      = display.getCharWidth();
+    const int sh      = display.sepH();      // separator thickness (2px landscape e-ink, else 1)
+    const int item_h  = lh + 2;             // row pitch
+    const int pad     = 4;                  // inner left/right padding
+    const int margin  = 4;                  // gap to the screen edge
+    const int gap     = 2;                   // breathing room below the separator (matches listStart())
+    const int title_h = lh + 2 + sh + gap;   // title text + scaled separator + gap
+
+    // Hard ceiling: never show more rows than physically fit on screen.
+    int avail_h = display.height() - margin * 2 - title_h - 2;
+    int max_by_height = avail_h / item_h;
     if (max_by_height < 1) max_by_height = 1;
     _cap = max_by_height;
     int vis = (_count < _cap) ? _count : _cap;
@@ -52,33 +60,69 @@ struct PopupMenu {
     if (max_scroll < 0)       max_scroll = 0;
     if (_scroll > max_scroll) _scroll = max_scroll;
     if (_scroll < 0)          _scroll = 0;
-    int bh  = 12 + vis * PM_ITEM_H;
+
+    bool can_scroll = (_count > vis);
+    int  arrow_w    = can_scroll ? (cw + 2) : 0;   // right gutter for ^/v markers
+
+    // Box width: widest of the title / all items, plus padding and the arrow
+    // gutter; clamped to the screen with a sane minimum.
+    int content_w = _title ? display.getTextWidth(_title) : 0;
+    for (int i = 0; i < _count; i++) {
+      int w = display.getTextWidth(_items[i]);
+      if (w > content_w) content_w = w;
+    }
+    int bw = content_w + pad * 2 + arrow_w;
+    int max_bw = display.width() - margin * 2;
+    if (bw > max_bw) bw = max_bw;
+    int min_bw = cw * 6 + pad * 2;
+    if (bw < min_bw) bw = min_bw;
+    if (bw > max_bw) bw = max_bw;
+
+    int bh = title_h + vis * item_h + 2;
+
+    // Centre on screen (clamped to the margins on small displays).
+    int bx = (display.width()  - bw) / 2;
+    int by = (display.height() - bh) / 2;
+    if (bx < margin) bx = margin;
+    if (by < margin) by = margin;
 
     display.setColor(DisplayDriver::DARK);
-    display.fillRect(PM_BX, PM_BY, PM_BW, bh);
+    display.fillRect(bx, by, bw, bh);
     display.setColor(DisplayDriver::LIGHT);
-    display.drawRect(PM_BX, PM_BY, PM_BW, bh);
-    display.setCursor(PM_BX + 4, PM_BY + 1);
-    display.print(_title);
-    display.fillRect(PM_BX, PM_BY + 10, PM_BW, 1);
+    display.drawRect(bx, by, bw, bh);
+    if (_title) display.drawTextEllipsized(bx + pad, by + 1, bw - pad * 2, _title);
+    display.fillRect(bx, by + lh + 2, bw, sh);   // separator just under the title; gap follows
 
-    if (_scroll > 0)
-      { display.setCursor(PM_BX + PM_BW - 7, PM_BY + 1); display.print("^"); }
-    if (_scroll + vis < _count)
-      { display.setCursor(PM_BX + PM_BW - 7, PM_BY + 2 + vis * PM_ITEM_H); display.print("v"); }
-
+    int list_y = by + title_h;
+    int text_w = bw - pad * 2 - arrow_w;
+    if (text_w < cw) text_w = cw;
     for (int i = 0; i < vis && (_scroll + i) < _count; i++) {
       int idx = _scroll + i;
-      int py  = PM_BY + 12 + i * PM_ITEM_H;
+      int py  = list_y + i * item_h + 1;
       if (idx == _sel) {
         display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(PM_BX + 1, py - 1, PM_BW - 2, PM_ITEM_H);
+        display.fillRect(bx + 1, py - 1, bw - 2, item_h);
         display.setColor(DisplayDriver::DARK);
       } else {
         display.setColor(DisplayDriver::LIGHT);
       }
-      display.setCursor(PM_BX + 4, py);
-      display.print(_items[idx]);
+      display.drawTextEllipsized(bx + pad, py, text_w, _items[idx]);
+      display.setColor(DisplayDriver::LIGHT);
+    }
+
+    // Scroll markers in the reserved gutter, drawn on top of their row and
+    // inverted on the selection bar so they stay visible.
+    if (can_scroll) {
+      int ax = bx + bw - arrow_w;
+      if (_scroll > 0) {
+        display.setColor(_scroll == _sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
+        display.setCursor(ax, list_y + 1); display.print("^");
+      }
+      if (_scroll + vis < _count) {
+        int last = _scroll + vis - 1;
+        display.setColor(last == _sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
+        display.setCursor(ax, list_y + (vis - 1) * item_h + 1); display.print("v");
+      }
     }
     display.setColor(DisplayDriver::LIGHT);
     return 50;
