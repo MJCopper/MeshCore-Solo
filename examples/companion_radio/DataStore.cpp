@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "DataStore.h"
+#include "Features.h"   // FEAT_JOYSTICK_ROTATION_SETTING (else `#if !FEAT_…` is always true)
 
 #if defined(EXTRAFS) || defined(QSPIFLASH)
   #define MAX_BLOBRECS 100
@@ -296,11 +297,12 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.display_rotation,          sizeof(_prefs.display_rotation));
   rd(_prefs.page_order,                 sizeof(_prefs.page_order));
   rd(&_prefs.joystick_rotation,         sizeof(_prefs.joystick_rotation));
-  // Override any stale stored value — must come AFTER rd() so files that already
-  // have the field (e.g. migrated from e-ink with rotation=2) are also corrected.
-#ifdef JOYSTICK_ROTATION
-  _prefs.joystick_rotation = JOYSTICK_ROTATION;
-#elif !FEAT_JOYSTICK_ROTATION_SETTING
+#if !FEAT_JOYSTICK_ROTATION_SETTING
+  // No UI to change it on this build, so force the default — this also corrects
+  // a stale value migrated from another build (e.g. e-ink rotation=2). On builds
+  // that DO expose the setting the stored value is kept; the old code clobbered
+  // it unconditionally (FEAT_* was undefined here because Features.h wasn't
+  // included → `#if !FEAT_…` was always true), so the setting never persisted.
   _prefs.joystick_rotation = 0;
 #endif
   rd(&_prefs.eink_full_refresh_every,   sizeof(_prefs.eink_full_refresh_every));
