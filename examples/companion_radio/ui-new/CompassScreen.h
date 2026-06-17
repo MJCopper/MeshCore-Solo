@@ -33,7 +33,6 @@ public:
     display.setColor(DisplayDriver::LIGHT);
     display.drawCenteredHeader("COMPASS");
 
-    const int hdr = display.headerH();
     const int cx  = display.width() / 2;
     const int ch  = display.getLineHeight();
     const int cw  = display.getCharWidth();
@@ -41,7 +40,7 @@ public:
     display.setTextSize(2);
     const int bigH = display.getLineHeight();
     display.setTextSize(1);
-    const int top      = hdr + 2;
+    const int top      = display.listStart();
     const int readout_y = display.height() - bigH - 1;   // size-2 readout baseline
     const int mid      = (top + readout_y) / 2;
 

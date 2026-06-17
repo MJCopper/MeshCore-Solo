@@ -37,7 +37,7 @@ inline void draw(DisplayDriver& d,
   geo::fmtDist(dist, sizeof(dist), dist_km, imperial);
 
   const int step = d.lineStep();
-  int y = hdr + 2;
+  int y = d.listStart();
 
   // Distance — emphasised at size 2.
   d.setTextSize(2);

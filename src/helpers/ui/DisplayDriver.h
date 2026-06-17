@@ -39,7 +39,10 @@ public:
   // Use these instead of hardcoded pixel values so layouts adapt to any display.
   int lineStep()             const { return getLineHeight() + 2; }         // row pitch: text + gap
   int headerH()              const { return getLineHeight() + 3; }         // title bar height
-  int listStart()            const { return headerH(); }                   // y where list items begin
+  // y where list items begin: a 2px breathing gap below the header separator so
+  // the first row doesn't touch the line (matches the hand-rolled hdr+2 used by
+  // the graphical screens).
+  int listStart()            const { return headerH() + 2; }
   int listVisible(int itemH) const { return (height() - listStart()) / itemH; }
   int listVisible()          const { return listVisible(lineStep()); }
   // x where a right-side value column starts (leaves ~8 chars for the value)

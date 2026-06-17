@@ -404,7 +404,7 @@ class NearbyScreen : public UIScreen {
   // ── detail rendering ──────────────────────────────────────────────────────────
   void renderStoredDetail(DisplayDriver& display) {
     const Entry& e = _entries[_sel];
-    const int hdr  = display.headerH();
+    const int hdr  = display.listStart();   // content top (gap below the header separator)
     display.drawInvertedHeader(e.name);
 
     int step = display.lineStep();
@@ -434,7 +434,7 @@ class NearbyScreen : public UIScreen {
 
   void renderScanDetail(DisplayDriver& display) {
     const Entry& e = _entries[_sel];
-    const int hdr = display.headerH();
+    const int hdr = display.listStart();   // content top (gap below the header separator)
 
     char label[32];
     if (e.name[0]) { strncpy(label, e.name, 31); label[31] = '\0'; }
