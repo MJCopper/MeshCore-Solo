@@ -1,6 +1,7 @@
 #pragma once
 #include <helpers/ui/DisplayDriver.h>
 #include <Arduino.h>
+#include "icons.h"   // scalable scroll indicator (track + thumb), matches the rest of the UI
 
 // Generic scrollable popup menu overlay.
 // Caller owns item string lifetimes — addItem() stores const char* pointers.
@@ -63,7 +64,10 @@ struct PopupMenu {
     if (_scroll < 0)          _scroll = 0;
 
     bool can_scroll = (_count > vis);
-    int  arrow_w    = can_scroll ? (cw + 2) : 0;   // right gutter for ^/v markers
+    // Right gutter for the scroll indicator column, plus a couple px of
+    // clearance from the box border (full-screen lists sit flush against the
+    // screen edge instead, so they don't need this extra margin).
+    int  arrow_w    = can_scroll ? (scrollIndicatorColWidth(display) + 2) : 0;
 
     // Box width: widest of the title / all items, plus padding and the arrow
     // gutter; clamped to the screen with a sane minimum.
@@ -111,20 +115,10 @@ struct PopupMenu {
       display.setColor(DisplayDriver::LIGHT);
     }
 
-    // Scroll markers in the reserved gutter, drawn on top of their row and
-    // inverted on the selection bar so they stay visible.
-    if (can_scroll) {
-      int ax = bx + bw - arrow_w;
-      if (_scroll > 0) {
-        display.setColor(_scroll == _sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
-        display.setCursor(ax, list_y + 1); display.print("^");
-      }
-      if (_scroll + vis < _count) {
-        int last = _scroll + vis - 1;
-        display.setColor(last == _sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
-        display.setCursor(ax, list_y + (vis - 1) * item_h + 1); display.print("v");
-      }
-    }
+    // Same proportional track + thumb indicator the rest of the UI uses,
+    // anchored to the box's own right edge (a couple px clear of the border)
+    // instead of the screen edge since this box floats centred on screen.
+    drawScrollIndicator(display, bx + bw - 2, list_y, vis * item_h, _count, vis, _scroll);
     display.setColor(DisplayDriver::LIGHT);
     return 50;
   }

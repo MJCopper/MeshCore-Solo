@@ -285,7 +285,11 @@ inline int scrollIndicatorReserve(DisplayDriver& d, int total, int visible) {
 //   total_px  : total extent of the whole list (items or pixels)
 //   view_px   : extent currently visible
 //   scroll_px : extent scrolled past (offset of the first visible item)
-inline void drawScrollIndicatorPx(DisplayDriver& d, int top_y, int track_h,
+// right_x : column origin's right edge, in screen pixels (the indicator
+//           occupies [right_x - col, right_x)). Full-screen lists pass
+//           d.width(); a narrower container (e.g. a centred popup) passes its
+//           own right edge so the indicator lands inside the box, not the screen.
+inline void drawScrollIndicatorPx(DisplayDriver& d, int right_x, int top_y, int track_h,
                                   long total_px, long view_px, long scroll_px) {
   if (total_px <= view_px || track_h <= 0) return;  // whole list fits — no indicator
   const long span = total_px - view_px;             // > 0 here
@@ -295,7 +299,7 @@ inline void drawScrollIndicatorPx(DisplayDriver& d, int top_y, int track_h,
   const int s    = miniIconScale(d);
   const int col  = 5 * s;                  // triangle / column width
   const int th   = 3 * s;                  // triangle height
-  const int x    = d.width() - col;        // indicator column origin
+  const int x    = right_x - col;          // indicator column origin
 
   // Caps are static end-markers, always drawn flush at the very top / bottom of
   // the track; the thumb travels in the fixed band between them. (They mark the
@@ -330,6 +334,13 @@ inline void drawScrollIndicatorPx(DisplayDriver& d, int top_y, int track_h,
   miniIconDrawHalo(d, x, top_y + track_h - th, ICON_SCROLL_DOWN);
 }
 
+// Convenience overload anchored to the screen's right edge — the common case
+// for full-width lists.
+inline void drawScrollIndicatorPx(DisplayDriver& d, int top_y, int track_h,
+                                  long total_px, long view_px, long scroll_px) {
+  drawScrollIndicatorPx(d, d.width(), top_y, track_h, total_px, view_px, scroll_px);
+}
+
 // Uniform-height wrapper: one item = one unit. Drop-in replacement for
 // DisplayDriver::drawScrollArrows.
 //   total   : total number of items
@@ -338,6 +349,13 @@ inline void drawScrollIndicatorPx(DisplayDriver& d, int top_y, int track_h,
 inline void drawScrollIndicator(DisplayDriver& d, int top_y, int track_h,
                                 int total, int visible, int first) {
   drawScrollIndicatorPx(d, top_y, track_h, total, visible, first);
+}
+
+// right_x variant — see drawScrollIndicatorPx's right_x for why a narrower
+// container (e.g. a popup) needs this instead of the screen-edge default.
+inline void drawScrollIndicator(DisplayDriver& d, int right_x, int top_y, int track_h,
+                                int total, int visible, int first) {
+  drawScrollIndicatorPx(d, right_x, top_y, track_h, total, visible, first);
 }
 
 // Scrollable item-list skeleton shared by the list screens. Computes the visible
