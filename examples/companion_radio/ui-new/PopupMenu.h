@@ -41,8 +41,9 @@ struct PopupMenu {
     const int item_h  = lh + 2;             // row pitch
     const int pad     = 4;                  // inner left/right padding
     const int margin  = 4;                  // gap to the screen edge
-    const int gap     = 2;                   // breathing room below the separator (matches listStart())
-    const int title_h = lh + 2 + sh + gap;   // title text + scaled separator + gap
+    // Compact menu: rows tile straight under the separator (no header gap here —
+    // unlike full screens) so the selection bar fills its cell edge to edge.
+    const int title_h = lh + 2 + sh;        // title text + scaled separator
 
     // Hard ceiling: never show more rows than physically fit on screen.
     int avail_h = display.height() - margin * 2 - title_h - 2;
@@ -78,7 +79,7 @@ struct PopupMenu {
     if (bw < min_bw) bw = min_bw;
     if (bw > max_bw) bw = max_bw;
 
-    int bh = title_h + vis * item_h + 2;
+    int bh = title_h + vis * item_h + 1;   // +1 keeps the last row off the bottom border
 
     // Centre on screen (clamped to the margins on small displays).
     int bx = (display.width()  - bw) / 2;
