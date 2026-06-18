@@ -12,6 +12,7 @@
 // being recorded.
 
 #include "../GeoUtils.h"
+#include "icons.h"   // miniIconScale() — keeps the tape ticks/pointer legible on e-ink
 
 class CompassScreen : public UIScreen {
   UITask* _task;
@@ -66,17 +67,23 @@ public:
     const float HALF_SPAN = 80.0f;                 // degrees visible to each side
     const float ppd = (area_w / 2.0f) / HALF_SPAN;
 
-    const int pointerH  = 6;
-    const int tickMajor = 6;
-    const int tickMinor = 3;
-    const int blockH    = pointerH + 1 + tickMajor + 2 + ch;
+    // Tick/pointer sizes are authored at 1x and scaled by the font (same factor
+    // the mini-icon framework uses), so they stay legible next to the 2x
+    // cardinal labels and numeric readout on landscape e-ink.
+    const int s  = miniIconScale(display);
+    const int sh = display.sepH();        // baseline thickness (2px landscape e-ink, else 1)
+    const int pointerH_units = 6;
+    const int pointerH  = pointerH_units * s;
+    const int tickMajor = 6 * s;
+    const int tickMinor = 3 * s;
+    const int blockH    = pointerH + sh + tickMajor + 2 + ch;
     const int block_top = top + ((readout_y - top) - blockH) / 2;
     const int line_y    = block_top + pointerH;     // scale baseline
-    const int label_y   = line_y + 1 + tickMajor + 2;
+    const int label_y   = line_y + sh + tickMajor + 2;
     const int x_lo = area_x, x_hi = area_x + area_w;
 
     // Scale baseline.
-    display.fillRect(area_x, line_y, area_w, 1);
+    display.fillRect(area_x, line_y, area_w, sh);
 
     // Ticks + cardinal labels every 30°; majors (N/E/S/W) are taller + labelled.
     for (int deg = 0; deg < 360; deg += 30) {
@@ -86,19 +93,21 @@ public:
       int x = cx + (int)(delta * ppd);
       if (x < x_lo || x > x_hi) continue;
       bool major = (deg % 90 == 0);
-      display.fillRect(x, line_y + 1, 1, major ? tickMajor : tickMinor);
+      display.fillRect(x - s / 2, line_y + sh, s, major ? tickMajor : tickMinor);
       if (major) {
-        const char* s = cardinalLetter(deg);
+        const char* letter = cardinalLetter(deg);
         display.setCursor(x - cw / 2, label_y);
-        display.print(s);
+        display.print(letter);
       }
     }
 
     // Fixed travel-direction pointer: a downward triangle whose tip touches the
     // baseline at screen centre (your current course always sits under it).
-    for (int i = 0; i < pointerH; i++) {
-      int half = pointerH - 1 - i;
-      display.fillRect(cx - half, block_top + i, 2 * half + 1, 1);
+    // Each of the pointerH_units logical rows is drawn as an s-pixel-tall strip
+    // — the same block-scaling miniIconDraw uses for bitmap icons.
+    for (int i = 0; i < pointerH_units; i++) {
+      int half = (pointerH_units - 1 - i) * s;
+      display.fillRect(cx - half, block_top + i * s, 2 * half + 1, s);
     }
 
     // ── numeric readout ──────────────────────────────────────────────────────
