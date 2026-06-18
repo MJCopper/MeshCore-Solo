@@ -1333,8 +1333,8 @@ public:
         return true;
       }
       if (c == KEY_CANCEL) { _task->gotoHomeScreen(); return true; }
-      if (c == KEY_UP && _mode_sel > 0) { _mode_sel--; return true; }
-      if (c == KEY_DOWN && _mode_sel < 2) { _mode_sel++; return true; }
+      if (c == KEY_UP)   { _mode_sel = (_mode_sel > 0) ? _mode_sel - 1 : 2; return true; }
+      if (c == KEY_DOWN) { _mode_sel = (_mode_sel < 2) ? _mode_sel + 1 : 0; return true; }
       if (c == KEY_CONTEXT_MENU) {
         // PopupMenu stores the title pointer verbatim — use static strings.
         static const char* MODE_TITLES[] = { "DM options", "Channel options", "Room options" };
@@ -1455,8 +1455,8 @@ public:
       }
       if (c == KEY_CANCEL) { _room_mode = false; _phase = MODE_SELECT; return true; }
       // drawList() reclamps _contact_scroll from _contact_sel every render.
-      if (c == KEY_UP   && _contact_sel > 0)                 { _contact_sel--; return true; }
-      if (c == KEY_DOWN && _contact_sel < _num_contacts - 1) { _contact_sel++; return true; }
+      if (c == KEY_UP   && _num_contacts > 0) { _contact_sel = (_contact_sel > 0) ? _contact_sel - 1 : _num_contacts - 1; return true; }
+      if (c == KEY_DOWN && _num_contacts > 0) { _contact_sel = (_contact_sel < _num_contacts - 1) ? _contact_sel + 1 : 0; return true; }
       if (c == KEY_ENTER && _num_contacts > 0) {
         if (the_mesh.getContactByIdx(_sorted[_contact_sel], _sel_contact)) {
           _task->clearDMUnread(_sel_contact.id.pub_key);
@@ -1545,8 +1545,8 @@ public:
       }
       if (c == KEY_CANCEL) { _phase = MODE_SELECT; return true; }
       // drawList() reclamps _channel_scroll from _channel_sel every render.
-      if (c == KEY_UP   && _channel_sel > 0)                 { _channel_sel--; return true; }
-      if (c == KEY_DOWN && _channel_sel < _num_channels - 1) { _channel_sel++; return true; }
+      if (c == KEY_UP   && _num_channels > 0) { _channel_sel = (_channel_sel > 0) ? _channel_sel - 1 : _num_channels - 1; return true; }
+      if (c == KEY_DOWN && _num_channels > 0) { _channel_sel = (_channel_sel < _num_channels - 1) ? _channel_sel + 1 : 0; return true; }
       if (c == KEY_ENTER && _num_channels > 0) {
         _sel_channel_idx = _channel_indices[_channel_sel];
         int hc = histCountForChannel(_sel_channel_idx);
@@ -1770,8 +1770,8 @@ public:
         return true;
       }
       // drawList() reclamps _msg_scroll from _msg_sel every render.
-      if (c == KEY_UP   && _msg_sel > 0)                    { _msg_sel--; return true; }
-      if (c == KEY_DOWN && _msg_sel < total_msg_items - 1)  { _msg_sel++; return true; }
+      if (c == KEY_UP)   { _msg_sel = (_msg_sel > 0) ? _msg_sel - 1 : total_msg_items - 1; return true; }
+      if (c == KEY_DOWN) { _msg_sel = (_msg_sel < total_msg_items - 1) ? _msg_sel + 1 : 0; return true; }
       if (c == KEY_ENTER) {
         if (_msg_sel == 0) {
           _kb->begin(_reply_mode ? _reply_prefix : "");

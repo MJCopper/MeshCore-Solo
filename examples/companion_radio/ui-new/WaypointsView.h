@@ -291,8 +291,8 @@ public:
     // ADD form: type lat/lon (magnitude) + hemisphere toggle + label.
     if (_mode == ADD) {
       if (c == KEY_CANCEL) { _mode = OFF; return true; }
-      if (c == KEY_UP   && _add_sel > 0) { _add_sel--; return true; }
-      if (c == KEY_DOWN && _add_sel < 3) { _add_sel++; return true; }
+      if (c == KEY_UP)   { _add_sel = (_add_sel > 0) ? _add_sel - 1 : 3; return true; }
+      if (c == KEY_DOWN) { _add_sel = (_add_sel < 3) ? _add_sel + 1 : 0; return true; }
       if (c == KEY_LEFT || c == KEY_RIGHT) {
         if      (_add_sel == 0) _add_lat_neg = !_add_lat_neg;   // N <-> S
         else if (_add_sel == 1) _add_lon_neg = !_add_lon_neg;   // E <-> W
@@ -320,8 +320,8 @@ public:
     int total = n + 1;                       // + the "Add by coords" row
     if (c == KEY_CANCEL) { _mode = OFF; return true; }
     // drawList() reclamps _scroll from _sel every render.
-    if (c == KEY_UP   && _sel > 0)         { _sel--; return true; }
-    if (c == KEY_DOWN && _sel < total - 1) { _sel++; return true; }
+    if (c == KEY_UP)   { _sel = (_sel > 0) ? _sel - 1 : total - 1; return true; }
+    if (c == KEY_DOWN) { _sel = (_sel < total - 1) ? _sel + 1 : 0; return true; }
     if (c == KEY_ENTER) {
       if (_sel == n) openAddForm();          // last row → open the add form
       else           _mode = NAV;            // a waypoint / Trail-start row

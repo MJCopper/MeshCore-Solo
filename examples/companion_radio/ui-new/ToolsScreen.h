@@ -27,8 +27,8 @@ public:
   }
 
   bool handleInput(char c) override {
-    if (c == KEY_UP   && _sel > 0) { _sel--; return true; }
-    if (c == KEY_DOWN && _sel < ITEM_COUNT - 1) { _sel++; return true; }
+    if (c == KEY_UP)   { _sel = (_sel > 0) ? _sel - 1 : ITEM_COUNT - 1; return true; }
+    if (c == KEY_DOWN) { _sel = (_sel < ITEM_COUNT - 1) ? _sel + 1 : 0; return true; }
     if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) { _task->gotoHomeScreen(); return true; }
     if (c == KEY_ENTER) {
       if (_sel == 0) { _task->gotoRingtoneEditor();   return true; }

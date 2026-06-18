@@ -652,22 +652,20 @@ public:
       return true;
     }
 
-    if (c == KEY_UP) {
+    if (c == KEY_UP && _vis_count > 0) {
       int vi = visIndexOf(_selected);
-      if (vi > 0) {
-        vi--;
-        _selected = _vis[vi];
-        if (vi < _scroll) _scroll = vi;
-      }
+      vi = (vi > 0) ? vi - 1 : _vis_count - 1;
+      _selected = _vis[vi];
+      if (vi < _scroll)               _scroll = vi;
+      else if (vi >= _scroll + _visible) _scroll = vi - _visible + 1;
       return true;
     }
-    if (c == KEY_DOWN) {
+    if (c == KEY_DOWN && _vis_count > 0) {
       int vi = visIndexOf(_selected);
-      if (vi + 1 < _vis_count) {
-        vi++;
-        _selected = _vis[vi];
-        if (vi >= _scroll + _visible) _scroll = vi - _visible + 1;
-      }
+      vi = (vi + 1 < _vis_count) ? vi + 1 : 0;
+      _selected = _vis[vi];
+      if (vi >= _scroll + _visible)   _scroll = vi - _visible + 1;
+      else if (vi < _scroll)          _scroll = vi;
       return true;
     }
     if (c == KEY_CANCEL) {

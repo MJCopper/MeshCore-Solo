@@ -8,6 +8,7 @@
 #include "../Trail.h"
 #include "../GeoUtils.h"
 #include "GfxUtils.h"
+#include "icons.h"     // scalable mini-icons (map markers, north arrow, grid dots)
 #include "NavView.h"
 #include "WaypointsView.h"
 #include <math.h>
@@ -20,6 +21,11 @@ class TrailScreen : public UIScreen {
   uint8_t _view           = V_SUMMARY;
   int     _summary_scroll = 0;
   int     _list_scroll    = 0;
+  // Top-of-scroll bound for each view, recomputed every render() from the
+  // live display height (mirrors how _scroll itself is reclamped) — lets
+  // handleInput() wrap top<->bottom without duplicating the layout math.
+  int     _summary_max_scroll = 0;
+  int     _list_max_scroll    = 0;
   bool    _cfg_dirty      = false;
   bool    _map_grid       = true;   // show scale grid in map view (Enter to toggle)
 
@@ -139,10 +145,22 @@ public:
 
     if (c == KEY_LEFT  || c == KEY_PREV) { _view = (uint8_t)((_view + V_COUNT - 1) % V_COUNT); return true; }
     if (c == KEY_RIGHT || c == KEY_NEXT) { _view = (uint8_t)((_view + 1) % V_COUNT);          return true; }
-    if (_view == V_SUMMARY && c == KEY_UP   && _summary_scroll > 0) { _summary_scroll--; return true; }
-    if (_view == V_SUMMARY && c == KEY_DOWN)                        { _summary_scroll++; return true; }
-    if (_view == V_LIST    && c == KEY_UP   && _list_scroll > 0)    { _list_scroll--;    return true; }
-    if (_view == V_LIST    && c == KEY_DOWN)                        { _list_scroll++;    return true; }
+    if (_view == V_SUMMARY && c == KEY_UP) {
+      _summary_scroll = (_summary_scroll > 0) ? _summary_scroll - 1 : _summary_max_scroll;
+      return true;
+    }
+    if (_view == V_SUMMARY && c == KEY_DOWN) {
+      _summary_scroll = (_summary_scroll < _summary_max_scroll) ? _summary_scroll + 1 : 0;
+      return true;
+    }
+    if (_view == V_LIST && c == KEY_UP) {
+      _list_scroll = (_list_scroll > 0) ? _list_scroll - 1 : _list_max_scroll;
+      return true;
+    }
+    if (_view == V_LIST && c == KEY_DOWN) {
+      _list_scroll = (_list_scroll < _list_max_scroll) ? _list_scroll + 1 : 0;
+      return true;
+    }
     if (c == KEY_ENTER) {
       // Short Enter intentionally does nothing destructive — both start and
       // stop go through the Hold-Enter popup so a stray tap can't change the
@@ -401,6 +419,7 @@ private:
     int max_scroll = SUMMARY_ITEM_COUNT - visible;
     if (_summary_scroll > max_scroll) _summary_scroll = max_scroll;
     if (_summary_scroll < 0)          _summary_scroll = 0;
+    _summary_max_scroll = max_scroll;
 
     for (int i = 0; i < visible; i++) {
       int idx = _summary_scroll + i;
@@ -421,6 +440,7 @@ private:
 
     if (_store->empty()) {
       display.drawTextCentered(display.width() / 2, top + avail / 2, "No trail yet");
+      _list_max_scroll = 0;
       return;
     }
 
@@ -432,6 +452,7 @@ private:
     int max_scroll = total - visible;
     if (_list_scroll > max_scroll) _list_scroll = max_scroll;
     if (_list_scroll < 0)          _list_scroll = 0;
+    _list_max_scroll = max_scroll;
 
     NodePrefs* p = _task->getNodePrefs();
     int32_t tz_off = (int32_t)(p ? p->tz_offset_hours : 0) * 3600;
@@ -604,7 +625,7 @@ private:
     if (have_trail) {
       int x0, y0;
       proj.project(_store->at(0).lat_1e6, _store->at(0).lon_1e6, x0, y0);
-      display.fillRect(x0, y0, 1, 1);
+      miniIconDrawCentered(display, x0, y0, ICON_MAP_DOT);
       for (int i = 1; i < _store->count(); i++) {
         const TrailPoint& pt = _store->at(i);
         int x1, y1;
@@ -625,7 +646,19 @@ private:
 
     drawMarkers(display, proj, have_gps, my_lat, my_lon, have_trail);
 
-    drawNorthArrow(display, area_x + area_w - 4, area_y + display.getLineHeight() + 1);
+    int nx, ny;
+    northIconPos(display, area_x, area_w, area_y, nx, ny);
+    miniIconDrawTop(display, nx, ny, ICON_MAP_NORTH);
+  }
+
+  // Top-left placement of the north marker — flush to the top-right corner of
+  // the map area with a small buffer. Shared with renderGrid so its exclusion
+  // box always matches exactly where the icon is actually drawn.
+  static void northIconPos(DisplayDriver& d, int area_x, int area_w, int area_y,
+                           int& nx, int& ny) {
+    const int s = miniIconScale(d);
+    nx = area_x + area_w - ICON_MAP_NORTH.w * s - 1;
+    ny = area_y + 1;
   }
 
   void renderGrid(DisplayDriver& display, const MapProjection& proj) {
@@ -699,17 +732,24 @@ private:
     int x_max = area_x + area_w - 1, y_max = area_y + area_h - 1;
 
     // Exclusion boxes so grid dots don't smear the scale label (bottom-left) or
-    // the north arrow (top-right, mirrors drawNorthArrow).
+    // the north marker (top-right) — northIconPos() is the single source of
+    // truth for where that icon actually lands, so this box can't drift out of
+    // sync with it as the mini-icon scale changes.
+    const int s = miniIconScale(display);
     int lbl_x2 = area_x + (int)strlen(lbl) * cw + 1;
     int lbl_y1 = area_y + area_h - lh - 1;
-    int arr_x1 = area_x + area_w - 4 - cw - 1;
-    int arr_y2 = area_y + lh + 1 + 7;
+    int nx, ny;
+    northIconPos(display, area_x, area_w, area_y, nx, ny);
+    int arr_x1 = nx - 1;
+    int arr_y2 = ny + ICON_MAP_NORTH.h * s + 1;
 
+    // Grid dots are drawn at mini-icon scale too, so they stay visible instead
+    // of shrinking to a single pixel on large-font (e-ink) layouts.
     auto fillSafe = [&](int x, int y) {
       if (x < area_x || x > x_max || y < area_y || y > y_max) return;
       if (x <= lbl_x2 && y >= lbl_y1) return;   // under the scale label
       if (x >= arr_x1 && y <= arr_y2) return;   // under the north arrow
-      display.fillRect(x, y, 1, 1);
+      display.fillRect(x - s / 2, y - s / 2, s, s);
     };
 
     // A single dot per intersection — cleaner and more legible on an OLED than
@@ -748,41 +788,20 @@ private:
   }
 
   static void drawFilledDot(DisplayDriver& d, int cx, int cy) {
-    d.fillRect(cx - 1, cy - 1, 3, 3);
+    miniIconDrawCentered(d, cx, cy, ICON_MAP_DOT);
   }
   // Hollow diamond — distinct from the trail's dots (○●), start (+) and
   // current (✕) markers.
   static void drawWaypointMarker(DisplayDriver& d, int cx, int cy) {
-    d.fillRect(cx,     cy - 2, 1, 1);
-    d.fillRect(cx - 1, cy - 1, 1, 1); d.fillRect(cx + 1, cy - 1, 1, 1);
-    d.fillRect(cx - 2, cy,     1, 1); d.fillRect(cx + 2, cy,     1, 1);
-    d.fillRect(cx - 1, cy + 1, 1, 1); d.fillRect(cx + 1, cy + 1, 1, 1);
-    d.fillRect(cx,     cy + 2, 1, 1);
+    miniIconDrawCentered(d, cx, cy, ICON_MAP_WAYPOINT);
   }
   static void drawOpenDot(DisplayDriver& d, int cx, int cy) {
-    d.fillRect(cx - 1, cy - 1, 3, 1);
-    d.fillRect(cx - 1, cy + 1, 3, 1);
-    d.fillRect(cx - 1, cy,     1, 1);
-    d.fillRect(cx + 1, cy,     1, 1);
+    miniIconDrawCentered(d, cx, cy, ICON_MAP_RING);
   }
   static void drawStartMarker(DisplayDriver& d, int cx, int cy) {
-    d.fillRect(cx - 2, cy,     5, 1);
-    d.fillRect(cx,     cy - 2, 1, 5);
+    miniIconDrawCentered(d, cx, cy, ICON_MAP_START);
   }
   static void drawCurrentMarker(DisplayDriver& d, int cx, int cy) {
-    for (int i = -2; i <= 2; i++) {
-      d.fillRect(cx + i, cy + i, 1, 1);
-      d.fillRect(cx + i, cy - i, 1, 1);
-    }
-  }
-  static void drawNorthArrow(DisplayDriver& d, int cx, int cy) {
-    int lh = d.getLineHeight();
-    int cw = d.getCharWidth();
-    d.setCursor(cx - cw / 2, cy - lh);
-    d.print("N");
-    d.fillRect(cx,     cy,     1, 1);
-    d.fillRect(cx - 1, cy + 1, 3, 1);
-    d.fillRect(cx - 2, cy + 2, 5, 1);
-    d.fillRect(cx,     cy + 3, 1, 4);
+    miniIconDrawCentered(d, cx, cy, ICON_MAP_CURRENT);
   }
 };

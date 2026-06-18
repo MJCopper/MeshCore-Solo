@@ -668,8 +668,8 @@ public:
     }
     if (c == KEY_CONTEXT_MENU) { openActionMenu(); return true; }
     // drawList() reclamps _scroll from _sel every render.
-    if (c == KEY_UP   && _sel > 0)          { _sel--; return true; }
-    if (c == KEY_DOWN && _sel < _count - 1) { _sel++; return true; }
+    if (c == KEY_UP   && _count > 0) { _sel = (_sel > 0) ? _sel - 1 : _count - 1; return true; }
+    if (c == KEY_DOWN && _count > 0) { _sel = (_sel < _count - 1) ? _sel + 1 : 0; return true; }
     if (c == KEY_ENTER) {
       if (_count == 0) { if (_source == SRC_STORED) enterScan(); return true; }
       _detail = true;

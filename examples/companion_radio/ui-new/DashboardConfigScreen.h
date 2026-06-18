@@ -69,8 +69,8 @@ public:
       _task->gotoHomeScreen();
       return true;
     }
-    if (c == KEY_UP   && _sel > 0)              { _sel--; return true; }
-    if (c == KEY_DOWN && _sel < FIELD_SLOTS - 1){ _sel++; return true; }
+    if (c == KEY_UP)   { _sel = (_sel > 0) ? _sel - 1 : FIELD_SLOTS - 1; return true; }
+    if (c == KEY_DOWN) { _sel = (_sel < FIELD_SLOTS - 1) ? _sel + 1 : 0; return true; }
     if (keyIsPrev(c))  { cycle(_sel, -1); return true; }
     if (keyIsNext(c))  { cycle(_sel,  1); return true; }
     if (c == KEY_ENTER)                   { cycle(_sel,  1); return true; }

@@ -96,6 +96,13 @@ inline void miniIconDrawHalo(DisplayDriver& d, int x, int y, const MiniIcon& ic,
       if (ic.rows[r] & (1 << c)) d.fillRect(x + c * s, y + r * s, s, s);
 }
 
+// Draw a mini-icon centred on a point (scaled) — used for map markers, which
+// are positioned by their centre rather than a text-line top.
+inline void miniIconDrawCentered(DisplayDriver& d, int cx, int cy, const MiniIcon& ic) {
+  const int s = miniIconScale(d);
+  miniIconDrawTop(d, cx - (ic.w * s) / 2, cy - (ic.h * s) / 2, ic);
+}
+
 // Centre a mini-icon inside the slot [x, 0, box_w, box_h] using the current ink
 // colour (no background). Centres on the box itself, not the text line, so the
 // glyph sits dead-centre regardless of font line height.
@@ -172,6 +179,43 @@ MINI_ICON(ICON_TRAIL, 6,   // map pin / location marker (GPS trail logging)
   packRow("######"),
   packRow(".####."),
   packRow("..##.."));
+
+// Trail-map markers — centred on a point (see miniIconDrawCentered) rather
+// than anchored to a text line.
+MINI_ICON(ICON_MAP_DOT, 3,        // ● filled trail point
+  packRow("###"),
+  packRow("###"),
+  packRow("###"));
+MINI_ICON(ICON_MAP_RING, 3,       // ○ hollow ring — marks a new trail segment start
+  packRow("###"),
+  packRow("#.#"),
+  packRow("###"));
+MINI_ICON(ICON_MAP_WAYPOINT, 5,   // ◇ hollow diamond — saved waypoint
+  packRow("..#.."),
+  packRow(".#.#."),
+  packRow("#...#"),
+  packRow(".#.#."),
+  packRow("..#.."));
+MINI_ICON(ICON_MAP_START, 5,      // + trail start marker
+  packRow("..#.."),
+  packRow("..#.."),
+  packRow("#####"),
+  packRow("..#.."),
+  packRow("..#.."));
+MINI_ICON(ICON_MAP_CURRENT, 5,    // ✕ live position / last trail point
+  packRow("#...#"),
+  packRow(".#.#."),
+  packRow("..#.."),
+  packRow(".#.#."),
+  packRow("#...#"));
+MINI_ICON(ICON_MAP_NORTH, 5,      // "N" with a peaked roof — compass north marker
+  packRow("..#.."),
+  packRow(".###."),
+  packRow("#...#"),
+  packRow("##..#"),
+  packRow("#.#.#"),
+  packRow("#..##"),
+  packRow("#...#"));
 
 // Keyboard special-key glyphs.
 MINI_ICON(ICON_SHIFT, 7,   // ⇧  caps

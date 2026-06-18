@@ -87,10 +87,10 @@ struct KeyboardWidget {
     const int cell_w  = display.width() / KB_COLS_CHAR;
     // compact: don't stretch cells beyond lh; freed vertical space goes to preview lines
     const int kb_h      = (KB_ROWS_CHAR + 1) * lh;
-    const int preview_h = display.height() - kb_h - 1;
+    const int preview_h = display.height() - kb_h - display.sepH();
     const int prev_lines = (preview_h / lh) > 1 ? (preview_h / lh) : 1;
     const int sep_y   = prev_lines * lh;
-    const int chars_y = sep_y + 1;
+    const int chars_y = sep_y + display.sepH();
     const int cell_h  = (display.height() - chars_y) / (KB_ROWS_CHAR + 1);
     const int spec_y  = chars_y + KB_ROWS_CHAR * cell_h;
     const int spec_w  = display.width() / KB_SPECIAL;
@@ -121,7 +121,7 @@ struct KeyboardWidget {
       display.setCursor(0, pl * lh);
       display.print(linebuf_t);
     }
-    display.fillRect(0, sep_y, display.width(), 1);
+    display.fillRect(0, sep_y, display.width(), display.sepH());
 
     // character grid
     for (int r = 0; r < KB_ROWS_CHAR; r++) {
@@ -196,6 +196,9 @@ struct KeyboardWidget {
         row--;
         if (row == KB_ROWS_CHAR - 1)  // leaving special row upward
           col = col * KB_COLS_CHAR / KB_SPECIAL;
+      } else {
+        row = KB_ROWS_CHAR;             // wrap up onto the special row
+        col = col * KB_SPECIAL / KB_COLS_CHAR;
       }
       return NONE;
     }
@@ -204,16 +207,20 @@ struct KeyboardWidget {
         row++;
         if (row == KB_ROWS_CHAR)  // entering special row
           col = col * KB_SPECIAL / KB_COLS_CHAR;
+      } else {
+        row = 0;                        // wrap down onto the first char row
+        col = col * KB_COLS_CHAR / KB_SPECIAL;
       }
       return NONE;
     }
     if (c == KEY_LEFT) {
-      if (col > 0) col--;
+      int max_col = (row == KB_ROWS_CHAR) ? KB_SPECIAL - 1 : KB_COLS_CHAR - 1;
+      col = (col > 0) ? col - 1 : max_col;
       return NONE;
     }
     if (c == KEY_RIGHT) {
       int max_col = (row == KB_ROWS_CHAR) ? KB_SPECIAL - 1 : KB_COLS_CHAR - 1;
-      if (col < max_col) col++;
+      col = (col < max_col) ? col + 1 : 0;
       return NONE;
     }
     if (c == KEY_ENTER) {

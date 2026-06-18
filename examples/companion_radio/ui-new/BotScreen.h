@@ -146,8 +146,8 @@ public:
       return true;
     }
     // drawList() reclamps _scroll from _sel every render.
-    if (up   && _sel > 0)              { _sel--; return true; }
-    if (down && _sel < ITEM_COUNT - 1) { _sel++; return true; }
+    if (up)   { _sel = (_sel > 0) ? _sel - 1 : ITEM_COUNT - 1; return true; }
+    if (down) { _sel = (_sel < ITEM_COUNT - 1) ? _sel + 1 : 0; return true; }
 
     if (_sel == 0 && (enter || left || right)) {
       _prefs->bot_enabled ^= 1;
