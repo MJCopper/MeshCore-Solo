@@ -19,6 +19,8 @@ namespace mesh {
 void Dispatcher::begin() {
   n_sent_flood = n_sent_direct = 0;
   n_recv_flood = n_recv_direct = 0;
+  memset(n_sent_by_type, 0, sizeof(n_sent_by_type));
+  memset(n_recv_by_type, 0, sizeof(n_recv_by_type));
   _err_flags = 0;
   radio_nonrx_start = _ms->getMillis();
 
@@ -106,6 +108,7 @@ void Dispatcher::loop() {
 
       _radio->onSendFinished();
       logTx(outbound, 2 + outbound->getPathByteLen() + outbound->payload_len);
+      n_sent_by_type[outbound->getPayloadType()]++;
       if (outbound->isRouteFlood()) {
         n_sent_flood++;
       } else {
@@ -236,6 +239,7 @@ void Dispatcher::checkRecv() {
     #endif
     logRx(pkt, pkt->getRawLength(), score);   // hook for custom logging
 
+    n_recv_by_type[pkt->getPayloadType()]++;
     if (pkt->isRouteFlood()) {
       n_recv_flood++;
 

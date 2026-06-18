@@ -7,7 +7,7 @@ class ToolsScreen : public UIScreen {
   int _sel;
   int _scroll = 0;
 
-  static const int ITEM_COUNT = 6;
+  static const int ITEM_COUNT = 7;
   static const char* ITEMS[ITEM_COUNT];
 
 public:
@@ -37,8 +37,9 @@ public:
       if (_sel == 3) { _task->gotoAutoAdvertScreen(); return true; }
       if (_sel == 4) { _task->gotoTrailScreen(); return true; }
       if (_sel == 5) { _task->gotoCompassScreen(); return true; }
+      if (_sel == 6) { _task->gotoDiagnosticsScreen(); return true; }
     }
     return false;
   }
 };
-const char* ToolsScreen::ITEMS[6] = { "Ringtone Editor", "Auto-Reply Bot", "Nearby Nodes", "Auto-Advert", "Trail", "Compass" };
+const char* ToolsScreen::ITEMS[7] = { "Ringtone Editor", "Auto-Reply Bot", "Nearby Nodes", "Auto-Advert", "Trail", "Compass", "Diagnostics" };

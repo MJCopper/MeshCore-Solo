@@ -79,6 +79,7 @@ class UITask : public AbstractUITask {
   UIScreen* auto_advert_screen;
   UIScreen* trail_screen;
   UIScreen* compass_screen;
+  UIScreen* diag_screen;
   UIScreen* curr;
   CayenneLPP _dash_lpp;
   TrailStore _trail;
@@ -152,6 +153,7 @@ public:
   void gotoAutoAdvertScreen();
   void gotoTrailScreen();
   void gotoCompassScreen();
+  void gotoDiagnosticsScreen();
   TrailStore& trail() { return _trail; }
   WaypointStore& waypoints() { return _waypoints; }
   // Shared on-screen keyboard — only one screen drives it at a time.

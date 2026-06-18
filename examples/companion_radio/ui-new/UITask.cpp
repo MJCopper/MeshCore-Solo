@@ -125,6 +125,7 @@ static const int QUICK_MSGS_MAX = 10;
 #include "AutoAdvertScreen.h"
 #include "TrailScreen.h"
 #include "CompassScreen.h"
+#include "DiagnosticsScreen.h"
 #include "ToolsScreen.h"
 
 #ifndef BATT_MIN_MILLIVOLTS
@@ -1198,6 +1199,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   auto_advert_screen = new AutoAdvertScreen(this, node_prefs);
   trail_screen       = new TrailScreen(this, &_trail);
   compass_screen     = new CompassScreen(this);
+  diag_screen        = new DiagnosticsScreen(this);
   applyBrightness();
   applyFont();
   applyRotation();
@@ -1242,6 +1244,10 @@ void UITask::gotoTrailScreen() {
 void UITask::gotoCompassScreen() {
   ((CompassScreen*)compass_screen)->enter();
   setCurrScreen(compass_screen);
+}
+
+void UITask::gotoDiagnosticsScreen() {
+  setCurrScreen(diag_screen);
 }
 
 void UITask::gotoAutoAdvertScreen() {

@@ -123,6 +123,7 @@ class Dispatcher {
   bool  prev_isrecv_mode;
   uint32_t n_sent_flood, n_sent_direct;
   uint32_t n_recv_flood, n_recv_direct;
+  uint32_t n_sent_by_type[16], n_recv_by_type[16];   // indexed by getPayloadType() (4-bit field)
   unsigned long tx_budget_ms;
   unsigned long last_budget_update;
   unsigned long duty_cycle_window_ms;
@@ -184,8 +185,14 @@ public:
   uint32_t getNumSentDirect() const { return n_sent_direct; }
   uint32_t getNumRecvFlood() const { return n_recv_flood; }
   uint32_t getNumRecvDirect() const { return n_recv_direct; }
+  uint32_t getNumSentByType(uint8_t payload_type) const { return n_sent_by_type[payload_type & 0x0F]; }
+  uint32_t getNumRecvByType(uint8_t payload_type) const { return n_recv_by_type[payload_type & 0x0F]; }
+  int getPoolFreeCount() const { return _mgr->getFreeCount(); }
+  int getOutboundQueueLen() const { return _mgr->getOutboundTotal(); }
   void resetStats() {
     n_sent_flood = n_sent_direct = n_recv_flood = n_recv_direct = 0;
+    memset(n_sent_by_type, 0, sizeof(n_sent_by_type));
+    memset(n_recv_by_type, 0, sizeof(n_recv_by_type));
     _err_flags = 0;
   }
 
