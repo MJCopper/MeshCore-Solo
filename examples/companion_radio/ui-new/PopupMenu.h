@@ -106,7 +106,10 @@ struct PopupMenu {
       int py  = list_y + i * item_h + 1;
       if (idx == _sel) {
         display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(bx + 1, py - 1, bw - 2, item_h);
+        // Stops short of the scroll-indicator gutter, like every other list's
+        // selection bar (e.g. drawList's row width - reserve) — otherwise the
+        // bar paints over the indicator's column instead of framing it.
+        display.fillRect(bx + 1, py - 1, bw - 2 - arrow_w, item_h);
         display.setColor(DisplayDriver::DARK);
       } else {
         display.setColor(DisplayDriver::LIGHT);
