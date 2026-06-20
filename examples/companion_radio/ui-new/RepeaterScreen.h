@@ -44,6 +44,8 @@ class RepeaterScreen : public UIScreen {
   DigitEditor _freq_editor;
   uint8_t    _preset_user_slot[NodePrefs::USER_RADIO_PRESET_MAX];
   int        _preset_user_count = 0;
+  bool       _preset_saving = false;    // keyboard is open to name a new preset
+  bool       _preset_deleting = false;  // _preset_menu is showing the delete sub-list
 
   // Nearest entry in LORA_BW_OPTS to the repeater profile's bw.
   int rptBwIndex(NodePrefs* p) const {
@@ -112,6 +114,47 @@ class RepeaterScreen : public UIScreen {
     return "Custom";
   }
 
+  // Position of the repeater profile within the popup list built by
+  // openPresetMenu() below ("Save current..." at 0, then built-ins, then
+  // non-empty user slots in slot order) — or -1 ("Custom") if nothing matches.
+  int currentPresetListIndex(NodePrefs* p) const {
+    for (int i = 0; i < RADIO_PRESET_COUNT; i++) {
+      const RadioPreset& r = RADIO_PRESETS[i];
+      if (radioParamsMatchPreset(p->repeater_freq, p->repeater_bw, p->repeater_sf, p->repeater_cr, r.freq, r.bw, r.sf, r.cr))
+        return i + 1;
+    }
+    int pos = RADIO_PRESET_COUNT + 1;
+    for (int i = 0; i < NodePrefs::USER_RADIO_PRESET_MAX; i++) {
+      const auto& u = p->user_radio_presets[i];
+      if (!u.name[0]) continue;
+      if (radioParamsMatchPreset(p->repeater_freq, p->repeater_bw, p->repeater_sf, p->repeater_cr, u.freq, u.bw, u.sf, u.cr))
+        return pos;
+      pos++;
+    }
+    return -1;
+  }
+
+  // Save the current repeater profile as a named user preset: overwrite a slot
+  // with the same name if one exists, else the first empty slot, else slot 0.
+  // Shared with Settings' freq/bw/sf/cr — these are the same 4 user slots, just
+  // populated from the repeater profile instead of the companion's own params.
+  void saveCurrentAsPreset(NodePrefs* p, const char* name) {
+    if (!p || !name || !name[0]) return;
+    int slot = -1;
+    for (int i = 0; i < NodePrefs::USER_RADIO_PRESET_MAX; i++)
+      if (strcmp(p->user_radio_presets[i].name, name) == 0) { slot = i; break; }
+    if (slot < 0)
+      for (int i = 0; i < NodePrefs::USER_RADIO_PRESET_MAX; i++)
+        if (!p->user_radio_presets[i].name[0]) { slot = i; break; }
+    if (slot < 0) slot = 0;
+    NodePrefs::UserRadioPreset& u = p->user_radio_presets[slot];
+    strncpy(u.name, name, sizeof(u.name) - 1);
+    u.name[sizeof(u.name) - 1] = '\0';
+    u.freq = p->repeater_freq; u.bw = p->repeater_bw; u.sf = p->repeater_sf; u.cr = p->repeater_cr;
+    _dirty = true;
+    _task->showAlert("Preset saved", 800);
+  }
+
   void itemValue(int item, NodePrefs* p, char* buf, size_t n) const {
     if (!p) { strncpy(buf, "OFF", n); buf[n-1]=0; return; }
     switch (item) {
@@ -148,8 +191,12 @@ class RepeaterScreen : public UIScreen {
     p->repeater_sf = p->sf;     p->repeater_cr = p->cr;
   }
 
+  // Layout: [0]="+ Save current...", [1..RADIO_PRESET_COUNT]=built-ins,
+  // [..+_preset_user_count]=saved user presets, ["- Delete preset..." if any].
   void openPresetMenu(NodePrefs* p) {
+    _preset_deleting = false;
     _preset_menu.begin("Repeater Preset", 6);
+    _preset_menu.addItem("+ Save current...");
     for (int i = 0; i < RADIO_PRESET_COUNT; i++) _preset_menu.addItem(RADIO_PRESETS[i].name);
     _preset_user_count = 0;
     for (int i = 0; i < NodePrefs::USER_RADIO_PRESET_MAX; i++) {
@@ -157,14 +204,33 @@ class RepeaterScreen : public UIScreen {
       _preset_menu.addItem(p->user_radio_presets[i].name);
       _preset_user_slot[_preset_user_count++] = (uint8_t)i;
     }
+    if (_preset_user_count > 0) _preset_menu.addItem("- Delete preset...");
+    int idx = currentPresetListIndex(p);
+    _preset_menu.setSelected(idx >= 0 ? idx : 0);
+  }
+
+  // Reuses _preset_menu for a second-level list of just the saved user presets
+  // (their slot mapping in _preset_user_slot is still the one openPresetMenu()
+  // just built, since this is only reached from within that same popup).
+  void openDeletePresetMenu(NodePrefs* p) {
+    _preset_menu.begin("Delete Preset", 6);
+    for (int i = 0; i < _preset_user_count; i++)
+      _preset_menu.addItem(p->user_radio_presets[_preset_user_slot[i]].name);
+    _preset_deleting = true;
   }
 
 public:
   RepeaterScreen(UITask* task) : _task(task), _dirty(false), _sel(0), _scroll(0), _item_count(1) {}
 
-  void enter() { _dirty = false; _sel = 0; _scroll = 0; _preset_menu.active = false; _freq_editor.active = false; }
+  void enter() {
+    _dirty = false; _sel = 0; _scroll = 0;
+    _preset_menu.active = false; _freq_editor.active = false;
+    _preset_saving = false; _preset_deleting = false;
+  }
 
   int render(DisplayDriver& display) override {
+    if (_preset_saving) return _task->keyboard().render(display);
+
     NodePrefs* p = _task->getNodePrefs();
     buildItems(p);
     display.setTextSize(1);
@@ -212,23 +278,54 @@ public:
   bool handleInput(char c) override {
     NodePrefs* p = _task->getNodePrefs();
 
+    // Keyboard editing mode for naming a new saved preset
+    if (_preset_saving) {
+      auto res = _task->keyboard().handleInput(c);
+      if (res == KeyboardWidget::DONE) {
+        saveCurrentAsPreset(p, _task->keyboard().buf);
+        _preset_saving = false;
+      } else if (res == KeyboardWidget::CANCELLED) {
+        _preset_saving = false;
+      }
+      return true;
+    }
+
     // Modal overlays first.
     if (_preset_menu.active) {
       auto res = _preset_menu.handleInput(c);
       if (res == PopupMenu::SELECTED && p) {
         int idx = _preset_menu.selectedIndex();
-        if (idx >= 0 && idx < RADIO_PRESET_COUNT) {
-          const RadioPreset& r = RADIO_PRESETS[idx];
-          p->repeater_freq = r.freq; p->repeater_bw = r.bw; p->repeater_sf = r.sf; p->repeater_cr = r.cr;
+        if (_preset_deleting) {
+          if (idx >= 0 && idx < _preset_user_count) {
+            p->user_radio_presets[_preset_user_slot[idx]].name[0] = '\0';
+            _dirty = true;
+            _task->showAlert("Preset deleted", 800);
+          }
+          _preset_deleting = false;
         } else {
-          int u = idx - RADIO_PRESET_COUNT;
-          if (u >= 0 && u < _preset_user_count) {
-            const NodePrefs::UserRadioPreset& up = p->user_radio_presets[_preset_user_slot[u]];
+          int save_idx     = 0;
+          int builtin_base = 1;
+          int user_base    = builtin_base + RADIO_PRESET_COUNT;
+          int delete_idx   = user_base + _preset_user_count;
+          if (idx == save_idx) {
+            _preset_saving = true;
+            _task->keyboard().begin("", (int)sizeof(p->user_radio_presets[0].name) - 1);
+          } else if (idx >= builtin_base && idx < user_base) {
+            const RadioPreset& r = RADIO_PRESETS[idx - builtin_base];
+            p->repeater_freq = r.freq; p->repeater_bw = r.bw; p->repeater_sf = r.sf; p->repeater_cr = r.cr;
+            the_mesh.applyRepeaterRadio();   // live if currently relaying on the profile
+            _dirty = true;
+          } else if (idx >= user_base && idx < delete_idx) {
+            const NodePrefs::UserRadioPreset& up = p->user_radio_presets[_preset_user_slot[idx - user_base]];
             p->repeater_freq = up.freq; p->repeater_bw = up.bw; p->repeater_sf = up.sf; p->repeater_cr = up.cr;
+            the_mesh.applyRepeaterRadio();
+            _dirty = true;
+          } else if (_preset_user_count > 0 && idx == delete_idx) {
+            openDeletePresetMenu(p);
           }
         }
-        the_mesh.applyRepeaterRadio();   // live if currently relaying on the profile
-        _dirty = true;
+      } else if (res == PopupMenu::CANCELLED) {
+        _preset_deleting = false;
       }
       return true;
     }
