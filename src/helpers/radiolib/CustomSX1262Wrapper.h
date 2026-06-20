@@ -20,6 +20,9 @@ public:
     updatePreamble(sf);
   }
 
+  // From RadioLib's SX1262::setFrequency(): RADIOLIB_CHECK_RANGE(freq, 150.0f, 960.0f, ...).
+  void getFreqBounds(float& min_mhz, float& max_mhz) const override { min_mhz = 150.0f; max_mhz = 960.0f; }
+
   bool isReceivingPacket() override { 
     return ((CustomSX1262 *)_radio)->isReceiving();
   }

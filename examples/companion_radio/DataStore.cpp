@@ -210,6 +210,10 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
 #ifdef DISPLAY_ROTATION
   _prefs.display_rotation = DISPLAY_ROTATION;
 #endif
+  // 0 is a valid SNR threshold, so the "off" state needs its own sentinel set
+  // before reading — an older file lacking this field must read as disabled,
+  // not as "filter everything below 0 dB".
+  _prefs.repeat_min_snr = NodePrefs::REPEAT_SNR_DISABLED;
   File file = openRead(_fs, filename);
   if (!file) return;
 
@@ -331,6 +335,38 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.bot_quiet_start,     sizeof(_prefs.bot_quiet_start));
   rd(&_prefs.bot_quiet_end,       sizeof(_prefs.bot_quiet_end));
   rd(_prefs.bot_trigger_ch,       sizeof(_prefs.bot_trigger_ch));
+  rd(_prefs.user_radio_presets,   sizeof(_prefs.user_radio_presets));
+  // → 0xC0DE000E: repeater politeness knobs. On a pre-E file the bytes here are
+  // that file's own sentinel tail, so clamp every out-of-range value back to its
+  // "off" default (same stray-byte handling as the fields below).
+  rd(&_prefs.repeat_skip_adverts, sizeof(_prefs.repeat_skip_adverts));
+  rd(&_prefs.repeat_max_hops,     sizeof(_prefs.repeat_max_hops));
+  rd(&_prefs.repeat_delay_boost,  sizeof(_prefs.repeat_delay_boost));
+  rd(&_prefs.repeat_min_snr,      sizeof(_prefs.repeat_min_snr));
+  rd(&_prefs.repeat_suppress_dup, sizeof(_prefs.repeat_suppress_dup));
+  if (_prefs.repeat_skip_adverts > 1) _prefs.repeat_skip_adverts = 0;
+  if (_prefs.repeat_max_hops > 64)    _prefs.repeat_max_hops = 0;
+  if (_prefs.repeat_delay_boost > 8)  _prefs.repeat_delay_boost = 0;
+  if (_prefs.repeat_min_snr != NodePrefs::REPEAT_SNR_DISABLED &&
+      (_prefs.repeat_min_snr < -20 || _prefs.repeat_min_snr > 10))
+    _prefs.repeat_min_snr = NodePrefs::REPEAT_SNR_DISABLED;   // match the UI's -20..10 range
+  if (_prefs.repeat_suppress_dup > 1) _prefs.repeat_suppress_dup = 0;
+  rd(&_prefs.repeater_use_profile, sizeof(_prefs.repeater_use_profile));
+  rd(&_prefs.repeater_freq,        sizeof(_prefs.repeater_freq));
+  rd(&_prefs.repeater_bw,          sizeof(_prefs.repeater_bw));
+  rd(&_prefs.repeater_sf,          sizeof(_prefs.repeater_sf));
+  rd(&_prefs.repeater_cr,          sizeof(_prefs.repeater_cr));
+  // Pre-0x10 files leave stray sentinel bytes here, same as a never-configured
+  // device. Either way there's no valid saved profile, so default to a profile
+  // in the same band as the companion's own network (_prefs.freq, already read
+  // above) rather than "Current" — a repeater silently following the companion
+  // onto whatever private network it later joins isn't the MeshCore community
+  // norm; that stays opt-in. Band-matched rather than a flat frequency so the
+  // default can't land outside what's legal where the companion is set up.
+  if (_prefs.repeater_use_profile > 1) _prefs.repeater_use_profile = 0;
+  if (!isValidRepeaterProfile(_prefs.repeater_freq, _prefs.repeater_bw, _prefs.repeater_sf, _prefs.repeater_cr)) {
+    seedDefaultRepeaterProfile(_prefs);
+  }
   // → 0xC0DE000B: append bot_commands_enabled + quiet-hours. Older files leave
   // stray bytes here; clamp so upgraders fall back to off / no quiet hours.
   if (_prefs.bot_commands_enabled > 1)  _prefs.bot_commands_enabled = 0;
@@ -385,6 +421,9 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     // so an existing channel bot keeps reacting to the same word after upgrade.
     if (_prefs.bot_trigger_ch[0] == '\0')
       strncpy(_prefs.bot_trigger_ch, _prefs.bot_trigger, sizeof(_prefs.bot_trigger_ch) - 1);
+    // → 0xC0DE000D: append user_radio_presets. No clamping needed — rd() already
+    // zero-inits it on a pre-0x0D file, and name[0]=='\0' is exactly the "empty
+    // slot" sentinel the UI already expects.
   }
 
   file.close();
@@ -484,6 +523,17 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.bot_quiet_start,     sizeof(_prefs.bot_quiet_start));
     file.write((uint8_t *)&_prefs.bot_quiet_end,       sizeof(_prefs.bot_quiet_end));
     file.write((uint8_t *)_prefs.bot_trigger_ch,       sizeof(_prefs.bot_trigger_ch));
+    file.write((uint8_t *)_prefs.user_radio_presets,   sizeof(_prefs.user_radio_presets));
+    file.write((uint8_t *)&_prefs.repeat_skip_adverts,  sizeof(_prefs.repeat_skip_adverts));
+    file.write((uint8_t *)&_prefs.repeat_max_hops,      sizeof(_prefs.repeat_max_hops));
+    file.write((uint8_t *)&_prefs.repeat_delay_boost,   sizeof(_prefs.repeat_delay_boost));
+    file.write((uint8_t *)&_prefs.repeat_min_snr,       sizeof(_prefs.repeat_min_snr));
+    file.write((uint8_t *)&_prefs.repeat_suppress_dup,  sizeof(_prefs.repeat_suppress_dup));
+    file.write((uint8_t *)&_prefs.repeater_use_profile, sizeof(_prefs.repeater_use_profile));
+    file.write((uint8_t *)&_prefs.repeater_freq,        sizeof(_prefs.repeater_freq));
+    file.write((uint8_t *)&_prefs.repeater_bw,          sizeof(_prefs.repeater_bw));
+    file.write((uint8_t *)&_prefs.repeater_sf,          sizeof(_prefs.repeater_sf));
+    file.write((uint8_t *)&_prefs.repeater_cr,          sizeof(_prefs.repeater_cr));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL.
     uint32_t sentinel = NodePrefs::SCHEMA_SENTINEL;

@@ -74,28 +74,6 @@ inline void miniIconDrawTop(DisplayDriver& d, int x, int y, const MiniIcon& ic) 
       if (ic.rows[r] & (1 << c)) d.fillRect(x + c * s, y + r * s, s, s);
 }
 
-// Like miniIconDrawTop, but first lays down a 1px DARK halo that hugs the icon's
-// shape (each pixel dilated by 1px), then the icon in LIGHT. Invisible on a dark
-// row; on the LIGHT selection bar it outlines just the glyph — no boxed-in
-// rectangle around it. Restores ink to LIGHT. clip_top bounds the halo so it
-// can't bleed above a given y (e.g. onto a header separator just above the icon).
-inline void miniIconDrawHalo(DisplayDriver& d, int x, int y, const MiniIcon& ic,
-                             int clip_top = -100000) {
-  const int s = miniIconScale(d);
-  d.setColor(DisplayDriver::DARK);
-  for (int r = 0; r < ic.h; r++)
-    for (int c = 0; c < ic.w; c++)
-      if (ic.rows[r] & (1 << c)) {
-        int hy = y + r * s - 1, hh = s + 2;
-        if (hy < clip_top) { hh -= clip_top - hy; hy = clip_top; }
-        if (hh > 0) d.fillRect(x + c * s - 1, hy, s + 2, hh);
-      }
-  d.setColor(DisplayDriver::LIGHT);
-  for (int r = 0; r < ic.h; r++)
-    for (int c = 0; c < ic.w; c++)
-      if (ic.rows[r] & (1 << c)) d.fillRect(x + c * s, y + r * s, s, s);
-}
-
 // Draw a mini-icon centred on a point (scaled) — used for map markers, which
 // are positioned by their centre rather than a text-line top.
 inline void miniIconDrawCentered(DisplayDriver& d, int cx, int cy, const MiniIcon& ic) {
@@ -179,6 +157,13 @@ MINI_ICON(ICON_TRAIL, 6,   // map pin / location marker (GPS trail logging)
   packRow("######"),
   packRow(".####."),
   packRow("..##.."));
+
+MINI_ICON(ICON_REPEATER, 6,   // » double chevron — relaying/forwarding (repeater active)
+  packRow("#..#.."),
+  packRow(".#..#."),
+  packRow("..#..#"),
+  packRow(".#..#."),
+  packRow("#..#.."));
 
 // Trail-map markers — centred on a point (see miniIconDrawCentered) rather
 // than anchored to a text line.
@@ -318,20 +303,15 @@ inline void drawScrollIndicatorPx(DisplayDriver& d, int right_x, int top_y, int 
   if (thumb_h > band)  thumb_h = band;
   const int thumb_y = band_t + (int)((long)(band - thumb_h) * scroll_px / span);
 
-  // Each marker is drawn with a 1px DARK halo: invisible on a normal (dark) row,
-  // but on the LIGHT selection bar it carves out contrast so the LIGHT marker
-  // stays visible. Avoids having to know which row is currently selected.
-  // Thumb: a rectangle, so a plain box halo matches its shape.
-  d.setColor(DisplayDriver::DARK);
-  d.fillRect(bar_x - 1, thumb_y - 1, bar_w + 2, thumb_h + 2);
+  // No halo: every caller already keeps its selection bar clear of this column
+  // (reserve/_reserve), so the markers never need to fight a LIGHT background
+  // for contrast — and a halo on the bottom arrow had no symmetric clip like
+  // the top one, so it bled 1px into the container's bottom border.
   d.setColor(DisplayDriver::LIGHT);
   d.fillRect(bar_x, thumb_y, bar_w, thumb_h);
 
-  // Arrows: shape-hugging halo so they aren't boxed in on the selection bar.
-  // The top arrow clips its halo at top_y so it can't bite into the header
-  // separator sitting one pixel above the list area.
-  miniIconDrawHalo(d, x, top_y, ICON_SCROLL_UP, top_y);
-  miniIconDrawHalo(d, x, top_y + track_h - th, ICON_SCROLL_DOWN);
+  miniIconDrawTop(d, x, top_y, ICON_SCROLL_UP);
+  miniIconDrawTop(d, x, top_y + track_h - th, ICON_SCROLL_DOWN);
 }
 
 // Convenience overload anchored to the screen's right edge — the common case

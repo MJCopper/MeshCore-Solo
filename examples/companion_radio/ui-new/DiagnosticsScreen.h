@@ -4,6 +4,7 @@
 #include <helpers/DeviceDiag.h>
 #include <Arduino.h>
 #include "icons.h"
+#include "PopupMenu.h"
 #include "../MyMesh.h"
 
 extern MyMesh the_mesh;
@@ -18,9 +19,10 @@ extern MyMesh the_mesh;
 class DiagnosticsScreen : public UIScreen {
   UITask* _task;
   int _scroll = 0;
+  PopupMenu _reset_menu;   // Hold Enter → 1-item "Reset counters" action menu (Back dismisses)
 
   struct Row { const char* label; char value[20]; };
-  static const int MAX_ROWS = 12;
+  static const int MAX_ROWS = 14;
   Row _rows[MAX_ROWS];
   int _row_count = 0;
 
@@ -76,6 +78,9 @@ class DiagnosticsScreen : public UIScreen {
     addRxTxRow("Ack/Path", rte_rx, rte_tx);
     addRxTxRow("Other",   oth_rx, oth_tx);
 
+    snprintf(buf, sizeof(buf), "%lu", (unsigned long)the_mesh.getNumForwarded());
+    addRow("Forwarded", buf);
+
     uint32_t heap_free, heap_total;
     DeviceDiag::getHeapStats(heap_free, heap_total);
     if (heap_total > 0) snprintf(buf, sizeof(buf), "%lu/%luKB", (unsigned long)(heap_free / 1024), (unsigned long)(heap_total / 1024));
@@ -95,6 +100,20 @@ class DiagnosticsScreen : public UIScreen {
     addRow("Pool free", buf);
     snprintf(buf, sizeof(buf), "%d", the_mesh.getOutboundQueueLen());
     addRow("Queue", buf);
+
+    // Radio error flags since boot/reset, decoded to short tokens (F=queue full,
+    // C=CAD timeout, R=RX-start timeout). "OK" when none have fired.
+    uint16_t err = the_mesh.getErrFlags();
+    if (err == 0) strcpy(buf, "OK");
+    else {
+      buf[0] = '\0';
+      if (err & ERR_EVENT_FULL)            strcat(buf, "F ");
+      if (err & ERR_EVENT_CAD_TIMEOUT)     strcat(buf, "C ");
+      if (err & ERR_EVENT_STARTRX_TIMEOUT) strcat(buf, "R ");
+      int len = strlen(buf);   // drop the trailing space so right-alignment sits flush
+      if (len > 0 && buf[len - 1] == ' ') buf[len - 1] = '\0';
+    }
+    addRow("Errors", buf);
   }
 
 public:
@@ -125,13 +144,27 @@ public:
     }
     drawScrollIndicator(display, start_y, visible * item_h, _row_count, visible, _scroll);
     display.setColor(DisplayDriver::LIGHT);
-    return 1000;   // stats refresh once a second — no need for a faster redraw
+    if (_reset_menu.active) _reset_menu.render(display);
+    return _reset_menu.active ? 50 : 1000;   // popup wants snappier redraw; stats otherwise refresh once a second
   }
 
   bool handleInput(char c) override {
+    if (_reset_menu.active) {
+      auto res = _reset_menu.handleInput(c);   // Back/Cancel dismisses; the only item is "Reset counters"
+      if (res == PopupMenu::SELECTED) {
+        the_mesh.resetStats();   // zeroes Dispatcher per-type counters + Mesh forward count + err flags
+        _task->showAlert("Counters reset", 800);
+      }
+      return true;
+    }
     if (c == KEY_UP)   { if (_scroll > 0) _scroll--; return true; }
     if (c == KEY_DOWN) { _scroll++; return true; }   // clamped to max_scroll in render()
-    if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU || c == KEY_ENTER) { _task->gotoToolsScreen(); return true; }
+    if (c == KEY_CONTEXT_MENU) {   // Hold Enter — same action-menu gesture as the rest of the UI
+      _reset_menu.begin("Diagnostics", 1);
+      _reset_menu.addItem("Reset counters");
+      return true;
+    }
+    if (c == KEY_CANCEL) { _task->gotoToolsScreen(); return true; }
     return false;
   }
 };

@@ -65,9 +65,16 @@ Lists all available home screen pages. For each entry:
 
 | Setting   | Options    | Notes                                                                                                                                                              |
 | --------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| TX power  | 2–22 dBm   | LEFT/RIGHT. With **Auto pwr** on this is the *ceiling* — the radio may transmit lower. |
-| Pwr save  | ON / OFF   | **Battery saver.** Hardware duty-cycle receive: the SX126x cycles RX↔sleep on its own and wakes on a preamble, cutting average RX current. Trades a little receive latency; leave OFF for lowest-latency reception. Requires an SX126x radio (otherwise stays on continuous RX). |
-| Auto pwr  | ON / OFF   | **Adaptive Power Control.** Lowers actual TX power on strong links to save energy, ramping back up — to the **TX power** ceiling — on weak or lost links. Link quality comes from direct-message ACK SNR and, for channel messages (no ACK), from hearing a repeater rebroadcast your packet. The radio page / name bar shows the live power. Default OFF (fixed TX power). |
+| TX Pwr    | 2–22 dBm   | LEFT/RIGHT. With **Auto pwr** on this is the *ceiling* — the radio may transmit lower. |
+| Preset    | named presets | LEFT/RIGHT cycles community RF presets (region frequency + bandwidth/SF/CR). **Enter** opens a popup to pick one, save the current settings as a named preset, or delete a saved one. Applies frequency, bandwidth, SF and CR together. |
+| Freq      | chip range | **Enter** opens a digit-by-digit editor: LEFT/RIGHT moves between decimal places, UP/DOWN steps that digit. Bounds come from the radio chip's own validated range, so a value the radio would reject can't be entered. |
+| SF        | 5–12       | LEFT/RIGHT. Spreading factor. |
+| BW        | 7.8–500 kHz | LEFT/RIGHT cycles the standard LoRa bandwidths. |
+| CR        | 5–8        | LEFT/RIGHT. Coding rate (4/5–4/8). |
+| Pwr save  | ON / OFF   | **Battery saver.** Hardware duty-cycle receive: the SX126x cycles RX↔sleep on its own and wakes on a preamble, cutting average RX current. Trades a little receive latency; leave OFF for lowest-latency reception. Requires an SX126x radio (otherwise stays on continuous RX). **Forced off (shown as `--`) while the repeater is on** — a repeater must listen continuously; your setting is restored when the repeater is switched off. |
+| Auto pwr  | ON / OFF   | **Adaptive Power Control.** Lowers actual TX power on strong links to save energy, ramping back up — to the **TX Pwr** ceiling — on weak or lost links. Link quality comes from direct-message ACK SNR and, for channel messages (no ACK), from hearing a repeater rebroadcast your packet. The radio page / name bar shows the live power. Default OFF (fixed TX power). **Suppressed (shown as `--`) while the repeater is on** — a repeater holds full TX power for consistent relay reach; your setting is restored when the repeater is switched off. |
+
+The **repeater** mode and its flood filters live on their own screen — see **Tools › Repeater**.
 
 ---
 

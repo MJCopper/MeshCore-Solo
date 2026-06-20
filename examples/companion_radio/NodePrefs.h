@@ -2,6 +2,37 @@
 #include <cstdint>
 #include <stdio.h>
 
+// Firmware's own boot-default radio params — used both as the companion's
+// initial freq/sf/bw/cr (MyMesh.cpp) and, here, as the seed for a never-
+// configured repeater profile (DataStore.cpp). Kept above any per-board
+// target.h include so a board can still override via -D before this file
+// is reached.
+#ifndef LORA_FREQ
+#define LORA_FREQ 915.0
+#endif
+#ifndef LORA_BW
+#define LORA_BW 250
+#endif
+#ifndef LORA_SF
+#define LORA_SF 10
+#endif
+#ifndef LORA_CR
+#define LORA_CR 5
+#endif
+
+// Bucket a companion frequency into whichever of the three license-exempt
+// bands MeshCore's app-driven repeat toggle historically restricted to (see
+// repeat_freq_ranges in MyMesh.cpp: 433.000 / 869.495 / 918.000 MHz). Used to
+// seed a never-configured repeater profile in the same legal band as the
+// companion's own network (MyMesh.cpp begin(), DataStore.cpp) — a flat
+// single frequency could land outside the bands allowed where the operator
+// actually lives.
+static inline float defaultRepeaterFreqForBand(float companion_freq) {
+  if (companion_freq < 500.0f) return 433.000f;
+  if (companion_freq < 890.0f) return 869.495f;
+  return 918.000f;
+}
+
 #define TELEM_MODE_DENY            0
 #define TELEM_MODE_ALLOW_FLAGS     1     // use contact.flags
 #define TELEM_MODE_ALLOW_ALL       2
@@ -140,11 +171,58 @@ struct NodePrefs {  // persisted to file
   // shows ✗. 0 = no auto-resend (single attempt). Default 2.
   uint8_t  dm_resend_count;
 
+  // User-saved radio presets (Settings > Radio > Preset > "Save current...").
+  // name[0] == '\0' marks an empty slot.
+  struct UserRadioPreset {
+    char name[16];
+    float freq;
+    float bw;
+    uint8_t sf;
+    uint8_t cr;
+  };
+  static const uint8_t USER_RADIO_PRESET_MAX = 4;
+  UserRadioPreset user_radio_presets[USER_RADIO_PRESET_MAX];
+
+  // Repeater "politeness" — only consulted when client_repeat is on, via
+  // MyMesh::allowPacketForward(). Both default to off (0) so behaviour is
+  // unchanged until the user opts in (Settings > Radio).
+  //  repeat_skip_adverts: 1 = don't re-flood ADVERT packets (the highest-volume
+  //    flood traffic); messages/acks still relay.
+  //  repeat_max_hops: drop a flood packet once it has already travelled this
+  //    many hops. 0 = no hop limit.
+  //  repeat_delay_boost: extra retransmit-delay multiplier for FORWARDED floods
+  //    only (own sends are unaffected) — a mobile companion yields to better-sited
+  //    fixed repeaters. Effective delay = base * (1 + repeat_delay_boost). 0 = off.
+  //  repeat_min_snr: drop a flood packet received below this SNR (dB), so marginal
+  //    fringe traffic isn't re-flooded. REPEAT_SNR_DISABLED (-128) = off.
+  //  repeat_suppress_dup: 1 = cancel a queued retransmit when the same flood is
+  //    overheard from another node first (less redundant airtime in dense mesh).
+  uint8_t  repeat_skip_adverts;
+  uint8_t  repeat_max_hops;
+  uint8_t  repeat_delay_boost;
+  int8_t   repeat_min_snr;
+  static const int8_t REPEAT_SNR_DISABLED = -128;
+  uint8_t  repeat_suppress_dup;
+
+  // Optional dedicated radio profile for repeater mode. When repeater_use_profile
+  // is 1, enabling the repeater switches the radio to repeater_freq/bw/sf/cr and
+  // disabling restores the companion's freq/bw/sf/cr (the fields above). 0 = the
+  // repeater stays on the current companion frequency. Default (a never-configured
+  // device) is 1, seeded via defaultRepeaterFreqForBand(freq) + LORA_SF/BW/CR —
+  // repeating on whatever private network the companion later joins isn't the
+  // community norm, and the seed stays in the same legal band as the companion's
+  // own network rather than a flat frequency.
+  uint8_t  repeater_use_profile;
+  float    repeater_freq;
+  float    repeater_bw;
+  uint8_t  repeater_sf;
+  uint8_t  repeater_cr;
+
   // Tail sentinel written at the end of /new_prefs. Bump the low byte when
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE000C;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0010;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -213,3 +291,23 @@ struct NodePrefs {  // persisted to file
     if (pos < size) buf[pos] = '\0';
   }
 };
+
+// Bounds for a usable repeater radio profile — must match the radio chip's own
+// validated range (see CustomSX1262Wrapper::getFreqBounds(), 150-960 MHz), so
+// a profile that passes here is guaranteed to actually take effect on the radio.
+static inline bool isValidRepeaterProfile(float freq, float bw, uint8_t sf, uint8_t cr) {
+  return freq >= 150.0f && freq <= 960.0f
+      && sf >= 5 && sf <= 12
+      && cr >= 5 && cr <= 8
+      && bw >= 7.0f && bw <= 510.0f;
+}
+
+// Seed a never-configured repeater profile in the same band as the companion's
+// own network (see defaultRepeaterFreqForBand() above for why).
+static inline void seedDefaultRepeaterProfile(NodePrefs& prefs) {
+  prefs.repeater_use_profile = 1;
+  prefs.repeater_freq = defaultRepeaterFreqForBand(prefs.freq);
+  prefs.repeater_bw   = LORA_BW;
+  prefs.repeater_sf   = LORA_SF;
+  prefs.repeater_cr   = LORA_CR;
+}

@@ -778,9 +778,14 @@ public:
   }
 
   void updateChannelUnread() {
-    if (_hist_sel < 0 || _sel_channel_idx < 0 || _sel_channel_idx >= MAX_GROUP_CHANNELS) return;
-    if (_hist_sel > _viewing_max_seen) _viewing_max_seen = _hist_sel;
+    if (_sel_channel_idx < 0 || _sel_channel_idx >= MAX_GROUP_CHANNELS) return;
     // histEntryForChannel is newest-first: index 0 = newest (unread), higher = older.
+    // Count everything actually rendered on screen as seen — not just the
+    // highlighted row — so a taller screen that fits more boxes at once marks
+    // more read up front, instead of requiring a press per row.
+    int seen_to = _hist_scroll + _hist_visible - 1;
+    if (_hist_sel > seen_to) seen_to = _hist_sel;
+    if (seen_to > _viewing_max_seen) _viewing_max_seen = seen_to;
     // Each step down from 0 sees one more message; seen count = max_seen + 1.
     int remaining = _unread_at_entry - (_viewing_max_seen + 1);
     _ch_unread[_sel_channel_idx] = (uint8_t)(remaining > 0 ? remaining : 0);
@@ -1182,6 +1187,7 @@ public:
         }
       }
       _hist_visible = n_vis;
+      updateChannelUnread();  // mark everything in the just-computed visible window as seen
 
       for (int i = 0; i < n_vis && (_hist_scroll + i) < ch_hist_count; i++) {
         int item = _hist_scroll + i;
@@ -1555,7 +1561,10 @@ public:
         _hist_sel = hc > 0 ? 0 : -1;
         _viewing_max_seen = _hist_sel >= 0 ? _hist_sel : 0;
         _phase = CHANNEL_HIST;
-        updateChannelUnread();
+        // Not updateChannelUnread() here: _hist_visible is still whatever this
+        // channel's first render() hasn't computed yet (stale, shared with
+        // DM_HIST) — calling it now could ratchet _viewing_max_seen past what's
+        // actually about to be shown. render() calls it once that's fresh.
         if (_share_mode) beginShareCompose(true);
         return true;
       }

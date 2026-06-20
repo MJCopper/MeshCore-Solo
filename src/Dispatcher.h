@@ -170,6 +170,14 @@ protected:
   virtual int getAGCResetInterval() const { return 0; }    // disabled by default
   virtual unsigned long getDutyCycleWindowMs() const { return 3600000; }
 
+  // When true, a received flood packet whose hash matches one still waiting in
+  // the outbound queue cancels that queued retransmit (overhear suppression):
+  // another node already relayed it, so this node stays quiet. Default off.
+  virtual bool wantsOverhearSuppress() const { return false; }
+  // Hook fired when such a queued retransmit is cancelled — lets a sub-class
+  // keep its forward counter honest. Default no-op.
+  virtual void onRetransmitCancelled(Packet* packet) { }
+
 public:
   void begin();
   void loop();
@@ -189,7 +197,8 @@ public:
   uint32_t getNumRecvByType(uint8_t payload_type) const { return n_recv_by_type[payload_type & 0x0F]; }
   int getPoolFreeCount() const { return _mgr->getFreeCount(); }
   int getOutboundQueueLen() const { return _mgr->getOutboundTotal(); }
-  void resetStats() {
+  uint16_t getErrFlags() const { return _err_flags; }   // ERR_EVENT_* bitmask since last resetStats()
+  virtual void resetStats() {
     n_sent_flood = n_sent_direct = n_recv_flood = n_recv_direct = 0;
     memset(n_sent_by_type, 0, sizeof(n_sent_by_type));
     memset(n_recv_by_type, 0, sizeof(n_recv_by_type));
@@ -205,6 +214,7 @@ public:
 private:
   void checkRecv();
   void checkSend();
+  void suppressQueuedDuplicate(Packet* pkt);   // overhear cancel (see wantsOverhearSuppress)
 };
 
 }

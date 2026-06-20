@@ -49,7 +49,7 @@ All firmware files are published on the [releases page](https://github.com/Marek
 
 - [Screen Lock](./docs/solo_features/screen_lock/screen_lock.md) — lock the device to prevent accidental keypresses, with a lock screen showing time and sensor data
 
-- [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) — GPS trail & waypoints, compass, nearby nodes (with ping & navigate), ringtone editor, auto-reply bot, auto-advert
+- [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) — GPS trail & waypoints, compass, nearby nodes (with ping & navigate), ringtone editor, auto-reply bot, auto-advert, diagnostics, repeater
 
 - **Battery saving (radio)** — two optional, independent toggles under Settings › Radio:
   - **Pwr save** — hardware duty-cycle receive (SX126x `SetRxDutyCycle`): the radio cycles RX↔sleep on its own and wakes on a preamble, cutting average RX current with only a little added receive latency
@@ -97,7 +97,7 @@ Updating to a newer version usually does not require erasing flash unless the re
 | [Clock Screen](./docs/solo_features/clock_screen/clock_screen.md)          | Clock page, date, configurable data fields                            |
 | [Settings Screen](./docs/solo_features/settings_screen/settings_screen.md) | All settings sections with values and interactions                    |
 | [Screen Lock](./docs/solo_features/screen_lock/screen_lock.md)             | Lock/unlock sequence, lock screen, auto-lock                          |
-| [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md)          | GPS trail & waypoints, compass, navigation, nearby nodes, ringtone editor, auto-reply bot, auto-advert |
+| [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md)          | GPS trail & waypoints, compass, navigation, nearby nodes, ringtone editor, auto-reply bot, auto-advert, diagnostics, repeater |
 
 ### Upstream MeshCore
 

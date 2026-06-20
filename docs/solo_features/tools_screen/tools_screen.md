@@ -8,7 +8,7 @@
 | :-----------------------: | :-----------------------: |
 | ![](./tls_scr_1_oled.png) | ![](./tls_scr_1_eink.png) |
 
-The Tools screen is a hub for GPS trail recording, nearby node browsing, ringtone editing, auto-reply bot, and auto-advert. Navigate the tool list with **UP/DOWN** and press **Enter** to open a tool.
+The Tools screen is a hub for GPS trail recording, nearby node browsing, ringtone editing, auto-reply bot, auto-advert, compass, device diagnostics, and repeater mode. Navigate the tool list with **UP/DOWN** and press **Enter** to open a tool.
 
 ---
 
@@ -287,3 +287,61 @@ With **Commands** ON, a DM beginning with `!` is answered with live node data, i
 Several commands can be combined in one message — `!batt !time !hops` is answered with a single `4.10V | 14:30 | 3 hops` reply (one transmission). A message with no recognised command falls through to the trigger bot.
 
 Commands also work on the **monitored channel** (the one selected for channel mode) — anyone there can query the node. Channel replies are broadcast to everyone, so unlike DM commands they respect quiet hours and use the shared per-channel cooldown. DM commands use the per-contact throttle.
+
+---
+
+## Diagnostics
+
+A single read-only screen of live device and mesh stats, refreshed once a second. On a small OLED the rows scroll with **UP/DOWN**; on a larger e-ink display they all fit at once.
+
+| Row          | Shows                                                                                              |
+| ------------ | -------------------------------------------------------------------------------------------------- |
+| Uptime       | Time since boot (`d hh:mm:ss`)                                                                      |
+| Total rx/tx  | All received / transmitted packets, summed across the categories below                             |
+| Msg          | Text and group-text packets, `rx/tx`                                                                |
+| Advert       | Advert packets, `rx/tx`                                                                             |
+| Ack/Path     | Ack, path-return and trace packets, `rx/tx`                                                         |
+| Other        | Everything else (requests, responses, control, raw, …), `rx/tx`                                    |
+| Forwarded    | Packets this node actually re-transmitted as a repeater (reflects overhear suppression, if on)     |
+| Heap free    | Free / total heap                                                                                  |
+| Stack free   | Current task's minimum-ever stack headroom                                                          |
+| Noise floor  | Live radio noise floor (dBm)                                                                        |
+| RSSI/SNR     | Signal strength / signal-to-noise of the last received packet                                      |
+| Pool free    | Free entries in the packet pool                                                                     |
+| Queue        | Packets waiting in the outbound queue                                                               |
+| Errors       | Radio error flags since boot/reset — `OK`, or tokens `F` (queue full), `C` (CAD timeout), `R` (RX-start timeout) |
+
+The packet counters, **Forwarded** and **Errors** are cumulative since boot. **Hold Enter** opens a one-item *Reset counters* menu (Back dismisses it); the live readings (noise, RSSI/SNR, pool, queue, uptime) are not affected. **Cancel/Back** returns to the Tools list.
+
+The counters make the repeater behaviour observable: **Forwarded** confirms the node is actually relaying (not just configured to), and **Pool free** / **Queue** show whether forwarding is exhausting the packet pool. See **Tools › Repeater** for the relaying options.
+
+---
+
+## Repeater
+
+Turns the companion into a packet **repeater** while it keeps working as a normal companion — no separate firmware. By default, enabling it switches the radio to a dedicated repeater profile rather than relaying on whatever network you're chatting on (see **Network** below) — that matches the MeshCore community norm of repeaters sitting on a standard channel, not a private one. Loop-detection and an advert flood-depth cap are always applied. This screen keeps the toggle, the network/profile, and its flood-filter options together; live forwarding stats are on **Tools › Diagnostics**.
+
+Navigate with **UP/DOWN**; change a value with **LEFT/RIGHT** (or **Enter** for toggles). **Cancel/Back** saves and returns to Tools.
+
+| Setting        | Options         | Notes                                                                                                          |
+| -------------- | --------------- | -------------------------------------------------------------------------------------------------------------- |
+| Repeater       | ON / OFF        | Master switch. The options below appear only while it is ON.                                                    |
+| Network        | Current / Custom | **Custom** _(default)_: enabling the repeater switches the radio to a dedicated profile (below) and disabling restores the companion's settings — so you can drop onto a separate repeater network and come back. A never-configured device seeds Custom with a frequency in the same band as your own network (433/868/915 MHz region), not a flat one-size-fits-all default — so it can't land outside what's legal for your region. Switching to Custom afterwards (if it was OFF and unconfigured) seeds it from your current settings instead. **Current**: relay on the companion's own frequency — opt-in; not the community norm. |
+| Rpt preset     | named presets   | _(Custom only)_ **Enter** picks a community/saved preset for the repeater profile. |
+| Rpt freq       | chip range      | _(Custom only)_ **Enter** opens the digit-by-digit editor (chip-validated bounds). |
+| Rpt SF / BW / CR | 5–12 / 7.8–500 kHz / 5–8 | _(Custom only)_ **LEFT/RIGHT** to adjust the profile's spreading factor, bandwidth, coding rate. |
+| Skip advert    | ON / OFF        | Don't re-flood **advert** packets (the highest-volume flood traffic); messages and acks still relay.           |
+| Max hops       | OFF / 1–8       | Drop a flood packet once it has already travelled this many hops.                                              |
+| Yield          | OFF / x2–x9     | Scales the retransmit delay for **forwarded** floods only (your own sends are unaffected), so a mobile companion defers to better-sited fixed repeaters. Widens the window for **Suppress dup**. |
+| Min SNR        | OFF / −20…10 dB | Drop a flood copy received below this signal-to-noise threshold, so marginal fringe traffic isn't re-flooded.   |
+| Suppress dup   | ON / OFF        | If the same flood packet is overheard from another node while still queued to retransmit, cancel our copy — a peer already relayed it. Cuts redundant airtime in dense meshes; pairs with **Yield**. |
+
+The five flood filters are **opt-in** (default OFF, so a plain repeater is unaffected) and act on **flood** traffic only — on a direct route this node is the named next hop, so it never drops those.
+
+**Same network vs. separate network.** With **Network = Current** (or a Custom profile set equal to your companion settings) the repeater stays on your own network — you keep messaging while relaying. With a *different* Custom profile the device moves entirely onto that network while relaying (a single radio can't be on two at once) and returns to your companion network when the repeater is switched off. The profile also re-applies after a reboot if the repeater was left on.
+
+While the repeater is on, a **»** indicator appears in the status bar (same blink convention as the auto-advert and trail markers) so you can tell it's relaying at a glance. Two radio settings are also overridden while relaying and restored afterwards: **Settings › Radio › Pwr save** is forced off (a repeater must listen continuously) and **Auto pwr** is forced off (a repeater holds full TX power for consistent relay reach). Both show `--` in Settings while the repeater is on.
+
+Live forwarding stats — **Forwarded**, **Pool free**, **Queue** — are shown on **Tools › Diagnostics**.
+
+While the repeater is ON, the bottom of the screen shows live stats: **Forwarded** (packets actually re-transmitted — reflects Suppress dup), **Pool free**, and **Queue**. The same numbers appear, alongside the full device picture, in **Tools › Diagnostics**.

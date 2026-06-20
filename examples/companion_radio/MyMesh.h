@@ -41,18 +41,7 @@ class UITask;
 
 /* ---------------------------------- CONFIGURATION ------------------------------------- */
 
-#ifndef LORA_FREQ
-#define LORA_FREQ 915.0
-#endif
-#ifndef LORA_BW
-#define LORA_BW 250
-#endif
-#ifndef LORA_SF
-#define LORA_SF 10
-#endif
-#ifndef LORA_CR
-#define LORA_CR 5
-#endif
+// LORA_FREQ/BW/SF/CR fallbacks now live in NodePrefs.h (DataStore.cpp needs them too).
 #ifndef LORA_TX_POWER
 #define LORA_TX_POWER 20
 #endif
@@ -152,6 +141,10 @@ protected:
   uint8_t getExtraAckTransmitCount() const override;
   bool filterRecvFloodPacket(mesh::Packet* packet) override;
   bool allowPacketForward(const mesh::Packet* packet) override;
+  bool isRepeatLooped(const mesh::Packet* packet) const;
+  // Overhear suppression only makes sense while repeating; gated behind its own
+  // opt-in pref (Settings > Radio > Suppress dup).
+  bool wantsOverhearSuppress() const override { return _prefs.client_repeat && _prefs.repeat_suppress_dup; }
 
   void sendFloodScoped(const TransportKey& scope, mesh::Packet* pkt, uint32_t delay_millis);
   void sendFloodScoped(const ContactInfo& recipient, mesh::Packet* pkt, uint32_t delay_millis=0) override;
@@ -223,6 +216,21 @@ public:
   void saveRTCTime() { _store->saveRTCTime(); }
   DataStore* getDataStore() const { return _store; }
   void applyApc();   // (re)initialise Adaptive Power Control from prefs
+  // Adaptive Power Control is suppressed while repeating: a repeater wants full,
+  // consistent TX power for relay reach, and its feedback sources (own ACKs /
+  // own flood echoes) don't fire on forwarded traffic anyway. applyApc() then
+  // pins power to the ceiling.
+  bool apcActive() const { return _prefs.tx_apc && !_prefs.client_repeat; }
+
+  // True when the optional repeater radio profile is a valid LoRa config.
+  bool repeaterProfileValid() const {
+    return isValidRepeaterProfile(_prefs.repeater_freq, _prefs.repeater_bw, _prefs.repeater_sf, _prefs.repeater_cr);
+  }
+  // Load the radio with the correct params for the current mode: the repeater
+  // profile when relaying with a valid dedicated profile, otherwise the
+  // companion's own params. Single source of truth, used at boot and whenever
+  // the repeater toggle / network / profile changes.
+  void applyRepeaterRadio();
 
   bool isAckPending(uint32_t expected_ack) const {
     for (int i = 0; i < EXPECTED_ACK_TABLE_SIZE; i++)

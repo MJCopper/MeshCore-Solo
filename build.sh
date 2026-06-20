@@ -96,7 +96,7 @@ get_platform_for_env() {
   local env_name=$1
   echo "$PIO_CONFIG_JSON" | python3 -c "
 import sys, json, re
-data = json.load(sys.stdin)
+data = json.load(sys.stdin, strict=False)
 for section, options in data:
     if section == 'env:$env_name':
         for key, value in options:

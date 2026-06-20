@@ -240,6 +240,9 @@ void Dispatcher::checkRecv() {
     logRx(pkt, pkt->getRawLength(), score);   // hook for custom logging
 
     n_recv_by_type[pkt->getPayloadType()]++;
+    // Overhear suppression: if we just heard a flood packet that we still have
+    // queued to retransmit, another node beat us to it — drop our copy.
+    if (pkt->isRouteFlood() && wantsOverhearSuppress()) suppressQueuedDuplicate(pkt);
     if (pkt->isRouteFlood()) {
       n_recv_flood++;
 
@@ -257,6 +260,27 @@ void Dispatcher::checkRecv() {
     } else {
       n_recv_direct++;
       processRecvPacket(pkt);
+    }
+  }
+}
+
+void Dispatcher::suppressQueuedDuplicate(Packet* pkt) {
+  uint8_t h[MAX_HASH_SIZE];
+  pkt->calculatePacketHash(h);
+  // Scan the whole outbound queue (not just due entries). hasSeen() already
+  // keeps at most one copy queued, so the first hash match is the only one.
+  int n = _mgr->getOutboundTotal();
+  for (int i = 0; i < n; i++) {
+    Packet* q = _mgr->getOutboundByIdx(i);
+    if (q == NULL || !q->isRouteFlood()) continue;   // only ever suppress a queued flood retransmit
+    uint8_t qh[MAX_HASH_SIZE];
+    q->calculatePacketHash(qh);
+    if (memcmp(h, qh, MAX_HASH_SIZE) == 0) {
+      _mgr->removeOutboundByIdx(i);
+      onRetransmitCancelled(q);
+      _mgr->free(q);
+      MESH_DEBUG_PRINTLN("%s Dispatcher: overhear suppressed a queued retransmit", getLogDateTime());
+      return;
     }
   }
 }

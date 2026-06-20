@@ -126,6 +126,7 @@ static const int QUICK_MSGS_MAX = 10;
 #include "TrailScreen.h"
 #include "CompassScreen.h"
 #include "DiagnosticsScreen.h"
+#include "RepeaterScreen.h"
 #include "ToolsScreen.h"
 
 #ifndef BATT_MIN_MILLIVOLTS
@@ -477,6 +478,15 @@ class HomeScreen : public UIScreen {
         if (blinkOn()) drawBoxedIcon(display, gX, ind, ind_h, ICON_TRAIL);
         leftmostX = gX - 1;
       }
+
+      // Repeater relaying. Same blink convention — a "leave it on and forget"
+      // mode, so an at-a-glance cue matters (especially on a Custom profile,
+      // where the device is off your own network while this is shown).
+      if (_node_prefs && _node_prefs->client_repeat) {
+        int rX = leftmostX - ind;
+        if (blinkOn()) drawBoxedIcon(display, rX, ind, ind_h, ICON_REPEATER);
+        leftmostX = rX - 1;
+      }
     }
     return leftmostX;
   }
@@ -532,7 +542,11 @@ public:
       display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
       int rightEdge = renderBatteryIndicator(display, _task->getBattMilliVolts());
       display.setColor(DisplayDriver::LIGHT);
-      if (_node_prefs && _node_prefs->tx_apc) {
+      // Only show the live-power readout when APC is actually controlling power —
+      // not merely when the pref is set. While repeating APC is suppressed and
+      // power is pinned to the ceiling, so apcActive() is false and the name bar
+      // drops the readout (matching the "--" lock in Settings).
+      if (the_mesh.apcActive()) {
         char pwr_buf[8];
         snprintf(pwr_buf, sizeof(pwr_buf), "%ddB", (int)radio_driver.getTxPower());
         int pwr_w = display.getTextWidth(pwr_buf);
@@ -994,7 +1008,8 @@ public:
     // Any blinking status-bar indicator needs a 1 s refresh to animate evenly —
     // but the status bar (and its icons) is hidden on the CLOCK page, so don't
     // pay the 1 s cadence there for icons that aren't drawn.
-    bool need_blink = (_page != HomePage::CLOCK) && (auto_adv || _task->trail().isActive());
+    bool repeating = _node_prefs && _node_prefs->client_repeat;
+    bool need_blink = (_page != HomePage::CLOCK) && (auto_adv || _task->trail().isActive() || repeating);
     if (Features::IS_EINK) {
       // slow display: poll every 30 s; inbound msgs force immediate refresh via notify()
       return Features::HOME_REFRESH_MS;
@@ -1200,6 +1215,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   trail_screen       = new TrailScreen(this, &_trail);
   compass_screen     = new CompassScreen(this);
   diag_screen        = new DiagnosticsScreen(this);
+  repeater_screen    = new RepeaterScreen(this);
   applyBrightness();
   applyFont();
   applyRotation();
@@ -1248,6 +1264,11 @@ void UITask::gotoCompassScreen() {
 
 void UITask::gotoDiagnosticsScreen() {
   setCurrScreen(diag_screen);
+}
+
+void UITask::gotoRepeaterScreen() {
+  ((RepeaterScreen*)repeater_screen)->enter();
+  setCurrScreen(repeater_screen);
 }
 
 void UITask::gotoAutoAdvertScreen() {
@@ -2092,11 +2113,19 @@ void UITask::applyTxPower() {
 
 void UITask::applyPowerSave() {
   if (_node_prefs == NULL) return;
-  radio_driver.setPowerSaving(_node_prefs->rx_powersave);
+  // A repeater must hear every packet to relay it, so duty-cycle RX (which sleeps
+  // between preamble checks) is forced off while repeating — the user's pref is
+  // kept and restored when the repeater is switched off.
+  radio_driver.setPowerSaving(_node_prefs->rx_powersave && !_node_prefs->client_repeat);
 }
 
 void UITask::applyApc() {
   the_mesh.applyApc();   // (re)initialise Adaptive Power Control from prefs
+}
+
+void UITask::applyRadioParams() {
+  if (_node_prefs == NULL) return;
+  the_mesh.applyRepeaterRadio();   // companion params, or the repeater profile if relaying with one set
 }
 
 void UITask::applyBrightness() {

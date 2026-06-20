@@ -5,6 +5,7 @@ namespace mesh {
 
 void Mesh::begin() {
   Dispatcher::begin();
+  n_forwarded = 0;
 }
 
 void Mesh::loop() {
@@ -60,6 +61,7 @@ DispatcherAction Mesh::onRecvPacket(Packet* pkt) {
         pkt->path[pkt->path_len++] = (int8_t) (pkt->getSNR()*4);
 
         uint32_t d = getDirectRetransmitDelay(pkt);
+        n_forwarded++;
         return ACTION_RETRANSMIT_DELAYED(5, d);  // schedule with priority 5 (for now), maybe make configurable?
       }
     }
@@ -100,7 +102,8 @@ DispatcherAction Mesh::onRecvPacket(Packet* pkt) {
         removeSelfFromPath(pkt);
 
         uint32_t d = getDirectRetransmitDelay(pkt);
-        return ACTION_RETRANSMIT_DELAYED(0, d);  // Routed traffic is HIGHEST priority 
+        n_forwarded++;
+        return ACTION_RETRANSMIT_DELAYED(0, d);  // Routed traffic is HIGHEST priority
       }
     }
     return ACTION_RELEASE;   // this node is NOT the next hop (OR this packet has already been forwarded), so discard.
@@ -336,6 +339,7 @@ DispatcherAction Mesh::routeRecvPacket(Packet* packet) {
     packet->setPathHashCount(n + 1);
 
     uint32_t d = getRetransmitDelay(packet);
+    n_forwarded++;
     // as this propagates outwards, give it lower and lower priority
     return ACTION_RETRANSMIT_DELAYED(packet->getPathHashCount(), d);   // give priority to closer sources, than ones further away
   }

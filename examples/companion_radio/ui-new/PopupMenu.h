@@ -7,7 +7,7 @@
 // Caller owns item string lifetimes — addItem() stores const char* pointers.
 // Navigation wraps around: up from first item goes to last, and vice versa.
 struct PopupMenu {
-  static const int PM_MAX_ITEMS = 16;
+  static const int PM_MAX_ITEMS = 24;
 
   const char* _items[PM_MAX_ITEMS];
   int         _count;

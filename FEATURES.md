@@ -441,6 +441,83 @@ Sequencing: hardware duty-cycle RX and APC are both done and in field test on
 `feat/power-saving`; see the status block at the top of this entry for what's
 left (PPK2 current measurement, multi-hop APC gating).
 
+### ✅ Companion repeater + politeness knobs + diagnostics
+
+On-device repeater for the Solo companion, scoped to the SX1262 boards (Wio
+Tracker L1 OLED/e-ink, GAT562 30S). All on `feature/companion-repeater-presets`.
+
+- **Repeater toggle** (`client_repeat`, Tools › Repeater) — the companion relays
+  flood/direct traffic, still working as a normal companion. By default it
+  switches to a dedicated band on enable (see profile note below) rather than
+  relaying on whatever network it's chatting on. `MyMesh::allowPacketForward`
+  gates it; loop
+  detection (`isRepeatLooped`, ported from `simple_repeater`) and an advert
+  flood-depth cap are always applied. Packet pool bumped 16→32 to match the
+  repeater workload (a too-small pool starved channel/DM reception once relaying
+  queued retransmits).
+- **Consolidated on Tools › Repeater** — the toggle and the five filters share
+  one full-width screen, rather than the original Settings › Radio sub-items
+  (whose indented labels collided with the value column on a 128px OLED). Live
+  forwarding stats (Forwarded / Pool free / Queue) stay on Tools › Diagnostics.
+- **Optional dedicated radio profile** (`Network: Current/Custom`,
+  `repeater_use_profile` + `repeater_freq/bw/sf/cr`). Custom switches the radio to
+  a preset/manual profile when the repeater is enabled and restores the
+  companion's params when disabled (user-chosen revert-on-disable); a profile
+  equal to the companion = "same network", a different one = drop onto a separate
+  repeater network. `MyMesh::applyRepeaterRadio()` is the single decision point,
+  called at boot and on every toggle/edit; `repeaterProfileValid()` gates it.
+  Schema sentinel `0xC0DE0010`. **Custom is the default**: a never-configured
+  device (or one upgrading from a pre-`0x10` file, which has no saved profile)
+  turns the profile on and seeds `repeater_sf/bw/cr` from `LORA_SF/BW/CR` plus
+  a band-matched `repeater_freq` — relaying on the same network the operator is
+  chatting on isn't the MeshCore community norm, so "Current" stays opt-in.
+  `defaultRepeaterFreqForBand()` (`NodePrefs.h`) buckets the companion's own
+  `freq` into whichever of the three license-exempt bands MeshCore's app-driven
+  repeat toggle historically restricted to (433.000 / 869.495 / 918.000 MHz —
+  see `repeat_freq_ranges` in `MyMesh.cpp`), so the seeded default can't land
+  outside what's legal for wherever the companion's own network already is.
+  `LORA_FREQ/BW/SF/CR` fallback `#define`s moved from `MyMesh.h` to
+  `NodePrefs.h` so `DataStore.cpp`'s migration code can see them too.
+- **Politeness knobs** (all opt-in, default off, flood-only — a direct route's
+  named next hop is never dropped). Shown only while the repeater is on:
+  - **Skip advert** — don't re-flood adverts (highest-volume flood).
+  - **Max hops** — drop a flood past N hops.
+  - **Yield** — scale the retransmit delay for *forwarded* floods only
+    (`getRetransmitDelay`); own sends pass their own delay to `sendFlood`, so the
+    companion's own traffic is never slowed. Widens the overhear window.
+  - **Min SNR** — drop a flood copy below a dB threshold (`-128` sentinel = off,
+    so an upgraded prefs file can't read as "filter at 0 dB").
+  - **Suppress dup** — overhear cancel: a received flood whose hash matches a
+    queued retransmit cancels our copy (`Dispatcher::suppressQueuedDuplicate`,
+    `wantsOverhearSuppress` hook). MeshCore had no overhear-cancel before — the
+    unused `removeOutboundByIdx`/`getOutboundByIdx` finally have a caller. Packet
+    hash ignores the path for non-TRACE, so our copy and the peer's relayed copy
+    hash equal. Pairs with Yield (longer delay → wider window to hear a peer).
+- **Diagnostics screen** (Tools › Diagnostics) — single read-only page: per-type
+  RX/TX counters (generic `Dispatcher::n_recv_by_type`/`n_sent_by_type`), uptime,
+  heap + stack (new `DeviceDiag` helper, nRF52 linker-symbol/`sbrk` heap +
+  FreeRTOS stack high-water), noise floor, RSSI/SNR, pool free, outbound queue,
+  **Forwarded** (`Mesh::n_forwarded` — actual retransmits; backed out on overhear
+  cancel so it reflects what hits the air), and **Errors** (Dispatcher
+  `ERR_EVENT_*` flags decoded to F/C/R). Hold Enter opens a one-item "Reset
+  counters" menu (Back dismisses) — `resetStats` made virtual; `Mesh` override
+  also clears `n_forwarded`.
+- **Radio settings locked while relaying** — a repeater must hear all traffic and
+  relay at consistent power, so duty-cycle RX ("Pwr save") and APC ("Auto pwr")
+  are forced off whenever `client_repeat` is on (effective `pref && !client_repeat`
+  via `applyPowerSave()` / `apcActive()`), applied at boot, on the on-device
+  toggle, and on the app's `CMD_SET_RADIO_PARAMS`; Settings shows `--` and blocks
+  the toggle, preserving the user's pref for when the repeater goes off. A
+  blinking `»` status-bar indicator (`ICON_REPEATER`) shows relaying at a glance.
+- Prefs persisted behind schema sentinels `0xC0DE000E` (four knobs),
+  `0xC0DE000F` (suppress-dup), `0xC0DE0010` (radio profile), with stray-byte
+  clamps for upgraders.
+- **Open question:** the app-side dedicated-band gate in `CMD_SET_RADIO_PARAMS`
+  was commented out (not deleted) to match the on-device toggle's any-frequency
+  behaviour — undecided whether that gate was UX-only or regulatory.
+- **Not done:** live two-device mesh verification (A→repeater→C); counters make
+  it observable but don't replace the field test.
+
 ### SOS broadcast
 
 Configurable in Settings › System › SOS:

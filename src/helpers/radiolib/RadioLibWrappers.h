@@ -56,6 +56,13 @@ public:
   }
 
   virtual void setParams(float freq, float bw, uint8_t sf, uint8_t cr) = 0;
+  // RadioLib's own setFrequency() silently rejects values outside the chip's
+  // validated range and leaves the radio retuned to its previous frequency —
+  // setParams() above doesn't check that return code, so the UI clamps to this
+  // instead of letting NodePrefs drift out of sync with the actual radio.
+  // Default is the generic sanity bound the app's CMD_SET_RADIO_PARAMS already
+  // uses; chips with a narrower RadioLib-validated range override it.
+  virtual void getFreqBounds(float& min_mhz, float& max_mhz) const { min_mhz = 150.0f; max_mhz = 2500.0f; }
   uint32_t getRngSeed();
   void setTxPower(int8_t dbm);
   int8_t getTxPower() const { return _tx_dbm; }   // actual current power (reflects APC)

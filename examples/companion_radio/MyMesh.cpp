@@ -282,7 +282,12 @@ int MyMesh::calcRxDelay(float score, uint32_t air_time) const {
 
 uint32_t MyMesh::getRetransmitDelay(const mesh::Packet *packet) {
   uint32_t t = (_radio->getEstAirtimeFor(packet->getPathByteLen() + packet->payload_len + 2) * 0.5f);
-  return getRNG()->nextInt(0, 5*t + 1);
+  uint32_t d = getRNG()->nextInt(0, 5*t + 1);
+  // Politeness yield (Settings > Radio): scale the flood retransmit delay so a
+  // mobile companion waits longer and lets better-sited fixed repeaters win the
+  // flood first. Only forwarded floods reach here — own sends pass their own
+  // delay to sendFlood() — so this never slows the companion's own traffic.
+  return d * (1 + _prefs.repeat_delay_boost);
 }
 uint32_t MyMesh::getDirectRetransmitDelay(const mesh::Packet *packet) {
   uint32_t t = (_radio->getEstAirtimeFor(packet->getPathByteLen() + packet->payload_len + 2) * 0.2f);
@@ -491,7 +496,7 @@ bool MyMesh::filterRecvFloodPacket(mesh::Packet* packet) {
   // positive feedback on the repeater link — sample its SNR. This is the only
   // confirmation a channel send gets (no ACK), and is what lets APC recover power
   // after it has trimmed too far for the repeaters to hear.
-  if (_prefs.tx_apc && _apc_flood_pending && packet->payload_len == _apc_flood_len) {
+  if (apcActive() && _apc_flood_pending && packet->payload_len == _apc_flood_len) {
     uint8_t h[MAX_HASH_SIZE];
     packet->calculatePacketHash(h);
     if (memcmp(h, _apc_flood_hash, MAX_HASH_SIZE) == 0) {
@@ -521,8 +526,49 @@ bool MyMesh::filterRecvFloodPacket(mesh::Packet* packet) {
   return false;
 }
 
+// Loop guard for flood packets, ported from simple_repeater's LOOP_DETECT_MODERATE
+// thresholds (max times this node's hash may already appear in the path, by hash size).
+// A companion moves around, so it re-enters its own flood's path more easily than a
+// fixed repeater — hardcoded rather than configurable since there's no CLI here.
+// Indexed by getPathHashSize() = (path_len>>6)+1, so 1..4. Index 0 is unused
+// (hash size is never 0); index 4 covers path_mode 3, which tryParsePacket
+// currently rejects — kept in-bounds so this can't OOB-read if that guard is
+// ever relaxed.
+static const uint8_t REPEAT_LOOP_MAX[] = { 0, /*1-byte*/ 2, /*2-byte*/ 1, /*3-byte*/ 1, /*4-byte*/ 1 };
+// Caps how many hops an ADVERT flood gets repeated, matching simple_repeater's default
+// flood_max_advert — adverts are the most frequent flood traffic, so this is the one
+// depth limit worth keeping even without the rest of simple_repeater's flood_max knobs.
+static const uint8_t REPEAT_MAX_ADVERT_HOPS = 8;
+
+bool MyMesh::isRepeatLooped(const mesh::Packet* packet) const {
+  uint8_t hash_size = packet->getPathHashSize();
+  if (hash_size >= sizeof(REPEAT_LOOP_MAX)) return true;  // unknown hash size: treat as looped, don't forward
+  uint8_t hash_count = packet->getPathHashCount();
+  uint8_t n = 0;
+  const uint8_t* path = packet->path;
+  while (hash_count > 0) {
+    if (self_id.isHashMatch(path, hash_size)) n++;
+    hash_count--;
+    path += hash_size;
+  }
+  return n >= REPEAT_LOOP_MAX[hash_size];
+}
+
 bool MyMesh::allowPacketForward(const mesh::Packet* packet) {
-  return _prefs.client_repeat != 0;
+  if (_prefs.client_repeat == 0) return false;
+  // "Politeness" filters (Settings > Radio) — all default off, so a plain repeater
+  // is unaffected. Flood-only by design: on a direct route this node is the named
+  // next hop, so dropping there would kill delivery with no alternate path, while
+  // dropping a flood copy just trims redundancy other nodes still carry.
+  if (packet->isRouteFlood()) {
+    if (_prefs.repeat_min_snr != NodePrefs::REPEAT_SNR_DISABLED
+        && packet->getSNR() < (float)_prefs.repeat_min_snr) return false;
+    if (_prefs.repeat_skip_adverts && packet->getPayloadType() == PAYLOAD_TYPE_ADVERT) return false;
+    if (_prefs.repeat_max_hops > 0 && packet->getPathHashCount() >= _prefs.repeat_max_hops) return false;
+    if (packet->getPayloadType() == PAYLOAD_TYPE_ADVERT && packet->getPathHashCount() >= REPEAT_MAX_ADVERT_HOPS) return false;
+    if (isRepeatLooped(packet)) return false;
+  }
+  return true;
 }
 
 void MyMesh::sendFloodScoped(const TransportKey& scope, mesh::Packet* pkt, uint32_t delay_millis) {
@@ -550,7 +596,7 @@ void MyMesh::sendFloodScoped(const ContactInfo& recipient, mesh::Packet* pkt, ui
 }
 void MyMesh::sendFloodScoped(const mesh::GroupChannel& channel, mesh::Packet* pkt, uint32_t delay_millis) {
   // TODO: have per-channel send_scope
-  if (_prefs.tx_apc) apcTrackFloodSend(pkt);   // listen for a repeater echo to drive APC (channels have no ACK)
+  if (apcActive()) apcTrackFloodSend(pkt);   // listen for a repeater echo to drive APC (channels have no ACK)
   trackRelaySend(pkt);                          // and for the UI "relayed" marker
   if (send_unscoped) {
     sendFlood(pkt, delay_millis, _prefs.path_hash_mode + 1);  // app has explicitly requested un-scoped
@@ -1195,7 +1241,7 @@ void MyMesh::trackRelaySend(const mesh::Packet* pkt) {
 }
 
 void MyMesh::onSendTimeout() {
-  if (_prefs.tx_apc) apcOnFailure();
+  if (apcActive()) apcOnFailure();
 }
 
 void MyMesh::onAckRecv(mesh::Packet* packet, uint32_t ack_crc) {
@@ -1204,7 +1250,7 @@ void MyMesh::onAckRecv(mesh::Packet* packet, uint32_t ack_crc) {
   // Capture the match before the base handler's processAck() clears the entry.
   bool mine = isAckPending(ack_crc);
   BaseChatMesh::onAckRecv(packet, ack_crc);
-  if (mine && _prefs.tx_apc) apcSampleSnr(radio_driver.getLastSNR());
+  if (mine && apcActive()) apcSampleSnr(radio_driver.getLastSNR());
   // Drive the DM delivery-status marker. Note isAckPending() only covers
   // app/serial-initiated sends (expected_ack_table); a DM composed on the
   // device UI registers in BaseChatMesh's own ack table instead, so gating on
@@ -1214,7 +1260,13 @@ void MyMesh::onAckRecv(mesh::Packet* packet, uint32_t ack_crc) {
 }
 
 MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMeshTables &tables, DataStore& store, AbstractUITask* ui)
-    : BaseChatMesh(radio, *new ArduinoMillis(), rng, rtc, *new StaticPoolPacketManager(16), tables),
+    // Sized to match simple_repeater's pool (32), not the old client-only 16: with the
+    // on-device Repeater toggle, queued retransmits (adverts/channel flood from
+    // neighbours) can now hold packet-pool slots for their retransmit delay window. A
+    // pool too small for that starves Dispatcher::checkRecv()'s allocNew(), which then
+    // silently drops every incoming packet — DMs and channels included — until a slot
+    // frees up.
+    : BaseChatMesh(radio, *new ArduinoMillis(), rng, rtc, *new StaticPoolPacketManager(32), tables),
       _serial(NULL), telemetry(MAX_PACKET_PAYLOAD - 4), _store(&store), _ui(ui) {
   _iter_started = false;
   _cli_rescue = false;
@@ -1255,6 +1307,10 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.bw = LORA_BW;
   _prefs.cr = LORA_CR;
   _prefs.tx_power_dbm = LORA_TX_POWER;
+  // Repeater profile default for a true first boot (no prefs file yet, so
+  // loadPrefs() below is a no-op) — same band-matched seed as the upgrade
+  // path in DataStore.cpp.
+  seedDefaultRepeaterProfile(_prefs);
   _prefs.gps_enabled = 0;       // GPS disabled by default
   _prefs.gps_interval = 0;      // No automatic GPS updates by default
   _prefs.display_brightness = 2; // medium brightness by default
@@ -1366,12 +1422,19 @@ void MyMesh::begin(bool has_display) {
   addChannel("Public", PUBLIC_GROUP_PSK); // pre-configure Andy's public channel
   _store->loadChannels(this);
 
-  radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
+  applyRepeaterRadio();   // companion params, or the repeater profile if relaying with one set
   applyApc();                                         // sets TX power to the ceiling and arms APC if enabled
   radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain);
-  radio_driver.setPowerSaving(_prefs.rx_powersave);   // hardware duty-cycle RX (battery saver)
+  radio_driver.setPowerSaving(_prefs.rx_powersave && !_prefs.client_repeat);   // duty-cycle RX off while repeating (must hear all traffic)
   MESH_DEBUG_PRINTLN("RX Boosted Gain Mode: %s",
                      radio_driver.getRxBoostedGainMode() ? "Enabled" : "Disabled");
+}
+
+void MyMesh::applyRepeaterRadio() {
+  if (_prefs.client_repeat && _prefs.repeater_use_profile && repeaterProfileValid())
+    radio_driver.setParams(_prefs.repeater_freq, _prefs.repeater_bw, _prefs.repeater_sf, _prefs.repeater_cr);
+  else
+    radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
 }
 
 const char *MyMesh::getNodeName() {
@@ -1784,9 +1847,15 @@ void MyMesh::handleCmdFrame(size_t len) {
       repeat = cmd_frame[i++];   // FIRMWARE_VER_CODE  9+
     }
 
-    if (repeat && !isValidClientRepeatFreq(freq)) {
-      writeErrFrame(ERR_CODE_ILLEGAL_ARG);
-    } else if (freq >= 150000 && freq <= 2500000 && sf >= 5 && sf <= 12 && cr >= 5 && cr <= 8 && bw >= 7000 &&
+    // Dedicated-band requirement for app-driven repeat disabled, to match the
+    // on-device Repeater toggle (Settings > Radio), which repeats on whatever
+    // frequency is already set with no band restriction. Uncomment to restore
+    // the old behaviour (repeat=1 only accepted on repeat_freq_ranges, i.e.
+    // 433.000/869.495/918.000 MHz exactly, by default).
+    // if (repeat && !isValidClientRepeatFreq(freq)) {
+    //   writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+    // } else
+    if (freq >= 150000 && freq <= 2500000 && sf >= 5 && sf <= 12 && cr >= 5 && cr <= 8 && bw >= 7000 &&
         bw <= 500000) {
       _prefs.sf = sf;
       _prefs.cr = cr;
@@ -1795,7 +1864,12 @@ void MyMesh::handleCmdFrame(size_t len) {
       _prefs.client_repeat = repeat;
       savePrefs();
 
-      radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
+      applyRepeaterRadio();   // companion params, or the repeater profile if relaying with one set
+      // Keep the "repeating ⇒ continuous RX, full TX power" invariants when repeat
+      // is toggled via the app, mirroring the on-device path (a repeater must hear
+      // all traffic and relay at consistent power).
+      radio_driver.setPowerSaving(_prefs.rx_powersave && !_prefs.client_repeat);
+      applyApc();   // pins power to the ceiling; apcActive() keeps it there while repeating
       MESH_DEBUG_PRINTLN("OK: CMD_SET_RADIO_PARAMS: f=%d, bw=%d, sf=%d, cr=%d", freq, bw, (uint32_t)sf,
                          (uint32_t)cr);
 
@@ -2706,7 +2780,7 @@ void MyMesh::loop() {
   // treated as a lost confirmation → ramp power up (lets channel sends recover).
   if (_apc_flood_pending && millisHasNowPassed(_apc_flood_deadline)) {
     _apc_flood_pending = false;
-    if (_prefs.tx_apc) apcOnFailure();
+    if (apcActive()) apcOnFailure();
   }
   // UI relay windows expired with no echo — just drop them (no echo is not a
   // failure for channels; the marker simply stays "sent").
