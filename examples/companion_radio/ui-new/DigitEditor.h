@@ -65,7 +65,12 @@ struct DigitEditor {
   // selected row (ink DARK on a LIGHT selection bar); restores LIGHT after.
   void render(DisplayDriver& d, int x, int y) {
     char buf[16];
-    snprintf(buf, sizeof(buf), "%.*f", (int)dec_digits, value);
+    // Zero-pad the integer part to int_digits so the glyph under the cursor is
+    // always the place it addresses: the cursor maps place values (100, 10, 1,
+    // 0.1…), so a value with fewer integer digits than int_digits would shift
+    // every glyph left and misplace the highlight (e.g. "62.500" vs "062.500").
+    const int width = (int)int_digits + (dec_digits > 0 ? 1 + (int)dec_digits : 0);
+    snprintf(buf, sizeof(buf), "%0*.*f", width, (int)dec_digits, value);
     const int cw = d.getCharWidth();
     const int char_idx = cursor < int_digits ? cursor : cursor + 1;  // skip '.'
     for (int k = 0; buf[k]; k++) {

@@ -293,11 +293,15 @@ struct NodePrefs {  // persisted to file
   }
 };
 
-// Bounds for a usable repeater radio profile — must match the radio chip's own
-// validated range (see CustomSX1262Wrapper::getFreqBounds(), 150-960 MHz), so
-// a profile that passes here is guaranteed to actually take effect on the radio.
-static inline bool isValidRepeaterProfile(float freq, float bw, uint8_t sf, uint8_t cr) {
-  return freq >= 150.0f && freq <= 960.0f
+// Bounds for a usable repeater radio profile. The frequency range is passed in
+// by the caller from RadioLibWrapper::getFreqBounds() — the radio chip's own
+// validated range — so a profile that passes here is guaranteed to actually take
+// effect on the radio, instead of a hard-coded cap (was 150-960, the SX1262
+// range) that would wrongly reject legal frequencies on any other chip. SF/BW/CR
+// are the chip-independent discrete LoRa sets.
+static inline bool isValidRepeaterProfile(float freq, float bw, uint8_t sf, uint8_t cr,
+                                          float min_freq, float max_freq) {
+  return freq >= min_freq && freq <= max_freq
       && sf >= 5 && sf <= 12
       && cr >= 5 && cr <= 8
       && bw >= 7.0f && bw <= 510.0f;

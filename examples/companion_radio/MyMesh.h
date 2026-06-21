@@ -222,9 +222,11 @@ public:
   // pins power to the ceiling.
   bool apcActive() const { return _prefs.tx_apc && !_prefs.client_repeat; }
 
-  // True when the optional repeater radio profile is a valid LoRa config.
+  // True when the optional repeater radio profile is a valid LoRa config for
+  // this radio (freq bounds come from the chip's own validated range).
   bool repeaterProfileValid() const {
-    return isValidRepeaterProfile(_prefs.repeater_freq, _prefs.repeater_bw, _prefs.repeater_sf, _prefs.repeater_cr);
+    float lo, hi; radio_driver.getFreqBounds(lo, hi);
+    return isValidRepeaterProfile(_prefs.repeater_freq, _prefs.repeater_bw, _prefs.repeater_sf, _prefs.repeater_cr, lo, hi);
   }
   // Load the radio with the correct params for the current mode: the repeater
   // profile when relaying with a valid dedicated profile, otherwise the

@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "DataStore.h"
 #include "Features.h"   // FEAT_JOYSTICK_ROTATION_SETTING (else `#if !FEAT_…` is always true)
+#include <target.h>     // radio_driver — repeater-profile freq bounds (getFreqBounds)
 
 #if defined(EXTRAFS) || defined(QSPIFLASH)
   #define MAX_BLOBRECS 100
@@ -364,7 +365,8 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   // norm; that stays opt-in. Band-matched rather than a flat frequency so the
   // default can't land outside what's legal where the companion is set up.
   if (_prefs.repeater_use_profile > 1) _prefs.repeater_use_profile = 0;
-  if (!isValidRepeaterProfile(_prefs.repeater_freq, _prefs.repeater_bw, _prefs.repeater_sf, _prefs.repeater_cr)) {
+  float rpt_lo, rpt_hi; radio_driver.getFreqBounds(rpt_lo, rpt_hi);
+  if (!isValidRepeaterProfile(_prefs.repeater_freq, _prefs.repeater_bw, _prefs.repeater_sf, _prefs.repeater_cr, rpt_lo, rpt_hi)) {
     seedDefaultRepeaterProfile(_prefs);
   }
   // → 0xC0DE000B: append bot_commands_enabled + quiet-hours. Older files leave
