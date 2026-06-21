@@ -768,23 +768,17 @@ Defensive `if (ch_idx >= MAX_GROUP_CHANNELS) return;` at function entry — prev
 
 ## High
 
-### 📋 `findChannelIdx` scans all-zero secret in uninitialised slots
+### ✅ `findChannelIdx` scans all-zero secret in uninitialised slots
 
-[`BaseChatMesh.cpp:892-897`](src/helpers/BaseChatMesh.cpp#L892-L897)
+[`BaseChatMesh.cpp:908`](src/helpers/BaseChatMesh.cpp#L908)
 
-```cpp
-for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {  // full range, not num_channels
-  if (memcmp(ch.secret, channels[i].channel.secret, 32) == 0) return i;
-}
-```
+Fixed (local override): `findChannelIdx()` now returns `-1` immediately when the queried secret is all-zero, so a corrupted/empty channel can't match an unused all-zero slot. Complements the load-side skip already in `loadChannels()`.
 
-If `ch.secret` is all-zero (uninitialised or corrupted) and an unused slot is also all-zero, the function returns that unused slot as a "match". Upstream code — needs upstream fix or local override.
+### ✅ `saveChannels` writes all 40 slots to `/channels2`
 
-### 📋 `saveChannels` writes all 40 slots to `/channels2`
+[`DataStore.cpp:687`](examples/companion_radio/DataStore.cpp#L687)
 
-[`DataStore.cpp:563-580`](examples/companion_radio/DataStore.cpp#L563-L580) + [`BaseChatMesh.cpp:871-877`](src/helpers/BaseChatMesh.cpp#L871-L877)
-
-`saveChannels` calls `getChannelForSave(idx, ch)` in a loop; `BaseChatMesh::getChannel(idx)` returns `true` for any `idx < MAX_GROUP_CHANNELS` (including uninitialised slots). Result: file is always ~2.7 KB (40 × 68 B). The `loadChannels` sanity check (skip empty secret) papers over the symptom but the root cause is in save.
+Fixed: the save loop now skips unused slots (all-zero secret) instead of writing every slot up to `MAX_GROUP_CHANNELS`, so the file holds only the channels actually configured (was always ~2.7 KB). `loadChannels()` already compacted empty entries on read, so the loaded result is unchanged — only on-flash size and write wear drop.
 
 ### 📋 `msgRead(0)` wipes the whole DM unread table
 
@@ -862,17 +856,17 @@ Point (0, 0) is a legitimate location (Gulf of Guinea). Corner case but a logic 
 
 Scan detail view (`SNR: %.1f dB`, `Rem: %.1f dB`) and the ping popup keep the 0.25 dB resolution. (After the one-list refactor the scan list cards show **RSSI** in the right column, not SNR.)
 
-### 📋 Trail `_count` cast to `uint16_t`
+### ✅ Trail `_count` cast to `uint16_t`
 
-[`Trail.h:176`](examples/companion_radio/Trail.h#L176)
+[`Trail.h:27`](examples/companion_radio/Trail.h#L27)
 
-Safe today (CAPACITY=512 fits), fragile if CAPACITY grows past 65535.
+A `static_assert(CAPACITY <= 0xFFFF, …)` next to the CAPACITY definition now fails the build if it is ever grown past what the uint16_t save-header count can hold, instead of silently truncating. Safe today (CAPACITY=512).
 
-### 📋 Bot `strstr` on truncated 199-char buffer
+### ✅ Bot `strstr` on truncated 199-char buffer — not reachable
 
-[`MyMeshBot.h:22-25`](examples/companion_radio/MyMeshBot.h#L22-L25)
+[`MyMeshBot.h:11`](examples/companion_radio/MyMeshBot.h#L11)
 
-Trigger word near the end of a >199-character message will not match. Matching is now centralised in `botTriggerMatches()` (single `BOT_SCRATCH`-sized buffer), so a fix would land in one place.
+Re-checked: `BOT_SCRATCH` is 200 and `MAX_TEXT_LEN` is 160, so an incoming message never reaches the 199-char truncation point — the scratch buffer (used by the centralised `botTriggerMatches()`) always holds the whole message. No fix needed.
 
 ### ✅ `strncpy("?", buf, sizeof(buf))` replaced with `strcpy`
 
@@ -880,11 +874,11 @@ Trigger word near the end of a >199-character message will not match. Matching i
 
 Two fallback "?" sender names now use a plain `strcpy` so we don't memset 21 unused bytes for a one-character string.
 
-### 📋 Title truncation in MSG_PICK reply mode
+### ❌ Title truncation in MSG_PICK reply mode — not an overflow
 
-[`QuickMsgScreen.h:937`](examples/companion_radio/ui-new/QuickMsgScreen.h#L937)
+[`QuickMsgScreen.h:1279-1287`](examples/companion_radio/ui-new/QuickMsgScreen.h#L1279)
 
-`char title[24]` for `"RE:" + nick[32]` truncates long nicks silently.
+Re-checked: `rlen` is clamped to 20 before building `"RE:" + nick`, so the title is ≤23 chars and fits `title[24]` with no overflow. A nick longer than 20 chars is shown truncated, but that's an intentional fit-to-header limit (the OLED header only fits ~21 chars anyway), not a bug.
 
 ## Priority for merge
 

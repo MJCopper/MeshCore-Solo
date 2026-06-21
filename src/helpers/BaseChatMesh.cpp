@@ -906,6 +906,11 @@ bool BaseChatMesh::setChannel(int idx, const ChannelDetails& src) {
   return false;
 }
 int BaseChatMesh::findChannelIdx(const mesh::GroupChannel& ch) {
+  // An all-zero secret is never a real channel key; without this guard it would
+  // match the first uninitialised (all-zero) slot and misroute incoming messages.
+  bool empty = true;
+  for (int b = 0; b < (int)sizeof(ch.secret); b++) if (ch.secret[b]) { empty = false; break; }
+  if (empty) return -1;
   for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
     if (memcmp(ch.secret, channels[i].channel.secret, sizeof(ch.secret)) == 0) return i;
   }

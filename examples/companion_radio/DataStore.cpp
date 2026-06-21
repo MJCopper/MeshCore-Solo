@@ -685,12 +685,19 @@ void DataStore::saveChannels(DataStoreHost* host) {
     memset(unused, 0, 4);
 
     while (host->getChannelForSave(channel_idx, ch)) {
+      channel_idx++;
+      // getChannelForSave() returns every slot up to MAX_GROUP_CHANNELS, so skip
+      // the unused ones (all-zero secret) rather than writing all 40 — otherwise
+      // the file is always ~2.7 KB and wears the flash needlessly. loadChannels()
+      // already compacts empty entries on read, so the loaded result is identical.
+      bool empty = true;
+      for (int b = 0; b < 32; b++) if (ch.channel.secret[b]) { empty = false; break; }
+      if (empty) continue;
+
       bool success = (file.write(unused, 4) == 4);
       success = success && (file.write((uint8_t *)ch.name, 32) == 32);
       success = success && (file.write((uint8_t *)ch.channel.secret, 32) == 32);
-
       if (!success) break; // write failed
-      channel_idx++;
     }
     file.close();
   }

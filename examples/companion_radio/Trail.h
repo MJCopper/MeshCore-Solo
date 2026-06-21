@@ -25,6 +25,9 @@ static const uint8_t TRAIL_FLAG_SEG_START = 0x01;
 class TrailStore {
 public:
   static const int CAPACITY = 512;
+  // _count is serialised as uint16_t in the save header — fail the build loudly
+  // if CAPACITY is ever grown past what that can hold, rather than truncating.
+  static_assert(CAPACITY <= 0xFFFF, "TrailStore::CAPACITY must fit in the uint16_t save-header count");
 
   // Fixed sampling cadence — matches the sensor manager's default GPS update
   // rate (1 s). Density is controlled by the min-delta gate (settings) rather
