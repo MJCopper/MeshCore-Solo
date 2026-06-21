@@ -19,7 +19,7 @@
 #include <helpers/ui/DisplayDriver.h>
 #include <helpers/ui/UIScreen.h>
 #include "icons.h"
-#include "DigitEditor.h"
+#include "RadioParamsEditor.h"
 #include "RadioPresetPicker.h"
 #include "../RadioPresets.h"
 #include "../MyMesh.h"
@@ -41,7 +41,7 @@ class RepeaterScreen : public UIScreen {
   int     _item_count;
 
   RadioPresetPicker _picker;
-  DigitEditor _freq_editor;
+  RadioParamsEditor _editor;
 
   // The dedicated repeater profile's fields, as the shared preset picker's target
   // (Settings › Radio points the same picker at the companion's own params).
@@ -130,7 +130,7 @@ public:
 
   void enter() {
     _dirty = false; _sel = 0; _scroll = 0;
-    _picker.menu.active = false; _freq_editor.active = false;
+    _picker.menu.active = false; _editor.freq.active = false;
     _picker.saving = false; _picker.deleting = false;
   }
 
@@ -167,8 +167,8 @@ public:
       display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
       display.setCursor(2, y);
       display.print(itemLabel(item));
-      if (item == IT_RFREQ && sel && _freq_editor.active) {
-        _freq_editor.render(display, display.valCol(), y);
+      if (item == IT_RFREQ && sel && _editor.active()) {
+        _editor.render(display, display.valCol(), y);
       } else {
         itemValue(item, p, val, sizeof(val));
         display.drawTextRightAlign(display.width() - reserve - 2, y, val);
@@ -178,7 +178,7 @@ public:
     drawScrollIndicator(display, start_y, visible * item_h, total, visible, _scroll);
     display.setColor(DisplayDriver::LIGHT);
     if (_picker.menu.active) _picker.menu.render(display);
-    return (_picker.menu.active || _freq_editor.active) ? 50 : 500;
+    return (_picker.menu.active || _editor.active()) ? 50 : 500;
   }
 
   bool handleInput(char c) override {
@@ -223,14 +223,8 @@ public:
       }
       return true;
     }
-    if (_freq_editor.active) {
-      float before = _freq_editor.value;
-      _freq_editor.handleInput(c);
-      if (p && _freq_editor.value != before) {
-        p->repeater_freq = _freq_editor.value;
-        the_mesh.applyRepeaterRadio();
-        _dirty = true;
-      }
+    if (_editor.active()) {
+      if (_editor.handleFreqInput(c) && p) { the_mesh.applyRepeaterRadio(); _dirty = true; }
       return true;
     }
 
@@ -269,22 +263,13 @@ public:
     if (item == IT_RPRESET && enter) { _picker.open(p, rptTarget(p), "Repeater Preset"); return true; }
     if (item == IT_RFREQ && enter) {
       float lo, hi; radio_driver.getFreqBounds(lo, hi);
-      _freq_editor.begin(p->repeater_freq, lo, hi, 3, 3);
+      _editor.beginFreq(p->repeater_freq, lo, hi);
       return true;
     }
-    if (item == IT_RSF) {
-      if (right && p->repeater_sf < 12) { p->repeater_sf++; the_mesh.applyRepeaterRadio(); _dirty = true; return true; }
-      if (left  && p->repeater_sf > 5)  { p->repeater_sf--; the_mesh.applyRepeaterRadio(); _dirty = true; return true; }
-    }
-    if (item == IT_RBW) {
-      int idx = nearestBwIndex(p->repeater_bw);
-      if (right && idx < LORA_BW_OPT_COUNT - 1) { p->repeater_bw = LORA_BW_OPTS[idx + 1]; the_mesh.applyRepeaterRadio(); _dirty = true; return true; }
-      if (left  && idx > 0)                     { p->repeater_bw = LORA_BW_OPTS[idx - 1]; the_mesh.applyRepeaterRadio(); _dirty = true; return true; }
-    }
-    if (item == IT_RCR) {
-      if (right && p->repeater_cr < 8) { p->repeater_cr++; the_mesh.applyRepeaterRadio(); _dirty = true; return true; }
-      if (left  && p->repeater_cr > 5) { p->repeater_cr--; the_mesh.applyRepeaterRadio(); _dirty = true; return true; }
-    }
+    int dir = right ? 1 : (left ? -1 : 0);
+    if (item == IT_RSF && dir && RadioParamsEditor::stepSF(p->repeater_sf, dir)) { the_mesh.applyRepeaterRadio(); _dirty = true; return true; }
+    if (item == IT_RBW && dir && RadioParamsEditor::stepBW(p->repeater_bw, dir)) { the_mesh.applyRepeaterRadio(); _dirty = true; return true; }
+    if (item == IT_RCR && dir && RadioParamsEditor::stepCR(p->repeater_cr, dir)) { the_mesh.applyRepeaterRadio(); _dirty = true; return true; }
     if (item == IT_SKIP && (left || right || enter)) {
       p->repeat_skip_adverts ^= 1; _dirty = true; return true;
     }

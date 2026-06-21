@@ -4,7 +4,7 @@
 
 #include "../Features.h"
 #include "../RadioPresets.h"
-#include "DigitEditor.h"
+#include "RadioParamsEditor.h"
 #include "RadioPresetPicker.h"
 
 class SettingsScreen : public UIScreen {
@@ -508,8 +508,8 @@ class SettingsScreen : public UIScreen {
     } else if (item == CUSTOM_FREQ) {
       display.print("Freq");
       int xc = valCol(display);
-      if (sel && _freq_editor.active) {
-        _freq_editor.render(display, xc, y);
+      if (sel && _editor.active()) {
+        _editor.render(display, xc, y);
       } else {
         char buf[10];
         snprintf(buf, sizeof(buf), "%.3f", p ? p->freq : 0.0f);
@@ -650,9 +650,9 @@ class SettingsScreen : public UIScreen {
   // _kb is open to name a new preset, not a message slot.
   RadioPresetPicker _picker;
 
-  // Digit-by-digit Freq editor (see DigitEditor.h) — only this field uses it;
-  // SF/BW/CR are small discrete sets where a plain left/right cycle is fine.
-  DigitEditor _freq_editor;
+  // Manual radio-parameter editing (digit-by-digit Freq editor + SF/BW/CR
+  // stepping), shared with Tools › Repeater — see RadioParamsEditor.h.
+  RadioParamsEditor _editor;
 
 public:
   SettingsScreen(UITask* task, KeyboardWidget* kb)
@@ -667,7 +667,7 @@ public:
     _selected = SECTION_DISPLAY;
     buildVis();
     _scroll = 0;
-    _freq_editor.active = false;
+    _editor.freq.active = false;
   }
 
   int render(DisplayDriver& display) override {
@@ -715,14 +715,8 @@ public:
     }
 
     // Digit-by-digit Freq editor
-    if (_freq_editor.active) {
-      float before = _freq_editor.value;
-      _freq_editor.handleInput(c);
-      if (p && _freq_editor.value != before) {
-        p->freq = _freq_editor.value;
-        _task->applyRadioParams();
-        _dirty = true;
-      }
+    if (_editor.active()) {
+      if (_editor.handleFreqInput(c) && p) { _task->applyRadioParams(); _dirty = true; }
       return true;
     }
 
@@ -861,28 +855,19 @@ public:
       _picker.open(p, radioTarget(p), "Radio Preset");
       return true;
     }
-    // Enter Freq's digit-by-digit editor (see DigitEditor.h). Bounds come from
-    // the radio driver itself (RadioLib's own validated range for this chip)
-    // so a digit can never be nudged to a value setFrequency() would reject.
+    // Enter Freq's digit-by-digit editor. Bounds come from the radio driver
+    // itself (RadioLib's own validated range for this chip) so a digit can never
+    // be nudged to a value setFrequency() would reject.
     if (_selected == CUSTOM_FREQ && p && enter) {
       float min_mhz, max_mhz;
       radio_driver.getFreqBounds(min_mhz, max_mhz);
-      _freq_editor.begin(p->freq, min_mhz, max_mhz, 3, 3);  // SX1262 range fits 3 integer digits; 3 decimals = kHz
+      _editor.beginFreq(p->freq, min_mhz, max_mhz);
       return true;
     }
-    if (_selected == CUSTOM_SF && p) {
-      if (right && p->sf < 12) { p->sf++; _task->applyRadioParams(); _dirty = true; return true; }
-      if (left  && p->sf > 5)  { p->sf--; _task->applyRadioParams(); _dirty = true; return true; }
-    }
-    if (_selected == CUSTOM_BW && p) {
-      int idx = nearestBwIndex(p->bw);
-      if (right && idx < LORA_BW_OPT_COUNT - 1) { p->bw = LORA_BW_OPTS[idx + 1]; _task->applyRadioParams(); _dirty = true; return true; }
-      if (left  && idx > 0)                     { p->bw = LORA_BW_OPTS[idx - 1]; _task->applyRadioParams(); _dirty = true; return true; }
-    }
-    if (_selected == CUSTOM_CR && p) {
-      if (right && p->cr < 8) { p->cr++; _task->applyRadioParams(); _dirty = true; return true; }
-      if (left  && p->cr > 5) { p->cr--; _task->applyRadioParams(); _dirty = true; return true; }
-    }
+    int dir = right ? 1 : (left ? -1 : 0);
+    if (_selected == CUSTOM_SF && p && dir && RadioParamsEditor::stepSF(p->sf, dir)) { _task->applyRadioParams(); _dirty = true; return true; }
+    if (_selected == CUSTOM_BW && p && dir && RadioParamsEditor::stepBW(p->bw, dir)) { _task->applyRadioParams(); _dirty = true; return true; }
+    if (_selected == CUSTOM_CR && p && dir && RadioParamsEditor::stepCR(p->cr, dir)) { _task->applyRadioParams(); _dirty = true; return true; }
     if (_selected == POWER_SAVE && p && (left || right || enter)) {
       if (p->client_repeat) { _task->showAlert("Off while repeating", 900); return true; }
       p->rx_powersave ^= 1;
