@@ -342,6 +342,4 @@ The five flood filters are **opt-in** (default OFF, so a plain repeater is unaff
 
 While the repeater is on, a **»** indicator appears in the status bar (same blink convention as the auto-advert and trail markers) so you can tell it's relaying at a glance. Two radio settings are also overridden while relaying and restored afterwards: **Settings › Radio › Pwr save** is forced off (a repeater must listen continuously) and **Auto pwr** is forced off (a repeater holds full TX power for consistent relay reach). Both show `--` in Settings while the repeater is on.
 
-Live forwarding stats — **Forwarded**, **Pool free**, **Queue** — are shown on **Tools › Diagnostics**.
-
-While the repeater is ON, the bottom of the screen shows live stats: **Forwarded** (packets actually re-transmitted — reflects Suppress dup), **Pool free**, and **Queue**. The same numbers appear, alongside the full device picture, in **Tools › Diagnostics**.
+Live forwarding stats — **Forwarded**, **Pool free**, **Queue** — are shown on **Tools › Diagnostics** (this screen is config-only).

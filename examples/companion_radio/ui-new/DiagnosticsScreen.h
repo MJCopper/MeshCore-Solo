@@ -9,13 +9,14 @@
 
 extern MyMesh the_mesh;
 
-// Single-screen device diagnostics: packet counts by category (RX/TX), radio
-// totals, uptime, heap and stack headroom. Built from Dispatcher's per-type
-// counters (Mesh.h/Dispatcher.cpp) — grouped into a handful of categories
-// rather than all 16 raw PAYLOAD_TYPE_* values, so it stays readable on a
-// 128x64 OLED without needing the full type list. Falls back to scrolling
-// (same drawList-style indicator as every other screen) on screens too small
-// to show every row at once.
+// Single-screen device diagnostics: uptime, packet counts by category (RX/TX),
+// forwarded-packet count, heap and stack headroom, radio signal (noise floor,
+// RSSI/SNR), packet-pool/outbound-queue depth, and radio error flags. The packet
+// counts are built from Dispatcher's per-type counters (Mesh.h/Dispatcher.cpp) —
+// grouped into a handful of categories rather than all 16 raw PAYLOAD_TYPE_*
+// values, so they stay readable on a 128x64 OLED without the full type list.
+// Falls back to scrolling (same drawList-style indicator as every other screen)
+// on screens too small to show every row at once. Hold Enter resets the counters.
 class DiagnosticsScreen : public UIScreen {
   UITask* _task;
   int _scroll = 0;

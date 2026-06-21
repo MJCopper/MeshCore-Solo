@@ -441,7 +441,7 @@ Sequencing: hardware duty-cycle RX and APC are both done and in field test on
 `feat/power-saving`; see the status block at the top of this entry for what's
 left (PPK2 current measurement, multi-hop APC gating).
 
-### ✅ Companion repeater + politeness knobs + diagnostics
+### ✅ Companion repeater + forwarding filters + diagnostics
 
 On-device repeater for the Solo companion, scoped to the SX1262 boards (Wio
 Tracker L1 OLED/e-ink, GAT562 30S). All on `feature/companion-repeater-presets`.
@@ -478,7 +478,7 @@ Tracker L1 OLED/e-ink, GAT562 30S). All on `feature/companion-repeater-presets`.
   outside what's legal for wherever the companion's own network already is.
   `LORA_FREQ/BW/SF/CR` fallback `#define`s moved from `MyMesh.h` to
   `NodePrefs.h` so `DataStore.cpp`'s migration code can see them too.
-- **Politeness knobs** (all opt-in, default off, flood-only — a direct route's
+- **Forwarding filters** (all opt-in, default off, flood-only — a direct route's
   named next hop is never dropped). Shown only while the repeater is on:
   - **Skip advert** — don't re-flood adverts (highest-volume flood).
   - **Max hops** — drop a flood past N hops.

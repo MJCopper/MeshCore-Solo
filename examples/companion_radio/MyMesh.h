@@ -143,7 +143,7 @@ protected:
   bool allowPacketForward(const mesh::Packet* packet) override;
   bool isRepeatLooped(const mesh::Packet* packet) const;
   // Overhear suppression only makes sense while repeating; gated behind its own
-  // opt-in pref (Settings > Radio > Suppress dup).
+  // opt-in pref (Tools > Repeater > Suppress dup).
   bool wantsOverhearSuppress() const override { return _prefs.client_repeat && _prefs.repeat_suppress_dup; }
 
   void sendFloodScoped(const TransportKey& scope, mesh::Packet* pkt, uint32_t delay_millis);

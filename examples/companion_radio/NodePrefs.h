@@ -171,8 +171,9 @@ struct NodePrefs {  // persisted to file
   // shows ✗. 0 = no auto-resend (single attempt). Default 2.
   uint8_t  dm_resend_count;
 
-  // User-saved radio presets (Settings > Radio > Preset > "Save current...").
-  // name[0] == '\0' marks an empty slot.
+  // User-saved radio presets, written by the "Save current..." entry in the
+  // shared preset picker (Settings > Radio and Tools > Repeater both populate
+  // these same slots). name[0] == '\0' marks an empty slot.
   struct UserRadioPreset {
     char name[16];
     float freq;
@@ -183,9 +184,9 @@ struct NodePrefs {  // persisted to file
   static const uint8_t USER_RADIO_PRESET_MAX = 4;
   UserRadioPreset user_radio_presets[USER_RADIO_PRESET_MAX];
 
-  // Repeater "politeness" — only consulted when client_repeat is on, via
+  // Repeater forwarding filters — only consulted when client_repeat is on, via
   // MyMesh::allowPacketForward(). Both default to off (0) so behaviour is
-  // unchanged until the user opts in (Settings > Radio).
+  // unchanged until the user opts in (Tools > Repeater).
   //  repeat_skip_adverts: 1 = don't re-flood ADVERT packets (the highest-volume
   //    flood traffic); messages/acks still relay.
   //  repeat_max_hops: drop a flood packet once it has already travelled this

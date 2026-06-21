@@ -283,7 +283,7 @@ int MyMesh::calcRxDelay(float score, uint32_t air_time) const {
 uint32_t MyMesh::getRetransmitDelay(const mesh::Packet *packet) {
   uint32_t t = (_radio->getEstAirtimeFor(packet->getPathByteLen() + packet->payload_len + 2) * 0.5f);
   uint32_t d = getRNG()->nextInt(0, 5*t + 1);
-  // Politeness yield (Settings > Radio): scale the flood retransmit delay so a
+  // Yield filter (Tools > Repeater): scale the flood retransmit delay so a
   // mobile companion waits longer and lets better-sited fixed repeaters win the
   // flood first. Only forwarded floods reach here — own sends pass their own
   // delay to sendFlood() — so this never slows the companion's own traffic.
@@ -556,7 +556,7 @@ bool MyMesh::isRepeatLooped(const mesh::Packet* packet) const {
 
 bool MyMesh::allowPacketForward(const mesh::Packet* packet) {
   if (_prefs.client_repeat == 0) return false;
-  // "Politeness" filters (Settings > Radio) — all default off, so a plain repeater
+  // Forwarding filters (Tools > Repeater) — all default off, so a plain repeater
   // is unaffected. Flood-only by design: on a direct route this node is the named
   // next hop, so dropping there would kill delivery with no alternate path, while
   // dropping a flood copy just trims redundancy other nodes still carry.
@@ -1848,7 +1848,7 @@ void MyMesh::handleCmdFrame(size_t len) {
     }
 
     // Dedicated-band requirement for app-driven repeat disabled, to match the
-    // on-device Repeater toggle (Settings > Radio), which repeats on whatever
+    // on-device Repeater toggle (Tools > Repeater), which repeats on whatever
     // frequency is already set with no band restriction. Uncomment to restore
     // the old behaviour (repeat=1 only accepted on repeat_freq_ranges, i.e.
     // 433.000/869.495/918.000 MHz exactly, by default).

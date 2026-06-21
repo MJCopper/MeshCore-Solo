@@ -336,7 +336,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.bot_quiet_end,       sizeof(_prefs.bot_quiet_end));
   rd(_prefs.bot_trigger_ch,       sizeof(_prefs.bot_trigger_ch));
   rd(_prefs.user_radio_presets,   sizeof(_prefs.user_radio_presets));
-  // → 0xC0DE000E: repeater politeness knobs. On a pre-E file the bytes here are
+  // → 0xC0DE000E: repeater forwarding-filter knobs. On a pre-E file the bytes here are
   // that file's own sentinel tail, so clamp every out-of-range value back to its
   // "off" default (same stray-byte handling as the fields below).
   rd(&_prefs.repeat_skip_adverts, sizeof(_prefs.repeat_skip_adverts));
