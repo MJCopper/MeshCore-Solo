@@ -41,6 +41,18 @@ static const int RADIO_PRESET_COUNT = sizeof(RADIO_PRESETS) / sizeof(RADIO_PRESE
 static const float LORA_BW_OPTS[] = { 7.8f, 10.4f, 15.6f, 20.8f, 31.25f, 41.7f, 62.5f, 125.0f, 250.0f, 500.0f };
 static const int LORA_BW_OPT_COUNT = sizeof(LORA_BW_OPTS) / sizeof(LORA_BW_OPTS[0]);
 
+// Index of the LORA_BW_OPTS entry nearest `bw` — used both to render the current
+// BW and to step left/right through the table without drifting off-grid.
+static inline int nearestBwIndex(float bw) {
+  int best = 0;
+  float best_diff = 1e9f;
+  for (int i = 0; i < LORA_BW_OPT_COUNT; i++) {
+    float diff = fabsf(bw - LORA_BW_OPTS[i]);
+    if (diff < best_diff) { best_diff = diff; best = i; }
+  }
+  return best;
+}
+
 // True if (freq, bw, sf, cr) matches the radio's currently-applied (cur_*) params.
 // Floats are compared with a small epsilon since they may have round-tripped
 // through unit conversions (e.g. kHz integers from the companion app).

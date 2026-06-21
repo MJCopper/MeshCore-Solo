@@ -5,6 +5,7 @@
 #include "../Features.h"
 #include "../RadioPresets.h"
 #include "DigitEditor.h"
+#include "RadioPresetPicker.h"
 
 class SettingsScreen : public UIScreen {
   UITask* _task;
@@ -115,77 +116,10 @@ class SettingsScreen : public UIScreen {
     return 0;
   }
 
-  static bool matchesPreset(NodePrefs* p, float freq, float bw, uint8_t sf, uint8_t cr) {
-    return radioParamsMatchPreset(p->freq, p->bw, p->sf, p->cr, freq, bw, sf, cr);
-  }
-
-  // Display name for the Preset row: a built-in preset, a saved user preset, or
-  // "Custom" if freq/sf/bw/cr don't exactly match any of them.
-  const char* currentPresetName() {
-    NodePrefs* p = _task->getNodePrefs();
-    if (!p) return "Custom";
-    for (int i = 0; i < RADIO_PRESET_COUNT; i++) {
-      const RadioPreset& r = RADIO_PRESETS[i];
-      if (matchesPreset(p, r.freq, r.bw, r.sf, r.cr)) return r.name;
-    }
-    for (int i = 0; i < NodePrefs::USER_RADIO_PRESET_MAX; i++) {
-      const auto& u = p->user_radio_presets[i];
-      if (u.name[0] && matchesPreset(p, u.freq, u.bw, u.sf, u.cr)) return u.name;
-    }
-    return "Custom";
-  }
-
-  // Position of the current settings within the popup list built by
-  // openPresetMenu() below ("Save current..." at 0, then built-ins, then
-  // non-empty user slots in slot order) — or -1 ("Custom") if nothing matches.
-  int currentPresetListIndex() {
-    NodePrefs* p = _task->getNodePrefs();
-    if (!p) return -1;
-    for (int i = 0; i < RADIO_PRESET_COUNT; i++) {
-      const RadioPreset& r = RADIO_PRESETS[i];
-      if (matchesPreset(p, r.freq, r.bw, r.sf, r.cr)) return i + 1;
-    }
-    int pos = RADIO_PRESET_COUNT + 1;
-    for (int i = 0; i < NodePrefs::USER_RADIO_PRESET_MAX; i++) {
-      const auto& u = p->user_radio_presets[i];
-      if (!u.name[0]) continue;
-      if (matchesPreset(p, u.freq, u.bw, u.sf, u.cr)) return pos;
-      pos++;
-    }
-    return -1;
-  }
-
-  // Save the current freq/sf/bw/cr as a named user preset: overwrite a slot with
-  // the same name if one exists, else the first empty slot, else slot 0 (oldest).
-  void saveCurrentAsPreset(const char* name) {
-    NodePrefs* p = _task->getNodePrefs();
-    if (!p || !name || !name[0]) return;
-    int slot = -1;
-    for (int i = 0; i < NodePrefs::USER_RADIO_PRESET_MAX; i++)
-      if (strcmp(p->user_radio_presets[i].name, name) == 0) { slot = i; break; }
-    if (slot < 0)
-      for (int i = 0; i < NodePrefs::USER_RADIO_PRESET_MAX; i++)
-        if (!p->user_radio_presets[i].name[0]) { slot = i; break; }
-    if (slot < 0) slot = 0;
-    NodePrefs::UserRadioPreset& u = p->user_radio_presets[slot];
-    strncpy(u.name, name, sizeof(u.name) - 1);
-    u.name[sizeof(u.name) - 1] = '\0';
-    u.freq = p->freq; u.bw = p->bw; u.sf = p->sf; u.cr = p->cr;
-    _dirty = true;
-    _task->showAlert("Preset saved", 800);
-  }
-
-  // Nearest entry in LORA_BW_OPTS to the current bw (also used to step left/right).
-  int customBwIndex() {
-    NodePrefs* p = _task->getNodePrefs();
-    float bw = p ? p->bw : 62.5f;
-    int best = 0;
-    float best_diff = 1e9f;
-    for (int i = 0; i < LORA_BW_OPT_COUNT; i++) {
-      float diff = fabsf(bw - LORA_BW_OPTS[i]);
-      if (diff < best_diff) { best_diff = diff; best = i; }
-    }
-    return best;
+  // The companion's own radio fields, as the shared preset picker's target
+  // (Tools › Repeater points the same picker at the dedicated repeater profile).
+  RadioPresetPicker::Target radioTarget(NodePrefs* p) const {
+    return { &p->freq, &p->bw, &p->sf, &p->cr };
   }
 
   // Value column start, pulled left by the scrollbar gutter so right-side
@@ -568,7 +502,7 @@ class SettingsScreen : public UIScreen {
       display.print(buf);
     } else if (item == RADIO_PRESET) {
       display.print("Preset");
-      const char* name = currentPresetName();
+      const char* name = p ? _picker.currentName(p, radioTarget(p)) : "Custom";
       int xc = valCol(display);
       display.drawTextEllipsized(xc, y, display.width() - xc - _reserve, name);
     } else if (item == CUSTOM_FREQ) {
@@ -711,50 +645,14 @@ class SettingsScreen : public UIScreen {
   KeyboardWidget* _kb;
 
   // Radio preset picker — names are too long for the value column, so Enter on
-  // RADIO_PRESET opens this as a full-width scrollable list instead of cycling.
-  PopupMenu _preset_menu;
-  // Maps a user-preset row's position in the open popup back to its slot in
-  // NodePrefs::user_radio_presets (empty slots are skipped when building the list).
-  uint8_t _preset_user_slot[NodePrefs::USER_RADIO_PRESET_MAX];
-  int     _preset_user_count = 0;
-  bool    _preset_saving = false;   // _kb is open to name a new preset, not a msg slot
-  bool    _preset_deleting = false; // _preset_menu is showing the delete sub-list
+  // RADIO_PRESET opens it as a full-width scrollable list instead of cycling.
+  // Shared with Tools › Repeater (see RadioPresetPicker.h). _picker.saving means
+  // _kb is open to name a new preset, not a message slot.
+  RadioPresetPicker _picker;
 
   // Digit-by-digit Freq editor (see DigitEditor.h) — only this field uses it;
   // SF/BW/CR are small discrete sets where a plain left/right cycle is fine.
   DigitEditor _freq_editor;
-
-  // Layout: [0]="+ Save current...", [1..RADIO_PRESET_COUNT]=built-ins,
-  // [..+_preset_user_count]=saved user presets, ["- Delete preset..." if any].
-  void openPresetMenu() {
-    NodePrefs* p = _task->getNodePrefs();
-    _preset_deleting = false;
-    _preset_menu.begin("Radio Preset", 6);
-    _preset_menu.addItem("+ Save current...");
-    for (int i = 0; i < RADIO_PRESET_COUNT; i++) _preset_menu.addItem(RADIO_PRESETS[i].name);
-    _preset_user_count = 0;
-    if (p) {
-      for (int i = 0; i < NodePrefs::USER_RADIO_PRESET_MAX; i++) {
-        if (!p->user_radio_presets[i].name[0]) continue;
-        _preset_menu.addItem(p->user_radio_presets[i].name);
-        _preset_user_slot[_preset_user_count++] = (uint8_t)i;
-      }
-    }
-    if (_preset_user_count > 0) _preset_menu.addItem("- Delete preset...");
-    int idx = currentPresetListIndex();
-    _preset_menu.setSelected(idx >= 0 ? idx : 0);
-  }
-
-  // Reuses _preset_menu for a second-level list of just the saved user presets
-  // (their slot mapping in _preset_user_slot is still the one openPresetMenu()
-  // just built, since this is only reached from within that same popup).
-  void openDeletePresetMenu() {
-    NodePrefs* p = _task->getNodePrefs();
-    _preset_menu.begin("Delete Preset", 6);
-    for (int i = 0; i < _preset_user_count; i++)
-      _preset_menu.addItem(p->user_radio_presets[_preset_user_slot[i]].name);
-    _preset_deleting = true;
-  }
 
 public:
   SettingsScreen(UITask* task, KeyboardWidget* kb)
@@ -775,7 +673,7 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
 
-    if (_edit_slot >= 0 || _preset_saving) {
+    if (_edit_slot >= 0 || _picker.saving) {
       return _kb->render(display);
     }
 
@@ -792,7 +690,7 @@ public:
 
     drawScrollIndicator(display, start_y, _visible * item_h, _vis_count, _visible, _scroll);
 
-    if (_preset_menu.active) _preset_menu.render(display);
+    if (_picker.menu.active) _picker.menu.render(display);
 
     return 2000;
   }
@@ -829,53 +727,41 @@ public:
     }
 
     // Keyboard editing mode for naming a new saved preset
-    if (_preset_saving) {
+    if (_picker.saving) {
       auto res = _kb->handleInput(c);
       if (res == KeyboardWidget::DONE) {
-        saveCurrentAsPreset(_kb->buf);
-        _preset_saving = false;
+        if (p && _picker.save(p, _kb->buf, radioTarget(p))) {
+          _dirty = true;
+          _task->showAlert("Preset saved", 800);
+        }
+        _picker.saving = false;
       } else if (res == KeyboardWidget::CANCELLED) {
-        _preset_saving = false;
+        _picker.saving = false;
       }
       return true;
     }
 
     // Radio preset popup (and its "delete a saved preset" sub-list)
-    if (_preset_menu.active) {
-      auto res = _preset_menu.handleInput(c);
+    if (_picker.menu.active) {
+      auto res = _picker.menu.handleInput(c);
       if (res == PopupMenu::SELECTED && p) {
-        int idx = _preset_menu.selectedIndex();
-        if (_preset_deleting) {
-          if (idx >= 0 && idx < _preset_user_count) {
-            p->user_radio_presets[_preset_user_slot[idx]].name[0] = '\0';
+        switch (_picker.onSelected(_picker.menu.selectedIndex(), p, radioTarget(p))) {
+          case RadioPresetPicker::START_SAVE:
+            _kb->begin("", (int)sizeof(p->user_radio_presets[0].name) - 1);
+            break;
+          case RadioPresetPicker::APPLIED:
+            _task->applyRadioParams();
+            _dirty = true;
+            break;
+          case RadioPresetPicker::DELETED:
             _dirty = true;
             _task->showAlert("Preset deleted", 800);
-          }
-          _preset_deleting = false;
-        } else {
-          int save_idx     = 0;
-          int builtin_base = 1;
-          int user_base    = builtin_base + RADIO_PRESET_COUNT;
-          int delete_idx   = user_base + _preset_user_count;
-          if (idx == save_idx) {
-            _preset_saving = true;
-            _kb->begin("", (int)sizeof(p->user_radio_presets[0].name) - 1);
-          } else if (idx >= builtin_base && idx < user_base) {
-            const RadioPreset& r = RADIO_PRESETS[idx - builtin_base];
-            p->freq = r.freq; p->bw = r.bw; p->sf = r.sf; p->cr = r.cr;
-            _task->applyRadioParams();
-            _dirty = true;
-          } else if (idx >= user_base && idx < delete_idx) {
-            const NodePrefs::UserRadioPreset& u = p->user_radio_presets[_preset_user_slot[idx - user_base]];
-            p->freq = u.freq; p->bw = u.bw; p->sf = u.sf; p->cr = u.cr;
-            _task->applyRadioParams();
-            _dirty = true;
-          } else if (_preset_user_count > 0 && idx == delete_idx) {
-            openDeletePresetMenu();
-          }
+            break;
+          case RadioPresetPicker::NONE:
+            break;
         }
       } else if (res == PopupMenu::CANCELLED) {
-        _preset_deleting = false;
+        _picker.deleting = false;
       }
       return true;
     }
@@ -972,7 +858,7 @@ public:
       if (left  && p->tx_power_dbm > 2)  { p->tx_power_dbm--; _task->applyTxPower(); _dirty = true; return true; }
     }
     if (_selected == RADIO_PRESET && p && enter) {
-      openPresetMenu();
+      _picker.open(p, radioTarget(p), "Radio Preset");
       return true;
     }
     // Enter Freq's digit-by-digit editor (see DigitEditor.h). Bounds come from
@@ -989,7 +875,7 @@ public:
       if (left  && p->sf > 5)  { p->sf--; _task->applyRadioParams(); _dirty = true; return true; }
     }
     if (_selected == CUSTOM_BW && p) {
-      int idx = customBwIndex();
+      int idx = nearestBwIndex(p->bw);
       if (right && idx < LORA_BW_OPT_COUNT - 1) { p->bw = LORA_BW_OPTS[idx + 1]; _task->applyRadioParams(); _dirty = true; return true; }
       if (left  && idx > 0)                     { p->bw = LORA_BW_OPTS[idx - 1]; _task->applyRadioParams(); _dirty = true; return true; }
     }
