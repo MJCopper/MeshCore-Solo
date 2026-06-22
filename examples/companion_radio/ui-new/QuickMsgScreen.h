@@ -213,6 +213,33 @@ class QuickMsgScreen : public UIScreen {
     return text;
   }
 
+  // Split a DM-history entry into the name to show as the author and the body to
+  // show beneath it. Room servers carry many guests, so incoming room posts are
+  // stored "Sender: text" (MyMesh::queueMessage); split that off so each line is
+  // attributed to its guest. Outgoing → "Me"; plain DMs (or no separator) keep
+  // the contact name and the text unchanged.
+  const char* dmDisplayParts(const DmHistEntry& e, bool is_room, const char* contact_name,
+                             char* sender_buf, int sender_cap) const {
+    const char* body = skipReplyPrefix(e.text);
+    if (e.outgoing) {
+      strncpy(sender_buf, "Me", sender_cap - 1);
+    } else if (is_room) {
+      const char* sep = strstr(body, ": ");
+      if (sep) {
+        int nl = (int)(sep - body);
+        if (nl > sender_cap - 1) nl = sender_cap - 1;
+        strncpy(sender_buf, body, nl);
+        sender_buf[nl] = '\0';
+        return sep + 2;   // body after "Sender: "
+      }
+      strncpy(sender_buf, contact_name, sender_cap - 1);
+    } else {
+      strncpy(sender_buf, contact_name, sender_cap - 1);
+    }
+    sender_buf[sender_cap - 1] = '\0';
+    return body;
+  }
+
   // Build "@[nick] " prefix from a channel message text ("nick: body") into _reply_prefix.
   // Returns false if sender is "Me" (own message — no reply prefix needed).
   bool buildChannelReplyPrefix(const char* text) {
@@ -976,9 +1003,12 @@ public:
         int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
         if (ring_pos >= 0) {
           const DmHistEntry& e = _dm_hist[ring_pos];
-          const char* sender = e.outgoing ? "Me" : filtered_name;
+          char sender_buf[33];
+          const char* body = dmDisplayParts(e, _sel_contact.type == ADV_TYPE_ROOM,
+                                            filtered_name, sender_buf, sizeof(sender_buf));
+          const char* sender = sender_buf;
           int dm_count = dmHistCountForContact(_sel_contact.id.pub_key);
-          int ret = _dm_fs.render(display, sender, e.text,
+          int ret = _dm_fs.render(display, sender, body,
                                   _dm_hist_sel < dm_count - 1,
                                   _dm_hist_sel > 0);
           if (e.outgoing) {  // delivery marker in the (inverted) header bar
@@ -1004,6 +1034,7 @@ public:
 
       int dm_count = dmHistCountForContact(_sel_contact.id.pub_key);
       uint32_t now_ts = rtc_clock.getCurrentTime();
+      bool is_room = (_sel_contact.type == ADV_TYPE_ROOM);
 
       // Portrait e-ink (height > width): variable-height boxes that show the full
       // wrapped message text. All other displays/orientations: compact 2-line boxes.
@@ -1028,7 +1059,9 @@ public:
           if (portrait_expand) {
             int rp = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_scroll + ii);
             if (rp >= 0) {
-              display.translateUTF8ToBlocks(s_wrap_trans, skipReplyPrefix(_dm_hist[rp].text), sizeof(s_wrap_trans));
+              char hsb[33];
+              const char* hbody = dmDisplayParts(_dm_hist[rp], is_room, filtered_name, hsb, sizeof(hsb));
+              display.translateUTF8ToBlocks(s_wrap_trans, hbody, sizeof(s_wrap_trans));
               int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 8);
               bh = (1 + (nl > 0 ? nl : 1)) * lh + 1;
             }
@@ -1049,7 +1082,9 @@ public:
         if (ring_pos < 0) continue;
 
         const DmHistEntry& e = _dm_hist[ring_pos];
-        const char* sender = e.outgoing ? "Me" : filtered_name;
+        char sender_buf[33];
+        const char* body = dmDisplayParts(e, is_room, filtered_name, sender_buf, sizeof(sender_buf));
+        const char* sender = sender_buf;
 
         char age[6]; fmtMsgAge(age, sizeof(age), e.timestamp, now_ts);
         int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
@@ -1072,11 +1107,11 @@ public:
         if (age[0]) { display.setCursor(display.width() - age_w - reserve, y + 1); display.print(age); }
         if (!sel) display.setColor(DisplayDriver::LIGHT);
         if (portrait_expand) {
-          display.translateUTF8ToBlocks(s_wrap_trans, skipReplyPrefix(e.text), sizeof(s_wrap_trans));
+          display.translateUTF8ToBlocks(s_wrap_trans, body, sizeof(s_wrap_trans));
           int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 8);
           for (int li = 0; li < nl; li++) { display.setCursor(3, y + (li + 1) * lh + 1); display.print(s_wrap_lines[li]); }
         } else {
-          display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(e.text));
+          display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, body);
         }
       }
 
