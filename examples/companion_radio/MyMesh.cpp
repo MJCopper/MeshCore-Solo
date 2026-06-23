@@ -1407,7 +1407,14 @@ void MyMesh::begin(bool has_display) {
   // load persisted prefs
   _store->loadPrefs(_prefs, sensors.node_lat, sensors.node_lon);
 
-  // sanitise bad pref values
+  // sanitise bad pref values. NaN/inf must be reset BEFORE constrain(): constrain
+  // is a min/max macro and NaN compares false against both bounds, so it would
+  // pass a NaN straight through to setParams() and hang the radio (a corrupted or
+  // layout-shifted prefs file easily decodes a float field as NaN/inf).
+  if (isnan(_prefs.freq) || isinf(_prefs.freq)) _prefs.freq = LORA_FREQ;
+  if (isnan(_prefs.bw)   || isinf(_prefs.bw))   _prefs.bw   = LORA_BW;
+  if (isnan(_prefs.airtime_factor) || isinf(_prefs.airtime_factor)) _prefs.airtime_factor = 0;
+  if (isnan(_prefs.rx_delay_base)  || isinf(_prefs.rx_delay_base))  _prefs.rx_delay_base  = 0;
   _prefs.rx_delay_base = constrain(_prefs.rx_delay_base, 0, 20.0f);
   _prefs.airtime_factor = constrain(_prefs.airtime_factor, 0, 9.0f);
   _prefs.freq = constrain(_prefs.freq, 150.0f, 2500.0f);
