@@ -45,11 +45,12 @@ class QuickMsgScreen : public UIScreen {
   FullscreenMsgView _fs;
   int  _unread_at_entry;    // _ch_unread value when entering CHANNEL_HIST
   int  _viewing_max_seen;  // highest _hist_sel reached in current session
-  // Shared ring for all channels combined. Sized to comfortably exceed
-  // typical inter-visit accumulation; addChannelMsg() decrements the
+  // Shared ring for all channels combined. addChannelMsg() decrements the
   // matching _ch_unread when an entry is evicted so the badge can't claim
-  // unread messages that no longer exist in the ring.
-  static const int CH_HIST_MAX = 96;
+  // unread messages that no longer exist in the ring. Each slot carries a full
+  // MSG_TEXT_BUF, so this ring dominates the screen's RAM footprint — kept
+  // modest to leave heap headroom (see DM_HIST_MAX).
+  static const int CH_HIST_MAX = 48;
 
   // KEYBOARD
   KeyboardWidget* _kb;
@@ -84,6 +85,9 @@ class QuickMsgScreen : public UIScreen {
   // in the keyboard to confirm/edit before sending.
   bool      _share_mode = false;
   char      _share_text[160] = "";
+  // Live-share target picker: reuse the recipient chooser to set the persistent
+  // auto-share target (channel / DM) instead of composing a message.
+  bool      _pick_target = false;
 
   // History text holds a full received message. Channel messages carry the
   // sender embedded as "Name: body" in the payload, so a message can be up to
@@ -123,7 +127,8 @@ class QuickMsgScreen : public UIScreen {
     uint8_t  attempt;          // last attempt number sent (outgoing); next resend = attempt+1
     uint8_t  resends_left;     // remaining auto-resends before the marker shows ✗
   };
-  static const int DM_HIST_MAX = 64;
+  // Each slot carries a full MSG_TEXT_BUF; kept modest to bound heap use.
+  static const int DM_HIST_MAX = 32;
   DmHistEntry _dm_hist[DM_HIST_MAX];
   int _dm_hist_head, _dm_hist_count;
   int _dm_hist_sel, _dm_hist_scroll;
@@ -834,6 +839,7 @@ public:
     _ctx_dirty = false;
     _nav_active = false;
     _share_mode = false;
+    _pick_target = false;
     _pin_picker_active = false;
     _dm_direct_entry = false;
     _unread_at_entry = 0;
@@ -879,6 +885,44 @@ public:
     strncpy(_share_text, text, sizeof(_share_text) - 1);
     _share_text[sizeof(_share_text) - 1] = '\0';
     _phase = MODE_SELECT;
+  }
+
+  // Open the recipient chooser to set the live-share target (channel/DM). On
+  // selection the target is stored in NodePrefs and the Map screen is restored.
+  void startPickTarget() {
+    reset();
+    _pick_target = true;
+    _phase = MODE_SELECT;
+  }
+
+  void commitPickTargetChannel(int ch_idx) {
+    NodePrefs* p = _task->getNodePrefs();
+    if (p) {
+      p->loc_share_target_type = 0;
+      p->loc_share_channel_idx = (uint8_t)ch_idx;
+      the_mesh.savePrefs();
+    }
+    _pick_target = false;
+    _task->showAlert("Share target set", 1200);
+    _task->gotoLiveShareScreen();
+  }
+
+  void commitPickTargetDM(const ContactInfo& ci) {
+    // A room server can't be a live-share target — a [LOC] DM to it is never
+    // reposted to the room's members. Reject the pick and keep the chooser open.
+    if (ci.type == ADV_TYPE_ROOM) {
+      _task->showAlert("Rooms not supported", 1400);
+      return;
+    }
+    NodePrefs* p = _task->getNodePrefs();
+    if (p) {
+      p->loc_share_target_type = 1;
+      memcpy(p->loc_share_dm_prefix, ci.id.pub_key, NodePrefs::FAVOURITE_PREFIX_LEN);
+      the_mesh.savePrefs();
+    }
+    _pick_target = false;
+    _task->showAlert("Share target set", 1200);
+    _task->gotoLiveShareScreen();
   }
 
   void enterDM(const ContactInfo& ci) {
@@ -1500,6 +1544,7 @@ public:
       if (c == KEY_DOWN && _num_contacts > 0) { _contact_sel = (_contact_sel < _num_contacts - 1) ? _contact_sel + 1 : 0; return true; }
       if (c == KEY_ENTER && _num_contacts > 0) {
         if (the_mesh.getContactByIdx(_sorted[_contact_sel], _sel_contact)) {
+          if (_pick_target) { commitPickTargetDM(_sel_contact); return true; }
           _task->clearDMUnread(_sel_contact.id.pub_key);
           _dm_hist_sel = -1;
           _dm_hist_scroll = 0;
@@ -1590,6 +1635,7 @@ public:
       if (c == KEY_DOWN && _num_channels > 0) { _channel_sel = (_channel_sel < _num_channels - 1) ? _channel_sel + 1 : 0; return true; }
       if (c == KEY_ENTER && _num_channels > 0) {
         _sel_channel_idx = _channel_indices[_channel_sel];
+        if (_pick_target) { commitPickTargetChannel(_sel_channel_idx); return true; }
         int hc = histCountForChannel(_sel_channel_idx);
         _unread_at_entry = (int)_ch_unread[_sel_channel_idx];
         _hist_scroll = 0;

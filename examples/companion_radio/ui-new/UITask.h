@@ -24,6 +24,7 @@
 #include "../NodePrefs.h"
 #include "../Trail.h"
 #include "../Waypoint.h"
+#include "../LiveTrack.h"
 #include "KeyboardWidget.h"
 
 class UITask : public AbstractUITask {
@@ -77,6 +78,8 @@ class UITask : public AbstractUITask {
   UIScreen* nearby_screen;
   UIScreen* dashboard_config;
   UIScreen* auto_advert_screen;
+  UIScreen* live_share_screen;
+  UIScreen* locator_screen;
   UIScreen* trail_screen;
   UIScreen* compass_screen;
   UIScreen* diag_screen;
@@ -85,7 +88,38 @@ class UITask : public AbstractUITask {
   CayenneLPP _dash_lpp;
   TrailStore _trail;
   WaypointStore _waypoints;
+  LiveTrackStore _livetrack;
   uint32_t _next_trail_sample_ms = 0;
+  uint32_t _next_livetrack_expire_ms = 0;
+
+  // Live location sharing engine state (auto [LOC] broadcast while moving).
+  uint32_t _next_loc_share_check_ms = 0;
+  uint32_t _loc_share_last_ms = 0;
+  int32_t  _loc_share_last_lat = 0, _loc_share_last_lon = 0;
+  bool     _loc_share_has_last = false;
+  bool     _loc_share_was_enabled = false;
+
+  // Trail auto-pause engine state. _trail_pause_ref is the last position the
+  // device was considered "at"; if it doesn't move beyond the trail min-delta
+  // gate for the configured delay, the trail is auto-paused.
+  int32_t  _trail_pause_ref_lat = 0, _trail_pause_ref_lon = 0;
+  bool     _trail_pause_has_ref = false;
+  uint32_t _trail_last_move_ms = 0;
+
+  // Locator engine state. _locator_known guards the first evaluation after
+  // arming (initialise inside/outside silently, fire only on later crossings).
+  uint32_t _next_locator_ms = 0;
+  bool     _locator_inside = false;
+  bool     _locator_known = false;
+  // Proximity beeper: ticks while inside the radius, faster the nearer the
+  // target. _locator_beep_check_ms throttles the distance poll; _locator_beep_next_ms
+  // is when the next tick is due.
+  uint32_t _locator_beep_check_ms = 0;
+  uint32_t _locator_beep_next_ms = 0;
+  bool locatorDistance(float& dist_m, float& radius_m) const;
+  void evaluateLocator();
+  void fireLocator(bool arrived);
+  void locatorProximityBeeper();
 
   // Course-over-ground ring — a heading source independent of trail recording.
   // Filled from the same periodic GPS poll regardless of _trail.isActive().
@@ -145,6 +179,8 @@ public:
   void gotoQuickMsgScreen();
   void openContactDM(const ContactInfo& ci);
   void shareToMessage(const char* text);   // open Messages pre-loaded to share `text`
+  void quickShareMyLocation();             // Home Map Hold-Enter: one-shot position share
+  void pickLocShareTarget();               // open Messages to choose the live-share target
   int  getRecentDMContacts(uint8_t out[][NodePrefs::FAVOURITE_PREFIX_LEN], int max) const;
   void gotoToolsScreen();
   void gotoRingtoneEditor(int slot = 0);
@@ -152,12 +188,45 @@ public:
   void gotoNearbyScreen();
   void gotoDashboardConfig();
   void gotoAutoAdvertScreen();
+  void gotoLiveShareScreen();
+  void gotoLocatorScreen();
+  // Re-arm the locator state machine so the next evaluation initialises
+  // silently (called by the Locator tool after the target/radius changes,
+  // so re-entering the zone doesn't fire on a stale inside/outside state).
+  void resetLocator() { _locator_known = false; }
+  // The one "active target" the device tracks — shared by the Locator geofence,
+  // the Nav bearing/ETA view and (future) the map focus, so every entry point
+  // sets the same thing. kind 0 = waypoint (key ignored), 1 = person (key
+  // required, 6-byte prefix). setTarget() only *defines* the target (fields +
+  // re-arm); the caller decides when to persist. Two commit policies, by
+  // context: a screen with an exit hook (LocatorScreen) batches the save so
+  // LEFT/RIGHT cycling doesn't thrash flash, while a per-item popup with no
+  // such hook uses setTargetNow() to save + confirm on the spot.
+  void setTarget(uint8_t kind, const uint8_t* key, int32_t lat, int32_t lon, const char* name);
+  void setTargetNow(uint8_t kind, const uint8_t* key, int32_t lat, int32_t lon, const char* name);
+  // Unset the active target (locator_has_target = 0). Distinct from setTarget()
+  // because there's no "kind" for nothing — clearing is its own operation.
+  void clearTarget();
+  // Resolve a person target (6-byte pubkey prefix) to a current position:
+  // prefers an active [LOC] live share, falls back to their last-advertised
+  // GPS fix. Returns false when neither is known. Optional live/ts report
+  // freshness for the picker's age tag. One precedence, used by both the
+  // Locator engine (locatorDistance) and the target picker.
+  bool resolvePersonPos(const uint8_t* key, int32_t& lat, int32_t& lon,
+                        bool* live = nullptr, uint32_t* ts = nullptr) const;
+  // Resolved position of the active target — a waypoint's coords, or a person
+  // via resolvePersonPos(). Gated only on a target being set, independent of
+  // whether the Locator alert is enabled, so a destination you set still shows
+  // on the map. Used by locatorDistance() and the map renderers.
+  bool activeTargetPos(int32_t& lat, int32_t& lon) const;
   void gotoTrailScreen();
+  void gotoMapScreen();   // opens the Trail screen directly in its Map view
   void gotoCompassScreen();
   void gotoDiagnosticsScreen();
   void gotoRepeaterScreen();
   TrailStore& trail() { return _trail; }
   WaypointStore& waypoints() { return _waypoints; }
+  LiveTrackStore& liveTrack() { return _livetrack; }
   // Shared on-screen keyboard — only one screen drives it at a time.
   KeyboardWidget& keyboard() { return _kb; }
   void saveWaypoints();
@@ -276,7 +345,13 @@ public:
   void msgRead(int msgcount) override;
   void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount, uint8_t contact_type = 0, const uint8_t* pub_key = nullptr) override;
   void notify(UIEventType t = UIEventType::none) override;
+  void onSharedLocation(const uint8_t* pub_key, const char* name,
+                        int32_t lat_1e6, int32_t lon_1e6,
+                        uint32_t ts, bool verified) override;
   void loop() override;
+  // Send one [LOC] message to the configured live-share target. Returns false
+  // if the target can't be resolved (no such channel / contact).
+  bool sendLocationShare(int32_t lat, int32_t lon);
 
   void shutdown(bool restart = false);
 };

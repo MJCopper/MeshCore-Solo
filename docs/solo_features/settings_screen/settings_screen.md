@@ -6,7 +6,7 @@
 
 |           OLED            |           E-Ink           |
 | :-----------------------: | :-----------------------: |
-| ![](./set_scr_1_oled.png) | ![](./set_scr_1_eink.png) |
+| ![](./overview_oled.png) | ![](./overview_eink.png) |
 
 All settings are saved to flash and restored on next boot. Settings are organised into collapsible sections. Press **Enter** on a section header to expand or collapse it — all sections start collapsed for faster navigation. Press **LEFT/RIGHT** to change a value, or **Enter** for toggle items.
 
@@ -50,7 +50,7 @@ Melody 1 and Melody 2 are custom sequences editable in **Tools › Ringtone Edit
 
 |           OLED            |           E-Ink           |
 | :-----------------------: | :-----------------------: |
-| ![](./set_scr_2_oled.png) | ![](./set_scr_2_eink.png) |
+| ![](./homepages_oled.png) | ![](./homepages_eink.png) |
 
 Lists all available home screen pages. For each entry:
 
@@ -73,6 +73,12 @@ Lists all available home screen pages. For each entry:
 | CR        | 5–8        | LEFT/RIGHT. Coding rate (4/5–4/8). |
 | Pwr save  | ON / OFF   | **Battery saver.** Hardware duty-cycle receive: the SX126x cycles RX↔sleep on its own and wakes on a preamble, cutting average RX current. Trades a little receive latency; leave OFF for lowest-latency reception. Requires an SX126x radio (otherwise stays on continuous RX). **Forced off (shown as `--`) while the repeater is on** — a repeater must listen continuously; your setting is restored when the repeater is switched off. |
 | Auto pwr  | ON / OFF   | **Adaptive Power Control.** Lowers actual TX power on strong links to save energy, ramping back up — to the **TX Pwr** ceiling — on weak or lost links. Link quality comes from direct-message ACK SNR and, for channel messages (no ACK), from hearing a repeater rebroadcast your packet. The radio page / name bar shows the live power. Default OFF (fixed TX power). **Suppressed (shown as `--`) while the repeater is on** — a repeater holds full TX power for consistent relay reach; your setting is restored when the repeater is switched off. |
+
+|           OLED            |           E-Ink           |
+| :-----------------------: | :-----------------------: |
+| ![](./radio_oled.png) | ![](./radio_eink.png) |
+
+<!-- screenshot pending: Radio — preset popup (pick/save/delete) and/or the digit-by-digit frequency editor -->
 
 The **repeater** mode and its flood filters live on their own screen — see **Tools › Repeater**.
 

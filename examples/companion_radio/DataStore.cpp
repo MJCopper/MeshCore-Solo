@@ -44,6 +44,21 @@ static File openWrite(FILESYSTEM* fs, const char* filename) {
 #endif
 }
 
+// Atomically swap a fully-written temp file over its final path. LittleFS
+// (nRF52/STM32) rename replaces an existing destination atomically, so a crash
+// leaves either the old file or the new one intact — never a truncated mix.
+// Other Arduino filesystems can't rename onto an existing file, so the
+// destination is dropped first (a metadata-only window, vs. the record-by-record
+// write window of a direct overwrite). Returns false if the swap fails.
+static bool commitTempFile(FILESYSTEM* fs, const char* tmp, const char* final_path) {
+#if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
+  return fs->rename(tmp, final_path);
+#else
+  fs->remove(final_path);
+  return fs->rename(tmp, final_path);
+#endif
+}
+
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   static uint32_t _ContactsChannelsTotalBlocks = 0;
 #endif
@@ -357,6 +372,48 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.repeater_bw,          sizeof(_prefs.repeater_bw));
   rd(&_prefs.repeater_sf,          sizeof(_prefs.repeater_sf));
   rd(&_prefs.repeater_cr,          sizeof(_prefs.repeater_cr));
+  // → 0xC0DE0011: track_shared_loc. Pre-0x11 files leave a stray sentinel byte
+  // here; clamp so upgraders fall back to "off".
+  rd(&_prefs.track_shared_loc,     sizeof(_prefs.track_shared_loc));
+  if (_prefs.track_shared_loc > 1) _prefs.track_shared_loc = 0;
+  // → 0xC0DE0012: live location sharing. Pre-0x12 files leave stray bytes here;
+  // clamp each field back to its default so upgraders start with sharing off.
+  rd(&_prefs.loc_share_enabled,     sizeof(_prefs.loc_share_enabled));
+  rd(&_prefs.loc_share_target_type, sizeof(_prefs.loc_share_target_type));
+  rd(&_prefs.loc_share_channel_idx, sizeof(_prefs.loc_share_channel_idx));
+  rd(_prefs.loc_share_dm_prefix,    sizeof(_prefs.loc_share_dm_prefix));
+  rd(&_prefs.loc_share_move_idx,    sizeof(_prefs.loc_share_move_idx));
+  rd(&_prefs.loc_share_interval_idx, sizeof(_prefs.loc_share_interval_idx));
+  rd(&_prefs.loc_share_heartbeat_idx, sizeof(_prefs.loc_share_heartbeat_idx));
+  if (_prefs.loc_share_enabled > 1)     _prefs.loc_share_enabled = 0;
+  if (_prefs.loc_share_target_type > 1) _prefs.loc_share_target_type = 0;
+  if (_prefs.loc_share_channel_idx >= MAX_GROUP_CHANNELS) _prefs.loc_share_channel_idx = 0;
+  if (_prefs.loc_share_move_idx >= NodePrefs::LOC_SHARE_MOVE_COUNT)         _prefs.loc_share_move_idx = 1;
+  if (_prefs.loc_share_interval_idx >= NodePrefs::LOC_SHARE_INTERVAL_COUNT) _prefs.loc_share_interval_idx = 1;
+  if (_prefs.loc_share_heartbeat_idx >= NodePrefs::LOC_SHARE_HEARTBEAT_COUNT) _prefs.loc_share_heartbeat_idx = 0;
+  // → 0xC0DE0013: locator + trail auto-pause. Pre-0x13 files leave stray bytes
+  // here; clamp each back to its default so upgraders start with both off.
+  rd(&_prefs.locator_enabled,    sizeof(_prefs.locator_enabled));
+  rd(&_prefs.locator_has_target, sizeof(_prefs.locator_has_target));
+  rd(&_prefs.locator_radius_idx, sizeof(_prefs.locator_radius_idx));
+  rd(&_prefs.locator_mode,       sizeof(_prefs.locator_mode));
+  rd(&_prefs.locator_lat_1e6,    sizeof(_prefs.locator_lat_1e6));
+  rd(&_prefs.locator_lon_1e6,    sizeof(_prefs.locator_lon_1e6));
+  rd(_prefs.locator_label,       sizeof(_prefs.locator_label));
+  rd(&_prefs.trail_autopause_idx,  sizeof(_prefs.trail_autopause_idx));
+  if (_prefs.locator_enabled > 1)    _prefs.locator_enabled = 0;
+  if (_prefs.locator_has_target > 1) _prefs.locator_has_target = 0;
+  if (_prefs.locator_radius_idx >= NodePrefs::LOCATOR_RADIUS_COUNT) _prefs.locator_radius_idx = 1;
+  if (_prefs.locator_mode >= NodePrefs::LOCATOR_MODE_COUNT)         _prefs.locator_mode = 0;
+  if (_prefs.trail_autopause_idx >= NodePrefs::TRAIL_AUTOPAUSE_COUNT)   _prefs.trail_autopause_idx = 0;
+  _prefs.locator_label[sizeof(_prefs.locator_label) - 1] = '\0';
+  // → 0xC0DE0014: locator proximity beeper.
+  rd(&_prefs.locator_beeper, sizeof(_prefs.locator_beeper));
+  if (_prefs.locator_beeper > 1) _prefs.locator_beeper = 0;
+  // → 0xC0DE0015: locator can target a live contact (kind + pubkey prefix).
+  rd(&_prefs.locator_target_kind, sizeof(_prefs.locator_target_kind));
+  rd(_prefs.locator_key,          sizeof(_prefs.locator_key));
+  if (_prefs.locator_target_kind > 1) _prefs.locator_target_kind = 0;
   // Pre-0x10 files leave stray sentinel bytes here, same as a never-configured
   // device. Either way there's no valid saved profile, so default to a profile
   // in the same band as the companion's own network (_prefs.freq, already read
@@ -432,7 +489,9 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
 }
 
 void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_lon) {
-  File file = ::openWrite(_fs, "/new_prefs");
+  // Atomic temp-then-rename (see commitTempFile) so an interrupted save can't
+  // wipe settings; loadPrefs() still validates the tail sentinel on read.
+  File file = ::openWrite(_fs, "/new_prefs.tmp");
   if (file) {
     uint8_t pad[8];
     memset(pad, 0, sizeof(pad));
@@ -536,12 +595,38 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.repeater_bw,          sizeof(_prefs.repeater_bw));
     file.write((uint8_t *)&_prefs.repeater_sf,          sizeof(_prefs.repeater_sf));
     file.write((uint8_t *)&_prefs.repeater_cr,          sizeof(_prefs.repeater_cr));
+    file.write((uint8_t *)&_prefs.track_shared_loc,     sizeof(_prefs.track_shared_loc));
+    file.write((uint8_t *)&_prefs.loc_share_enabled,     sizeof(_prefs.loc_share_enabled));
+    file.write((uint8_t *)&_prefs.loc_share_target_type, sizeof(_prefs.loc_share_target_type));
+    file.write((uint8_t *)&_prefs.loc_share_channel_idx, sizeof(_prefs.loc_share_channel_idx));
+    file.write((uint8_t *)_prefs.loc_share_dm_prefix,    sizeof(_prefs.loc_share_dm_prefix));
+    file.write((uint8_t *)&_prefs.loc_share_move_idx,    sizeof(_prefs.loc_share_move_idx));
+    file.write((uint8_t *)&_prefs.loc_share_interval_idx, sizeof(_prefs.loc_share_interval_idx));
+    file.write((uint8_t *)&_prefs.loc_share_heartbeat_idx, sizeof(_prefs.loc_share_heartbeat_idx));
+    file.write((uint8_t *)&_prefs.locator_enabled,    sizeof(_prefs.locator_enabled));
+    file.write((uint8_t *)&_prefs.locator_has_target, sizeof(_prefs.locator_has_target));
+    file.write((uint8_t *)&_prefs.locator_radius_idx, sizeof(_prefs.locator_radius_idx));
+    file.write((uint8_t *)&_prefs.locator_mode,       sizeof(_prefs.locator_mode));
+    file.write((uint8_t *)&_prefs.locator_lat_1e6,    sizeof(_prefs.locator_lat_1e6));
+    file.write((uint8_t *)&_prefs.locator_lon_1e6,    sizeof(_prefs.locator_lon_1e6));
+    file.write((uint8_t *)_prefs.locator_label,       sizeof(_prefs.locator_label));
+    file.write((uint8_t *)&_prefs.trail_autopause_idx,  sizeof(_prefs.trail_autopause_idx));
+    file.write((uint8_t *)&_prefs.locator_beeper,     sizeof(_prefs.locator_beeper));
+    file.write((uint8_t *)&_prefs.locator_target_kind, sizeof(_prefs.locator_target_kind));
+    file.write((uint8_t *)_prefs.locator_key,         sizeof(_prefs.locator_key));
 
-    // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL.
+    // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
+    // the one we check: once the flash fills, writes return 0, so a good
+    // sentinel write means the whole record fit. Only then swap it in.
     uint32_t sentinel = NodePrefs::SCHEMA_SENTINEL;
-    file.write((uint8_t *)&sentinel, sizeof(sentinel));
+    bool ok = (file.write((uint8_t *)&sentinel, sizeof(sentinel)) == sizeof(sentinel));
 
     file.close();
+    if (ok) {
+      commitTempFile(_fs, "/new_prefs.tmp", "/new_prefs");
+    } else {
+      _fs->remove("/new_prefs.tmp");   // keep the previous good /new_prefs
+    }
   }
 }
 
@@ -597,35 +682,48 @@ File file = openRead(_getContactsChannelsFS(), "/contacts3");
 }
 
 void DataStore::saveContacts(DataStoreHost* host, bool (*filter)(const ContactInfo& c)) {
-  File file = ::openWrite(_getContactsChannelsFS(), "/contacts3");
-  if (file) {
-    uint32_t idx = 0;
-    ContactInfo c;
-    uint8_t unused = 0;
+  FILESYSTEM* fs = _getContactsChannelsFS();
+  // Write to a temp file, then atomically rename it over /contacts3 only once
+  // every record has written cleanly. The old code truncated /contacts3 up
+  // front and wrote in place, so a crash, reset or full flash mid-save wiped
+  // the entire contact list. Now an interrupted save leaves the previous good
+  // file untouched.
+  File file = ::openWrite(fs, "/contacts3.tmp");
+  if (!file) return;
 
-    while (host->getContactForSave(idx, c)) {
-      if (filter && !filter(c)) {
-        idx++;  // advance to next contact
-        continue;
-      }
-      bool success = (file.write(c.id.pub_key, 32) == 32);
-      success = success && (file.write((uint8_t *)&c.name, 32) == 32);
-      success = success && (file.write(&c.type, 1) == 1);
-      success = success && (file.write(&c.flags, 1) == 1);
-      success = success && (file.write(&unused, 1) == 1);
-      success = success && (file.write((uint8_t *)&c.sync_since, 4) == 4);
-      success = success && (file.write((uint8_t *)&c.out_path_len, 1) == 1);
-      success = success && (file.write((uint8_t *)&c.last_advert_timestamp, 4) == 4);
-      success = success && (file.write(c.out_path, 64) == 64);
-      success = success && (file.write((uint8_t *)&c.lastmod, 4) == 4);
-      success = success && (file.write((uint8_t *)&c.gps_lat, 4) == 4);
-      success = success && (file.write((uint8_t *)&c.gps_lon, 4) == 4);
+  bool ok = true;
+  uint32_t idx = 0;
+  ContactInfo c;
+  uint8_t unused = 0;
 
-      if (!success) break; // write failed
-
+  while (host->getContactForSave(idx, c)) {
+    if (filter && !filter(c)) {
       idx++;  // advance to next contact
+      continue;
     }
-    file.close();
+    bool success = (file.write(c.id.pub_key, 32) == 32);
+    success = success && (file.write((uint8_t *)&c.name, 32) == 32);
+    success = success && (file.write(&c.type, 1) == 1);
+    success = success && (file.write(&c.flags, 1) == 1);
+    success = success && (file.write(&unused, 1) == 1);
+    success = success && (file.write((uint8_t *)&c.sync_since, 4) == 4);
+    success = success && (file.write((uint8_t *)&c.out_path_len, 1) == 1);
+    success = success && (file.write((uint8_t *)&c.last_advert_timestamp, 4) == 4);
+    success = success && (file.write(c.out_path, 64) == 64);
+    success = success && (file.write((uint8_t *)&c.lastmod, 4) == 4);
+    success = success && (file.write((uint8_t *)&c.gps_lat, 4) == 4);
+    success = success && (file.write((uint8_t *)&c.gps_lon, 4) == 4);
+
+    if (!success) { ok = false; break; } // write failed (e.g. flash full)
+
+    idx++;  // advance to next contact
+  }
+  file.close();
+
+  if (ok) {
+    commitTempFile(fs, "/contacts3.tmp", "/contacts3");
+  } else {
+    fs->remove("/contacts3.tmp");   // keep the previous good /contacts3
   }
 }
 
@@ -677,29 +775,39 @@ void DataStore::loadChannels(DataStoreHost* host) {
 }
 
 void DataStore::saveChannels(DataStoreHost* host) {
-  File file = ::openWrite(_getContactsChannelsFS(), "/channels2");
-  if (file) {
-    uint8_t channel_idx = 0;
-    ChannelDetails ch;
-    uint8_t unused[4];
-    memset(unused, 0, 4);
+  FILESYSTEM* fs = _getContactsChannelsFS();
+  // Same atomic temp-then-rename pattern as saveContacts() — never truncate the
+  // live /channels2 before the new copy is fully written.
+  File file = ::openWrite(fs, "/channels2.tmp");
+  if (!file) return;
 
-    while (host->getChannelForSave(channel_idx, ch)) {
-      channel_idx++;
-      // getChannelForSave() returns every slot up to MAX_GROUP_CHANNELS, so skip
-      // the unused ones (all-zero secret) rather than writing all 40 — otherwise
-      // the file is always ~2.7 KB and wears the flash needlessly. loadChannels()
-      // already compacts empty entries on read, so the loaded result is identical.
-      bool empty = true;
-      for (int b = 0; b < 32; b++) if (ch.channel.secret[b]) { empty = false; break; }
-      if (empty) continue;
+  bool ok = true;
+  uint8_t channel_idx = 0;
+  ChannelDetails ch;
+  uint8_t unused[4];
+  memset(unused, 0, 4);
 
-      bool success = (file.write(unused, 4) == 4);
-      success = success && (file.write((uint8_t *)ch.name, 32) == 32);
-      success = success && (file.write((uint8_t *)ch.channel.secret, 32) == 32);
-      if (!success) break; // write failed
-    }
-    file.close();
+  while (host->getChannelForSave(channel_idx, ch)) {
+    channel_idx++;
+    // getChannelForSave() returns every slot up to MAX_GROUP_CHANNELS, so skip
+    // the unused ones (all-zero secret) rather than writing all 40 — otherwise
+    // the file is always ~2.7 KB and wears the flash needlessly. loadChannels()
+    // already compacts empty entries on read, so the loaded result is identical.
+    bool empty = true;
+    for (int b = 0; b < 32; b++) if (ch.channel.secret[b]) { empty = false; break; }
+    if (empty) continue;
+
+    bool success = (file.write(unused, 4) == 4);
+    success = success && (file.write((uint8_t *)ch.name, 32) == 32);
+    success = success && (file.write((uint8_t *)ch.channel.secret, 32) == 32);
+    if (!success) { ok = false; break; } // write failed
+  }
+  file.close();
+
+  if (ok) {
+    commitTempFile(fs, "/channels2.tmp", "/channels2");
+  } else {
+    fs->remove("/channels2.tmp");   // keep the previous good /channels2
   }
 }
 

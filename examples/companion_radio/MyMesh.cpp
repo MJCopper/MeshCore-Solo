@@ -1,5 +1,6 @@
 #include "MyMesh.h"
 #include "MsgExpand.h"
+#include "GeoUtils.h"
 #include "Features.h"
 
 #include <Arduino.h> // needed for PlatformIO
@@ -484,7 +485,7 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
   bool should_display = txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN;
   if (should_display && _ui) {
     _ui->newMsg(path_len, from.name, text, offline_queue_len, from.type, from.id.pub_key);
-    _ui->notify(UIEventType::contactMessage);
+    _ui->notify(from.type == ADV_TYPE_ROOM ? UIEventType::roomMessage : UIEventType::contactMessage);
     // Add to the on-device conversation history. Room servers (ADV_TYPE_ROOM) are
     // viewed through the same history list as chat contacts (keyed by the server's
     // pubkey), so their posts must be stored too — otherwise an incoming room
@@ -636,6 +637,12 @@ void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t 
   markConnectionActive(from); // in case this is from a server, and we have a connection
   queueMessage(from, TXT_TYPE_PLAIN, pkt, sender_timestamp, NULL, 0, text);
 
+  // Live position share: a verified DM, so key the track by the sender's pubkey.
+  int32_t loc_lat, loc_lon;
+  if (_ui && geo::parseLocShare(text, loc_lat, loc_lon)) {
+    _ui->onSharedLocation(from.id.pub_key, from.name, loc_lat, loc_lon, sender_timestamp, true);
+  }
+
   // hop count of the received message. getPathHashCount() (low 6 bits of path_len)
   // is the number of repeaters traversed — the same value the mesh uses for flood
   // retransmit priority. 0 = heard directly. (Raw path_len is a size/count
@@ -657,6 +664,17 @@ void MyMesh::onSignedMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uin
   // from.sync_since change needs to be persisted
   dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
   queueMessage(from, TXT_TYPE_SIGNED_PLAIN, pkt, sender_timestamp, sender_prefix, 4, text);
+
+  // Live position share inside a room (mirrors the DM and channel paths). The
+  // post's author is the signed sender_prefix, not the room server `from`, so
+  // resolve that 4-byte prefix to a contact name and track by name. Unverified:
+  // we only hold a 4-byte prefix here, not the full pubkey LiveTrack keys on.
+  int32_t loc_lat, loc_lon;
+  if (_ui && geo::parseLocShare(text, loc_lat, loc_lon)) {
+    ContactInfo* sc = sender_prefix ? lookupContactByPubKey(sender_prefix, 4) : nullptr;
+    const char* who = (sc && sc->name[0]) ? sc->name : from.name;
+    _ui->onSharedLocation(nullptr, who, loc_lat, loc_lon, sender_timestamp, false);
+  }
 }
 
 void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint32_t timestamp,
@@ -710,6 +728,23 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
     channel_name = channel_details.name;
   }
   if (_ui) _ui->newMsg(path_len, channel_name, text, offline_queue_len, 0);
+
+  // Live position share on a channel. The sender's identity here is only the
+  // unsigned "name: msg" prefix (no pubkey), so track it by name — best-effort
+  // and unverified. parseLocShare requires an explicit [LOC] tag, so ordinary
+  // chatter is ignored.
+  int32_t loc_lat, loc_lon;
+  if (_ui && geo::parseLocShare(text, loc_lat, loc_lon)) {
+    char sender[32] = {0};
+    const char* sep = strstr(text, ": ");
+    if (sep && sep > text) {
+      int n = (int)(sep - text);
+      if (n > (int)sizeof(sender) - 1) n = sizeof(sender) - 1;
+      memcpy(sender, text, n);
+      sender[n] = '\0';
+    }
+    _ui->onSharedLocation(nullptr, sender[0] ? sender : "?", loc_lat, loc_lon, timestamp, false);
+  }
 #endif
 
   // hop count for !hops (see onMessageRecv); not the wire path_len above.

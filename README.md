@@ -36,7 +36,9 @@ All firmware files are published on the [releases page](https://github.com/Marek
   - **GPS compass** — heading derived from course-over-ground (no magnetometer needed), shown as a clear scrolling heading tape with a large degrees + cardinal readout
   - **Navigate to anything** — a saved waypoint, a node straight from Nearby Nodes, or a location someone shares with you in a message
   - **Share & save locations** — send a waypoint to a contact or channel; on the other end, navigate to or save any shared location with one menu
-  - **GPS trail** — background route recording with an auto-fit map (waypoints + live position), summary stats, and [GPX export](#solo-tools)
+  - **Live location sharing** — broadcast your position over the mesh as you move (movement-gated, to a channel or contact) and see others who share theirs as pins on the map and live distance/bearing in Nearby
+  - **Locator** — arm a geofence around a target — a saved waypoint *or* a person (their live/last-known position) — and get an alert when you arrive/leave or they get near/far, with an optional homing beeper that ticks faster the closer you get. Set it from the Locator screen or straight from Nearby Nodes / Waypoints, and see the target as a flag on the map
+  - **GPS trail** — background route recording with an auto-fit map (waypoints + live position), summary stats, auto-pause on stops, and [GPX export](#solo-tools)
   - **Metric or imperial** — one global Units setting drives every distance and speed across the UI
 
 - [Messages Screen](./docs/solo_features/message_screen/message_screen.md) — view and send messages, open message details, reply with quick messages or custom text, navigate to / save locations shared in a message, per-channel notification and melody overrides
@@ -49,7 +51,7 @@ All firmware files are published on the [releases page](https://github.com/Marek
 
 - [Screen Lock](./docs/solo_features/screen_lock/screen_lock.md) — lock the device to prevent accidental keypresses, with a lock screen showing time and sensor data
 
-- [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) — GPS trail & waypoints, compass, nearby nodes (with ping & navigate), ringtone editor, auto-reply bot, auto-advert, diagnostics, repeater
+- [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) — GPS trail & waypoints, compass, nearby nodes (with ping & navigate), ringtone editor, auto-reply bot, auto-advert, live location sharing, locator, diagnostics, repeater
 
 - **Battery saving (radio)** — two optional, independent toggles under Settings › Radio:
   - **Pwr save** — hardware duty-cycle receive (SX126x `SetRxDutyCycle`): the radio cycles RX↔sleep on its own and wakes on a preamble, cutting average RX current with only a little added receive latency
@@ -97,7 +99,7 @@ Updating to a newer version usually does not require erasing flash unless the re
 | [Clock Screen](./docs/solo_features/clock_screen/clock_screen.md)          | Clock page, date, configurable data fields                            |
 | [Settings Screen](./docs/solo_features/settings_screen/settings_screen.md) | All settings sections with values and interactions                    |
 | [Screen Lock](./docs/solo_features/screen_lock/screen_lock.md)             | Lock/unlock sequence, lock screen, auto-lock                          |
-| [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md)          | GPS trail & waypoints, compass, navigation, nearby nodes, ringtone editor, auto-reply bot, auto-advert, diagnostics, repeater |
+| [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md)          | GPS trail & waypoints, compass, navigation, nearby nodes, ringtone editor, auto-reply bot, auto-advert, live location sharing, locator, diagnostics, repeater |
 
 ### Upstream MeshCore
 

@@ -6,6 +6,7 @@
 
 #include <helpers/ui/DisplayDriver.h>
 #include <stdlib.h>   // abs
+#include "../Trail.h"
 
 namespace gfx {
 
@@ -34,6 +35,27 @@ static inline void drawCircle(DisplayDriver& d, int cx, int cy, int r) {
     y++;
     if (err < 0) err += 2 * y + 1;
     else { x--; err += 2 * (y - x) + 1; }
+  }
+}
+
+// Walks a TrailStore and renders it as a connected polyline via drawLine(),
+// breaking the line at each TRAIL_FLAG_SEG_START point (trail paused/
+// restarted) instead of bridging the dead-time gap. Shared by the full Trail
+// map and the Home screen's mini-map preview, which only differ in how they
+// project lat/lon to screen coords and what (if anything) they draw at a
+// break. `project(lat, lon, x, y)` fills the screen coords for one point;
+// `on_break(x_prev_end, y_prev_end, x_new_start, y_new_start)` runs at each
+// break instead of drawLine() — pass a no-op lambda for a silent gap.
+template <typename Project, typename OnBreak>
+static void drawTrail(DisplayDriver& d, TrailStore& tr, Project project, OnBreak on_break) {
+  if (tr.count() == 0) return;
+  int x0, y0; project(tr.at(0).lat_1e6, tr.at(0).lon_1e6, x0, y0);
+  for (int i = 1; i < tr.count(); i++) {
+    const TrailPoint& pt = tr.at(i);
+    int x1, y1; project(pt.lat_1e6, pt.lon_1e6, x1, y1);
+    if (pt.flags & TRAIL_FLAG_SEG_START) on_break(x0, y0, x1, y1);
+    else                                  drawLine(d, x0, y0, x1, y1);
+    x0 = x1; y0 = y1;
   }
 }
 

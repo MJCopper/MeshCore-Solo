@@ -13,6 +13,7 @@
 #include "KeyboardWidget.h"
 #include "PopupMenu.h"
 #include "NavView.h"
+#include "DigitEditor.h"
 
 class WaypointsView {
   UITask*     _task;
@@ -30,14 +31,18 @@ class WaypointsView {
   int32_t   _mark_lat = 0, _mark_lon = 0;   // pending new-mark position
   uint32_t  _mark_ts  = 0;
 
-  // ADD form — type a waypoint by coordinates. The keyboard has no comma or
-  // minus, so lat/lon are entered as magnitude + a hemisphere toggle (LEFT/RIGHT).
-  char      _add_lat[12] = "", _add_lon[12] = "";   // magnitude strings
+  // ADD form — enter a waypoint by coordinates. Lat/Lon are numeric, so they use
+  // the digit-by-digit scroll editor (same widget as the radio frequency field)
+  // rather than the text keyboard: Enter opens the editor on the magnitude,
+  // LEFT/RIGHT on the row toggles the hemisphere (N/S, E/W). Only the Label field
+  // uses the keyboard.
+  float     _add_lat_mag = 0.0f, _add_lon_mag = 0.0f;   // magnitude (degrees)
   char      _add_label[WAYPOINT_LABEL_LEN] = "";
   bool      _add_lat_neg = false;    // true = S
   bool      _add_lon_neg = false;    // true = W
   int       _add_sel  = 0;           // 0=Lat 1=Lon 2=Label 3=Save
-  int       _kb_field = -1;          // which ADD field the keyboard edits (-1 = label/rename)
+  int       _kb_field = -1;          // ADD label edit (>=0) vs mark/rename (-1)
+  DigitEditor _add_editor;           // active while editing a Lat/Lon magnitude
 
   bool useImperial() const { return _task && _task->useImperial(); }
   bool ownPos(int32_t& lat, int32_t& lon) const { return _task->currentLocation(lat, lon); }
@@ -53,38 +58,23 @@ class WaypointsView {
   // Add a waypoint by coordinates (no GPS fix needed). Opens the ADD form.
   void openAddForm() {
     if (_task->waypoints().full()) { _task->showAlert("Waypoints full", 1000); return; }
-    _add_lat[0] = _add_lon[0] = _add_label[0] = '\0';
+    _add_lat_mag = _add_lon_mag = 0.0f;
+    _add_label[0] = '\0';
     _add_lat_neg = _add_lon_neg = false;
     _add_sel = 0;
+    _add_editor.active = false;
     _mode = ADD;
   }
 
-  // Store the just-typed value into the focused ADD field.
+  // Store the just-typed label (the only ADD field that still uses the keyboard).
   void applyAddField(const char* buf) {
-    char* dst = (_kb_field == 0) ? _add_lat
-              : (_kb_field == 1) ? _add_lon : _add_label;
-    int   cap = (_kb_field == 2) ? WAYPOINT_LABEL_LEN : (int)sizeof(_add_lat);
-    strncpy(dst, buf, cap - 1);
-    dst[cap - 1] = '\0';
-  }
-
-  // Parse a numeric field: true only when the whole string is a number (so a
-  // stray letter from the full keyboard can't silently read as 0).
-  static bool parseNum(const char* s, double& out) {
-    if (!s || !s[0]) return false;
-    char* end = nullptr;
-    out = strtod(s, &end);
-    if (end == s) return false;          // nothing numeric parsed
-    while (*end == ' ') end++;
-    return *end == '\0';                  // no trailing non-numeric chars
+    strncpy(_add_label, buf, sizeof(_add_label) - 1);
+    _add_label[sizeof(_add_label) - 1] = '\0';
   }
 
   // Validate the ADD form and save the waypoint.
   void commitAddForm() {
-    double la, lo;
-    if (!parseNum(_add_lat, la) || !parseNum(_add_lon, lo)) {
-      _task->showAlert("Lat/Lon invalid", 1200); return;
-    }
+    double la = _add_lat_mag, lo = _add_lon_mag;
     if (_add_lat_neg) la = -la;
     if (_add_lon_neg) lo = -lo;
     if (la < -90.0 || la > 90.0 || lo < -180.0 || lo > 180.0) {
@@ -134,12 +124,22 @@ class WaypointsView {
       int y = top + i * step;
       bool sel = (i == _add_sel);
       display.drawSelectionRow(0, y - 1, display.width(), step - 1, sel);
-      char row[28];
-      if      (i == 0) snprintf(row, sizeof(row), "Lat: %c %s", _add_lat_neg ? 'S' : 'N', _add_lat[0] ? _add_lat : "--");
-      else if (i == 1) snprintf(row, sizeof(row), "Lon: %c %s", _add_lon_neg ? 'W' : 'E', _add_lon[0] ? _add_lon : "--");
-      else if (i == 2) snprintf(row, sizeof(row), "Label: %s",  _add_label[0] ? _add_label : "(auto)");
-      else             snprintf(row, sizeof(row), "[Save]");
-      display.setCursor(2, y); display.print(row);
+      // While editing a magnitude, draw the row prefix + the digit editor so the
+      // place under the cursor is highlighted; otherwise draw the plain value.
+      if ((i == 0 || i == 1) && sel && _add_editor.active) {
+        char prefix[10];
+        if (i == 0) snprintf(prefix, sizeof(prefix), "Lat: %c ", _add_lat_neg ? 'S' : 'N');
+        else        snprintf(prefix, sizeof(prefix), "Lon: %c ", _add_lon_neg ? 'W' : 'E');
+        display.setCursor(2, y); display.print(prefix);
+        _add_editor.render(display, 2 + (int)strlen(prefix) * display.getCharWidth(), y);
+      } else {
+        char row[28];
+        if      (i == 0) snprintf(row, sizeof(row), "Lat: %c %.5f", _add_lat_neg ? 'S' : 'N', _add_lat_mag);
+        else if (i == 1) snprintf(row, sizeof(row), "Lon: %c %.5f", _add_lon_neg ? 'W' : 'E', _add_lon_mag);
+        else if (i == 2) snprintf(row, sizeof(row), "Label: %s",  _add_label[0] ? _add_label : "(auto)");
+        else             snprintf(row, sizeof(row), "[Save]");
+        display.setCursor(2, y); display.print(row);
+      }
       display.setColor(DisplayDriver::LIGHT);
     }
   }
@@ -274,7 +274,7 @@ public:
             if (_sel >= wpListCount()) _sel = wpListCount() - 1;
             if (_sel < 0) _sel = 0;
           }
-        } else {                                          // Send (share in a message)
+        } else if (sel == 2) {                            // Send (share in a message)
           if (wi >= 0 && wi < _task->waypoints().count()) {
             const Waypoint& w = _task->waypoints().at(wi);
             double lat = w.lat_1e6 / 1000000.0, lon = w.lon_1e6 / 1000000.0;
@@ -283,13 +283,27 @@ public:
             else            snprintf(text, sizeof(text), WAYPOINT_MSG_TAG "%.5f,%.5f", lat, lon);
             _task->shareToMessage(text);   // hands off to the Messages screen
           }
+        } else {                                          // Set as target
+          if (wi >= 0 && wi < _task->waypoints().count()) {
+            const Waypoint& w = _task->waypoints().at(wi);
+            _task->setTargetNow(0, nullptr, w.lat_1e6, w.lon_1e6, w.label);
+          }
         }
       }
       return true;
     }
 
-    // ADD form: type lat/lon (magnitude) + hemisphere toggle + label.
+    // ADD form: scroll-edit lat/lon (magnitude) + hemisphere toggle + label.
     if (_mode == ADD) {
+      // The digit editor, while open, consumes all input (UP/DOWN change the
+      // digit, LEFT/RIGHT move the cursor, Enter commits, Cancel aborts).
+      if (_add_editor.active) {
+        if (_add_editor.handleInput(c) == DigitEditor::DONE) {
+          if (_add_sel == 0) _add_lat_mag = _add_editor.value;
+          else               _add_lon_mag = _add_editor.value;
+        }
+        return true;
+      }
       if (c == KEY_CANCEL) { _mode = OFF; return true; }
       if (c == KEY_UP)   { _add_sel = (_add_sel > 0) ? _add_sel - 1 : 3; return true; }
       if (c == KEY_DOWN) { _add_sel = (_add_sel < 3) ? _add_sel + 1 : 0; return true; }
@@ -299,8 +313,8 @@ public:
         return true;
       }
       if (c == KEY_ENTER) {
-        if      (_add_sel == 0) { _kb_field = 0; openKb(_add_lat, 11); }
-        else if (_add_sel == 1) { _kb_field = 1; openKb(_add_lon, 11); }
+        if      (_add_sel == 0) _add_editor.begin(_add_lat_mag, 0.0f,  90.0f, 2, 5);
+        else if (_add_sel == 1) _add_editor.begin(_add_lon_mag, 0.0f, 180.0f, 3, 5);
         else if (_add_sel == 2) { _kb_field = 2; openKb(_add_label, WAYPOINT_LABEL_LEN - 1); }
         else                    { commitAddForm(); }
         return true;
@@ -327,13 +341,14 @@ public:
       else           _mode = NAV;            // a waypoint / Trail-start row
       return true;
     }
-    // Rename/Delete/Send apply to saved waypoints only — not Trail-start or Add.
+    // Rename/Delete/Send/Locator apply to saved waypoints only — not Trail-start or Add.
     if (c == KEY_CONTEXT_MENU && !selIsStart() && _sel != n &&
         wpIndex() >= 0 && wpIndex() < _task->waypoints().count()) {
-      _ctx.begin("Waypoint", 3);
+      _ctx.begin("Waypoint", 4);
       _ctx.addItem("Rename");
       _ctx.addItem("Delete");
       _ctx.addItem("Send");
+      _ctx.addItem("Set as target");
       return true;
     }
     return true;

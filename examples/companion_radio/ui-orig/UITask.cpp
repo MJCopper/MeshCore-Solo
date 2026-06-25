@@ -43,10 +43,11 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
     _display->turnOn();
   }
 
-  // strip off dash and commit hash by changing dash to null terminator
-  // e.g: v1.2.3-abcdef -> v1.2.3
+  // strip off the commit-hash suffix build.sh always appends as the LAST
+  // dash-segment, e.g: v1.2.3-abcdef -> v1.2.3, v1.21-rc1-abcdef -> v1.21-rc1
+  // (must use the last dash, not the first, since a tag itself may contain one)
   char *version = strdup(FIRMWARE_VERSION);
-  char *dash = strchr(version, '-');
+  char *dash = strrchr(version, '-');
   if (dash) {
     *dash = 0;
   }

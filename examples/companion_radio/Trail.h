@@ -9,9 +9,19 @@
 
 // RAM-only GPS trail ring buffer.
 // Storage cost: CAPACITY(512) × sizeof(TrailPoint)(16 B, padded) = 8 KB,
-// always resident (UITask::_trail member). The trail survives auto-off (only
+// always resident in .bss (UITask::_trail, and ui_task is a global object —
+// see main.cpp). Because the nRF52 heap region starts just above .bss, every
+// byte added here is a byte taken from the heap: at 1024 points (16 KB) free
+// heap fell to ~4 KB and the input/menu path started failing its allocations
+// while the periodic redraw kept running. Keep this conservative. The trail
+// survives auto-off (only
 // the display blanks) but is lost on reboot — user explicitly snapshots to a
 // LittleFS slot before powering down to keep it.
+//
+// Samples are simplified in-stream as they arrive (see addPoint()): a straight
+// stretch is stored as just its two endpoints, no matter how long, while a
+// turn still gets a vertex roughly every min-delta of deviation — so CAPACITY
+// covers a much longer route than CAPACITY × min-delta would suggest.
 
 struct TrailPoint {
   int32_t  lat_1e6;
@@ -73,6 +83,7 @@ public:
     if (a && !_active) {
       // off → on: start a new session timer.
       _session_start_ms = millis();
+      _paused = false;
     } else if (_active && !a) {
       // on → off: bank the elapsed of this session and arm a segment break
       // so the renderer doesn't draw a straight line through the dead time.
@@ -80,9 +91,32 @@ public:
         _accumulated_ms   += millis() - _session_start_ms;
         _session_start_ms  = 0;
       }
+      flushPending();
       _pending_seg_break = true;
+      _paused = false;
     }
     _active = a;
+  }
+
+  // Auto-pause: freeze the active trail without ending the session. Banks the
+  // running session time (so elapsedSeconds() stops advancing) and arms a
+  // segment break so the map doesn't draw a line across the idle gap; resuming
+  // restarts the session timer. Distinct from setActive() — the trail stays
+  // "on" (UI shows "paused", home-screen blink keeps going). No-op if inactive.
+  bool isPaused() const { return _paused; }
+  void setPaused(bool p) {
+    if (!_active || p == _paused) return;
+    if (p) {
+      if (_session_start_ms != 0) {
+        _accumulated_ms  += millis() - _session_start_ms;
+        _session_start_ms = 0;
+      }
+      flushPending();
+      _pending_seg_break = true;
+    } else {
+      _session_start_ms = millis();  // resume timing from now
+    }
+    _paused = p;
   }
 
   int  count() const { return _count; }
@@ -98,36 +132,83 @@ public:
     _pending_seg_break = false;
     _accumulated_ms    = 0;
     _session_start_ms  = 0;
+    _paused            = false;
+    _has_pending       = false;
   }
 
-  // Returns true if the point was stored (passed the min-delta gate).
-  // First point of the ring and the first point after a stop/start cycle
-  // get flagged TRAIL_FLAG_SEG_START so the map renderer breaks the line.
+  // Returns true if the sample was accepted (passed the min-delta gate) —
+  // whether that landed it as a new committed vertex right away, or just
+  // extended the pending candidate (see below). First point of the ring and
+  // the first point after a stop/start cycle get flagged TRAIL_FLAG_SEG_START
+  // so the map renderer breaks the line.
+  //
+  // Straight-run simplification (a fixed-corridor / Reumann–Witkam pass): a
+  // sample is only ever a *candidate* vertex (_pending) until a later one
+  // proves the run has bent. The corridor is the straight line anchored at the
+  // last committed vertex and aimed at the first sample of this run (_dir);
+  // each new sample is tested against *that fixed line*. While it stays within
+  // CORRIDOR_FACTOR x min_delta_m of the corridor the run is still "straight
+  // enough", so drop the intermediate and extend; once a sample leaves the
+  // corridor the previous in-corridor sample (_pending) was the last good
+  // vertex, so commit it and open a fresh corridor from there.
+  //
+  // The corridor is deliberately tighter than the min-delta gate itself
+  // (CORRIDOR_FACTOR < 1): the gate is the noise floor for *rejecting* samples
+  // outright, while the corridor decides when a run has bent enough to need a
+  // new vertex. Field data showed plenty of headroom (4 km at a 10 m gate cost
+  // just 38 of the 512-point capacity), so a tighter corridor trades some of
+  // that headroom for a polyline that hugs the real track more closely.
+  //
+  // The fixed direction is the whole point: testing the newest sample against
+  // a line that re-aims at the newest sample (or testing the previous
+  // candidate, which always sits right beside that moving endpoint where the
+  // cross-track is near zero) lets a long gentle curve slip through one
+  // sub-min_delta step at a time and collapse to a single chord that deviates
+  // arbitrarily far. Anchoring the direction bounds the stored polyline to
+  // ~CORRIDOR_FACTOR x min_delta_m of the real track, while a straight road
+  // still costs just its two endpoints no matter how long it is.
+  // How much tighter the simplification corridor is than the min-delta gate
+  // (see addPoint() above). 1.0 would track the gate exactly; lowering this
+  // commits more vertices per route (more fidelity, less reduction).
+  static constexpr float CORRIDOR_FACTOR = 0.5f;
+
   bool addPoint(int32_t lat_1e6, int32_t lon_1e6, uint32_t ts, uint16_t min_delta_m) {
-    if (_count > 0 && !_pending_seg_break) {
-      float d = haversineMeters(last().lat_1e6, last().lon_1e6, lat_1e6, lon_1e6);
+    const TrailPoint* ref = _has_pending ? &_pending : (_count > 0 ? &last() : nullptr);
+    if (ref && !_pending_seg_break) {
+      float d = haversineMeters(ref->lat_1e6, ref->lon_1e6, lat_1e6, lon_1e6);
       if (d < (float)min_delta_m) return false;
     }
-    uint8_t flags = (_count == 0 || _pending_seg_break) ? TRAIL_FLAG_SEG_START : 0;
-    _pending_seg_break = false;
 
-    int pos;
-    if (_count < CAPACITY) {
-      pos = (_head + _count) % CAPACITY;
-      _count++;
-    } else {
-      pos = _head;
-      _head = (_head + 1) % CAPACITY;
+    if (_count == 0 || _pending_seg_break) {
+      flushPending();   // shouldn't normally have one here, but never lose real distance
+      commitPoint(lat_1e6, lon_1e6, ts, TRAIL_FLAG_SEG_START);
+      _pending_seg_break = false;
+      return true;
     }
-    _buf[pos].lat_1e6 = lat_1e6;
-    _buf[pos].lon_1e6 = lon_1e6;
-    _buf[pos].ts      = ts;
-    _buf[pos].flags   = flags;
+
+    TrailPoint sample{ lat_1e6, lon_1e6, ts, 0 };
+    if (!_has_pending) {
+      _pending     = sample;   // last in-corridor sample (the commit candidate)
+      _dir         = sample;   // fixes the corridor direction: last() → _dir
+      _has_pending = true;
+      return true;
+    }
+
+    if (crossTrackMeters(last(), _dir, sample) <= (float)min_delta_m * CORRIDOR_FACTOR) {
+      _pending = sample;                                            // within corridor — extend
+    } else {
+      commitPoint(_pending.lat_1e6, _pending.lon_1e6, _pending.ts, 0);  // left corridor — keep last good
+      _pending = sample;   // the exiting sample opens the next run...
+      _dir     = sample;   // ...and fixes its corridor direction from the just-committed vertex
+    }
     return true;
   }
 
   // Sum of pairwise Haversine deltas across the whole ring, skipping segment
-  // boundaries (a SEG_START point isn't reached from its predecessor).
+  // boundaries (a SEG_START point isn't reached from its predecessor). The
+  // uncommitted candidate (_pending) is counted too, so the live total doesn't
+  // stall over a long straight run — where simplification holds the whole
+  // stretch as one pending point until a bend forces a commit (see addPoint()).
   uint32_t totalDistanceMeters() const {
     float d = 0;
     for (int i = 1; i < _count; i++) {
@@ -135,6 +216,9 @@ public:
       d += haversineMeters(at(i - 1).lat_1e6, at(i - 1).lon_1e6,
                             at(i).lat_1e6,     at(i).lon_1e6);
     }
+    if (_has_pending && _count > 0)
+      d += haversineMeters(last().lat_1e6, last().lon_1e6,
+                            _pending.lat_1e6, _pending.lon_1e6);
     return (uint32_t)d;
   }
 
@@ -182,6 +266,7 @@ public:
   // cleanly. The file is left open for the caller to close.
   template <typename F>
   bool writeTo(F& file) {
+    flushPending();   // the snapshot should include the latest position, not lag behind it
     if (!persist::writeHeader(file, SAVE_MAGIC, SAVE_VERSION, (uint16_t)_count)) return false;
     uint32_t accum = currentAccumulatedMs();
     if (file.write((uint8_t*)&accum, sizeof(accum)) != sizeof(accum)) return false;
@@ -202,6 +287,8 @@ public:
       _active = false;
       _session_start_ms = 0;
     }
+    _paused = false;
+    _has_pending = false;   // any candidate belonged to the session being replaced
     _head = 0;
     _count = 0;
     for (int i = 0; i < cnt; i++) {
@@ -367,7 +454,58 @@ private:
   int      _head             = 0;
   int      _count            = 0;
   bool     _active           = false;
+  bool     _paused           = false;  // auto-paused (active but timer/sampling frozen)
   bool     _pending_seg_break = false;  // next addPoint flags itself SEG_START
   uint32_t _accumulated_ms   = 0;       // banked active time across previous sessions
   uint32_t _session_start_ms = 0;       // millis() of the current active session, 0 if none
+
+  // Streaming simplification: a sample that passed the min-delta gate but
+  // hasn't been committed as a real vertex yet — see addPoint(). _dir is the
+  // first sample of the current run; last()→_dir fixes the corridor direction
+  // every later sample of the run is tested against.
+  bool       _has_pending = false;
+  TrailPoint _pending;
+  TrailPoint _dir;
+
+  void commitPoint(int32_t lat_1e6, int32_t lon_1e6, uint32_t ts, uint8_t flags) {
+    int pos;
+    if (_count < CAPACITY) {
+      pos = (_head + _count) % CAPACITY;
+      _count++;
+    } else {
+      pos = _head;
+      _head = (_head + 1) % CAPACITY;
+    }
+    _buf[pos].lat_1e6 = lat_1e6;
+    _buf[pos].lon_1e6 = lon_1e6;
+    _buf[pos].ts      = ts;
+    _buf[pos].flags   = flags;
+  }
+
+  // Commit the pending candidate (if any) as a real vertex. Called before a
+  // segment break (stop/pause/save) so the last stretch of a straight run is
+  // never silently dropped just because no bend came along to force a commit.
+  void flushPending() {
+    if (!_has_pending) return;
+    commitPoint(_pending.lat_1e6, _pending.lon_1e6, _pending.ts, 0);
+    _has_pending = false;
+  }
+
+  // Perpendicular ("cross-track") distance from q to the line through a→b, in
+  // metres. Planar approximation (equirectangular, centred at a) — accurate
+  // enough at trail scale, where consecutive points are metres to a few km
+  // apart. Falls back to a straight distance to a if a and b coincide.
+  static float crossTrackMeters(const TrailPoint& a, const TrailPoint& b, const TrailPoint& q) {
+    static const float M_PER_DEG = 111320.0f;   // metres per degree of latitude
+    float lat_rad   = (a.lat_1e6 * 1e-6f) * ((float)M_PI / 180.0f);
+    float lon_scale = cosf(lat_rad);
+    float bx = (b.lon_1e6 - a.lon_1e6) * 1e-6f * M_PER_DEG * lon_scale;
+    float by = (b.lat_1e6 - a.lat_1e6) * 1e-6f * M_PER_DEG;
+    float ab_len = sqrtf(bx * bx + by * by);
+    if (ab_len < 0.01f) return haversineMeters(a.lat_1e6, a.lon_1e6, q.lat_1e6, q.lon_1e6);
+    float qx = (q.lon_1e6 - a.lon_1e6) * 1e-6f * M_PER_DEG * lon_scale;
+    float qy = (q.lat_1e6 - a.lat_1e6) * 1e-6f * M_PER_DEG;
+    float cross = bx * qy - by * qx;
+    return fabsf(cross) / ab_len;
+  }
 };

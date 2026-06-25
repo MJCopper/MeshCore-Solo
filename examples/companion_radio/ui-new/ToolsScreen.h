@@ -1,46 +1,132 @@
 #pragma once
 // Custom screen — not part of upstream UITask.cpp
 // Included by UITask.cpp just before HomeScreen.
+//
+// The flat 10-item list grew crowded, so tools are grouped into collapsible
+// sections (Location / Comms / System) via the shared AccordionList helper —
+// the same fold-in-place model as Settings. Each row carries a mini-icon;
+// section headers show their cog/marker plus a fold indicator.
+
+#include "AccordionList.h"
 
 class ToolsScreen : public UIScreen {
   UITask* _task;
-  int _sel;
-  int _scroll = 0;
 
-  static const int ITEM_COUNT = 8;
-  static const char* ITEMS[ITEM_COUNT];
+  enum Action {
+    ACT_NEARBY, ACT_LIVESHARE, ACT_TRAIL, ACT_LOCATOR, ACT_COMPASS,
+    ACT_BOT, ACT_AUTOADVERT, ACT_REPEATER,
+    ACT_RINGTONE, ACT_DIAGNOSTICS
+  };
+  struct Tool { const char* label; const MiniIcon* icon; Action action; };
+  struct Section { const char* name; const MiniIcon* icon; const Tool* tools; uint8_t count; };
+
+  static const Tool LOCATION_TOOLS[];
+  static const Tool COMMS_TOOLS[];
+  static const Tool SYSTEM_TOOLS[];
+  static const Section SECTIONS[];
+  static const int SECTION_COUNT = 3;
+
+  AccordionList _acc;
+
+  // Fixed icon gutter so labels line up whether or not a row has a glyph. Sized
+  // for the widest icon (the 7px cog) at the current font scale.
+  static int gutter(DisplayDriver& d) { return 7 * miniIconScale(d) + 2; }
+
+  static void drawIcon(DisplayDriver& d, int x, int y, const MiniIcon* ic) {
+    if (!ic) return;
+    const int s = miniIconScale(d);
+    const int top = (y - 1) + ((d.lineStep() - 1) - ic->h * s) / 2;
+    miniIconDrawTop(d, x, top, *ic);
+  }
+
+  void dispatch(Action a) {
+    switch (a) {
+      case ACT_NEARBY:      _task->gotoNearbyScreen();      break;
+      case ACT_LIVESHARE:   _task->gotoLiveShareScreen();   break;
+      case ACT_TRAIL:       _task->gotoTrailScreen();       break;
+      case ACT_LOCATOR:     _task->gotoLocatorScreen();     break;
+      case ACT_COMPASS:     _task->gotoCompassScreen();     break;
+      case ACT_BOT:         _task->gotoBotScreen();         break;
+      case ACT_AUTOADVERT:  _task->gotoAutoAdvertScreen();  break;
+      case ACT_REPEATER:    _task->gotoRepeaterScreen();    break;
+      case ACT_RINGTONE:    _task->gotoRingtoneEditor();    break;
+      case ACT_DIAGNOSTICS: _task->gotoDiagnosticsScreen(); break;
+    }
+  }
 
 public:
-  ToolsScreen(UITask* task) : _task(task), _sel(0) {}
+  ToolsScreen(UITask* task) : _task(task) {}
+
+  // Open folded at the section list each time Tools is entered from Home.
+  void enter() {
+    static uint8_t sizes[SECTION_COUNT];
+    for (int i = 0; i < SECTION_COUNT; i++) sizes[i] = SECTIONS[i].count;
+    _acc.begin(sizes, SECTION_COUNT);
+  }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
     display.drawCenteredHeader("TOOLS");
 
-    drawList(display, ITEM_COUNT, _sel, _scroll, [&](int idx, int y, bool sel, int reserve) {
-      display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
-      display.setCursor(2, y);
-      display.print(ITEMS[idx]);
-    });
+    const int cw = display.getCharWidth();
+    const int g  = gutter(display);
+
+    _acc.render(display,
+      // Section header: "[+/-] <icon> Name"
+      [&](int sec, int y, bool sel, int reserve, bool collapsed) {
+        display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+        display.setCursor(2, y);
+        display.print(collapsed ? "+" : "-");
+        const int icon_x = 2 + cw + 2;
+        // drawIcon(display, icon_x, y, SECTIONS[sec].icon); // icons disabled for now, don't fit visually
+        display.setCursor(icon_x + g, y);
+        display.print(SECTIONS[sec].name);
+      },
+      // Item: indented "<icon> Label"
+      [&](int sec, int item, int y, bool sel, int reserve) {
+        display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+        const int icon_x = 2 + cw + 2;   // align item icons under the header icon
+        // drawIcon(display, icon_x, y, SECTIONS[sec].tools[item].icon); // icons disabled for now, don't fit visually
+        display.setCursor(icon_x + g, y);
+        display.print(SECTIONS[sec].tools[item].label);
+      });
     return 500;
   }
 
   bool handleInput(char c) override {
-    if (c == KEY_UP)   { _sel = (_sel > 0) ? _sel - 1 : ITEM_COUNT - 1; return true; }
-    if (c == KEY_DOWN) { _sel = (_sel < ITEM_COUNT - 1) ? _sel + 1 : 0; return true; }
     if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) { _task->gotoHomeScreen(); return true; }
-    if (c == KEY_ENTER) {
-      if (_sel == 0) { _task->gotoRingtoneEditor();   return true; }
-      if (_sel == 1) { _task->gotoBotScreen();        return true; }
-      if (_sel == 2) { _task->gotoNearbyScreen();     return true; }
-      if (_sel == 3) { _task->gotoAutoAdvertScreen(); return true; }
-      if (_sel == 4) { _task->gotoTrailScreen(); return true; }
-      if (_sel == 5) { _task->gotoCompassScreen(); return true; }
-      if (_sel == 6) { _task->gotoDiagnosticsScreen(); return true; }
-      if (_sel == 7) { _task->gotoRepeaterScreen(); return true; }
+    switch (_acc.handleInput(c)) {
+      case AccordionList::ACTIVATED: {
+        const AccordionList::Row& r = _acc.selected();
+        dispatch(SECTIONS[r.sec].tools[r.item].action);
+        return true;
+      }
+      case AccordionList::HANDLED:  return true;
+      case AccordionList::IGNORED:  return false;
     }
     return false;
   }
 };
-const char* ToolsScreen::ITEMS[8] = { "Ringtone Editor", "Auto-Reply Bot", "Nearby Nodes", "Auto-Advert", "Trail", "Compass", "Diagnostics", "Repeater" };
+
+const ToolsScreen::Tool ToolsScreen::LOCATION_TOOLS[] = {
+  { "Nearby Nodes", &ICON_MAP_CONTACT,  ACT_NEARBY },
+  { "Live Share",   &ICON_GPS,          ACT_LIVESHARE },
+  { "Trail",        &ICON_TRAIL,        ACT_TRAIL },
+  { "Locator",    &ICON_MAP_WAYPOINT, ACT_LOCATOR },
+  { "Compass",      &ICON_MAP_NORTH,    ACT_COMPASS },
+};
+const ToolsScreen::Tool ToolsScreen::COMMS_TOOLS[] = {
+  { "Auto-Reply Bot", &ICON_BOT,      ACT_BOT },
+  { "Auto-Advert",    &ICON_ADVERT,   ACT_AUTOADVERT },
+  { "Repeater",       &ICON_REPEATER, ACT_REPEATER },
+};
+const ToolsScreen::Tool ToolsScreen::SYSTEM_TOOLS[] = {
+  { "Ringtone Editor", &ICON_NOTE,  ACT_RINGTONE },
+  { "Diagnostics",     &ICON_CHART, ACT_DIAGNOSTICS },
+};
+const ToolsScreen::Section ToolsScreen::SECTIONS[] = {
+  { "Location", &ICON_MAP_CONTACT, LOCATION_TOOLS, 5 },
+  { "Comms",    &ICON_ADVERT,      COMMS_TOOLS,    3 },
+  { "System",   &ICON_GEAR,        SYSTEM_TOOLS,   2 },
+};

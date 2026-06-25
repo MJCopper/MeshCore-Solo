@@ -6,7 +6,7 @@
 
 |           OLED            |           E-Ink           |
 | :-----------------------: | :-----------------------: |
-| ![](./lck_scr_1_oled.png) | ![](./lck_scr_1_eink.png) |
+| ![](./overview_oled.png) | ![](./overview_eink.png) |
 
 Screen lock prevents accidental keypresses. While locked the display turns off and all input is ignored.
 
@@ -34,7 +34,7 @@ If no press is made for 3 seconds, the counter resets.
 
 |           OLED            |           E-Ink           |
 | :-----------------------: | :-----------------------: |
-| ![](./lck_scr_2_oled.png) | ![](./lck_scr_2_eink.png) |
+| ![](./screen_oled.png) | ![](./screen_eink.png) |
 
 A brief press of any button wakes the display and shows the lock screen. It displays:
 

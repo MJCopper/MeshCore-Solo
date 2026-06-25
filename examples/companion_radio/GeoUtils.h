@@ -61,6 +61,19 @@ static inline void fmtDist(char* buf, int n, float km, bool imperial) {
   }
 }
 
+// Compact age tag for a timestamp, e.g. "12s" / "5m" / "3h" / "2d" — sized to
+// sit inline after a name (unlike a full "X ago" sentence). Empty string for
+// an unknown (0) or future timestamp. Takes `now` rather than reading the RTC
+// itself, so this stays a pure function like the rest of this file.
+static inline void fmtAgeShort(char* buf, int n, uint32_t now, uint32_t lastmod) {
+  if (lastmod == 0 || now < lastmod) { buf[0] = '\0'; return; }
+  uint32_t age = now - lastmod;
+  if      (age < 60)    snprintf(buf, n, "%us", (unsigned)age);
+  else if (age < 3600)  snprintf(buf, n, "%um", (unsigned)(age / 60));
+  else if (age < 86400) snprintf(buf, n, "%uh", (unsigned)(age / 3600));
+  else                  snprintf(buf, n, "%ud", (unsigned)(age / 86400));
+}
+
 // Tag marking a shared waypoint inside a message: "[WAY]<lat>,<lon> <label>".
 // A plain {loc} expansion ("<lat>,<lon>") parses too — the tag just adds intent
 // and a label, and keeps the text readable on apps/firmware that don't know it.
@@ -107,6 +120,25 @@ static inline bool parseLatLon(const char* text, int32_t& lat_1e6, int32_t& lon_
     return true;
   }
   return false;
+}
+
+// Tag marking a live position share inside a message: "[LOC]<lat>,<lon>".
+// Distinct from WAYPOINT_MSG_TAG: a waypoint is a static point-of-interest to
+// save, whereas this announces the *sender's own* current position so the
+// receiver can update its bearing/track on that node. Both reuse parseLatLon
+// for the coordinate, and both stay readable on firmware/apps that don't know
+// the tag (it just looks like a coordinate).
+#define LOCATION_MSG_TAG "[LOC]"
+
+// True if `text` carries a LOCATION_MSG_TAG share; fills lat/lon (1e6-scaled)
+// from the coordinate that follows it. Returns false for plain text, for a
+// bare coordinate, or for a [WAY] share — only an explicit [LOC] tag counts,
+// so ordinary messages that happen to contain digits don't move anyone's pin.
+static inline bool parseLocShare(const char* text, int32_t& lat_1e6, int32_t& lon_1e6) {
+  if (!text) return false;
+  const char* tag = strstr(text, LOCATION_MSG_TAG);
+  if (!tag) return false;
+  return parseLatLon(tag + strlen(LOCATION_MSG_TAG), lat_1e6, lon_1e6);
 }
 
 }  // namespace geo

@@ -6,7 +6,7 @@
 
 |            OLED            |           E-Ink            |
 | :------------------------: | :------------------------: |
-| ![](./fav_dial_1_oled.png) | ![](./fav_dial_1_eink.png) |
+| ![](./overview_oled.png) | ![](./overview_eink.png) |
 
 A dedicated home page showing a grid of up to 6 pinned contacts for quick access. The layout adapts to the display orientation:
 
@@ -40,6 +40,12 @@ If a pinned contact has been removed from the contacts list, the tile shows `(go
 1. Contacts marked as favourites in the upstream app (starred contacts) — listed first
 2. Recent DM contacts — listed after
 3. All remaining chat contacts — fallback when the first two tiers are empty (e.g. fresh install before any DMs)
+
+|            OLED            |           E-Ink            |
+| :------------------------: | :------------------------: |
+| ![](./picker_oled.png) | ![](./picker_eink.png) |
+
+<!-- screenshot pending: Pin-to-dial contact picker (favourites first, then recent DMs, then all contacts) -->
 
 Select a contact to pin it to that slot.
 

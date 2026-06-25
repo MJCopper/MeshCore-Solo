@@ -63,5 +63,11 @@ public:
   virtual void notify(UIEventType t = UIEventType::none) = 0;
   virtual void addChannelMsg(uint8_t channel_idx, const char* text) {}
   virtual void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) {}
+  // A node shared its current position via a [LOC] message. pub_key is the
+  // sender's key prefix for a verified DM share, or null for a channel share
+  // (keyed by name, best-effort). Default no-op so UI variants opt in.
+  virtual void onSharedLocation(const uint8_t* pub_key, const char* name,
+                                int32_t lat_1e6, int32_t lon_1e6,
+                                uint32_t ts, bool verified) {}
   virtual void loop() = 0;
 };

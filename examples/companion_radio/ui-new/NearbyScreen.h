@@ -28,7 +28,7 @@ class NearbyScreen : public UIScreen {
   enum Source : uint8_t { SRC_STORED, SRC_SCAN };
 
   // ── action-menu actions (matched by id, not by row index) ────────────────────
-  enum Action : uint8_t { ACT_NAV, ACT_PING, ACT_WAYPOINT, ACT_SORT, ACT_SCAN };
+  enum Action : uint8_t { ACT_NAV, ACT_PING, ACT_WAYPOINT, ACT_LOCATOR, ACT_SORT, ACT_SCAN };
 
   // ── unified list entry ───────────────────────────────────────────────────────
   struct Entry {
@@ -44,6 +44,11 @@ class NearbyScreen : public UIScreen {
     // scan-source fields
     int8_t   rssi, snr_x4, remote_snr_x4;
     bool     is_known;
+    // live-track ([LOC] share) overlay: this row's position/age came from a
+    // shared-location message. live_verified == true for a DM (pubkey) share,
+    // false for a channel (name, best-effort) share.
+    bool     is_live;
+    bool     live_verified;
   };
 
   static const int MAX_NEARBY = 32;
@@ -53,6 +58,7 @@ class NearbyScreen : public UIScreen {
   int     _scroll;
   bool    _detail;
   bool    _nav = false;     // full-screen navigate-to-node view (over detail)
+  navview::EtaTracker _nav_eta;  // closing-speed/ETA for the navigate view
   int32_t _own_lat, _own_lon;
   bool    _own_gps;
 
@@ -63,6 +69,7 @@ class NearbyScreen : public UIScreen {
   unsigned long _detail_refresh_ms;
   unsigned long _list_refresh_ms = 0;
   static const unsigned long DETAIL_REFRESH_MS    = 10000UL;
+  static const unsigned long NAV_REFRESH_MS       = 1000UL;   // navigate view tracks a moving target
   static const unsigned long TIME_LIST_REFRESH_MS = 3000UL;
 
   // ── live-scan state ──────────────────────────────────────────────────────────
@@ -178,10 +185,93 @@ class NearbyScreen : public UIScreen {
       e.contact_idx = i;
       e.lastmod     = ci.lastmod;
       e.is_known    = true;
+      e.is_live     = false;
+      e.live_verified = false;
     }
 
+    mergeLiveTrack();
     sortStored();
     clampSelection();
+  }
+
+  // Rebuild the stored list (re-merge live shares + re-sort) while keeping the
+  // currently highlighted node selected across the rebuild — by contact index
+  // for a stored node, or by name for a non-contact live sender. Returns false
+  // if that node is no longer in the list (caller decides whether to drop the
+  // detail/nav view). Shared by the list, detail and navigate refresh paths.
+  bool refreshKeepingSelection() {
+    int  saved_idx  = (_sel < _count) ? _entries[_sel].contact_idx : -1;
+    bool saved_live = (_sel < _count) && _entries[_sel].is_live && saved_idx < 0;
+    char saved_name[sizeof(_entries[0].name)]; saved_name[0] = '\0';
+    if (_sel < _count) {
+      strncpy(saved_name, _entries[_sel].name, sizeof(saved_name) - 1);
+      saved_name[sizeof(saved_name) - 1] = '\0';
+    }
+    refreshStored();
+    if (saved_idx >= 0) {
+      for (int i = 0; i < _count; i++)
+        if (_entries[i].contact_idx == saved_idx) { _sel = i; return true; }
+    } else if (saved_live && saved_name[0]) {
+      for (int i = 0; i < _count; i++)
+        if (_entries[i].is_live && strncmp(_entries[i].name, saved_name, sizeof(saved_name) - 1) == 0)
+          { _sel = i; return true; }
+    }
+    return false;
+  }
+
+  // Overlay live [LOC] shares onto the stored list: refresh a matching contact
+  // with the fresher shared position, and append senders who aren't contacts so
+  // a group sharing on a channel still shows up. DM shares match by pubkey
+  // prefix (verified); channel shares match by name (best-effort).
+  void mergeLiveTrack() {
+    if (!_task) return;
+    LiveTrackStore& lt = _task->liveTrack();
+    uint32_t now = rtc_clock.getCurrentTime();
+    for (int i = 0; i < LiveTrackStore::CAPACITY; i++) {
+      if (!lt.isActive(i, now)) continue;
+      const LiveTrackStore::Entry& s = lt.slotAt(i);
+
+      int m = -1;
+      for (int j = 0; j < _count; j++) {
+        if (s.verified && _entries[j].has_key
+            && memcmp(_entries[j].pub_key, s.key, LiveTrackStore::KEY_LEN) == 0) { m = j; break; }
+        if (!s.verified && strncmp(_entries[j].name, s.name, sizeof(_entries[j].name) - 1) == 0) { m = j; break; }
+      }
+
+      if (m >= 0) {
+        Entry& e = _entries[m];
+        // A [LOC] share is an explicit "here I am now", so it defines the pin and
+        // the distance (used for proximity sorting). Recency for the time sort is
+        // the most recent of the advert and the share.
+        e.lat_e6  = s.lat_1e6;
+        e.lon_e6  = s.lon_1e6;
+        e.dist_km = _own_gps ? geo::haversineKm(_own_lat, _own_lon, s.lat_1e6, s.lon_1e6) : -1.0f;
+        if (s.ts > e.lastmod) e.lastmod = s.ts;
+        e.is_live       = true;
+        e.live_verified = s.verified;
+      } else if (_count < MAX_NEARBY && typeMatchesFilter(ADV_TYPE_CHAT, 0, false)) {
+        // A sender we don't have as a contact: treat it as a companion (the only
+        // node type that shares position), so the type filter still applies —
+        // e.g. it must not appear under the Repeater/Room/Sensor filters.
+        Entry& e = _entries[_count++];
+        memset(&e, 0, sizeof(e));
+        strncpy(e.name, s.name, sizeof(e.name) - 1);
+        e.name[sizeof(e.name) - 1] = '\0';
+        // We only keep a key *prefix* for shares, not the full pubkey, so Ping
+        // and the base64 key view (which need 32 bytes) stay unavailable for a
+        // non-contact live entry. Navigate / Save-waypoint work off lat/lon.
+        e.has_key       = false;
+        e.type          = ADV_TYPE_CHAT;
+        e.lat_e6        = s.lat_1e6;
+        e.lon_e6        = s.lon_1e6;
+        e.dist_km       = _own_gps ? geo::haversineKm(_own_lat, _own_lon, s.lat_1e6, s.lon_1e6) : -1.0f;
+        e.lastmod       = s.ts;
+        e.contact_idx   = -1;
+        e.is_known      = false;
+        e.is_live       = true;
+        e.live_verified = s.verified;
+      }
+    }
   }
 
   void sortStored() {
@@ -223,6 +313,8 @@ class NearbyScreen : public UIScreen {
       e.dist_km = -1.0f;
       e.lastmod = 0;
       e.contact_idx = -1;
+      e.is_live = false;
+      e.live_verified = false;
     }
     // strongest first
     for (int i = 0; i < _count - 1; i++) {
@@ -367,7 +459,7 @@ class NearbyScreen : public UIScreen {
 
     buildSortLabel();
     _menu_action_count = 0;
-    _menu.begin("Options", 5);
+    _menu.begin("Options", 7);
     auto add = [&](const char* label, Action a) {
       _menu.addItem(label);
       _menu_actions[_menu_action_count++] = a;
@@ -376,6 +468,9 @@ class NearbyScreen : public UIScreen {
     if (has_gps) add("Navigate",      ACT_NAV);
     if (has_key) add("Ping",          ACT_PING);
     if (has_gps) add("Save waypoint", ACT_WAYPOINT);
+    // Needs both a position and a stable identity — a person target is keyed
+    // by pubkey prefix, so a name-only live-scan/channel row can't offer this.
+    if (has_gps && has_key) add("Set as target", ACT_LOCATOR);
     if (stored) add(_sort_label, ACT_SORT);   // sort is meaningless for live-scan rows
     add(stored ? "Discover scan" : "Rescan", ACT_SCAN);
   }
@@ -384,7 +479,7 @@ class NearbyScreen : public UIScreen {
     switch (a) {
       case ACT_NAV: {
         const Entry* e = selected();
-        if (e && (e->lat_e6 != 0 || e->lon_e6 != 0)) _nav = true;
+        if (e && (e->lat_e6 != 0 || e->lon_e6 != 0)) { _nav = true; _nav_eta.reset(); }
         else _task->showAlert("No node GPS", 1000);
         break;
       }
@@ -396,6 +491,12 @@ class NearbyScreen : public UIScreen {
         break;
       }
       case ACT_WAYPOINT: saveSelectedWaypoint(); break;
+      case ACT_LOCATOR: {
+        const Entry* e = selected();
+        if (e && e->has_key && (e->lat_e6 != 0 || e->lon_e6 != 0))
+          _task->setTargetNow(1, e->pub_key, e->lat_e6, e->lon_e6, e->name);
+        break;
+      }
       case ACT_SORT:     break;  // adjusted in-place via LEFT/RIGHT, not ENTER
       case ACT_SCAN:     enterScan();            break;
     }
@@ -428,7 +529,10 @@ class NearbyScreen : public UIScreen {
     display.setCursor(2, hdr + step * 3); display.print(buf);
     char age[16];
     fmtAge(age, sizeof(age), e.lastmod);
-    snprintf(buf, sizeof(buf), "Seen: %s", age);
+    // For a live [LOC] row, label the timestamp as a position share and note
+    // whether the sender's identity is verified (DM) or name-only (channel).
+    if (e.is_live) snprintf(buf, sizeof(buf), "Sharing pos: %s %s", age, e.live_verified ? "(DM)" : "(chan)");
+    else           snprintf(buf, sizeof(buf), "Seen: %s", age);
     display.drawTextEllipsized(2, hdr + step * 4, display.width() - 4, buf);
   }
 
@@ -507,16 +611,16 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
 
-    // periodic refresh in stored-detail — preserve selected contact by idx
-    if (_detail && _source == SRC_STORED &&
-        millis() - _detail_refresh_ms >= DETAIL_REFRESH_MS) {
-      int saved = (_sel < _count) ? _entries[_sel].contact_idx : -1;
-      refreshStored();
-      bool found = false;
-      if (saved >= 0)
-        for (int i = 0; i < _count; i++)
-          if (_entries[i].contact_idx == saved) { _sel = i; found = true; break; }
-      if (!found) { _detail = false; _nav = false; }  // contact gone — drop both views
+    // Periodic refresh of the selected entry while in detail or navigate view,
+    // preserving the selection across the list rebuild. Navigate refreshes
+    // faster so a moving live target (a contact sharing [LOC]) tracks smoothly.
+    // Re-selection keys on contact index for stored nodes, and on name for a
+    // non-contact live sender — without the latter, navigating to someone who
+    // only shares on a channel would drop out on the first refresh.
+    unsigned long refresh_due = _nav ? NAV_REFRESH_MS : DETAIL_REFRESH_MS;
+    if ((_detail || _nav) && _source == SRC_STORED &&
+        millis() - _detail_refresh_ms >= refresh_due) {
+      if (!refreshKeepingSelection()) { _detail = false; _nav = false; }  // node/share gone
       _detail_refresh_ms = millis();
     }
 
@@ -525,7 +629,7 @@ public:
       const Entry& e = _entries[_sel];
       int cog; bool cogv = _task->currentCourse(cog);
       navview::draw(display, _own_gps, _own_lat, _own_lon,
-                    e.lat_e6, e.lon_e6, e.name, cogv, cog, useImperial());
+                    e.lat_e6, e.lon_e6, e.name, cogv, cog, useImperial(), &_nav_eta);
       return 1000;
     }
 
@@ -541,9 +645,11 @@ public:
     if (_source == SRC_SCAN) {
       refreshScan();
       if (_scanning && millis() - _scan_started_ms >= SCAN_DURATION_MS) _scanning = false;
-    } else if (_sort == SORT_TIME && millis() - _list_refresh_ms >= TIME_LIST_REFRESH_MS) {
-      // re-sort periodically so newly-heard contacts bubble up
-      refreshStored();
+    } else if (millis() - _list_refresh_ms >= TIME_LIST_REFRESH_MS) {
+      // Re-merge + re-sort periodically so newly-heard contacts and fresh live
+      // [LOC] shares bubble to the right spot under either sort (distances move
+      // as you and they do, not just recency). Keep the highlighted node put.
+      refreshKeepingSelection();
       _list_refresh_ms = millis();
     }
 
@@ -589,11 +695,20 @@ public:
         display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
 
         char filt[32];
+        int tx = 2;
+        if (e.is_live) {
+          // Diamond marker = this node is broadcasting its position ([LOC]),
+          // the same marker the map uses for a live-tracked contact. DM-verified
+          // vs channel-only is spelled out in the detail view.
+          int iw = ICON_MAP_CONTACT.w * miniIconScale(display);
+          miniIconDrawCentered(display, 2 + iw / 2, y + display.getLineHeight() / 2 - 1, ICON_MAP_CONTACT);
+          tx = 2 + iw + 2;
+        }
         display.translateUTF8ToBlocks(filt, e.name, sizeof(filt));
         if (_source == SRC_SCAN && !e.name[0]) {  // unknown node → "[Type]"
           snprintf(filt, sizeof(filt), "[%s]", typeName(e.type));
         }
-        display.drawTextEllipsized(2, y, dist_col - 4, filt);
+        display.drawTextEllipsized(tx, y, dist_col - tx - 2, filt);
 
         display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
         char right[10];

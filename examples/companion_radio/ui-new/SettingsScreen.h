@@ -6,6 +6,7 @@
 #include "../RadioPresets.h"
 #include "RadioParamsEditor.h"
 #include "RadioPresetPicker.h"
+#include "AccordionList.h"
 
 class SettingsScreen : public UIScreen {
   UITask* _task;
@@ -76,15 +77,20 @@ class SettingsScreen : public UIScreen {
     Count
   };
 
-  int _selected;
-  int _scroll;
-  int _visible;   // items fitting on screen; updated each render, used by handleInput
-  int _reserve = 0;  // right-edge px reserved for the scrollbar (0 when list fits)
-  bool _dirty;
-  uint8_t _collapsed = 0x7F; // bit N set = section N collapsed (Display=0..Messages=6)
-  static const int MAX_VIS = 60;
-  uint8_t _vis[MAX_VIS];    // filtered list of visible SettingItem values
-  int _vis_count = 0;
+  // Cursor + scroll, fold state and the flattened visible list are owned by the
+  // shared AccordionList helper. We keep only the section→SettingItem mapping it
+  // needs (sections are walked once from the enum, honouring the #if guards).
+  int  _selected = 0;   // SettingItem under the cursor, resolved per input/render
+  int  _reserve = 0;    // right-edge px reserved for the scrollbar (0 when list fits)
+  bool _dirty = false;
+
+  AccordionList _acc;
+  static const int NUM_SECTIONS = 7;
+  static const int MAX_PER_SEC  = 16;
+  uint8_t _sec_items[NUM_SECTIONS][MAX_PER_SEC]; // SettingItem per (section, row)
+  uint8_t _sec_count[NUM_SECTIONS];
+  uint8_t _sec_header[NUM_SECTIONS];             // the SECTION_* enum for each section
+  int     _num_sections = 0;
 
 #if AUTO_OFF_MILLIS > 0
   static const uint16_t AUTO_OFF_OPTS[5];
@@ -176,36 +182,33 @@ class SettingsScreen : public UIScreen {
     return "";
   }
 
-  int sectionIndex(int item) const {
-    if (item == SECTION_DISPLAY)    return 0;
-    if (item == SECTION_SOUND)      return 1;
-    if (item == SECTION_HOME_PAGES) return 2;
-    if (item == SECTION_RADIO)      return 3;
-    if (item == SECTION_SYSTEM)     return 4;
-    if (item == SECTION_CONTACTS)   return 5;
-    if (item == SECTION_MESSAGES)   return 6;
-    return -1;
-  }
-
-  int visIndexOf(int item) const {
-    for (int i = 0; i < _vis_count; i++)
-      if (_vis[i] == (uint8_t)item) return i;
-    return 0;
-  }
-
-  void buildVis() {
-    _vis_count = 0;
-    int cur_sec = -1;
-    bool cur_collapsed = false;
+  // Walk the SettingItem enum once, bucketing items under their section header.
+  // #if-guarded items need no special handling — they simply aren't in the enum.
+  void buildSections() {
+    int cur = -1;
     for (int i = 0; i < (int)Count; i++) {
       if (isSection(i)) {
-        cur_sec++;
-        cur_collapsed = (_collapsed >> cur_sec) & 1;
-        if (_vis_count < MAX_VIS) _vis[_vis_count++] = (uint8_t)i;
-      } else if (!cur_collapsed && _vis_count < MAX_VIS) {
-        _vis[_vis_count++] = (uint8_t)i;
+        if (++cur >= NUM_SECTIONS) break;
+        _sec_header[cur] = (uint8_t)i;
+        _sec_count[cur]  = 0;
+      } else if (cur >= 0 && _sec_count[cur] < MAX_PER_SEC) {
+        _sec_items[cur][_sec_count[cur]++] = (uint8_t)i;
       }
     }
+    _num_sections = cur + 1;
+  }
+
+  // (Re)load the section sizes into the accordion (folds all, resets the cursor).
+  void resetList() {
+    uint8_t sizes[NUM_SECTIONS];
+    for (int i = 0; i < _num_sections; i++) sizes[i] = _sec_count[i];
+    _acc.begin(sizes, _num_sections);
+  }
+
+  // Resolve the accordion's selected row to a SettingItem (header → SECTION_*).
+  int currentItem() const {
+    const AccordionList::Row& r = _acc.selected();
+    return (r.item < 0) ? _sec_header[r.sec] : _sec_items[r.sec][r.item];
   }
 
   bool isHomePage(int item) const {
@@ -416,23 +419,9 @@ class SettingsScreen : public UIScreen {
     return item - MSG_SLOT_0;
   }
 
-  void renderItem(DisplayDriver& display, int item, int y) {
+  void renderItem(DisplayDriver& display, int item, int y, bool sel) {
     NodePrefs* p = _task->getNodePrefs();
 
-    if (isSection(item)) {
-      int si = sectionIndex(item);
-      bool collapsed = (_collapsed >> si) & 1;
-      bool sel = (item == _selected);
-      display.setColor(DisplayDriver::LIGHT);
-      display.drawSelectionRow(0, y - 1, display.width() - _reserve, display.lineStep() - 1, sel);
-      display.setCursor(2, y);
-      display.print(collapsed ? "+" : "-");
-      display.print(" ");
-      display.print(sectionName(item));
-      return;
-    }
-
-    bool sel = (item == _selected);
     display.drawSelectionRow(0, y - 1, display.width() - _reserve, display.lineStep() - 1, sel);
 
     display.setCursor(2, y);
@@ -641,7 +630,7 @@ class SettingsScreen : public UIScreen {
   }
 
   // Keyboard state for editing message slots
-  int            _edit_slot;  // -1 = not editing, 0..9 = slot being edited
+  int            _edit_slot = -1;  // -1 = not editing, 0..9 = slot being edited
   KeyboardWidget* _kb;
 
   // Radio preset picker — names are too long for the value column, so Enter on
@@ -656,17 +645,15 @@ class SettingsScreen : public UIScreen {
 
 public:
   SettingsScreen(UITask* task, KeyboardWidget* kb)
-    : _task(task), _kb(kb), _selected(SECTION_DISPLAY), _scroll(0), _visible(4), _dirty(false), _edit_slot(-1) {
-    buildVis();
+    : _task(task), _kb(kb) {
+    buildSections();
+    resetList();
   }
 
 
   void markClean() {
     _dirty = false;
-    _collapsed = 0x7F;
-    _selected = SECTION_DISPLAY;
-    buildVis();
-    _scroll = 0;
+    resetList();
     _editor.freq.active = false;
   }
 
@@ -677,18 +664,24 @@ public:
       return _kb->render(display);
     }
 
-    int item_h  = display.lineStep();
-    int start_y = display.listStart();
-    _visible    = display.listVisible(item_h);
-    _reserve    = scrollIndicatorReserve(display, _vis_count, _visible);
-
     display.drawCenteredHeader("SETTINGS");
 
-    for (int i = 0; i < _visible && (_scroll + i) < _vis_count; i++) {
-      renderItem(display, _vis[_scroll + i], start_y + i * item_h);
-    }
-
-    drawScrollIndicator(display, start_y, _visible * item_h, _vis_count, _visible, _scroll);
+    _acc.render(display,
+      // Section header: "[+/-] Name"
+      [&](int sec, int y, bool sel, int reserve, bool collapsed) {
+        _reserve = reserve;
+        display.setColor(DisplayDriver::LIGHT);
+        display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+        display.setCursor(2, y);
+        display.print(collapsed ? "+" : "-");
+        display.print(" ");
+        display.print(sectionName(_sec_header[sec]));
+      },
+      // Item row
+      [&](int sec, int item, int y, bool sel, int reserve) {
+        _reserve = reserve;
+        renderItem(display, _sec_items[sec][item], y, sel);
+      });
 
     if (_picker.menu.active) _picker.menu.render(display);
 
@@ -760,41 +753,22 @@ public:
       return true;
     }
 
-    if (c == KEY_UP && _vis_count > 0) {
-      int vi = visIndexOf(_selected);
-      vi = (vi > 0) ? vi - 1 : _vis_count - 1;
-      _selected = _vis[vi];
-      if (vi < _scroll)               _scroll = vi;
-      else if (vi >= _scroll + _visible) _scroll = vi - _visible + 1;
-      return true;
-    }
-    if (c == KEY_DOWN && _vis_count > 0) {
-      int vi = visIndexOf(_selected);
-      vi = (vi + 1 < _vis_count) ? vi + 1 : 0;
-      _selected = _vis[vi];
-      if (vi >= _scroll + _visible)   _scroll = vi - _visible + 1;
-      else if (vi < _scroll)          _scroll = vi;
-      return true;
-    }
     if (c == KEY_CANCEL) {
       if (_dirty) the_mesh.savePrefs();
       _task->gotoHomeScreen();
       return true;
     }
 
+    // Up/down navigation and section fold/unfold live in the shared helper.
+    // Enter on an item returns ACTIVATED and falls through to the per-item logic
+    // below; left/right are ignored by the helper and likewise fall through.
+    AccordionList::Result ar = _acc.handleInput(c);
+    if (ar == AccordionList::HANDLED) return true;
+    _selected = currentItem();
+
     bool right = keyIsNext(c);
     bool left  = keyIsPrev(c);
     bool enter = (c == KEY_ENTER);
-
-    if (enter && isSection(_selected)) {
-      int si = sectionIndex(_selected);
-      _collapsed ^= (1 << si);
-      buildVis();
-      int vi = visIndexOf(_selected);
-      if (vi < _scroll) _scroll = vi;
-      if (_visible > 0 && vi >= _scroll + _visible) _scroll = vi - _visible + 1;
-      return true;
-    }
 
 #if FEAT_BRIGHTNESS_SETTING
     if (_selected == BRIGHTNESS) {

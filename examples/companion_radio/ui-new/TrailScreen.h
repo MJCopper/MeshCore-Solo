@@ -11,7 +11,40 @@
 #include "icons.h"     // scalable mini-icons (map markers, north arrow, grid dots)
 #include "NavView.h"
 #include "WaypointsView.h"
+#include <helpers/StreamUtils.h>
 #include <math.h>
+
+// Bounds every Serial write the GPX export makes. A full trail dump is tens
+// of KB across hundreds of individual write() calls (one or more per point) —
+// without this, a serial monitor that's open but not actively reading (DTR
+// asserted, nothing draining the USB-CDC FIFO) would block each one, and the
+// main loop with it, indefinitely (see StreamUtils.h). Duck-typed to the
+// handful of Print methods Trail.h's GPX writers actually call, so it slots
+// into their `S& out` template parameter without any change there.
+// __FlashStringHelper content is plain flash on nRF52/ARM (no
+// Harvard-architecture PROGMEM split), so it's safe to read like any other
+// char*.
+//
+// The first stalled write gives up for the rest of the export (_gave_up),
+// rather than re-arming a fresh timeout on every one of those hundreds of
+// calls — a host that's truly stuck would otherwise cost calls × timeout_ms
+// in total instead of one bounded stall.
+struct BoundedSerialPrint {
+  uint32_t timeout_ms;
+  bool _gave_up;
+  BoundedSerialPrint(uint32_t t) : timeout_ms(t), _gave_up(false) {}
+  size_t write(const uint8_t* buf, size_t len) {
+    if (_gave_up) return 0;
+    size_t sent = streamWriteUntil(Serial, buf, len, millis() + timeout_ms);
+    if (sent < len) _gave_up = true;
+    return sent;
+  }
+  size_t print(const char* s) { return write((const uint8_t*)s, strlen(s)); }
+  size_t print(const __FlashStringHelper* s) {
+    const char* p = reinterpret_cast<const char*>(s);
+    return write((const uint8_t*)p, strlen(p));
+  }
+};
 
 class TrailScreen : public UIScreen {
   UITask*     _task;
@@ -28,6 +61,7 @@ class TrailScreen : public UIScreen {
   int     _list_max_scroll    = 0;
   bool    _cfg_dirty      = false;
   bool    _map_grid       = true;   // show scale grid in map view (Enter to toggle)
+  bool    _return_home    = false;  // entered via Home "Map" page → KEY_CANCEL returns to Home
 
   // Waypoint management UI (list / nav / add / mark / rename / delete / send)
   // lives in its own component; TrailScreen delegates to it while it's active.
@@ -38,10 +72,13 @@ class TrailScreen : public UIScreen {
   // (Start/Stop tracking, Reset). PopupMenu stores label pointers verbatim, so
   // the labels live in member buffers that get refreshed in openActionMenu()
   // and after every LEFT/RIGHT cycle.
-  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS, ACT_FILE, ACT_SETTINGS };
-  // The action popup is two-level: a short main menu, plus "Trail file…" and
+  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_AUTOPAUSE, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS, ACT_FILE, ACT_SETTINGS,
+                 ACT_SHARE_NOW };
+  // The action popup is multi-level: a short main menu, plus "Trail file…" and
   // "Settings…" submenus. _menu_level tracks which is open so input is routed
   // correctly (settings rows cycle with LEFT/RIGHT; everything else is Enter).
+  // Live-share *config* lives in its own tool (Tools › Live Share); the map only
+  // keeps the one-shot "Share my pos" action.
   enum MenuLevel { ML_MAIN, ML_FILE, ML_SETTINGS };
   PopupMenu _action_menu;
   uint8_t   _menu_level = ML_MAIN;
@@ -50,6 +87,7 @@ class TrailScreen : public UIScreen {
   char      _act_min_dist_label[24];
   char      _act_units_label[24];
   char      _act_grid_label[16];
+  char      _act_autopause_label[24];
   char      _act_toggle_label[20];
 
   static const int SUMMARY_ITEM_COUNT = 5;
@@ -65,8 +103,13 @@ public:
     _cfg_dirty      = false;
     _action_menu.active = false;
     _menu_level     = ML_MAIN;
+    _return_home    = false;
     _wp.reset();
   }
+
+  // Enter straight into the Map view (used by the Home "Map" page). Remembers
+  // that we came from Home so KEY_CANCEL returns there, not to Tools.
+  void enterMap() { enter(); _view = V_MAP; _return_home = true; }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
@@ -101,11 +144,10 @@ public:
       // LEFT/RIGHT cycles the focused value — only meaningful in the Settings
       // submenu; the popup stays open so the user can keep tapping.
       if (c == KEY_LEFT || c == KEY_RIGHT || c == KEY_PREV || c == KEY_NEXT) {
-        if (_menu_level == ML_SETTINGS) {
-          int idx = _action_menu.selectedIndex();
-          if (idx >= 0 && idx < _act_count)
-            cycleSetting((ActionId)_act_map[idx], (c == KEY_RIGHT || c == KEY_NEXT) ? 1 : -1);
-        }
+        int dir = (c == KEY_RIGHT || c == KEY_NEXT) ? 1 : -1;
+        int idx = _action_menu.selectedIndex();
+        if (idx >= 0 && idx < _act_count && _menu_level == ML_SETTINGS)
+          cycleSetting((ActionId)_act_map[idx], dir);
         return true;  // swallow elsewhere
       }
       auto res = _action_menu.handleInput(c);
@@ -113,12 +155,14 @@ public:
         int sel = _action_menu.selectedIndex();
         ActionId act = (sel >= 0 && sel < _act_count) ? (ActionId)_act_map[sel] : ACT_TOGGLE;
         switch (act) {
-          case ACT_FILE:     buildFileMenu();     return true;   // descend into submenu
-          case ACT_SETTINGS: buildSettingsMenu(); return true;
+          case ACT_FILE:      buildFileMenu();     return true;   // descend into submenu
+          case ACT_SETTINGS:  buildSettingsMenu(); return true;
           // Settings rows: Enter advances/toggles the value and keeps focus.
           case ACT_MIN_DIST:
           case ACT_UNITS:
-          case ACT_GRID:     cycleSetting(act, 1); reopenSettingsAt(sel); return true;
+          case ACT_GRID:
+          case ACT_AUTOPAUSE: cycleSetting(act, 1); reopenSettingsAt(sel); return true;
+          case ACT_SHARE_NOW:     shareMyLocationNow(); break;
           case ACT_TOGGLE:        handleToggle();      break;
           case ACT_MARK:          _wp.markHere();      break;
           case ACT_WAYPOINTS:     _wp.openList();      break;
@@ -138,7 +182,8 @@ public:
 
     if (c == KEY_CANCEL) {
       if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
-      _task->gotoToolsScreen();
+      if (_return_home) _task->gotoHomeScreen();
+      else              _task->gotoToolsScreen();
       return true;
     }
     if (c == KEY_CONTEXT_MENU) { openActionMenu(); return true; }
@@ -207,7 +252,8 @@ private:
   }
   void handleExport() {
     if (!Serial) { _task->showAlert("Connect USB first", 1200); return; }
-    size_t n = _store->exportGpx(Serial, _task->waypoints());
+    BoundedSerialPrint out{300};
+    size_t n = _store->exportGpx(out, _task->waypoints());
     showExportAlert(n);
   }
 
@@ -217,7 +263,8 @@ private:
     if (!ds) { _task->showAlert("FS unavailable", 800); return; }
     File f = ds->openRead(TRAIL_FILE);
     if (!f) { _task->showAlert("No saved trail", 800); return; }
-    size_t n = TrailStore::exportGpxFromFile(f, Serial, _task->waypoints());
+    BoundedSerialPrint out{300};
+    size_t n = TrailStore::exportGpxFromFile(f, out, _task->waypoints());
     f.close();
     if (n == 0) { _task->showAlert("Bad saved file", 1000); return; }
     showExportAlert(n);
@@ -249,6 +296,8 @@ private:
               "Readout: %s",  (p && p->trail_show_pace) ? "Pace" : "Speed");
     snprintf(_act_grid_label,   sizeof(_act_grid_label),
               "Grid: %s",      _map_grid ? "ON" : "OFF");
+    snprintf(_act_autopause_label, sizeof(_act_autopause_label),
+              "Auto-pause: %s", NodePrefs::trailAutoPauseLabel(p ? p->trail_autopause_idx : 0));
     snprintf(_act_toggle_label, sizeof(_act_toggle_label),
               "%s tracking",  _store->isActive() ? "Stop" : "Start");
   }
@@ -276,6 +325,7 @@ private:
     // "Waypoints" opens the nav list — always available; it hosts the list,
     // backtrack (Trail-start row) and the "+ Add by coords" entry.
     pushAction(ACT_WAYPOINTS, "Waypoints...");
+    pushAction(ACT_SHARE_NOW,  "Share my pos");
     if (fileMenuHasItems()) pushAction(ACT_FILE, "Trail file...");
     pushAction(ACT_SETTINGS,  "Settings...");
   }
@@ -299,8 +349,9 @@ private:
     refreshActionLabels();
     _menu_level = ML_SETTINGS;
     _act_count  = 0;
-    _action_menu.begin("Settings", 3);
-    pushAction(ACT_MIN_DIST, _act_min_dist_label);
+    _action_menu.begin("Settings", 4);
+    pushAction(ACT_MIN_DIST,  _act_min_dist_label);
+    pushAction(ACT_AUTOPAUSE, _act_autopause_label);
     if (_view == V_SUMMARY) pushAction(ACT_UNITS, _act_units_label);
     if (_view == V_MAP)     pushAction(ACT_GRID,  _act_grid_label);
   }
@@ -311,6 +362,7 @@ private:
     if (act == ACT_MIN_DIST && p) { cycleMinDelta(p, dir); _cfg_dirty = true; refreshActionLabels(); return true; }
     if (act == ACT_UNITS    && p) { cycleUnits(p, dir);    _cfg_dirty = true; refreshActionLabels(); return true; }
     if (act == ACT_GRID)          { _map_grid = !_map_grid;                    refreshActionLabels(); return true; }
+    if (act == ACT_AUTOPAUSE && p){ cycleAutoPause(p, dir); _cfg_dirty = true; refreshActionLabels(); return true; }
     return false;
   }
 
@@ -346,6 +398,24 @@ private:
   // The trail "Readout" row toggles speed vs pace; the metric/imperial unit
   // comes from the global Settings preference, so this is a plain on/off flip.
   void cycleUnits(NodePrefs* p, int /*dir*/) { p->trail_show_pace ^= 1; }
+  void cycleAutoPause(NodePrefs* p, int dir) {
+    uint8_t idx = p->trail_autopause_idx;
+    if (idx >= NodePrefs::TRAIL_AUTOPAUSE_COUNT) idx = 0;
+    idx = (dir > 0) ? (idx + 1) % NodePrefs::TRAIL_AUTOPAUSE_COUNT
+                    : (idx + NodePrefs::TRAIL_AUTOPAUSE_COUNT - 1) % NodePrefs::TRAIL_AUTOPAUSE_COUNT;
+    p->trail_autopause_idx = idx;
+  }
+
+  // One-shot manual share: build "[LOC]lat,lon" and hand it to the Messages
+  // screen, where the user picks a DM or channel recipient. (Auto live-share
+  // config lives in Tools › Live Share.)
+  void shareMyLocationNow() {
+    int32_t lat, lon;
+    if (!_task->currentLocation(lat, lon)) { _task->showAlert("No GPS fix", 1000); return; }
+    char text[40];
+    snprintf(text, sizeof(text), LOCATION_MSG_TAG "%.5f,%.5f", lat / 1e6, lon / 1e6);
+    _task->shareToMessage(text);
+  }
 
   // Render the average speed (or pace) in the globally-selected unit system.
   void formatAvgPaceOrSpeed(char* buf, size_t n, NodePrefs* p) const {
@@ -376,6 +446,7 @@ private:
       case 0: {
         const char* st;
         if (!_store->isActive())     st = "stopped";
+        else if (_store->isPaused()) st = "paused";
         else if (_store->empty())    st = "waiting fix";
         else                          st = "tracking";
         snprintf(buf, n, "Status: %s", st);
@@ -523,6 +594,15 @@ private:
       for (int i = 0; i < wp.count(); i++) fold(wp.at(i).lat_1e6, wp.at(i).lon_1e6);
     }
     if (have_gps) fold(my_lat, my_lon);
+    // Fold in live-tracked contacts ([LOC] shares) so they stay in frame.
+    {
+      LiveTrackStore& lt = _task->liveTrack();
+      uint32_t now = rtc_clock.getCurrentTime();
+      for (int i = 0; i < LiveTrackStore::CAPACITY; i++)
+        if (lt.isActive(i, now)) fold(lt.slotAt(i).lat_1e6, lt.slotAt(i).lon_1e6);
+    }
+    // Fold in the active target too, so a destination you set never sits off-frame.
+    { int32_t tla, tlo; if (_task->activeTargetPos(tla, tlo)) fold(tla, tlo); }
     return init;
   }
 
@@ -534,6 +614,25 @@ private:
     const int area_w = proj.area_w, area_h = proj.area_h;
     WaypointStore& wp = _task->waypoints();
     const int wp_x_max = area_x + area_w - 1, wp_y_max = area_y + area_h - 1;
+    // Reserved rectangles of labels already placed this frame, so a dense
+    // cluster of points doesn't smear their labels on top of one another.
+    // Live-tracked contacts are labelled FIRST so a moving person's name wins a
+    // slot over a nearby static waypoint (on a live map the person matters most).
+    LblRect occ[40]; int nocc = 0;
+    {
+      LiveTrackStore& lt = _task->liveTrack();
+      uint32_t now = rtc_clock.getCurrentTime();
+      for (int i = 0; i < LiveTrackStore::CAPACITY; i++) {
+        if (!lt.isActive(i, now)) continue;
+        const LiveTrackStore::Entry& s = lt.slotAt(i);
+        int cx, cy; proj.project(s.lat_1e6, s.lon_1e6, cx, cy);
+        if (cx < area_x) cx = area_x;  else if (cx > wp_x_max) cx = wp_x_max;
+        if (cy < area_y) cy = area_y;  else if (cy > wp_y_max) cy = wp_y_max;
+        drawContactMarker(display, cx, cy);
+        char s2[3] = { s.name[0], s.name[0] ? s.name[1] : (char)0, 0 };
+        drawLabelAvoiding(display, s2, cx, cy, area_x, area_y, area_w, area_h, occ, nocc, 40);
+      }
+    }
     for (int i = 0; i < wp.count(); i++) {
       const Waypoint& w = wp.at(i);
       int wx, wy; proj.project(w.lat_1e6, w.lon_1e6, wx, wy);
@@ -541,14 +640,25 @@ private:
       if (wy < area_y) wy = area_y;  else if (wy > wp_y_max) wy = wp_y_max;
       drawWaypointMarker(display, wx, wy);
       char s[3] = { w.label[0], w.label[0] ? w.label[1] : (char)0, 0 };
-      drawWaypointLabel(display, s, wx, wy, area_x, area_y, area_w, area_h);
+      drawLabelAvoiding(display, s, wx, wy, area_x, area_y, area_w, area_h, occ, nocc, 40);
     }
+
     if (have_gps) {
       int mx, my; proj.project(my_lat, my_lon, mx, my);
       drawCurrentMarker(display, mx, my);
     } else if (have_trail) {
       int ex, ey; proj.project(_store->last().lat_1e6, _store->last().lon_1e6, ex, ey);
       drawCurrentMarker(display, ex, ey);
+    }
+
+    // Active target flag, last so it stays legible atop any waypoint/contact it
+    // coincides with. Clamped to the frame like the other off-edge markers.
+    int32_t tla, tlo;
+    if (_task->activeTargetPos(tla, tlo)) {
+      int tx, ty; proj.project(tla, tlo, tx, ty);
+      if (tx < area_x) tx = area_x;  else if (tx > wp_x_max) tx = wp_x_max;
+      if (ty < area_y) ty = area_y;  else if (ty > wp_y_max) ty = wp_y_max;
+      drawTargetMarker(display, tx, ty);
     }
   }
 
@@ -564,8 +674,11 @@ private:
     // when no trail is being recorded.
     int32_t my_lat, my_lon;
     const bool have_gps = ownPos(my_lat, my_lon);
+    const bool have_live = _task->liveTrack().active(rtc_clock.getCurrentTime()) > 0;
+    int32_t tgt_lat, tgt_lon;
+    const bool have_tgt = _task->activeTargetPos(tgt_lat, tgt_lon);
 
-    if (!have_trail && nwp == 0 && !have_gps) {
+    if (!have_trail && nwp == 0 && !have_gps && !have_live && !have_tgt) {
       display.drawTextCentered(display.width() / 2, (top + bottom) / 2, "No GPS / no trail");
       return;
     }
@@ -595,6 +708,7 @@ private:
         drawWaypointLabel(display, s, ccx, ccy, area_x, area_y, area_w, area_h);
       }
       if (have_gps || have_trail) drawCurrentMarker(display, ccx, ccy);
+      { int32_t tla, tlo; if (_task->activeTargetPos(tla, tlo)) drawTargetMarker(display, ccx, ccy); }
       return;
     }
 
@@ -626,19 +740,9 @@ private:
       int x0, y0;
       proj.project(_store->at(0).lat_1e6, _store->at(0).lon_1e6, x0, y0);
       miniIconDrawCentered(display, x0, y0, ICON_MAP_DOT);
-      for (int i = 1; i < _store->count(); i++) {
-        const TrailPoint& pt = _store->at(i);
-        int x1, y1;
-        proj.project(pt.lat_1e6, pt.lon_1e6, x1, y1);
-        if (pt.flags & TRAIL_FLAG_SEG_START) {
-          drawFilledDot(display, x0, y0);
-          drawOpenDot(display, x1, y1);
-        } else {
-          gfx::drawLine(display, x0, y0, x1, y1);
-        }
-        x0 = x1;
-        y0 = y1;
-      }
+      gfx::drawTrail(display, *_store,
+        [&](int32_t la, int32_t lo, int& x, int& y) { proj.project(la, lo, x, y); },
+        [&](int xa, int ya, int xb, int yb) { drawFilledDot(display, xa, ya); drawOpenDot(display, xb, yb); });
       int sx, sy;
       proj.project(_store->first().lat_1e6, _store->first().lon_1e6, sx, sy);
       drawStartMarker(display, sx, sy);
@@ -787,6 +891,38 @@ private:
     d.print(s);
   }
 
+  // Map label collision avoidance. Each placed label reserves a rectangle; a new
+  // label tries up to four offsets around its marker (upper-right, upper-left,
+  // lower-right, lower-left) and is skipped — the marker still shows — if none
+  // fit on-frame without overlapping an already-placed one. On a dense map this
+  // drops a few labels instead of smearing them into an unreadable blob.
+  struct LblRect { int x, y, w, h; };
+  static bool rectsOverlap(int ax, int ay, int aw, int ah, int bx, int by, int bw, int bh) {
+    return ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
+  }
+  static void drawLabelAvoiding(DisplayDriver& d, const char* s, int wx, int wy,
+                                int ax, int ay, int aw, int ah,
+                                LblRect* occ, int& nocc, int occ_max) {
+    if (!s[0]) return;
+    int tw = (int)d.getTextWidth(s);
+    int ch = d.getLineHeight();
+    const int cand[4][2] = { { wx + 4, wy - 3 }, { wx - 4 - tw, wy - 3 },
+                             { wx + 4, wy + 3 }, { wx - 4 - tw, wy + 3 } };
+    for (int c = 0; c < 4; c++) {
+      int lx = cand[c][0], ly = cand[c][1];
+      if (lx < ax || lx + tw > ax + aw || ly < ay || ly + ch > ay + ah) continue;
+      bool clash = false;
+      for (int k = 0; k < nocc; k++)
+        if (rectsOverlap(lx, ly, tw, ch, occ[k].x, occ[k].y, occ[k].w, occ[k].h)) { clash = true; break; }
+      if (clash) continue;
+      d.setCursor(lx, ly);
+      d.print(s);
+      if (nocc < occ_max) occ[nocc++] = { lx, ly, tw, ch };
+      return;
+    }
+    // No free slot — skip the label; the marker alone still conveys the point.
+  }
+
   static void drawFilledDot(DisplayDriver& d, int cx, int cy) {
     miniIconDrawCentered(d, cx, cy, ICON_MAP_DOT);
   }
@@ -803,5 +939,14 @@ private:
   }
   static void drawCurrentMarker(DisplayDriver& d, int cx, int cy) {
     miniIconDrawCentered(d, cx, cy, ICON_MAP_CURRENT);
+  }
+  // Filled diamond — a contact whose position arrived via a [LOC] share.
+  static void drawContactMarker(DisplayDriver& d, int cx, int cy) {
+    miniIconDrawCentered(d, cx, cy, ICON_MAP_CONTACT);
+  }
+  // Flag — the active Locator/Nav target. Drawn last (on top) so it stays
+  // legible even when it lands on the same spot as a waypoint or contact.
+  static void drawTargetMarker(DisplayDriver& d, int cx, int cy) {
+    miniIconDrawCentered(d, cx, cy, ICON_MAP_TARGET);
   }
 };

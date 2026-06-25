@@ -165,6 +165,127 @@ MINI_ICON(ICON_REPEATER, 6,   // » double chevron — relaying/forwarding (repe
   packRow(".#..#."),
   packRow("#..#.."));
 
+MINI_ICON(ICON_GPS, 5,   // reticle — GPS fix status (boxed = fix, plain = searching)
+  packRow(".###."),
+  packRow("#...#"),
+  packRow("#.#.#"),
+  packRow("#...#"),
+  packRow(".###."));
+
+// Tools-menu glyphs (auto-reply bot, ringtone editor, diagnostics, system).
+MINI_ICON(ICON_BOT, 5,   // robot head: antenna + eyes + grille (auto-reply bot)
+  packRow("..#.."),
+  packRow("#####"),
+  packRow("#.#.#"),
+  packRow("#####"),
+  packRow("#.#.#"),
+  packRow("#####"));
+MINI_ICON(ICON_NOTE, 5,   // ♪ quaver — ringtone editor
+  packRow("...##"),
+  packRow("...##"),
+  packRow("...#."),
+  packRow("...#."),
+  packRow("...#."),
+  packRow("####."),
+  packRow("####."));
+MINI_ICON(ICON_CHART, 5,   // ascending bars — diagnostics / stats
+  packRow("....#"),
+  packRow("..#.#"),
+  packRow("..#.#"),
+  packRow("#.#.#"),
+  packRow("#.#.#"),
+  packRow("#####"));
+MINI_ICON(ICON_GEAR, 7,   // ⚙ cog with hub hole — system
+  packRow("..#.#.."),
+  packRow(".#####."),
+  packRow("#######"),
+  packRow(".##.##."),
+  packRow("#######"),
+  packRow(".#####."),
+  packRow("..#.#.."));
+
+// Home-carousel page glyphs — a uniform 5x5 set, deliberately smaller than the
+// menu/status icons above, used in place of the page-indicator dots. One per
+// HomePage; see UITask HomeScreen::pageIcon().
+MINI_ICON(ICON_PG_CLOCK, 5,      // clock face + hands
+  packRow(".###."),
+  packRow("#.#.#"),
+  packRow("#.###"),
+  packRow("#...#"),
+  packRow(".###."));
+MINI_ICON(ICON_PG_STAR, 5,       // favourites
+  packRow("..#.."),
+  packRow("#####"),
+  packRow(".###."),
+  packRow("##.##"),
+  packRow("#...#"));
+MINI_ICON(ICON_PG_RECENT, 5,     // stacked lines — recent list
+  packRow("#####"),
+  packRow("....."),
+  packRow("#####"),
+  packRow("....."),
+  packRow("#####"));
+MINI_ICON(ICON_PG_RADIO, 5,      // antenna tower — radio params
+  packRow("..#.."),
+  packRow(".###."),
+  packRow("..#.."),
+  packRow(".#.#."),
+  packRow("#...#"));
+MINI_ICON(ICON_PG_BT, 5,         // bluetooth (compact)
+  packRow("..#.."),
+  packRow("#.##."),
+  packRow(".###."),
+  packRow("#.##."),
+  packRow("..#.."));
+MINI_ICON(ICON_PG_ADVERT, 5,     // mast + radiating waves — advert
+  packRow("#...#"),
+  packRow(".#.#."),
+  packRow("..#.."),
+  packRow("..#.."),
+  packRow("..#.."));
+MINI_ICON(ICON_PG_GPS, 5,        // location pin — GPS
+  packRow(".###."),
+  packRow("#.#.#"),
+  packRow("#.#.#"),
+  packRow(".#.#."),
+  packRow("..#.."));
+MINI_ICON(ICON_PG_SENSORS, 5,    // thermometer/gauge — sensors
+  packRow("..#.."),
+  packRow(".#.#."),
+  packRow(".#.#."),
+  packRow(".###."),
+  packRow(".###."));
+MINI_ICON(ICON_PG_SETTINGS, 5,   // small cog — settings
+  packRow(".#.#."),
+  packRow("#####"),
+  packRow("##.##"),
+  packRow("#####"),
+  packRow(".#.#."));
+MINI_ICON(ICON_PG_MAP, 5,        // folded map — map page
+  packRow("#####"),
+  packRow("#.#.#"),
+  packRow("#.#.#"),
+  packRow("#.#.#"),
+  packRow("#####"));
+MINI_ICON(ICON_PG_TOOLS, 5,      // wrench (open jaw + handle) — tools
+  packRow(".#.#."),
+  packRow(".###."),
+  packRow("..#.."),
+  packRow("..#.."),
+  packRow("..#.."));
+MINI_ICON(ICON_PG_MSG, 5,        // speech bubble — quick messages
+  packRow("#####"),
+  packRow("#...#"),
+  packRow("#...#"),
+  packRow("#####"),
+  packRow(".#..."));
+MINI_ICON(ICON_PG_POWER, 5,      // power symbol — shutdown
+  packRow("..#.."),
+  packRow("#.#.#"),
+  packRow("#...#"),
+  packRow("#...#"),
+  packRow(".###."));
+
 // Trail-map markers — centred on a point (see miniIconDrawCentered) rather
 // than anchored to a text line.
 MINI_ICON(ICON_MAP_DOT, 3,        // ● filled trail point
@@ -193,6 +314,12 @@ MINI_ICON(ICON_MAP_CURRENT, 5,    // ✕ live position / last trail point
   packRow("..#.."),
   packRow(".#.#."),
   packRow("#...#"));
+MINI_ICON(ICON_MAP_CONTACT, 5,    // ◆ filled diamond — a live-tracked contact ([LOC] share)
+  packRow("..#.."),
+  packRow(".###."),
+  packRow("#####"),
+  packRow(".###."),
+  packRow("..#.."));
 MINI_ICON(ICON_MAP_NORTH, 5,      // "N" with a peaked roof — compass north marker
   packRow("..#.."),
   packRow(".###."),
@@ -201,6 +328,18 @@ MINI_ICON(ICON_MAP_NORTH, 5,      // "N" with a peaked roof — compass north ma
   packRow("#.#.#"),
   packRow("#..##"),
   packRow("#...#"));
+MINI_ICON(ICON_MAP_ARROW, 5,      // → distance-to-nearest-tracked-contact indicator
+  packRow("..#.."),
+  packRow("...#."),
+  packRow("#####"),
+  packRow("...#."),
+  packRow("..#.."));
+MINI_ICON(ICON_MAP_TARGET, 5,     // ⚑ flag on a pole — the active Locator/Nav target
+  packRow("####."),
+  packRow("#..#."),
+  packRow("####."),
+  packRow("#...."),
+  packRow("#...."));
 
 // Keyboard special-key glyphs.
 MINI_ICON(ICON_SHIFT, 7,   // ⇧  caps

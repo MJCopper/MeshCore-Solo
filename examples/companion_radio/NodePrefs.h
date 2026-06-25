@@ -219,11 +219,103 @@ struct NodePrefs {  // persisted to file
   uint8_t  repeater_sf;
   uint8_t  repeater_cr;
 
+  // Track positions shared by other nodes via [LOC] messages (LiveTrackStore).
+  // 0 = ignore shared positions (default), 1 = parse incoming DM/channel [LOC]
+  // shares and update the live-track table (Nearby "Live" view / map).
+  uint8_t  track_shared_loc;
+
+  // Live location sharing — a message-based "beacon". When enabled, the device
+  // periodically sends a [LOC] message to the chosen target while it moves.
+  // Configured from the Map (Trail screen) "Live share" menu.
+  uint8_t  loc_share_enabled;       // 0=off (default), 1=auto-sharing on
+  uint8_t  loc_share_target_type;   // 0=channel, 1=DM contact
+  uint8_t  loc_share_channel_idx;   // target channel index (when target_type==0)
+  uint8_t  loc_share_dm_prefix[6];  // target contact pubkey prefix (when target_type==1)
+  uint8_t  loc_share_move_idx;      // movement gate level (index into locShareMoveMeters)
+  uint8_t  loc_share_interval_idx;  // min send interval (index into locShareIntervalSecs)
+  uint8_t  loc_share_heartbeat_idx; // stationary heartbeat (index into locShareHeartbeatSecs)
+
+  // Locator — a single geofence around a saved point. When enabled the device
+  // watches its own GPS fix and beeps + shows an alert when it crosses into
+  // (arrive) or out of (leave) the radius. The target coordinate/label is a
+  // snapshot of a chosen waypoint, so the alert survives the waypoint being
+  // edited or deleted. Configured from Tools › Locator.
+  uint8_t  locator_enabled;      // 0=off (default), 1=armed
+  uint8_t  locator_has_target;   // 0=no target chosen yet, 1=target set
+  uint8_t  locator_radius_idx;   // index into locatorRadiusMeters
+  uint8_t  locator_mode;         // 0=arrive, 1=leave, 2=both
+  int32_t  locator_lat_1e6;      // target latitude  (1e6-scaled; last-known for a contact)
+  int32_t  locator_lon_1e6;      // target longitude (1e6-scaled; last-known for a contact)
+  char     locator_label[12];    // target name for the alert text (WAYPOINT_LABEL_LEN)
+  // Target can be a static waypoint or a live contact: for a contact the engine
+  // re-reads the latest [LOC] position each evaluation (keyed by pubkey prefix),
+  // so the geofence follows a moving person ("alert when my friend is near").
+  uint8_t  locator_target_kind;  // 0=waypoint (static), 1=live contact
+  uint8_t  locator_key[6];       // contact pubkey prefix when target_kind==1
+
+  // Trail auto-pause — when tracking, automatically freeze the trail (timer +
+  // sampling) after the device has sat still for this long, and resume on the
+  // next real movement. 0 = off. Index into trailAutoPauseSecs.
+  uint8_t  trail_autopause_idx;
+
+  // Locator proximity beeper — when on (and the alert is armed with a target),
+  // the device ticks while inside the radius and shortens the gap between ticks
+  // the closer it gets to the target, like a homing beeper. Independent of the
+  // discrete arrive/leave alert (locator_mode).
+  uint8_t  locator_beeper;       // 0=off (default), 1=on
+
+  // Single source of truth for the live-share option tables (shared by the Map
+  // UI labels and the auto-send engine in UITask).
+  static const uint8_t LOC_SHARE_MOVE_COUNT = 4;
+  static uint16_t locShareMoveMeters(uint8_t idx) {
+    static const uint16_t M[LOC_SHARE_MOVE_COUNT] = { 50, 100, 250, 500 };
+    return M[idx < LOC_SHARE_MOVE_COUNT ? idx : 1];
+  }
+  static const uint8_t LOC_SHARE_INTERVAL_COUNT = 4;
+  static uint16_t locShareIntervalSecs(uint8_t idx) {
+    static const uint16_t S[LOC_SHARE_INTERVAL_COUNT] = { 30, 60, 120, 300 };
+    return S[idx < LOC_SHARE_INTERVAL_COUNT ? idx : 1];
+  }
+  static const uint8_t LOC_SHARE_HEARTBEAT_COUNT = 3;
+  static uint16_t locShareHeartbeatSecs(uint8_t idx) {
+    static const uint16_t H[LOC_SHARE_HEARTBEAT_COUNT] = { 0, 300, 900 };  // off / 5 min / 15 min
+    return H[idx < LOC_SHARE_HEARTBEAT_COUNT ? idx : 0];
+  }
+
+  // Locator option tables (shared by the Tools › Locator UI labels and the
+  // evaluation engine in UITask).
+  static const uint8_t LOCATOR_RADIUS_COUNT = 5;
+  static uint16_t locatorRadiusMeters(uint8_t idx) {
+    static const uint16_t R[LOCATOR_RADIUS_COUNT] = { 50, 100, 250, 500, 1000 };
+    return R[idx < LOCATOR_RADIUS_COUNT ? idx : 1];
+  }
+  static const uint8_t LOCATOR_MODE_COUNT = 3;  // 0=arrive, 1=leave, 2=both
+  static const char* locatorModeLabel(uint8_t m) {
+    static const char* L[LOCATOR_MODE_COUNT] = { "Arrive", "Leave", "Both" };
+    return L[m < LOCATOR_MODE_COUNT ? m : 0];
+  }
+
+  // Trail auto-pause delays (seconds). 0 = off.
+  static const uint8_t TRAIL_AUTOPAUSE_COUNT = 4;
+  static uint16_t trailAutoPauseSecs(uint8_t idx) {
+    static const uint16_t S[TRAIL_AUTOPAUSE_COUNT] = { 0, 60, 120, 300 };  // off / 1 / 2 / 5 min
+    return S[idx < TRAIL_AUTOPAUSE_COUNT ? idx : 0];
+  }
+  static const char* trailAutoPauseLabel(uint8_t idx) {
+    static const char* L[TRAIL_AUTOPAUSE_COUNT] = { "Off", "1m", "2m", "5m" };
+    return L[idx < TRAIL_AUTOPAUSE_COUNT ? idx : 0];
+  }
+  // Movement under this many metres counts as "stationary" for auto-pause.
+  // Deliberately coarser than the trail min-delta gate (and independent of it)
+  // so GPS jitter while parked doesn't keep resetting the idle timer. Engine
+  // tuning only — not persisted.
+  static const uint16_t TRAIL_AUTOPAUSE_MOVE_M = 15;
+
   // Tail sentinel written at the end of /new_prefs. Bump the low byte when
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0010;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0015;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
