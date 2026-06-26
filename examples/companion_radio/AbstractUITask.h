@@ -47,6 +47,10 @@ public:
   // A repeater rebroadcast of one of our channel sends was heard (seq from
   // lastChannelRelaySeq()) — drives the channel "relayed into mesh" marker.
   virtual void onChannelRelayed(uint32_t seq) { (void)seq; }
+  // Result of an on-device-UI-triggered MyMesh::sendRoomLogin() arrived.
+  // pub_key is the contact's key prefix (>=4 bytes valid); permissions is the
+  // room/repeater ACL byte (only meaningful when success is true).
+  virtual void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) { (void)pub_key; (void)success; (void)permissions; }
   // True only when a BLE central is actually bonded/connected. On a dual
   // (BLE+USB) interface hasConnection() is always true (USB counts), so use
   // this for BLE-specific UI like the pairing-PIN prompt.

@@ -20,6 +20,7 @@ class QuickMsgScreen : public UIScreen {
   uint16_t _sorted[MAX_CONTACTS];
   ContactInfo _sel_contact;
   bool _room_mode;  // true = picking a room server, false = picking a DM contact
+  bool _login_mode; // true while KEYBOARD is collecting a room-login password
 
   // CHANNEL_PICK
   int _channel_sel, _channel_scroll;
@@ -662,7 +663,7 @@ class QuickMsgScreen : public UIScreen {
 public:
   QuickMsgScreen(UITask* task, KeyboardWidget* kb)
     : _task(task), _kb(kb), _phase(MODE_SELECT), _mode_sel(0),
-      _contact_sel(0), _contact_scroll(0), _num_contacts(0), _room_mode(false),
+      _contact_sel(0), _contact_scroll(0), _num_contacts(0), _room_mode(false), _login_mode(false),
       _channel_sel(0), _channel_scroll(0), _num_channels(0),
       _sel_channel_idx(0), _sending_to_channel(false),
       _msg_sel(0), _msg_scroll(0), _active_msg_count(0),
@@ -749,6 +750,62 @@ public:
     }
   }
 
+  // Rooms successfully logged in to this power-on session. RAM-only — the
+  // server's ACL (see ClientACL) is the real permission store and survives
+  // reboot on its own, but the device has no way to query it, so this is just
+  // a local memo to skip re-prompting for a password already entered this
+  // session when the same room is picked again.
+  static const int ROOM_LOGIN_TABLE_SIZE = 8;
+  uint8_t _room_login_prefix[ROOM_LOGIN_TABLE_SIZE][4];
+  int _room_login_head = 0, _room_login_count = 0;
+
+  bool isRoomLoggedIn(const uint8_t* pub_key) const {
+    for (int i = 0; i < _room_login_count; i++)
+      if (memcmp(_room_login_prefix[i], pub_key, 4) == 0) return true;
+    return false;
+  }
+
+  void markRoomLoggedIn(const uint8_t* pub_key) {
+    if (isRoomLoggedIn(pub_key)) return;
+    int pos;
+    if (_room_login_count < ROOM_LOGIN_TABLE_SIZE) {
+      pos = (_room_login_head + _room_login_count) % ROOM_LOGIN_TABLE_SIZE;
+      _room_login_count++;
+    } else {
+      pos = _room_login_head;
+      _room_login_head = (_room_login_head + 1) % ROOM_LOGIN_TABLE_SIZE;
+    }
+    memcpy(_room_login_prefix[pos], pub_key, 4);
+  }
+
+  // Password of the room-login attempt currently in flight -- set right
+  // before sendRoomLogin(), read back in onRoomLoginResult() so a successful
+  // attempt can be persisted (see MyMesh::saveRoomPassword()).
+  char _login_pw[16];
+
+  void startRoomLogin(const char* password) {
+    strncpy(_login_pw, password, sizeof(_login_pw) - 1);
+    _login_pw[sizeof(_login_pw) - 1] = 0;
+    bool sent = the_mesh.sendRoomLogin(_sel_contact, password);
+    _task->showAlert(sent ? "Logging in..." : "Login failed", sent ? 1000 : 1500);
+  }
+
+  // Result of an on-device sendRoomLogin() (MyMesh::onContactResponse(), routed
+  // via AbstractUITask::onRoomLoginResult()). Surfaces as a transient alert.
+  void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
+    (void)permissions;
+    if (success) {
+      markRoomLoggedIn(pub_key);
+      the_mesh.saveRoomPassword(pub_key, _login_pw);
+    } else {
+      // Saved password (if any) no longer works -- forget it so the next
+      // ENTER on this room falls back to a manual prompt instead of
+      // silently retrying the same bad password forever.
+      the_mesh.forgetRoomPassword(pub_key);
+    }
+    _task->showAlert(success ? "Login OK" : "Login failed", 1200);
+  }
+
   // Look up a contact by 4-byte pub_key prefix (as stored in DmHistEntry).
   bool contactByPrefix(const uint8_t* prefix, ContactInfo& out) const {
     int total = the_mesh.getNumContacts();
@@ -832,6 +889,7 @@ public:
     _sending_to_channel = false;
 
     _room_mode = false;
+    _login_mode = false;
     buildContactList();
     buildChannelList();
 
@@ -1443,6 +1501,17 @@ public:
     } else if (_phase == CONTACT_PICK) {
       // Context menu consumes all input while open
       if (_ctx_menu.active) {
+        if (_room_mode) {
+          auto res = _ctx_menu.handleInput(c);
+          if (res == PopupMenu::SELECTED && _num_contacts > 0) {
+            if (the_mesh.getContactByIdx(_sorted[_contact_sel], _sel_contact)) {
+              _login_mode = true;
+              _kb->begin("", 15); // room/repeater password: max 15 chars
+              _phase = KEYBOARD;
+            }
+          }
+          return true;
+        }
         // LEFT/RIGHT cycle Notif/Melody in-place (menu stays open).
         if (!_pin_picker_active && _num_contacts > 0) {
           bool left  = (c == KEY_LEFT || c == KEY_PREV);
@@ -1545,6 +1614,22 @@ public:
       if (c == KEY_ENTER && _num_contacts > 0) {
         if (the_mesh.getContactByIdx(_sorted[_contact_sel], _sel_contact)) {
           if (_pick_target) { commitPickTargetDM(_sel_contact); return true; }
+          if (_room_mode && !isRoomLoggedIn(_sel_contact.id.pub_key)) {
+            // Posting to a room requires a login handshake first (even with a
+            // blank password) — go straight to the password prompt instead of
+            // a history view that would silently fail to send.
+            char saved_pw[sizeof(_login_pw)];
+            if (the_mesh.getRoomPassword(_sel_contact.id.pub_key, saved_pw, sizeof(saved_pw))) {
+              // Logged in to this room before, on an earlier boot -- retry
+              // with the remembered password instead of prompting again.
+              startRoomLogin(saved_pw);
+            } else {
+              _login_mode = true;
+              _kb->begin("", 15); // room/repeater password: max 15 chars
+              _phase = KEYBOARD;
+            }
+            return true;
+          }
           _task->clearDMUnread(_sel_contact.id.pub_key);
           _dm_hist_sel = -1;
           _dm_hist_scroll = 0;
@@ -1552,6 +1637,11 @@ public:
           _phase = DM_HIST;
           if (_share_mode) beginShareCompose(false);
         }
+        return true;
+      }
+      if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && _room_mode) {
+        _ctx_menu.begin("Room options", 1);
+        _ctx_menu.addItem("Login...");
         return true;
       }
       if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && !_room_mode) {
@@ -1831,6 +1921,20 @@ public:
 
     } else if (_phase == KEYBOARD) {
       auto res = _kb->handleInput(c);
+      if (_login_mode) {
+        if (res == KeyboardWidget::CANCELLED) {
+          _login_mode = false;
+          _phase = CONTACT_PICK;
+        } else if (res == KeyboardWidget::DONE) {
+          // Blank password is valid (guest/no-password rooms) — unlike normal
+          // message text, an empty submit here is a deliberate "log in with no
+          // password" attempt, so it isn't suppressed like an empty message is.
+          _login_mode = false;
+          startRoomLogin(_kb->buf);
+          _phase = CONTACT_PICK;
+        }
+        return true;
+      }
       if (res == KeyboardWidget::CANCELLED) {
         if (_share_mode) { _share_mode = false; _task->gotoHomeScreen(); }
         else             { _phase = MSG_PICK; }

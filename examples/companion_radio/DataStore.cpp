@@ -176,6 +176,10 @@ File DataStore::openWrite(const char* filename) {
   return ::openWrite(_fs, filename);
 }
 
+bool DataStore::commitFile(const char* tmp_path, const char* final_path) {
+  return commitTempFile(_fs, tmp_path, final_path);
+}
+
 bool DataStore::removeFile(const char* filename) {
   return _fs->remove(filename);
 }

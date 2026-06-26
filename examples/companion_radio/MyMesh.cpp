@@ -870,6 +870,24 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
       i += 6; // pub_key_prefix
     }
     _serial->writeFrame(out_frame, i);
+  } else if (ui_pending_login && memcmp(&ui_pending_login, contact.id.pub_key, 4) == 0) { // check for on-device UI login response
+    ui_pending_login = 0;
+
+    bool success;
+    uint8_t permissions = 0;
+    if (memcmp(&data[4], "OK", 2) == 0) { // legacy Repeater login OK response
+      success = true;
+    } else if (data[4] == RESP_SERVER_LOGIN_OK) { // new login response
+      uint16_t keep_alive_secs = ((uint16_t)data[5]) * 16;
+      if (keep_alive_secs > 0) {
+        startConnection(contact, keep_alive_secs);
+      }
+      success = true;
+      permissions = data[7]; // ACL permissions
+    } else {
+      success = false;
+    }
+    _ui->onRoomLoginResult(contact.id.pub_key, success, permissions);
   } else if (len > 4 && // check for status response
              pending_status &&
              memcmp(&pending_status, contact.id.pub_key, 4) == 0 // legacy matching scheme
@@ -908,6 +926,104 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     i += (len - 4);
     _serial->writeFrame(out_frame, i);
   }
+}
+
+#define ROOM_PW_FILE "/room_pw"
+#define ROOM_PW_TMP  "/room_pw.tmp"
+#define MAX_SAVED_ROOM_PASSWORDS 16
+
+namespace {
+  struct RoomPwRec {
+    uint8_t key[4];   // pub-key prefix
+    char pw[16];      // up to 15 chars + NUL
+  };
+}
+
+bool MyMesh::getRoomPassword(const uint8_t* pub_key, char* out_password, uint8_t max_len) {
+  File f = _store->openRead(ROOM_PW_FILE);
+  if (!f) return false;
+
+  RoomPwRec rec;
+  bool found = false;
+  while (f.read((uint8_t *)&rec, sizeof(rec)) == sizeof(rec)) {
+    if (memcmp(rec.key, pub_key, 4) == 0) {
+      strncpy(out_password, rec.pw, max_len - 1);
+      out_password[max_len - 1] = 0;
+      found = true;
+      break;
+    }
+  }
+  f.close();
+  return found;
+}
+
+bool MyMesh::saveRoomPassword(const uint8_t* pub_key, const char* password) {
+  // The table is tiny (<= MAX_SAVED_ROOM_PASSWORDS * 20 bytes), so just load
+  // it whole, update/append/evict in RAM, then rewrite -- simpler and just
+  // as crash-safe as a record seek given how rarely this runs (once per new
+  // room login).
+  RoomPwRec recs[MAX_SAVED_ROOM_PASSWORDS];
+  int count = 0;
+  File rf = _store->openRead(ROOM_PW_FILE);
+  if (rf) {
+    RoomPwRec rec;
+    while (count < MAX_SAVED_ROOM_PASSWORDS && rf.read((uint8_t *)&rec, sizeof(rec)) == sizeof(rec)) {
+      if (memcmp(rec.key, pub_key, 4) != 0) { // drop stale entry for this key -- replaced below
+        recs[count++] = rec;
+      }
+    }
+    rf.close();
+  }
+
+  RoomPwRec new_rec;
+  memcpy(new_rec.key, pub_key, 4);
+  strncpy(new_rec.pw, password, sizeof(new_rec.pw) - 1);
+  new_rec.pw[sizeof(new_rec.pw) - 1] = 0;
+
+  if (count < MAX_SAVED_ROOM_PASSWORDS) {
+    recs[count++] = new_rec;
+  } else { // table full and not already present -- evict oldest (front)
+    memmove(&recs[0], &recs[1], sizeof(RoomPwRec) * (MAX_SAVED_ROOM_PASSWORDS - 1));
+    recs[MAX_SAVED_ROOM_PASSWORDS - 1] = new_rec;
+  }
+
+  // Write to a temp file and atomically swap it over /room_pw, so an
+  // interrupted save leaves the previous good table intact rather than a
+  // truncated mix (mirrors how contacts/channels are persisted).
+  File wf = _store->openWrite(ROOM_PW_TMP);
+  if (!wf) return false;
+  size_t want = sizeof(RoomPwRec) * count;
+  bool ok = (wf.write((uint8_t *)recs, want) == want);
+  wf.close();
+  if (!ok) { _store->removeFile(ROOM_PW_TMP); return false; } // keep previous good file
+  return _store->commitFile(ROOM_PW_TMP, ROOM_PW_FILE);
+}
+
+void MyMesh::forgetRoomPassword(const uint8_t* pub_key) {
+  RoomPwRec recs[MAX_SAVED_ROOM_PASSWORDS];
+  int count = 0;
+  File rf = _store->openRead(ROOM_PW_FILE);
+  if (!rf) return;
+
+  RoomPwRec rec;
+  bool removed = false;
+  while (count < MAX_SAVED_ROOM_PASSWORDS && rf.read((uint8_t *)&rec, sizeof(rec)) == sizeof(rec)) {
+    if (memcmp(rec.key, pub_key, 4) == 0) {
+      removed = true;
+    } else {
+      recs[count++] = rec;
+    }
+  }
+  rf.close();
+  if (!removed) return; // nothing to do, avoid a pointless rewrite
+
+  File wf = _store->openWrite(ROOM_PW_TMP);
+  if (!wf) return;
+  size_t want = sizeof(RoomPwRec) * count;
+  bool ok = (wf.write((uint8_t *)recs, want) == want);
+  wf.close();
+  if (!ok) { _store->removeFile(ROOM_PW_TMP); return; } // keep previous good file
+  _store->commitFile(ROOM_PW_TMP, ROOM_PW_FILE);
 }
 
 bool MyMesh::onContactPathRecv(ContactInfo& contact, uint8_t* in_path, uint8_t in_path_len, uint8_t* out_path, uint8_t out_path_len, uint8_t extra_type, uint8_t* extra, uint8_t extra_len) {
@@ -1823,6 +1939,7 @@ void MyMesh::handleCmdFrame(size_t len) {
     ContactInfo *recipient = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
     if (recipient && removeContact(*recipient)) {
       _store->deleteBlobByKey(pub_key, PUB_KEY_SIZE);
+      forgetRoomPassword(pub_key); // drop any saved room login -- useless without the contact
       dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
       writeOKFrame();
     } else {

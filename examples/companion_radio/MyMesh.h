@@ -208,10 +208,30 @@ private:
   bool getChannelForSave(uint8_t channel_idx, ChannelDetails& ch) override { return getChannel(channel_idx, ch); }
 
   void clearPendingReqs() {
-    pending_login = pending_status = pending_telemetry = pending_discovery = pending_req = 0;
+    pending_login = pending_status = pending_telemetry = pending_discovery = pending_req = ui_pending_login = 0;
   }
 
 public:
+  // On-device UI login to a room/repeater contact — no phone app required.
+  // The room server's ACL grants permission per-identity (self_id), not per
+  // command source, so this reuses the same sendLogin() the BLE CMD_SEND_LOGIN
+  // path uses; the async result lands in onContactResponse() and is pushed to
+  // the UI via AbstractUITask::onRoomLoginResult().
+  bool sendRoomLogin(const ContactInfo& contact, const char* password) {
+    uint32_t est_timeout;
+    if (sendLogin(contact, password, est_timeout) == MSG_SEND_FAILED) return false;
+    clearPendingReqs();
+    memcpy(&ui_pending_login, contact.id.pub_key, 4); // match this in onContactResponse()
+    return true;
+  }
+
+  // On-device-saved room/repeater login passwords, persisted to flash (own
+  // small file, independent of /contacts3) so a room that's already been
+  // logged into doesn't need its password retyped after reboot.
+  bool saveRoomPassword(const uint8_t* pub_key, const char* password);
+  bool getRoomPassword(const uint8_t* pub_key, char* out_password, uint8_t max_len);
+  void forgetRoomPassword(const uint8_t* pub_key);
+
   void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
   void saveRTCTime() { _store->saveRTCTime(); }
   DataStore* getDataStore() const { return _store; }
@@ -299,6 +319,7 @@ private:
   DataStore* _store;
   NodePrefs _prefs;
   uint32_t pending_login;
+  uint32_t ui_pending_login;  // like pending_login, but triggered by on-device UI instead of BLE/USB app
   uint32_t pending_status;
   uint32_t pending_telemetry, pending_discovery;   // pending _TELEMETRY_REQ
   uint32_t pending_req;   // pending _BINARY_REQ
