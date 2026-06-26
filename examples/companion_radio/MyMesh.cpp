@@ -845,11 +845,13 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     pending_login = 0;
 
     int i = 0;
+    bool login_ok = false;
     if (memcmp(&data[4], "OK", 2) == 0) { // legacy Repeater login OK response
       out_frame[i++] = PUSH_CODE_LOGIN_SUCCESS;
       out_frame[i++] = 0; // legacy: is_admin = false
       memcpy(&out_frame[i], contact.id.pub_key, 6);
       i += 6;                                     // pub_key_prefix
+      login_ok = true;
     } else if (data[4] == RESP_SERVER_LOGIN_OK) { // new login response
       uint16_t keep_alive_secs = ((uint16_t)data[5]) * 16;
       if (keep_alive_secs > 0) {
@@ -863,11 +865,20 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
       i += 4; // NEW: include server timestamp
       out_frame[i++] = data[7]; // NEW (v7): ACL permissions
       out_frame[i++] = data[12]; // FIRMWARE_VER_LEVEL
+      login_ok = true;
     } else {
       out_frame[i++] = PUSH_CODE_LOGIN_FAIL;
       out_frame[i++] = 0; // reserved
       memcpy(&out_frame[i], contact.id.pub_key, 6);
       i += 6; // pub_key_prefix
+    }
+    // Persist app/USB-entered room passwords too, so the device can later post
+    // to that room standalone (after reboot, no phone) without re-prompting --
+    // same store the on-device login path uses. Rooms only; a failed login
+    // forgets any stale saved password, mirroring onRoomLoginResult().
+    if (contact.type == ADV_TYPE_ROOM) {
+      if (login_ok) saveRoomPassword(contact.id.pub_key, pending_login_pw);
+      else          forgetRoomPassword(contact.id.pub_key);
     }
     _serial->writeFrame(out_frame, i);
   } else if (ui_pending_login && memcmp(&ui_pending_login, contact.id.pub_key, 4) == 0) { // check for on-device UI login response
@@ -2185,6 +2196,8 @@ void MyMesh::handleCmdFrame(size_t len) {
       } else {
         clearPendingReqs();
         memcpy(&pending_login, recipient->id.pub_key, 4); // match this to onContactResponse()
+        strncpy(pending_login_pw, password, sizeof(pending_login_pw) - 1); // saved on success if it's a room
+        pending_login_pw[sizeof(pending_login_pw) - 1] = 0;
         out_frame[0] = RESP_CODE_SENT;
         out_frame[1] = (result == MSG_SEND_SENT_FLOOD) ? 1 : 0;
         memcpy(&out_frame[2], &pending_login, 4);
