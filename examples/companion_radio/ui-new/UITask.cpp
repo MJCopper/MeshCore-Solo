@@ -1645,6 +1645,15 @@ void UITask::onChannelRelayed(uint32_t seq) {
   ((QuickMsgScreen*)quick_msg)->markChannelRelayed(seq);
 }
 
+void UITask::onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
+  ((QuickMsgScreen*)quick_msg)->onRoomLoginResult(pub_key, success, permissions);
+  // Unlike the keypress-driven showAlert() calls elsewhere, this fires from a
+  // background mesh response with no keypress to schedule a redraw — without
+  // forcing one, the alert's short expiry can lapse before the next scheduled
+  // refresh ever draws it.
+  _next_refresh = 0;
+}
+
 void UITask::addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp) {
   ((QuickMsgScreen*)quick_msg)->addDMMsg(pub_key, outgoing, text, sender_timestamp);
 }

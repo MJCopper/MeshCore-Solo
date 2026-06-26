@@ -249,6 +249,7 @@ public:
   void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) override;
   void onMsgAck(uint32_t ack_crc) override;
   void onChannelRelayed(uint32_t seq) override;
+  void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) override;
   int  getDMUnreadTotal() const;
   int  getMsgCount() const { return _msgcount; }
   int  getChannelUnreadCount() const;

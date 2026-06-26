@@ -46,6 +46,11 @@ public:
   File openRead(const char* filename);
   File openRead(FILESYSTEM* fs, const char* filename);
   File openWrite(const char* filename);
+  // Atomically replace final_path with a fully-written temp file (see
+  // openWrite()). Use for small custom records that want the same crash-safety
+  // as contacts/channels: write everything to a .tmp, then commit. Returns
+  // false if the swap fails (the previous good file is left untouched).
+  bool commitFile(const char* tmp_path, const char* final_path);
   bool removeFile(const char* filename);
   bool removeFile(FILESYSTEM* fs, const char* filename);
   uint32_t getStorageUsedKb() const;
