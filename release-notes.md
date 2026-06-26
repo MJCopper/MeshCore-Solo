@@ -21,6 +21,7 @@
 - **Nearby Nodes** — live `[LOC]` senders now respect the type filter and sort by their shared position; the distance-sorted list refreshes so live shares bubble to the top.
 - **Map** — live contacts are labelled before waypoints, so a person's name shows rather than a nearby waypoint's.
 - **GPS status icon** is hidden when GPS is turned off in Settings, instead of sitting there empty.
+- **Trail — start with GPS off** now prompts **"GPS is off — Enable GPS & start"** instead of silently starting a session that shows "Waiting for GPS fix" forever and records nothing.
 - Null-guarded the Locator target picker and clamped the loc-share channel index on load.
 
 ### Under the hood
