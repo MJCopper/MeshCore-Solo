@@ -323,6 +323,7 @@ public:
   void cycleBuzzerMode();   // ON → OFF → Auto → ON
   int  getBuzzerMode(); // 0=ON, 1=OFF, 2=Auto
   bool getGPSState();
+  bool hasGPS();   // true if this board exposes a toggleable GPS (distinct from GPS being off)
   void toggleGPS();
   void applyBrightness();
   void setBrightnessLevel(uint8_t level);

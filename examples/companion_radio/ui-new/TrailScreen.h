@@ -79,7 +79,7 @@ class TrailScreen : public UIScreen {
   // correctly (settings rows cycle with LEFT/RIGHT; everything else is Enter).
   // Live-share *config* lives in its own tool (Tools › Live Share); the map only
   // keeps the one-shot "Share my pos" action.
-  enum MenuLevel { ML_MAIN, ML_FILE, ML_SETTINGS };
+  enum MenuLevel { ML_MAIN, ML_FILE, ML_SETTINGS, ML_CONFIRM_GPS };
   PopupMenu _action_menu;
   uint8_t   _menu_level = ML_MAIN;
   uint8_t   _act_map[16];  // max rows on any one level; pushAction guards the cap
@@ -152,6 +152,16 @@ public:
       }
       auto res = _action_menu.handleInput(c);
       if (res == PopupMenu::SELECTED) {
+        // GPS-off confirmation popup: rows aren't ActionIds, route by level.
+        if (_menu_level == ML_CONFIRM_GPS) {
+          if (_action_menu.selectedIndex() == 0) {   // "Enable GPS & start"
+            _task->toggleGPS();                       // off → on (persists, shows GPS alert)
+            _store->setActive(true);
+            _task->showAlert("GPS on, tracking started", 1200);
+          }
+          _menu_level = ML_MAIN;   // popup already closed by handleInput()
+          return true;
+        }
         int sel = _action_menu.selectedIndex();
         ActionId act = (sel >= 0 && sel < _act_count) ? (ActionId)_act_map[sel] : ACT_TOGGLE;
         switch (act) {
@@ -163,7 +173,16 @@ public:
           case ACT_GRID:
           case ACT_AUTOPAUSE: cycleSetting(act, 1); reopenSettingsAt(sel); return true;
           case ACT_SHARE_NOW:     shareMyLocationNow(); break;
-          case ACT_TOGGLE:        handleToggle();      break;
+          case ACT_TOGGLE:
+            // Starting a trail with GPS switched off logs nothing and just
+            // sits on "Waiting for GPS fix" forever -- prompt to enable it
+            // first (only on boards that actually have a toggleable GPS).
+            if (!_store->isActive() && _task->hasGPS() && !_task->getGPSState()) {
+              buildGpsConfirmMenu();
+              return true;
+            }
+            handleToggle();
+            break;
           case ACT_MARK:          _wp.markHere();      break;
           case ACT_WAYPOINTS:     _wp.openList();      break;
           case ACT_SAVE:          handleSave();        break;
@@ -328,6 +347,16 @@ private:
     pushAction(ACT_SHARE_NOW,  "Share my pos");
     if (fileMenuHasItems()) pushAction(ACT_FILE, "Trail file...");
     pushAction(ACT_SETTINGS,  "Settings...");
+  }
+
+  // Confirmation shown when "Start tracking" is chosen with GPS off. Rows are
+  // plain (not ActionIds); handled by _menu_level in the SELECTED branch.
+  void buildGpsConfirmMenu() {
+    _menu_level = ML_CONFIRM_GPS;
+    _act_count  = 0;
+    _action_menu.begin("GPS is off", 2);
+    _action_menu.addItem("Enable GPS & start");
+    _action_menu.addItem("Cancel");
   }
 
   // Trail-file submenu — only the operations that make sense right now.

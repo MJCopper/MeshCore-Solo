@@ -2616,6 +2616,16 @@ bool UITask::getGPSState() {
   return false;
 }
 
+bool UITask::hasGPS() {
+  if (_sensors != NULL) {
+    int num = _sensors->getNumSettings();
+    for (int i = 0; i < num; i++) {
+      if (strcmp(_sensors->getSettingName(i), "gps") == 0) return true;
+    }
+  }
+  return false;
+}
+
 void UITask::toggleGPS() {
     if (_sensors != NULL) {
     // toggle GPS on/off

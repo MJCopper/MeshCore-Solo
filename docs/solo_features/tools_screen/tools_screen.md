@@ -104,7 +104,7 @@ Cycle views with **LEFT / RIGHT**:
 
 | Item                  | Action                                              |
 | --------------------- | --------------------------------------------------- |
-| Start / Stop tracking | Begin or end a recording session                    |
+| Start / Stop tracking | Begin or end a recording session. If **GPS is off**, choosing Start asks **"GPS is off — Enable GPS & start"** so a session can't silently run with nothing to record |
 | Mark here             | Drop a waypoint at the current GPS fix (see below)  |
 | Waypoints…            | Open the waypoint list / navigation / add-by-coords |
 | Share my pos          | Send your current position as a one-shot `[LOC]` message — pick a contact or channel (see **Live Share**) |
