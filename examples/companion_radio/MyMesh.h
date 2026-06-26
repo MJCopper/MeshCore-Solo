@@ -320,6 +320,7 @@ private:
   NodePrefs _prefs;
   uint32_t pending_login;
   uint32_t ui_pending_login;  // like pending_login, but triggered by on-device UI instead of BLE/USB app
+  char pending_login_pw[16];  // password of the in-flight app/USB login, persisted on success for ADV_TYPE_ROOM (see saveRoomPassword)
   uint32_t pending_status;
   uint32_t pending_telemetry, pending_discovery;   // pending _TELEMETRY_REQ
   uint32_t pending_req;   // pending _BINARY_REQ
