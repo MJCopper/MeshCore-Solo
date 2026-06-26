@@ -40,6 +40,19 @@ Sensor placeholders appear automatically in the placeholder picker when the corr
 
 ---
 
+### Rooms — logging in
+
+Posting to a **room server** requires a login handshake first, so the device can log in on its own — no phone app needed. The first time you press **Enter** on a room, a password prompt opens automatically; type the room's password and press the **✓** key (leave it empty and submit for open / no-password rooms).
+
+- **Passwords are remembered across reboots.** After a successful login the password is saved on the device, so picking that room again — even after a power cycle — logs back in silently without re-prompting.
+- **A wrong or changed password self-heals.** If a saved password stops working (e.g. the server's password was changed), the failed login forgets it, so the next **Enter** prompts you to type a new one.
+- **Re-login any time** with **Hold Enter** on the room → **Login…** (see the room context menu below) — useful to switch to a new password without waiting for a failure.
+- Passwords set from the **phone app** are saved on the device too, so it can post to that room standalone after a reboot.
+
+> The on-screen keyboard is limited to ASCII (letters, digits and common symbols); accented characters such as `ą`/`ę` can't be typed on the device. A password containing them can still be set from the phone app — the device stores and replays it byte-for-byte.
+
+---
+
 ### Message history
 
 |           OLED            |           E-Ink           |
@@ -91,6 +104,12 @@ A location is any `lat,lon` pair in the text — exactly what the `{loc}` placeh
 | Pin to dial / Unpin (slot N) | Pin this contact to a Favourites Dial slot; if already pinned shows which slot |
 
 When **Pin to dial** is selected, a slot picker opens (Slot 1–6 showing current occupant name or "empty"). Choosing a slot that already holds another contact moves the new contact there.
+
+In the **Rooms** list the context menu instead offers a single item:
+
+| Item    | Action                                                                       |
+| ------- | ---------------------------------------------------------------------------- |
+| Login…  | Opens the password prompt to (re-)log in to this room (see Rooms — logging in) |
 
 ---
 
