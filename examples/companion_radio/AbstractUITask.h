@@ -79,5 +79,10 @@ public:
   // Locator/Live Share target) drop a reference that would otherwise dangle.
   // Default no-op.
   virtual void onContactRemoved(const uint8_t* pub_key) {}
+  // A channel slot was cleared (companion app set it to an empty secret).
+  // Drop any setting that referenced it by index — otherwise a new channel
+  // added later at the same slot would silently inherit the old one's bot/
+  // share target or notification melody. Default no-op.
+  virtual void onChannelRemoved(uint8_t channel_idx) {}
   virtual void loop() = 0;
 };

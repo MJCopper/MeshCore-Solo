@@ -1665,6 +1665,11 @@ void MyMesh::startInterface(BaseSerialInterface &serial) {
   serial.enable();
 }
 
+static bool isAllZero(const uint8_t* buf, size_t n) {
+  for (size_t i = 0; i < n; i++) if (buf[i]) return false;
+  return true;
+}
+
 void MyMesh::handleCmdFrame(size_t len) {
   if (cmd_frame[0] == CMD_DEVICE_QUERY && len >= 2) { // sent when app establishes connection
     app_target_ver = cmd_frame[1];                    // which version of protocol does app understand
@@ -2378,6 +2383,12 @@ void MyMesh::handleCmdFrame(size_t len) {
     memcpy(channel.channel.secret, &cmd_frame[2 + 32], 32); // 256-bit key
     if (setChannel(channel_idx, channel)) {
       saveChannels();
+      // An all-zero secret is this codebase's "empty slot" sentinel (same
+      // check loadChannels()/saveChannels() use) -- the app just cleared this
+      // channel, so drop anything that referenced it by index, the same way
+      // onContactRemoved() does for contacts.
+      if (_ui && isAllZero(channel.channel.secret, sizeof(channel.channel.secret)))
+        _ui->onChannelRemoved(channel_idx);
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx
@@ -2390,6 +2401,8 @@ void MyMesh::handleCmdFrame(size_t len) {
     memcpy(channel.channel.secret, &cmd_frame[2 + 32], 16); // 128-bit key
     if (setChannel(channel_idx, channel)) {
       saveChannels();
+      if (_ui && isAllZero(channel.channel.secret, sizeof(channel.channel.secret)))
+        _ui->onChannelRemoved(channel_idx);
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx

@@ -2445,6 +2445,29 @@ void UITask::onContactRemoved(const uint8_t* pub_key) {
   if (changed) the_mesh.savePrefs();
 }
 
+void UITask::onChannelRemoved(uint8_t channel_idx) {
+  if (!_node_prefs) return;
+  bool changed = false;
+
+  if (_node_prefs->bot_channel_enabled && _node_prefs->bot_channel_idx == channel_idx) {
+    _node_prefs->bot_channel_enabled = 0;
+    changed = true;
+  }
+  // Fail closed, same policy as onContactRemoved()'s Live Share case.
+  if (_node_prefs->loc_share_target_type == 0 && _node_prefs->loc_share_channel_idx == channel_idx) {
+    _node_prefs->loc_share_enabled = 0;
+    changed = true;
+  }
+  uint64_t mask = 1ULL << channel_idx;
+  if (_node_prefs->ch_notif_melody_set & mask) {
+    _node_prefs->ch_notif_melody_set &= ~mask;
+    _node_prefs->ch_notif_melody_2   &= ~mask;
+    changed = true;
+  }
+
+  if (changed) the_mesh.savePrefs();
+}
+
 // Homing beeper: while armed with a target and inside the radius, emit a short
 // tick whose interval shrinks linearly with distance — slow at the edge, rapid
 // near the centre. Polls distance a few times a second; silent outside the

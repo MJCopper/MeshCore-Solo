@@ -219,6 +219,10 @@ public:
   // any per-contact mute/melody override (those tables have only 16 shared
   // slots, so an orphan isn't just stale — it can starve other contacts).
   void onContactRemoved(const uint8_t* pub_key) override;
+  // A channel slot was cleared: turn off anything armed against it by index
+  // (the bot's channel, Live Share's channel target) and drop its per-channel
+  // melody bit, so a future channel re-added at the same slot starts clean.
+  void onChannelRemoved(uint8_t channel_idx) override;
   // Resolve a person target (6-byte pubkey prefix) to a current position:
   // prefers an active [LOC] live share, falls back to their last-advertised
   // GPS fix. Returns false when neither is known. Optional live/ts report
