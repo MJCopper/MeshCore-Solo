@@ -352,6 +352,7 @@ uint8_t MyMesh::getAutoAddMaxHops() const {
 
 void MyMesh::onContactOverwrite(const uint8_t* pub_key) {
     _store->deleteBlobByKey(pub_key, PUB_KEY_SIZE); // delete from storage
+  if (_ui) _ui->onContactRemoved(pub_key); // same cleanup as an explicit CMD_REMOVE_CONTACT
   if (_serial->isConnected()) {
     out_frame[0] = PUSH_CODE_CONTACT_DELETED;
     memcpy(&out_frame[1], pub_key, PUB_KEY_SIZE);

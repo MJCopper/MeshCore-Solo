@@ -29,7 +29,7 @@ Navigate tiles with **UP / DOWN / LEFT / RIGHT**. Pressing a directional key at 
 
 Filled tiles show an unread message count in the top-right corner when there are unread DMs from that contact. The contact name is ellipsized to make room for the badge.
 
-If a pinned contact has been removed from the contacts list, the tile shows `(gone)` until the slot is reassigned.
+If a pinned contact is removed from the contacts list — explicitly, or auto-evicted to make room when the table is full — its slot is freed automatically and goes back to an empty `+` tile.
 
 ---
 

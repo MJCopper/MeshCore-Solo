@@ -73,9 +73,11 @@ public:
   virtual void onSharedLocation(const uint8_t* pub_key, const char* name,
                                 int32_t lat_1e6, int32_t lon_1e6,
                                 uint32_t ts, bool verified) {}
-  // A contact was removed (companion app / CLI command). Lets UI state that
-  // references contacts by pubkey (favourite slots, the Locator/Live Share
-  // target) drop a reference that would otherwise dangle. Default no-op.
+  // A contact is gone — removed explicitly (companion app / CLI command) or
+  // silently auto-evicted to make room when the contact table is full. Lets
+  // UI state that references contacts by pubkey (favourite slots, the
+  // Locator/Live Share target) drop a reference that would otherwise dangle.
+  // Default no-op.
   virtual void onContactRemoved(const uint8_t* pub_key) {}
   virtual void loop() = 0;
 };

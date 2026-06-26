@@ -253,7 +253,7 @@ The tool holds both directions of sharing in one flat list. Navigate with **UP/D
 
 <!-- screenshot pending: Locator screen with a target set (e.g. "@Bob (5m)"), radius/mode/beeper rows -->
 
-A single **geofence** that beeps and shows an alert when you cross **into** or **out of** a radius. The target can be a **saved waypoint** (a fixed place — "tell me when I'm back at camp") or a **live contact** (a person sharing their position via Live Share — "alert me when my friend gets near / falls behind"). A waypoint target is a **snapshot** (coordinate + label copied), so it keeps working even if you later edit or delete that waypoint; a contact target follows the person's latest shared position.
+A single **geofence** that beeps and shows an alert when you cross **into** or **out of** a radius. The target can be a **saved waypoint** (a fixed place — "tell me when I'm back at camp") or a **live contact** (a person sharing their position via Live Share — "alert me when my friend gets near / falls behind"). A waypoint target is a **snapshot** (coordinate + label copied), so it keeps working even if you later edit that waypoint; a contact target follows the person's latest shared position. **Deleting** the target's waypoint, or the target contact being removed from the contacts list, clears the Locator target back to `none` instead of leaving it pointed at something that's gone.
 
 Navigate with **UP/DOWN**, change a value with **LEFT/RIGHT** (or **Enter**); **Cancel/Back** saves and returns to Tools.
 
