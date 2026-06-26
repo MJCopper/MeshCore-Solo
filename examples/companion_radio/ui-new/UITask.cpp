@@ -2399,6 +2399,52 @@ void UITask::clearTarget() {
   resetLocator();
 }
 
+void UITask::clearTargetIfWaypoint(int32_t lat_1e6, int32_t lon_1e6) {
+  if (!_node_prefs || !_node_prefs->locator_has_target || _node_prefs->locator_target_kind != 0) return;
+  if (_node_prefs->locator_lat_1e6 != lat_1e6 || _node_prefs->locator_lon_1e6 != lon_1e6) return;
+  clearTarget();
+  the_mesh.savePrefs();
+}
+
+void UITask::onContactRemoved(const uint8_t* pub_key) {
+  if (!_node_prefs || !pub_key) return;
+  bool changed = false;
+
+  int slot = findFavouriteSlot(pub_key);
+  if (slot >= 0) { clearFavouriteSlot(slot); changed = true; }
+
+  if (_node_prefs->locator_has_target && _node_prefs->locator_target_kind == 1
+      && memcmp(_node_prefs->locator_key, pub_key, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
+    clearTarget();
+    changed = true;
+  }
+  // Fail closed rather than guess a new recipient: a contact target that's
+  // gone just turns auto-share off, it doesn't fall back to some other target.
+  if (_node_prefs->loc_share_target_type == 1
+      && memcmp(_node_prefs->loc_share_dm_prefix, pub_key, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
+    _node_prefs->loc_share_enabled = 0;
+    changed = true;
+  }
+  // Per-contact mute/melody overrides — only 16 slots shared across every
+  // contact, so an orphaned entry isn't just stale, it can eventually starve
+  // new overrides for contacts that still exist. Keyed by a 4-byte prefix
+  // (narrower than the 6-byte one above), so compare only that many bytes.
+  for (int i = 0; i < NodePrefs::DM_NOTIF_TABLE_MAX; i++) {
+    if (_node_prefs->dm_notif[i].state && memcmp(_node_prefs->dm_notif[i].prefix, pub_key, 4) == 0) {
+      memset(&_node_prefs->dm_notif[i], 0, sizeof(_node_prefs->dm_notif[i]));
+      changed = true;
+    }
+  }
+  for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++) {
+    if (_node_prefs->dm_melody[i].slot && memcmp(_node_prefs->dm_melody[i].prefix, pub_key, 4) == 0) {
+      memset(&_node_prefs->dm_melody[i], 0, sizeof(_node_prefs->dm_melody[i]));
+      changed = true;
+    }
+  }
+
+  if (changed) the_mesh.savePrefs();
+}
+
 // Homing beeper: while armed with a target and inside the radius, emit a short
 // tick whose interval shrinks linearly with distance — slow at the edge, rapid
 // near the centre. Polls distance a few times a second; silent outside the

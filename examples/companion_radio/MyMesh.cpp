@@ -1951,6 +1951,7 @@ void MyMesh::handleCmdFrame(size_t len) {
     if (recipient && removeContact(*recipient)) {
       _store->deleteBlobByKey(pub_key, PUB_KEY_SIZE);
       forgetRoomPassword(pub_key); // drop any saved room login -- useless without the contact
+      if (_ui) _ui->onContactRemoved(pub_key); // drop any favourite slot / Locator / Live Share target pointed at it
       dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
       writeOKFrame();
     } else {

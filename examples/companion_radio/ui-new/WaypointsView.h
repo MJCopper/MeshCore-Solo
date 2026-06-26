@@ -269,6 +269,8 @@ public:
           }
         } else if (sel == 1) {                            // Delete
           if (wi >= 0 && wi < _task->waypoints().count()) {
+            const Waypoint& w = _task->waypoints().at(wi);
+            _task->clearTargetIfWaypoint(w.lat_1e6, w.lon_1e6);   // don't leave the Locator pointed at a deleted spot
             _task->waypoints().remove(wi);
             _task->saveWaypoints();
             if (_sel >= wpListCount()) _sel = wpListCount() - 1;

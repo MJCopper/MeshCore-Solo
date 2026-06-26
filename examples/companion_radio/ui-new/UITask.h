@@ -207,6 +207,18 @@ public:
   // Unset the active target (locator_has_target = 0). Distinct from setTarget()
   // because there's no "kind" for nothing — clearing is its own operation.
   void clearTarget();
+  // One-shot: if the active target is exactly this waypoint, clear it and
+  // persist immediately (setTargetNow()'s save-on-the-spot policy) — called
+  // from waypoint deletion so the Locator can't keep pointing at a spot
+  // that no longer exists.
+  void clearTargetIfWaypoint(int32_t lat_1e6, int32_t lon_1e6);
+  // A contact was removed (companion app / CLI): drop any UI reference to its
+  // pubkey that would otherwise dangle — a pinned favourite slot, the Locator
+  // target if it was this contact, the Live Share target if it was this
+  // contact (auto-share turns off rather than guessing a new recipient), and
+  // any per-contact mute/melody override (those tables have only 16 shared
+  // slots, so an orphan isn't just stale — it can starve other contacts).
+  void onContactRemoved(const uint8_t* pub_key) override;
   // Resolve a person target (6-byte pubkey prefix) to a current position:
   // prefers an active [LOC] live share, falls back to their last-advertised
   // GPS fix. Returns false when neither is known. Optional live/ts report
