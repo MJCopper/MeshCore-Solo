@@ -732,16 +732,24 @@ void DataStore::saveContacts(DataStoreHost* host, bool (*filter)(const ContactIn
 }
 
 void DataStore::loadChannels(DataStoreHost* host) {
-    File file = openRead(_getContactsChannelsFS(), "/channels2");
+    FILESYSTEM* fs = _getContactsChannelsFS();
+    File file = openRead(fs, "/channels3");
     if (file) {
+      // /channels3: the leading 4-byte field's first byte is the channel's
+      // original slot index (see saveChannels()) — load it back into that
+      // exact slot. The old /channels2 format instead reassigned indices
+      // 0,1,2… sequentially on every load, which silently shifted every
+      // later channel down a slot once an earlier one was removed — anything
+      // that remembers a channel by index (Live Share's target, the bot's
+      // channel, per-channel melody) would then point at the wrong channel
+      // after the next reboot.
       bool full = false;
-      uint8_t channel_idx = 0;
       uint8_t skipped = 0;
       while (!full) {
         ChannelDetails ch;
-        uint8_t unused[4];
+        uint8_t hdr[4];
 
-        bool success = (file.read(unused, 4) == 4);
+        bool success = (file.read(hdr, 4) == 4);
         success = success && (file.read((uint8_t *)ch.name, 32) == 32);
         success = success && (file.read((uint8_t *)ch.channel.secret, 32) == 32);
 
@@ -764,44 +772,71 @@ void DataStore::loadChannels(DataStoreHost* host) {
         // as a C string regardless of how the file was written.
         ch.name[31] = '\0';
 
-        if (host->onChannelLoaded(channel_idx, ch)) {
-          channel_idx++;
-        } else {
-          full = true;
-        }
+        if (!host->onChannelLoaded(hdr[0], ch)) full = true;
       }
       file.close();
       if (skipped > 0) {
         MESH_DEBUG_PRINTLN("loadChannels: skipped %u corrupted/empty channel entr%s",
                            (unsigned)skipped, skipped == 1 ? "y" : "ies");
       }
+      return;
+    }
+
+    // One-time migration from the old /channels2 format (sequential index,
+    // reassigned on every load — the bug /channels3 above replaces). Loads
+    // with that old semantics once, then resaves as /channels3 so this
+    // fallback is never hit again on this device.
+    file = openRead(fs, "/channels2");
+    if (file) {
+      bool full = false;
+      uint8_t channel_idx = 0;
+      while (!full) {
+        ChannelDetails ch;
+        uint8_t unused[4];
+
+        bool success = (file.read(unused, 4) == 4);
+        success = success && (file.read((uint8_t *)ch.name, 32) == 32);
+        success = success && (file.read((uint8_t *)ch.channel.secret, 32) == 32);
+        if (!success) break; // EOF
+
+        bool secret_empty = true;
+        for (int b = 0; b < 32; b++) if (ch.channel.secret[b] != 0) { secret_empty = false; break; }
+        if (secret_empty) continue;
+        ch.name[31] = '\0';
+
+        if (host->onChannelLoaded(channel_idx, ch)) channel_idx++;
+        else full = true;
+      }
+      file.close();
+      saveChannels(host);   // write /channels3 so the migration runs only once
     }
 }
 
 void DataStore::saveChannels(DataStoreHost* host) {
   FILESYSTEM* fs = _getContactsChannelsFS();
   // Same atomic temp-then-rename pattern as saveContacts() — never truncate the
-  // live /channels2 before the new copy is fully written.
-  File file = ::openWrite(fs, "/channels2.tmp");
+  // live /channels3 before the new copy is fully written.
+  File file = ::openWrite(fs, "/channels3.tmp");
   if (!file) return;
 
   bool ok = true;
   uint8_t channel_idx = 0;
   ChannelDetails ch;
-  uint8_t unused[4];
-  memset(unused, 0, 4);
 
   while (host->getChannelForSave(channel_idx, ch)) {
-    channel_idx++;
+    uint8_t idx = channel_idx++;
     // getChannelForSave() returns every slot up to MAX_GROUP_CHANNELS, so skip
     // the unused ones (all-zero secret) rather than writing all 40 — otherwise
-    // the file is always ~2.7 KB and wears the flash needlessly. loadChannels()
-    // already compacts empty entries on read, so the loaded result is identical.
+    // the file is always ~2.7 KB and wears the flash needlessly. Unlike the old
+    // /channels2 format, loadChannels() no longer compacts: the slot index
+    // travels with the record (hdr[0] below) so a removed channel just leaves
+    // a hole instead of shifting every later index down a slot.
     bool empty = true;
     for (int b = 0; b < 32; b++) if (ch.channel.secret[b]) { empty = false; break; }
     if (empty) continue;
 
-    bool success = (file.write(unused, 4) == 4);
+    uint8_t hdr[4] = { idx, 0, 0, 0 };
+    bool success = (file.write(hdr, 4) == 4);
     success = success && (file.write((uint8_t *)ch.name, 32) == 32);
     success = success && (file.write((uint8_t *)ch.channel.secret, 32) == 32);
     if (!success) { ok = false; break; } // write failed
@@ -809,9 +844,9 @@ void DataStore::saveChannels(DataStoreHost* host) {
   file.close();
 
   if (ok) {
-    commitTempFile(fs, "/channels2.tmp", "/channels2");
+    commitTempFile(fs, "/channels3.tmp", "/channels3");
   } else {
-    fs->remove("/channels2.tmp");   // keep the previous good /channels2
+    fs->remove("/channels3.tmp");   // keep the previous good /channels3
   }
 }
 
