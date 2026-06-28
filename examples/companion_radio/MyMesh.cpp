@@ -721,7 +721,7 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
     _serial->writeFrame(frame, 1);
   }
 #ifdef DISPLAY_CLASS
-  if (_ui) _ui->addChannelMsg(channel_idx, text);
+  if (_ui) _ui->addChannelMsg(channel_idx, text, timestamp);
   if (_ui) _ui->notify(UIEventType::channelMessage);
   const char *channel_name = "Unknown";
   ChannelDetails channel_details;

@@ -398,7 +398,11 @@ class QuickMsgScreen : public UIScreen {
     }
     memcpy(_dm_hist[pos].prefix, pub_key, 4);
     _dm_hist[pos].outgoing = outgoing ? 1 : 0;
-    _dm_hist[pos].timestamp = rtc_clock.getCurrentTime();
+    // Prefer the sender's own timestamp — a room-sync replay or an
+    // offline-queued message held by a repeater can arrive long after it was
+    // actually sent, so "now" would mislabel every backlog message as fresh.
+    // Fall back to receipt time only when the sender's timestamp is unknown.
+    _dm_hist[pos].timestamp = msg_ts ? msg_ts : rtc_clock.getCurrentTime();
     strncpy(_dm_hist[pos].text, text, sizeof(DmHistEntry::text) - 1);
     _dm_hist[pos].text[sizeof(DmHistEntry::text) - 1] = '\0';
     _dm_hist[pos].ack_status      = (outgoing && ack_tag) ? ACK_PENDING : ACK_NONE;
@@ -677,8 +681,10 @@ public:
   }
 
   // Returns the ring position the message was stored at, or -1 if rejected, so
-  // the outgoing path can attach a relay seq to that exact entry.
-  int addChannelMsg(uint8_t ch_idx, const char* text) {
+  // the outgoing path can attach a relay seq to that exact entry. `timestamp`
+  // is the sender's own send time (0 = unknown/outgoing — use receipt time);
+  // see storeDMMsg() for why this matters for synced/queued backlog messages.
+  int addChannelMsg(uint8_t ch_idx, const char* text, uint32_t timestamp = 0) {
     // Guard against bogus channel indices (e.g. findChannelIdx() returned -1
     // and was cast to uint8_t → 255). Storing such an entry would burn a ring
     // slot for a message that no visible channel can ever surface.
@@ -698,7 +704,7 @@ public:
       _hist_head = (_hist_head + 1) % CH_HIST_MAX;
     }
     _hist[pos].ch_idx = ch_idx;
-    _hist[pos].timestamp = rtc_clock.getCurrentTime();
+    _hist[pos].timestamp = timestamp ? timestamp : rtc_clock.getCurrentTime();
     strncpy(_hist[pos].text, text, sizeof(_hist[pos].text) - 1);
     _hist[pos].text[sizeof(_hist[pos].text) - 1] = '\0';
     _hist[pos].relay_status = ACK_NONE;

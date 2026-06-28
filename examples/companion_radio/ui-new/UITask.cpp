@@ -1628,9 +1628,9 @@ int UITask::getRecentDMContacts(uint8_t out[][NodePrefs::FAVOURITE_PREFIX_LEN], 
   return ((QuickMsgScreen*)quick_msg)->getRecentDMContacts(out, max);
 }
 
-void UITask::addChannelMsg(uint8_t channel_idx, const char* text) {
+void UITask::addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp) {
   _last_notif_ch_idx = (int)channel_idx;
-  ((QuickMsgScreen*)quick_msg)->addChannelMsg(channel_idx, text);
+  ((QuickMsgScreen*)quick_msg)->addChannelMsg(channel_idx, text, timestamp);
 }
 
 int UITask::getChannelUnreadCount() const {
