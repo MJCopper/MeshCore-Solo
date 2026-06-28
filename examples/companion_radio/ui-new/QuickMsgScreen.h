@@ -258,6 +258,19 @@ class QuickMsgScreen : public UIScreen {
     return true;
   }
 
+  // Build "@[nick] " into _reply_prefix for a reply to a DM/room post, raw
+  // (UTF-8) so it goes out over the air intact — like buildChannelReplyPrefix,
+  // and unlike the old per-site code which ran the name through the lossy
+  // display transliterator. Addresses the same author the history shows
+  // (dmDisplayParts): in a room every post is stored "Author: text", so the
+  // addressee is that author, not the room server's own name (_sel_contact.name);
+  // a plain 1:1 DM uses the contact name. Caller ensures the post is incoming.
+  void buildDmReplyPrefix(const DmHistEntry& e) {
+    char nick[32];
+    dmDisplayParts(e, _sel_contact.type == ADV_TYPE_ROOM, _sel_contact.name, nick, sizeof(nick));
+    snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", nick);
+  }
+
   void startReply(bool to_channel) {
     _sending_to_channel = to_channel;
     _reply_mode = true;
@@ -1788,10 +1801,7 @@ public:
           int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
           if (ring_pos >= 0) {
             bool reply_ok = !_dm_hist[ring_pos].outgoing;
-            if (reply_ok) {
-              char _tname[32]; DisplayDriver::translateUTF8Static(_tname, _sel_contact.name, sizeof(_tname));
-              snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _tname);
-            }
+            if (reply_ok) buildDmReplyPrefix(_dm_hist[ring_pos]);
             buildFsMenu(_dm_hist[ring_pos].text, reply_ok);
           }
         }
@@ -1847,10 +1857,7 @@ public:
         int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
         if (ring_pos >= 0) {
           bool reply_ok = !_dm_hist[ring_pos].outgoing;
-          if (reply_ok) {
-            char _tname[32]; DisplayDriver::translateUTF8Static(_tname, _sel_contact.name, sizeof(_tname));
-            snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _tname);
-          }
+          if (reply_ok) buildDmReplyPrefix(_dm_hist[ring_pos]);
           buildFsMenu(_dm_hist[ring_pos].text, reply_ok);
         }
         return true;
