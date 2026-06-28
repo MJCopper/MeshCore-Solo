@@ -89,9 +89,17 @@ void MomentaryButton::begin() {
 #ifdef BUTTON_USE_INTERRUPTS
     for (uint8_t i = 0; i < MAX_ISR_BUTTONS; i++) {
       if (_isr_table[i] == nullptr) {
-        _isr_table[i] = this;
-        _isr_slot = i;
-        attachInterrupt(digitalPinToInterrupt(_pin), ISR_TRAMPOLINES[i], CHANGE);
+        // The nRF52 has only 8 GPIOTE channels, shared across every pin using
+        // attachInterrupt() (the radio's DIO1 takes one too). It returns 0 when
+        // they're exhausted — only claim the trampoline slot if a channel was
+        // actually allocated. Otherwise leave _isr_slot = -1 so check() uses the
+        // polling path: that button still works, it just won't capture edges
+        // that land during a blocking display refresh. Retrying another index is
+        // pointless — the channel pool, not the trampoline slot, is what ran out.
+        if (attachInterrupt(digitalPinToInterrupt(_pin), ISR_TRAMPOLINES[i], CHANGE) != 0) {
+          _isr_table[i] = this;
+          _isr_slot = i;
+        }
         break;
       }
     }
