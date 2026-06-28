@@ -125,7 +125,6 @@ bool MomentaryButton::isPressed(int level) const {
 
 void MomentaryButton::applyTransition(int btn, unsigned long at) {
   if (btn == prev) return;
-  int event = BUTTON_EVENT_NONE;  // kept for parity with the original inline logic below
   if (isPressed(btn)) {
     down_at = at;
   } else {
@@ -140,12 +139,6 @@ void MomentaryButton::applyTransition(int btn, unsigned long at) {
         _click_count++;
         _last_click_time = at;
         _pending_click = true;
-    }
-    if (event == BUTTON_EVENT_CLICK && cancel) {
-      event = BUTTON_EVENT_NONE;
-      _click_count = 0;
-      _last_click_time = 0;
-      _pending_click = false;
     }
     down_at = 0;
   }
@@ -164,7 +157,14 @@ int MomentaryButton::check(bool repeat_click) {
     // click-duration / multi-click-window math still lines up correctly.
     uint8_t lvl; uint32_t at;
     while (popEdge(lvl, at)) applyTransition(lvl, at);
-    btn = prev;  // edges already caught us up to the live level
+    // Self-heal: if an edge was ever lost (buffer overflow, a debounce-dropped
+    // settling edge, or a missed GPIOTE event), prev would otherwise stay
+    // diverged from the hardware until the next captured edge — a stuck button.
+    // Reconcile against the live pin; a no-op whenever the edge stream already
+    // matches it, which is the normal case.
+    int live = digitalRead(_pin);
+    if (live != prev) applyTransition(live, millis());
+    btn = prev;
   } else
 #endif
   {
