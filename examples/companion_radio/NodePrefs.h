@@ -385,6 +385,23 @@ struct NodePrefs {  // persisted to file
   }
 };
 
+// ── Serialization tripwire ───────────────────────────────────────────────────
+// NodePrefs is written/read field-by-field, in order, by DataStore::savePrefs()
+// and loadPrefsInt(); the on-disk format IS the struct's field layout. There is
+// no automatic check that those two hand-written sequences match the struct, so
+// a forgotten read/write silently misaligns EVERY field after it.
+//
+// This assert is the manual checkpoint. Changing a data member changes sizeof
+// and trips it. When it trips, do ALL of the following, then update the number:
+//   1. add the field's rd(...)   in DataStore::loadPrefsInt(), in struct order
+//   2. add the field's write(...) in DataStore::savePrefs(),   in struct order
+//   3. clamp it on load (an upgrader's file lacks it → stray bytes)
+//   4. bump SCHEMA_SENTINEL's low byte
+// (Padding can also shift sizeof; a "false" trip just means re-check + rebump.)
+static_assert(sizeof(NodePrefs) == 2488,
+              "NodePrefs layout changed — sync DataStore save/load + clamp, bump "
+              "SCHEMA_SENTINEL, then update this size (see steps above).");
+
 // Bounds for a usable repeater radio profile. The frequency range is passed in
 // by the caller from RadioLibWrapper::getFreqBounds() — the radio chip's own
 // validated range — so a profile that passes here is guaranteed to actually take
