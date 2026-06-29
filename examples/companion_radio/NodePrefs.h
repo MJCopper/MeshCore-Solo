@@ -270,6 +270,18 @@ struct NodePrefs {  // persisted to file
   // Index into gpsAvgSecs(). [Tools › Trail › Settings › Mark avg]
   uint8_t  gps_avg_idx;
 
+  // Alarm clock — a single one-shot wake alarm, configured from the Clock page
+  // (Enter › Alarm). Stored as a local time-of-day; the actual fire instant is
+  // (re)computed as an absolute time in tickBackground(), which is what makes it
+  // robust to RTC re-syncs: the mesh (every inbound packet), the companion app,
+  // GPS and the CLI can all jump getCurrentTime() at any moment, but an absolute
+  // target instant stays correct across small corrections and still fires (late)
+  // if the clock jumps over it. Fires once, then alarm_on clears. The minutnik
+  // (countdown) and stoper (stopwatch) are runtime-only and not persisted.
+  uint8_t  alarm_on;    // 0=off (default), 1=armed (one-shot)
+  uint8_t  alarm_hour;  // 0-23, local time
+  uint8_t  alarm_min;   // 0-59
+
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
   static const uint8_t LOC_SHARE_MOVE_COUNT = 4;
@@ -332,7 +344,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0016;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0017;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage

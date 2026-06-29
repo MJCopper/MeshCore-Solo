@@ -150,6 +150,14 @@ MINI_ICON(ICON_ADVERT, 6,   // broadcast mast + radiating waves (auto-advert)
   packRow(".####."),
   packRow(".####."));
 
+MINI_ICON(ICON_ALARM, 5,   // bell — an alarm is armed
+  packRow("..#.."),
+  packRow(".###."),
+  packRow(".###."),
+  packRow(".###."),
+  packRow("#####"),
+  packRow("..#.."));
+
 MINI_ICON(ICON_TRAIL, 6,   // map pin / location marker (GPS trail logging)
   packRow(".####."),
   packRow("######"),

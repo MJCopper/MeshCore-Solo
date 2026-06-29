@@ -146,6 +146,7 @@ static const int QUICK_MSGS_MAX = 10;
 #include "DiagnosticsScreen.h"
 #include "RepeaterScreen.h"
 #include "ToolsScreen.h"
+#include "ClockToolsScreen.h"   // Alarm / Timer / Stopwatch (Clock page › Enter)
 
 #ifndef BATT_MIN_MILLIVOLTS
   #define BATT_MIN_MILLIVOLTS 3200
@@ -473,6 +474,13 @@ class HomeScreen : public UIScreen {
       battLeftX = mx;
     }
 #endif
+
+    // Alarm armed — a persistent status cue (like mute), always shown (no blink).
+    if (_node_prefs && _node_prefs->alarm_on) {
+      int alX = battLeftX - ind - ind_gap;
+      drawBoxedIcon(display, alX, ind, ind_h, ICON_ALARM);
+      battLeftX = alX;
+    }
 
     // BT connection indicator (left of muted/battery icons)
     int leftmostX = battLeftX;
@@ -802,6 +810,16 @@ public:
         static const char* mo[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
         snprintf(buf, sizeof(buf),"%s %d %s %d", wd[ti->tm_wday], ti->tm_mday, mo[ti->tm_mon], 1900 + ti->tm_year);
         display.drawTextCentered(display.width() / 2, date_y, buf);
+
+        // Alarm armed: a small bell in the top-left corner. The status bar (and
+        // its bell) is hidden on this page, so signal the armed alarm here. Just
+        // the glyph — no time text — so it stays clear of the centred clock
+        // digits (which can reach the corner when seconds are shown), matching
+        // the icon-only status-bar indicator. The exact time is in Clock Tools.
+        if (_node_prefs && _node_prefs->alarm_on) {
+          display.setColor(DisplayDriver::LIGHT);
+          miniIconDrawTop(display, 0, 0, ICON_ALARM);
+        }
 
         int sep_y  = date_y + lh + 1;
         int dash0  = sep_y + display.sepH() + 2;
@@ -1384,6 +1402,10 @@ public:
       _shutdown_init = true;  // need to wait for button to be released
       return true;
     }
+    if (c == KEY_ENTER && _page == HomePage::CLOCK) {
+      _task->gotoClockTools();   // Alarm / Timer / Stopwatch
+      return true;
+    }
     if (c == KEY_CONTEXT_MENU && _page == HomePage::CLOCK) {
       _task->gotoDashboardConfig();
       return true;
@@ -1467,6 +1489,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   compass_screen     = new CompassScreen(this);
   diag_screen        = new DiagnosticsScreen(this);
   repeater_screen    = new RepeaterScreen(this);
+  clock_tools        = new ClockToolsScreen(this, node_prefs);
   applyBrightness();
   applyFont();
   applyRotation();
@@ -1484,7 +1507,83 @@ void UITask::gotoTrailScreen()     { setCurrScreen(trail_screen); }
 void UITask::gotoCompassScreen()   { setCurrScreen(compass_screen); }
 void UITask::gotoDiagnosticsScreen() { setCurrScreen(diag_screen); }
 void UITask::gotoRepeaterScreen()  { setCurrScreen(repeater_screen); }
+void UITask::gotoClockTools()      { setCurrScreen(clock_tools); }
 void UITask::gotoLiveShareScreen() { setCurrScreen(live_share_screen); }
+
+void UITask::wakeForAlarm() {
+  if (_display != NULL) _display->turnOn();
+  _next_refresh = 0;   // draw the alert overlay immediately
+}
+
+// ── Clock tools engine (alarm / countdown / ring) ───────────────────────────
+// Lives here, not in ClockToolsScreen, so it fires regardless of the current
+// screen. The melody overrides mute (playMelody → buzzer.playForced); the ring
+// auto-stops after CLOCK_RING_MS if no key dismisses it (see UITask::loop).
+static const char*    CLOCK_ALARM_MELODY       = "alarm:d=8,o=6,b=125:c,c,c,c,p,c,c,c,c,p";
+static const uint32_t CLOCK_RING_MS            = 60000;
+static const uint32_t CLOCK_ALARM_CATCHUP_SECS = 6 * 3600;  // fire late up to 6 h, else reschedule
+
+// Next absolute wall instant matching alarm_hour:alarm_min in local time,
+// strictly after now_wall (an alarm set to the current minute waits a day).
+uint32_t UITask::computeAlarmNextFire(uint32_t now_wall) const {
+  int tz = _node_prefs ? _node_prefs->tz_offset_hours : 0;
+  int64_t now_local = (int64_t)now_wall + (int64_t)tz * 3600;
+  time_t t = (time_t)now_local;
+  struct tm* ti = gmtime(&t);
+  int64_t sod = ti->tm_hour * 3600 + ti->tm_min * 60 + ti->tm_sec;  // secs since local midnight
+  int64_t target = (now_local - sod)
+                 + (int64_t)_node_prefs->alarm_hour * 3600 + (int64_t)_node_prefs->alarm_min * 60;
+  if (target <= now_local) target += 86400;
+  return (uint32_t)(target - (int64_t)tz * 3600);
+}
+
+void UITask::fireClockAlert(const char* label) {
+  snprintf(_ring_label, sizeof(_ring_label), "%s", label);
+  _ringing = true;
+  _ring_until_ms = millis() + CLOCK_RING_MS;
+  wakeForAlarm();
+  showAlert(label, CLOCK_RING_MS);
+  playMelody(CLOCK_ALARM_MELODY);
+}
+
+void UITask::evaluateAlarm() {
+  if (!_node_prefs || !_node_prefs->alarm_on) return;
+  uint32_t now_ms = millis();
+  if (now_ms - _alarm_check_ms < 500) return;   // ~2 Hz is plenty for a minute alarm
+  _alarm_check_ms = now_ms;
+  uint32_t now_wall = rtc_clock.getCurrentTime();
+  if (now_wall < 1000000000UL) return;           // need a real time sync first
+  if (_alarm_next_fire == 0) _alarm_next_fire = computeAlarmNextFire(now_wall);
+  if (now_wall < _alarm_next_fire) return;
+  if (now_wall - _alarm_next_fire < CLOCK_ALARM_CATCHUP_SECS) {
+    char lbl[20];
+    snprintf(lbl, sizeof(lbl), "Alarm %02d:%02d", _node_prefs->alarm_hour, _node_prefs->alarm_min);
+    _node_prefs->alarm_on = 0;                    // one-shot
+    bool dirty = true; savePrefsIfDirty(dirty);
+    _alarm_next_fire = 0;
+    fireClockAlert(lbl);
+  } else {
+    // Clock jumped implausibly far past the target — reschedule rather than
+    // ringing absurdly late.
+    _alarm_next_fire = computeAlarmNextFire(now_wall);
+  }
+}
+
+void UITask::tickClockTools() {
+  uint32_t now_ms = millis();
+  // Ring maintenance: repeat the melody until dismissed or the window elapses.
+  if (_ringing) {
+    if (now_ms >= _ring_until_ms) { stopMelody(); _ringing = false; clearAlert(); }
+    else if (!isMelodyPlaying())  playMelody(CLOCK_ALARM_MELODY);
+  }
+  // Countdown timer (millis — sync-immune).
+  if (_timer_running && now_ms >= _timer_deadline_ms) {
+    _timer_running = false;
+    fireClockAlert("Timer done");
+  }
+  // Alarm (wall clock — absolute schedule for sync robustness).
+  evaluateAlarm();
+}
 
 // Ringtone takes a slot argument that onShow() can't carry — pass it after the
 // reset (setCurrScreen's onShow runs first, then this layers the slot on top).
@@ -1985,6 +2084,14 @@ void UITask::loop() {
   }
 #endif
 
+  // A ringing alarm/timer is dismissed by ANY key, even when locked or on another
+  // screen — and that key is swallowed so it doesn't also act on the current view.
+  if (c != 0 && isRinging()) {
+    dismissRing();
+    c = 0;
+    _next_refresh = 0;
+  }
+
   if (c != 0) {
     if (!_locked && curr) {
       curr->handleInput(c);
@@ -2021,6 +2128,10 @@ void UITask::loop() {
 #endif
 
   if (curr) curr->poll();
+
+  // Alarm + countdown run regardless of the current screen / display state, so
+  // they're driven here (not via the current screen's poll()).
+  tickClockTools();
 
   if (_display != NULL && _display->isOn()) {
     if (_locked && millis() > _lock_wake_until) {
@@ -2131,7 +2242,7 @@ void UITask::loop() {
       _auto_off = millis() + AUTO_OFF_MILLIS;
     }
 #endif
-    if (!_locked && autoOffMillis() > 0 && millis() > _auto_off) {
+    if (!_locked && autoOffMillis() > 0 && millis() > _auto_off && !isRinging()) {
       _display->turnOff();
 #ifdef PIN_LED
       digitalWrite(PIN_LED, LOW);  // turn off status LED with display to save power
