@@ -130,6 +130,7 @@ static const int QUICK_MSGS_MAX = 10;
 #include "FullscreenMsgView.h"
 #include "SensorPlaceholders.h"
 #include "SettingsScreen.h"
+#include "MessageHistory.h"   // RAM history rings (DM + channel) used by QuickMsgScreen
 #include "QuickMsgScreen.h"
 
 // ── Custom screens (separate files to ease upstream merges) ───────────────────
