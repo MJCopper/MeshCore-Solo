@@ -317,6 +317,34 @@ class QuickMsgScreen : public UIScreen {
     }
   }
 
+  // Selection frame for one history message box, shared by the DM/room and
+  // channel history lists. Selected = solid fill; unselected = outline with a
+  // filled header strip. Leaves the ink DARK (for the sender row drawn next).
+  static void drawHistRowFrame(DisplayDriver& d, int y, int bh, int reserve, int lh, bool sel) {
+    d.setColor(DisplayDriver::LIGHT);
+    if (sel) {
+      d.fillRect(0, y, d.width() - reserve, bh);
+    } else {
+      d.drawRect(0, y, d.width() - reserve, bh);
+      d.fillRect(1, y + 1, d.width() - 2 - reserve, lh);
+    }
+    d.setColor(DisplayDriver::DARK);
+  }
+
+  // Bottom-left "[+ send]" compose button, shared by both history lists:
+  // bordered when idle, inverted (filled) when selected. Always reset to LIGHT
+  // first so it stays visible regardless of the ink the message loop left.
+  static void drawComposeButton(DisplayDriver& d, int cby, int lh, bool sel) {
+    const char* ctxt = "[+ send]";
+    int ctw = d.getTextWidth(ctxt);
+    d.setColor(DisplayDriver::LIGHT);
+    if (sel) { d.fillRect(0, cby - 1, ctw + 4, lh + 2); d.setColor(DisplayDriver::DARK); }
+    else       d.drawRect(0, cby - 1, ctw + 4, lh + 2);
+    d.setCursor(2, cby);
+    d.print(ctxt);
+    d.setColor(DisplayDriver::LIGHT);
+  }
+
   void afterSend(bool ok, const char* msg) {
     _reply_mode = false;
     _share_mode = false;
@@ -922,16 +950,7 @@ public:
         char age[6]; geo::fmtAgeShort(age, sizeof(age), now_ts, e.timestamp);
         int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
 
-        if (sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y, display.width() - reserve, bh);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-          display.drawRect(0, y, display.width() - reserve, bh);
-          display.fillRect(1, y + 1, display.width() - 2 - reserve, lh);
-          display.setColor(DisplayDriver::DARK);
-        }
+        drawHistRowFrame(display, y, bh, reserve, lh, sel);
         display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w - reserve, sender);
         if (e.outgoing) {                       // delivery marker after "Me"
           int gx = 3 + display.getTextWidth(sender) + 3;
@@ -959,22 +978,7 @@ public:
         drawScrollIndicatorPx(display, hist_start_y + 1, hs.view_px,
                               hs.total_px, hs.view_px, hs.scroll_px);
 
-      bool compose_sel = (_dm_hist_sel == -1);
-      const char* ctxt = "[+ send]";
-      int ctw = display.getTextWidth(ctxt);
-      int cbx = 1;
-      // Reset to LIGHT first: the message loop above leaves the ink DARK when the
-      // last drawn box was the selected one, which would render an unselected
-      // [+ send] invisibly (dark-on-dark) — most visible in rooms, where there's
-      // always a selected message. With it selected we invert (light bar/dark text).
-      display.setColor(DisplayDriver::LIGHT);
-      if (compose_sel) {
-        display.fillRect(cbx, cby - 1, ctw + 4, lh + 1);
-        display.setColor(DisplayDriver::DARK);
-      }
-      display.setCursor(cbx + 2, cby);
-      display.print(ctxt);
-      display.setColor(DisplayDriver::LIGHT);
+      drawComposeButton(display, cby, lh, _dm_hist_sel == -1);
       if (_ctx_menu.active) _ctx_menu.render(display);
       return dm_count > 0 ? 500 : 2000;
 
@@ -1088,16 +1092,7 @@ public:
         char age[6]; geo::fmtAgeShort(age, sizeof(age), now_ts, _history.chAtPos(ring_pos).timestamp);
         int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
 
-        if (sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y, display.width() - reserve, bh);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-          display.drawRect(0, y, display.width() - reserve, bh);
-          display.fillRect(1, y + 1, display.width() - 2 - reserve, lh);
-          display.setColor(DisplayDriver::DARK);
-        }
+        drawHistRowFrame(display, y, bh, reserve, lh, sel);
         display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w - reserve, sender);
         // Channels have no recipient ACK — only show ✓ once a repeater echo
         // confirms the send was relayed into the mesh; otherwise no marker
@@ -1127,22 +1122,7 @@ public:
         drawScrollIndicatorPx(display, hist_start_y + 1, hs.view_px,
                               hs.total_px, hs.view_px, hs.scroll_px);
 
-      // small compose button (bottom-left, always bordered, inverted when selected)
-      bool compose_sel = (_hist_sel == -1);
-      const char* ctxt = "[+ send]";
-      int ctw = display.getTextWidth(ctxt);
-      int cbx = 1;
-      if (compose_sel) {
-        display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(cbx - 1, cby - 1, ctw + 4, lh + 2);
-        display.setColor(DisplayDriver::DARK);
-      } else {
-        display.setColor(DisplayDriver::LIGHT);
-        display.drawRect(cbx - 1, cby - 1, ctw + 4, lh + 2);
-      }
-      display.setCursor(cbx + 1, cby);
-      display.print(ctxt);
-      display.setColor(DisplayDriver::LIGHT);
+      drawComposeButton(display, cby, lh, _hist_sel == -1);
       if (_ctx_menu.active) _ctx_menu.render(display);
 
     } else if (_phase == KEYBOARD) {
