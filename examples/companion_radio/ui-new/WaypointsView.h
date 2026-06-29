@@ -20,10 +20,17 @@ class WaypointsView {
   TrailStore* _store;
 
   // Sub-modes layered over the trail views. OFF = the component is dormant.
-  enum Mode { OFF, LIST, NAV, ADD, AVG };
+  enum Mode { OFF, LIST, NAV, ADD, AVG, TRACKBACK };
   uint8_t _mode   = OFF;
   int     _sel    = 0;
   int     _scroll = 0;
+
+  // Track-back (Tools › Trail › Track back): retrace the recorded trail in
+  // reverse using NavView. _tb_idx is the current target breadcrumb; it walks
+  // down to 0 (the start) as each is reached within TB_ARRIVE_M.
+  static const int TB_ARRIVE_M = 20;
+  int                 _tb_idx = 0;
+  navview::EtaTracker _tb_eta;
 
   // GPS averaging (Tools › Trail › Settings › Mark avg). When enabled, markHere()
   // accumulates fixes for gps_avg_idx seconds and marks the mean position — a
@@ -226,6 +233,20 @@ class WaypointsView {
     navview::draw(display, have, mylat, mylon, tlat, tlon, label, cogv, cog, useImperial());
   }
 
+  // Navigate to the current track-back breadcrumb. The header doubles as the
+  // progress readout: "Trail start" on the last leg, else points still to go.
+  void renderTrackBack(DisplayDriver& display) {
+    if (_tb_idx < 0 || _tb_idx >= _store->count()) { _mode = OFF; return; }
+    const TrailPoint& t = _store->at(_tb_idx);
+    int32_t mylat, mylon; bool have = ownPos(mylat, mylon);
+    int cog; bool cogv = _task->currentCourse(cog);
+    char label[20];
+    if (_tb_idx == 0) snprintf(label, sizeof(label), "Trail start");
+    else              snprintf(label, sizeof(label), "Back: %d pt", _tb_idx);
+    navview::draw(display, have, mylat, mylon, t.lat_1e6, t.lon_1e6,
+                  label, cogv, cog, useImperial(), &_tb_eta);
+  }
+
   // Resolve a combined-list row to a nav target. Row 0 is the trail start when
   // a trail exists; the rest are saved waypoints.
   bool rowTarget(int row, int32_t& lat, int32_t& lon, const char*& label) {
@@ -271,11 +292,34 @@ public:
     _mode = AVG;
   }
 
-  // Accumulate GPS fixes while averaging. Driven from TrailScreen::poll() so it
-  // ticks on the main loop, not on the (slow on e-ink) render cadence. No-op
-  // unless an averaging window is open.
+  // Retrace the recorded trail back to its start. Snaps onto the route at the
+  // nearest recorded point, then NavView guides to each earlier breadcrumb in
+  // turn (poll() advances the target) until the start is reached.
+  void startTrackBack() {
+    if (_store->count() < 2) { _task->showAlert("No trail", 1000); return; }
+    int idx = _store->count() - 1;        // default: the newest end of the trail
+    int32_t lat, lon;
+    if (ownPos(lat, lon)) {               // else snap to the nearest recorded point
+      float best = 1e30f;
+      for (int i = 0; i < _store->count(); i++) {
+        float d = geo::haversineKm(lat, lon, _store->at(i).lat_1e6, _store->at(i).lon_1e6);
+        if (d < best) { best = d; idx = i; }
+      }
+    }
+    _tb_idx = idx;
+    _tb_eta.reset();
+    _mode = TRACKBACK;
+  }
+
+  // Driven from TrailScreen::poll() so the position-tracking sub-modes tick on
+  // the main loop, not on the (slow on e-ink) render cadence.
   void poll() {
-    if (_mode != AVG) return;
+    if (_mode == AVG)       pollAvg();
+    else if (_mode == TRACKBACK) pollTrackBack();
+  }
+
+  // Accumulate GPS fixes while averaging; mark the mean when the window closes.
+  void pollAvg() {
     uint32_t now = millis();
     if ((int32_t)(now - _avg_next_ms) >= 0) {
       int32_t lat, lon;
@@ -290,6 +334,18 @@ public:
     }
   }
 
+  // Advance the track-back target when the current breadcrumb is reached; once
+  // at the start (index 0) and within range, announce arrival and exit.
+  void pollTrackBack() {
+    int32_t lat, lon;
+    if (!ownPos(lat, lon)) return;
+    float d_m = geo::haversineKm(lat, lon, _store->at(_tb_idx).lat_1e6,
+                                 _store->at(_tb_idx).lon_1e6) * 1000.0f;
+    if (d_m > (float)TB_ARRIVE_M) return;
+    if (_tb_idx > 0) { _tb_idx--; _tb_eta.reset(); }
+    else { _task->showAlert("Back at start", 1500); _mode = OFF; }
+  }
+
   // Only called while active().
   int render(DisplayDriver& display) {
     display.setTextSize(1);
@@ -297,6 +353,7 @@ public:
     if (_kb_active) return _task->keyboard().render(display);  // keyboard owns the screen
     if (_mode == ADD) { renderAddForm(display); return 1000; }
     if (_mode == AVG) { renderAvg(display);     return display.isEink() ? 1000 : 300; }
+    if (_mode == TRACKBACK) { renderTrackBack(display); return 1000; }
     if (_mode == NAV) { renderWpNav(display);   return 1000; }
     renderWpList(display);                          // LIST
     if (_ctx.active) _ctx.render(display);
@@ -397,6 +454,13 @@ public:
     // Navigation view — any nav key returns to the list.
     if (_mode == NAV) {
       if (c == KEY_CANCEL || keyIsPrev(c) || keyIsNext(c)) { _mode = LIST; }
+      return true;
+    }
+
+    // Track-back — launched from the action menu, so Cancel returns to the
+    // trail views (not the waypoint list).
+    if (_mode == TRACKBACK) {
+      if (c == KEY_CANCEL) _mode = OFF;
       return true;
     }
 

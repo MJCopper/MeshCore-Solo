@@ -107,6 +107,7 @@ Cycle views with **LEFT / RIGHT**:
 | Start / Stop tracking | Begin or end a recording session. If **GPS is off**, choosing Start asks **"GPS is off — Enable GPS & start"** so a session can't silently run with nothing to record |
 | Mark here             | Drop a waypoint at the current GPS fix (see below)  |
 | Waypoints…            | Open the waypoint list / navigation / add-by-coords |
+| Track back            | Retrace the recorded route back to its start (needs ≥2 points; see below) |
 | Share my pos          | Send your current position as a one-shot `[LOC]` message — pick a contact or channel (see **Live Share**) |
 | Trail file…           | Open the file submenu (below)                        |
 | Settings…             | Open the settings submenu (below)                    |
@@ -134,6 +135,10 @@ Cycle views with **LEFT / RIGHT**:
 (Trail file… appears only when a live or saved trail exists. Mark here needs a GPS fix; Waypoints is always available.)
 
 **Auto-pause** — when set, a recording trail automatically **pauses** after the device has stayed within ~15 m of one spot for the chosen delay: the elapsed timer and point sampling both freeze, and the map line breaks across the idle gap. It **resumes on its own** as soon as you move again. This keeps a stop (a break, a meal, parking) out of your distance and average-speed stats without you having to remember to stop and restart tracking. A paused trail is still "on" (the **G** marker keeps blinking) — the Summary **Status** row shows `paused`. The stop is detected with its own coarse movement gate, independent of **Min dist**, so GPS jitter while you're parked doesn't keep it awake.
+
+### Track back
+
+**Hold Enter → Track back** retraces the trail you just recorded, back to where you started — useful for returning the same way in poor visibility or unfamiliar ground. It reuses the navigation view (distance + two absolute bearings; see *Waypoints › Navigating*), but instead of a single fixed target it walks the recorded breadcrumbs in reverse: it snaps onto the route at the **nearest recorded point**, guides you to it, then automatically advances to the next earlier point as you reach each one (within ~20 m). The header shows how many points remain (`Back: 12 pt`), reading `Trail start` on the final leg; arriving there shows `Back at start` and exits. **Cancel** leaves track-back at any time. It needs a trail with at least two points and a GPS fix; it doesn't require tracking to still be running.
 
 ### Waypoints
 

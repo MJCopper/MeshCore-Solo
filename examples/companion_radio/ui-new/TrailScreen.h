@@ -73,7 +73,7 @@ class TrailScreen : public UIScreen {
   // the labels live in member buffers that get refreshed in openActionMenu()
   // and after every LEFT/RIGHT cycle.
   enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_AUTOPAUSE, ACT_MARK_AVG, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS, ACT_FILE, ACT_SETTINGS,
-                 ACT_SHARE_NOW };
+                 ACT_SHARE_NOW, ACT_TRACKBACK };
   // The action popup is multi-level: a short main menu, plus "Trail file…" and
   // "Settings…" submenus. _menu_level tracks which is open so input is routed
   // correctly (settings rows cycle with LEFT/RIGHT; everything else is Enter).
@@ -192,6 +192,7 @@ public:
             break;
           case ACT_MARK:          _wp.markHere();      break;
           case ACT_WAYPOINTS:     _wp.openList();      break;
+          case ACT_TRACKBACK:     _wp.startTrackBack(); break;
           case ACT_SAVE:          handleSave();        break;
           case ACT_LOAD:          handleLoad();        break;
           case ACT_RESET:         handleReset();       break;
@@ -353,6 +354,8 @@ private:
     // "Waypoints" opens the nav list — always available; it hosts the list,
     // backtrack (Trail-start row) and the "+ Add by coords" entry.
     pushAction(ACT_WAYPOINTS, "Waypoints...");
+    // Track back retraces the recorded route to its start; needs ≥2 points.
+    if (_store->count() >= 2) pushAction(ACT_TRACKBACK, "Track back");
     pushAction(ACT_SHARE_NOW,  "Share my pos");
     if (fileMenuHasItems()) pushAction(ACT_FILE, "Trail file...");
     pushAction(ACT_SETTINGS,  "Settings...");
