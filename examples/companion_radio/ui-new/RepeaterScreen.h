@@ -146,7 +146,7 @@ public:
     // Config only — live forwarding stats live on Tools › Diagnostics.
     drawList(display, _item_count, _sel, _scroll, [&](int row, int y, bool sel, int reserve) {
       int item = _items[row];
-      display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+      drawRowSelection(display, y, sel, reserve);
       display.setCursor(2, y);
       display.print(itemLabel(item));
       if (item == IT_RFREQ && sel && _editor.active()) {

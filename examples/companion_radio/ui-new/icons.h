@@ -499,6 +499,16 @@ inline int drawList(DisplayDriver& d, int total, int sel, int& scroll, RenderRow
   return visible;
 }
 
+// Canonical selection bar for a drawList() row: spans the row width minus the
+// scroll-indicator `reserve`, one pixel short of the row height, anchored one
+// pixel above `y` (the row's text baseline-top). Call as the first line of a
+// row callback, then draw content over it. Captures the geometry every list row
+// repeated by hand; rows that intentionally differ (full-width, custom height)
+// still call display.drawSelectionRow() directly.
+inline void drawRowSelection(DisplayDriver& d, int y, bool sel, int reserve) {
+  d.drawSelectionRow(0, y - 1, d.width() - reserve, d.lineStep() - 1, sel);
+}
+
 // ── Big ASCII-art icons (skeleton, not yet used) ─────────────────────────────
 // Same authoring idea as the mini-icons but for full page glyphs up to 32 px
 // wide: one uint32_t per row. The existing XBM bitmaps below (logo/bluetooth/…)

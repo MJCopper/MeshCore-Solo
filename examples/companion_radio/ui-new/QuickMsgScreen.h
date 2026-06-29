@@ -1046,7 +1046,7 @@ public:
       drawList(display, _num_contacts, _contact_sel, _contact_scroll, [&](int list_idx, int y, bool sel, int reserve) {
         int mesh_idx = _sorted[list_idx];
 
-        display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
+        drawRowSelection(display, y, sel, reserve);
 
         ContactInfo c;
         if (the_mesh.getContactByIdx(mesh_idx, c)) {
@@ -1079,7 +1079,7 @@ public:
       }
 
       drawList(display, _num_channels, _channel_sel, _channel_scroll, [&](int list_idx, int y, bool sel, int reserve) {
-        display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
+        drawRowSelection(display, y, sel, reserve);
         ChannelDetails ch;
         if (the_mesh.getChannel(_channel_indices[list_idx], ch)) {
           uint8_t unread = _ch_unread[_channel_indices[list_idx]];
@@ -1437,7 +1437,7 @@ public:
 
       int total_msg_items = 1 + _active_msg_count;
       drawList(display, total_msg_items, _msg_sel, _msg_scroll, [&](int idx, int y, bool sel, int reserve) {
-        display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
+        drawRowSelection(display, y, sel, reserve);
 
         if (idx == 0) {
           display.setCursor(2, y);

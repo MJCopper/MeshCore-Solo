@@ -75,7 +75,7 @@ public:
                                     "Trigger Ch", "Reply Ch", "Commands",
                                     "Quiet from", "Quiet to" };
     drawList(display, ITEM_COUNT, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
-      display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+      drawRowSelection(display, y, sel, reserve);
       display.setCursor(2, y);
       display.print(labels[i]);
       display.setCursor(val_x, y);

@@ -153,12 +153,10 @@ class WaypointsView {
 
     int n     = wpListCount();
     int total = n + 1;                    // final row = "+ Add by coords"
-    const int step = display.lineStep();
-
     int32_t mylat, mylon; bool have = ownPos(mylat, mylon);
 
     drawList(display, total, _sel, _scroll, [&](int row, int y, bool sel, int reserve) {
-      display.drawSelectionRow(0, y - 1, display.width() - reserve, step - 1, sel);
+      drawRowSelection(display, y, sel, reserve);
 
       if (row == n) {                     // the synthetic "Add" row
         display.setCursor(2, y); display.print("+ Add by coords");

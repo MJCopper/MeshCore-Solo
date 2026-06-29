@@ -111,14 +111,17 @@ indicator:
 
 ```cpp
 drawList(display, count, _sel, _scroll, [&](int idx, int y, bool sel, int reserve) {
-  display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+  drawRowSelection(display, y, sel, reserve);   // canonical highlight bar
   display.drawTextEllipsized(2, y, display.width() - reserve - 4, items[idx].name);
 });
 ```
 
 `reserve` is the width the scrollbar took (0 when the list fits) — subtract it
 from any right-aligned content so nothing slides under the indicator. The row
-callback owns its own selection bar (so a screen can style it). For the
+callback owns its own selection bar: `drawRowSelection(d, y, sel, reserve)`
+(`ui-new/icons.h`) draws the standard one (full row minus reserve, one pixel
+short); call `display.drawSelectionRow()` directly only when a row needs a
+non-standard geometry (full-width, custom height). For the
 fold-in-place pattern (sections that expand/collapse) use `AccordionList`
 instead (`ui-new/AccordionList.h`) — same idea, two callbacks (header + item).
 
@@ -299,7 +302,7 @@ public:
     d.setTextSize(1);
     d.drawCenteredHeader("MY TOOL");
     drawList(d, ROWS, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
-      d.drawSelectionRow(0, y - 1, d.width() - reserve, d.lineStep() - 1, sel);
+      drawRowSelection(d, y, sel, reserve);
       d.setCursor(4, y);
       d.print(i == 0 ? "Alpha" : i == 1 ? "Bravo" : "Charlie");
     });

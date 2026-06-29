@@ -92,7 +92,7 @@ public:
     const int valx = display.width() / 2 + 6;
     drawList(display, ROW_COUNT, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
       Row r = rows(i);
-      display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+      drawRowSelection(display, y, sel, reserve);
       display.setCursor(4, y);
       display.print(r.label);
       char val[24];

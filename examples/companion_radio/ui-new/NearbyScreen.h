@@ -686,7 +686,7 @@ public:
       drawList(display, _count, _sel, _scroll, [&](int idx, int y, bool sel, int reserve) {
         const Entry& e = _entries[idx];
 
-        display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
+        drawRowSelection(display, y, sel, reserve);
 
         char filt[32];
         int tx = 2;

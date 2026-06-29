@@ -422,7 +422,7 @@ class SettingsScreen : public UIScreen {
   void renderItem(DisplayDriver& display, int item, int y, bool sel) {
     NodePrefs* p = _task->getNodePrefs();
 
-    display.drawSelectionRow(0, y - 1, display.width() - _reserve, display.lineStep() - 1, sel);
+    drawRowSelection(display, y, sel, _reserve);
 
     display.setCursor(2, y);
 
@@ -671,7 +671,7 @@ public:
       [&](int sec, int y, bool sel, int reserve, bool collapsed) {
         _reserve = reserve;
         display.setColor(DisplayDriver::LIGHT);
-        display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+        drawRowSelection(display, y, sel, reserve);
         display.setCursor(2, y);
         display.print(collapsed ? "+" : "-");
         display.print(" ");
