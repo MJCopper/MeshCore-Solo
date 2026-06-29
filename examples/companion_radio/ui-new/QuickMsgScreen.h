@@ -424,115 +424,92 @@ class QuickMsgScreen : public UIScreen {
   }
 
   // Returns per-channel notification state: 0=follow global, 1=muted, 2=force-on
-  uint8_t chNotifState(uint8_t ch_idx) const {
-    NodePrefs* p = _task->getNodePrefs();
-    if (!p) return 0;
-    uint64_t mask = 1ULL << ch_idx;
-    if (!(p->ch_notif_override & mask)) return 0;
-    return (p->ch_notif_muted & mask) ? 1 : 2;
+  // Per-contact/channel notification + melody overrides share two storage
+  // shapes, so the eight accessors below are thin wrappers over two primitives:
+  //
+  //  • Channels — a 3-state packed into a pair of channel-index bitmasks: a
+  //    "presence" mask (is there an override at all) + a "variant" mask. The two
+  //    uses disagree on which state the variant bit means, so the caller passes
+  //    the state value that corresponds to variant-set (v_set).
+  //  • DMs — a small {prefix[4], value} table: find by 4-byte prefix, update or
+  //    clear (clear frees the slot), else insert into the first free slot, else
+  //    overwrite slot 0. value 0 == "no override" == empty slot.
+
+  static uint8_t maskPairGet(uint64_t presence, uint64_t variant, uint8_t idx,
+                             uint8_t v_set, uint8_t v_clr) {
+    uint64_t m = 1ULL << idx;
+    if (!(presence & m)) return 0;
+    return (variant & m) ? v_set : v_clr;
+  }
+  static void maskPairSet(uint64_t& presence, uint64_t& variant, uint8_t idx,
+                          uint8_t state, uint8_t v_set) {
+    uint64_t m = 1ULL << idx;
+    if (state == 0) { presence &= ~m; variant &= ~m; return; }
+    presence |= m;
+    if (state == v_set) variant |= m; else variant &= ~m;
   }
 
+  template <class Entry>
+  static uint8_t prefTableGet(const Entry* tbl, int n, const uint8_t* pub_key,
+                              uint8_t Entry::* val) {
+    for (int i = 0; i < n; i++)
+      if (tbl[i].*val && memcmp(tbl[i].prefix, pub_key, 4) == 0) return tbl[i].*val;
+    return 0;
+  }
+  template <class Entry>
+  static void prefTableSet(Entry* tbl, int n, const uint8_t* pub_key,
+                           uint8_t Entry::* val, uint8_t v) {
+    for (int i = 0; i < n; i++)
+      if (tbl[i].*val && memcmp(tbl[i].prefix, pub_key, 4) == 0) {
+        if (v == 0) memset(&tbl[i], 0, sizeof(tbl[i])); else tbl[i].*val = v;
+        return;
+      }
+    if (v == 0) return;
+    for (int i = 0; i < n; i++)
+      if (tbl[i].*val == 0) { memcpy(tbl[i].prefix, pub_key, 4); tbl[i].*val = v; return; }
+    memcpy(tbl[0].prefix, pub_key, 4); tbl[0].*val = v;   // table full — overwrite slot 0
+  }
+
+  // Channel notif: state 1 = muted (variant bit set), 2 = force-on (variant clear).
+  uint8_t chNotifState(uint8_t ch_idx) const {
+    NodePrefs* p = _task->getNodePrefs();
+    return p ? maskPairGet(p->ch_notif_override, p->ch_notif_muted, ch_idx, 1, 2) : 0;
+  }
   void setChNotifState(uint8_t ch_idx, uint8_t state) {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return;
-    uint64_t mask = 1ULL << ch_idx;
-    if (state == 0) {
-      p->ch_notif_override &= ~mask;
-      p->ch_notif_muted    &= ~mask;
-    } else if (state == 1) {
-      p->ch_notif_override |= mask;
-      p->ch_notif_muted    |= mask;
-    } else {
-      p->ch_notif_override |= mask;
-      p->ch_notif_muted    &= ~mask;
-    }
+    if (p) maskPairSet(p->ch_notif_override, p->ch_notif_muted, ch_idx, state, 1);
   }
 
   uint8_t dmNotifState(const uint8_t* pub_key) const {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return 0;
-    for (int i = 0; i < NodePrefs::DM_NOTIF_TABLE_MAX; i++)
-      if (p->dm_notif[i].state && memcmp(p->dm_notif[i].prefix, pub_key, 4) == 0)
-        return p->dm_notif[i].state;
-    return 0;
+    return p ? prefTableGet(p->dm_notif, NodePrefs::DM_NOTIF_TABLE_MAX, pub_key,
+                            &NodePrefs::DmNotifEntry::state) : 0;
   }
-
   void setDmNotifState(const uint8_t* pub_key, uint8_t state) {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return;
-    for (int i = 0; i < NodePrefs::DM_NOTIF_TABLE_MAX; i++) {
-      if (p->dm_notif[i].state && memcmp(p->dm_notif[i].prefix, pub_key, 4) == 0) {
-        if (state == 0) { memset(&p->dm_notif[i], 0, sizeof(p->dm_notif[i])); }
-        else              p->dm_notif[i].state = state;
-        return;
-      }
-    }
-    if (state == 0) return;
-    for (int i = 0; i < NodePrefs::DM_NOTIF_TABLE_MAX; i++) {
-      if (p->dm_notif[i].state == 0) {
-        memcpy(p->dm_notif[i].prefix, pub_key, 4);
-        p->dm_notif[i].state = state;
-        return;
-      }
-    }
-    // table full — overwrite slot 0
-    memcpy(p->dm_notif[0].prefix, pub_key, 4);
-    p->dm_notif[0].state = state;
+    if (p) prefTableSet(p->dm_notif, NodePrefs::DM_NOTIF_TABLE_MAX, pub_key,
+                        &NodePrefs::DmNotifEntry::state, state);
   }
 
+  // Channel melody: slot 1 = melody 1 (variant bit clear), 2 = melody 2 (set).
   uint8_t chNotifMelody(uint8_t ch_idx) const {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return 0;
-    uint64_t mask = 1ULL << ch_idx;
-    if (!(p->ch_notif_melody_set & mask)) return 0;
-    return (p->ch_notif_melody_2 & mask) ? 2 : 1;
+    return p ? maskPairGet(p->ch_notif_melody_set, p->ch_notif_melody_2, ch_idx, 2, 1) : 0;
   }
-
   void setChNotifMelody(uint8_t ch_idx, uint8_t slot) {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return;
-    uint64_t mask = 1ULL << ch_idx;
-    if (slot == 0) {
-      p->ch_notif_melody_set &= ~mask;
-      p->ch_notif_melody_2   &= ~mask;
-    } else if (slot == 1) {
-      p->ch_notif_melody_set |= mask;
-      p->ch_notif_melody_2   &= ~mask;
-    } else {
-      p->ch_notif_melody_set |= mask;
-      p->ch_notif_melody_2   |= mask;
-    }
+    if (p) maskPairSet(p->ch_notif_melody_set, p->ch_notif_melody_2, ch_idx, slot, 2);
   }
 
   uint8_t dmMelodySlot(const uint8_t* pub_key) const {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return 0;
-    for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++)
-      if (p->dm_melody[i].slot && memcmp(p->dm_melody[i].prefix, pub_key, 4) == 0)
-        return p->dm_melody[i].slot;
-    return 0;
+    return p ? prefTableGet(p->dm_melody, NodePrefs::DM_MELODY_TABLE_MAX, pub_key,
+                            &NodePrefs::DmMelodyEntry::slot) : 0;
   }
-
   void setDmMelody(const uint8_t* pub_key, uint8_t slot) {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return;
-    for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++) {
-      if (p->dm_melody[i].slot && memcmp(p->dm_melody[i].prefix, pub_key, 4) == 0) {
-        if (slot == 0) memset(&p->dm_melody[i], 0, sizeof(p->dm_melody[i]));
-        else           p->dm_melody[i].slot = slot;
-        return;
-      }
-    }
-    if (slot == 0) return;
-    for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++) {
-      if (p->dm_melody[i].slot == 0) {
-        memcpy(p->dm_melody[i].prefix, pub_key, 4);
-        p->dm_melody[i].slot = slot;
-        return;
-      }
-    }
-    memcpy(p->dm_melody[0].prefix, pub_key, 4);
-    p->dm_melody[0].slot = slot;
+    if (p) prefTableSet(p->dm_melody, NodePrefs::DM_MELODY_TABLE_MAX, pub_key,
+                        &NodePrefs::DmMelodyEntry::slot, slot);
   }
 
 public:
