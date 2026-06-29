@@ -2406,6 +2406,12 @@ void UITask::clearTargetIfWaypoint(int32_t lat_1e6, int32_t lon_1e6) {
   the_mesh.savePrefs();
 }
 
+// CONTRACT: every NodePrefs field that keys on a contact pubkey/prefix is
+// cleared here, so a removed contact can't leave a dangling reference. If you
+// add such a field, add its cleanup below (and mark the field in NodePrefs.h).
+// Currently covered: favourite_contacts, locator_key, loc_share_dm_prefix,
+// dm_notif[], dm_melody[]. Called for both explicit removal and silent
+// auto-eviction (see MyMesh CMD_REMOVE_CONTACT / onContactOverwrite).
 void UITask::onContactRemoved(const uint8_t* pub_key) {
   if (!_node_prefs || !pub_key) return;
   bool changed = false;
@@ -2445,6 +2451,10 @@ void UITask::onContactRemoved(const uint8_t* pub_key) {
   if (changed) the_mesh.savePrefs();
 }
 
+// CONTRACT: every NodePrefs field that keys on a channel index is cleared here,
+// so a channel re-added at a freed slot can't inherit the old one's settings.
+// If you add such a field, add its cleanup below (and mark it in NodePrefs.h).
+// Currently covered: bot_channel_idx, loc_share_channel_idx, ch_notif_melody_*.
 void UITask::onChannelRemoved(uint8_t channel_idx) {
   if (!_node_prefs) return;
   bool changed = false;
