@@ -264,6 +264,12 @@ struct NodePrefs {  // persisted to file
   // discrete arrive/leave alert (locator_mode).
   uint8_t  locator_beeper;       // 0=off (default), 1=on
 
+  // GPS averaging for waypoint marking — when set, "Mark here" samples the GPS
+  // fix for this many seconds and stores the mean position, for a more accurate
+  // mark than a single instantaneous fix. 0 = off (instant mark, the default).
+  // Index into gpsAvgSecs(). [Tools › Trail › Settings › Mark avg]
+  uint8_t  gps_avg_idx;
+
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
   static const uint8_t LOC_SHARE_MOVE_COUNT = 4;
@@ -295,6 +301,17 @@ struct NodePrefs {  // persisted to file
     return L[m < LOCATOR_MODE_COUNT ? m : 0];
   }
 
+  // GPS-averaging durations for waypoint marking (seconds). 0 = off (instant).
+  static const uint8_t GPS_AVG_COUNT = 4;
+  static uint16_t gpsAvgSecs(uint8_t idx) {
+    static const uint16_t S[GPS_AVG_COUNT] = { 0, 5, 10, 30 };
+    return S[idx < GPS_AVG_COUNT ? idx : 0];
+  }
+  static const char* gpsAvgLabel(uint8_t idx) {
+    static const char* L[GPS_AVG_COUNT] = { "Off", "5s", "10s", "30s" };
+    return L[idx < GPS_AVG_COUNT ? idx : 0];
+  }
+
   // Trail auto-pause delays (seconds). 0 = off.
   static const uint8_t TRAIL_AUTOPAUSE_COUNT = 4;
   static uint16_t trailAutoPauseSecs(uint8_t idx) {
@@ -315,7 +332,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0015;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0016;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage

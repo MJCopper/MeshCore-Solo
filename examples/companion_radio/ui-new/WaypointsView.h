@@ -20,10 +20,21 @@ class WaypointsView {
   TrailStore* _store;
 
   // Sub-modes layered over the trail views. OFF = the component is dormant.
-  enum Mode { OFF, LIST, NAV, ADD };
+  enum Mode { OFF, LIST, NAV, ADD, AVG };
   uint8_t _mode   = OFF;
   int     _sel    = 0;
   int     _scroll = 0;
+
+  // GPS averaging (Tools › Trail › Settings › Mark avg). When enabled, markHere()
+  // accumulates fixes for gps_avg_idx seconds and marks the mean position — a
+  // steadier mark than one instantaneous fix. Sampling runs in poll() on a 1 s
+  // gate, independent of (slow, on e-ink) redraws. int64 sums: 30 samples ×
+  // ~180e6 overflows int32.
+  long long _avg_sum_lat = 0, _avg_sum_lon = 0;
+  uint32_t  _avg_n       = 0;       // fixes accumulated so far
+  uint32_t  _avg_end_ms  = 0;       // millis() when the averaging window closes
+  uint32_t  _avg_next_ms = 0;       // millis() of the next sample
+  uint16_t  _avg_total_s = 0;       // configured window length (for the readout)
 
   PopupMenu      _ctx;               // Rename / Delete / Send on a selected waypoint
   bool      _kb_active = false;
@@ -99,6 +110,17 @@ class WaypointsView {
     _kb_active = true;
   }
 
+  // Capture a mark position and open the keyboard for its label. Shared by the
+  // instant "Mark here" and the end of GPS averaging. _mode goes OFF: the
+  // keyboard takes over the screen, and there's no sub-view to return to once
+  // the label is committed (active() then tracks _kb_active alone).
+  void beginLabel(int32_t lat, int32_t lon) {
+    _mode = OFF;
+    _mark_lat = lat; _mark_lon = lon; _mark_ts = (uint32_t)rtc_clock.getCurrentTime();
+    _kb_rename_idx = -1;
+    openKb("", WAYPOINT_LABEL_LEN - 1);
+  }
+
   // Commit a mark-here / rename label from the keyboard.
   void commitLabel(const char* buf) {
     if (_kb_rename_idx >= 0) {
@@ -142,6 +164,23 @@ class WaypointsView {
       }
       display.setColor(DisplayDriver::LIGHT);
     }
+  }
+
+  // GPS-averaging progress screen. Sampling itself happens in poll(); this only
+  // reports remaining time and the running sample count.
+  void renderAvg(DisplayDriver& display) {
+    display.setColor(DisplayDriver::LIGHT);
+    display.drawCenteredHeader("AVERAGING GPS");
+    const int top  = display.listStart();
+    const int step = display.lineStep();
+    int remain = (int)((int32_t)(_avg_end_ms - millis()) / 1000);
+    if (remain < 0) remain = 0;
+    char line[28];
+    snprintf(line, sizeof(line), "%ds left (of %us)", remain, (unsigned)_avg_total_s);
+    display.setCursor(2, top);            display.print(line);
+    snprintf(line, sizeof(line), "Samples: %u", (unsigned)_avg_n);
+    display.setCursor(2, top + step);     display.print(line);
+    display.setCursor(2, top + 2 * step); display.print("Cancel to abort");
   }
 
   void renderWpList(DisplayDriver& display) {
@@ -220,9 +259,35 @@ public:
     int32_t lat, lon;
     if (!ownPos(lat, lon))         { _task->showAlert("No GPS fix", 1000); return; }
     if (_task->waypoints().full()) { _task->showAlert("Waypoints full", 1000); return; }
-    _mark_lat = lat; _mark_lon = lon; _mark_ts = (uint32_t)rtc_clock.getCurrentTime();
-    _kb_rename_idx = -1;
-    openKb("", WAYPOINT_LABEL_LEN - 1);
+    NodePrefs* p = _task->getNodePrefs();
+    uint8_t avg_idx = p ? p->gps_avg_idx : 0;
+    if (avg_idx == 0) { beginLabel(lat, lon); return; }   // instant mark (default)
+    // Averaging: seed with the current fix, then sample for N more seconds.
+    _avg_total_s = NodePrefs::gpsAvgSecs(avg_idx);
+    _avg_sum_lat = lat; _avg_sum_lon = lon; _avg_n = 1;
+    uint32_t now = millis();
+    _avg_end_ms  = now + (uint32_t)_avg_total_s * 1000;
+    _avg_next_ms = now + 1000;
+    _mode = AVG;
+  }
+
+  // Accumulate GPS fixes while averaging. Driven from TrailScreen::poll() so it
+  // ticks on the main loop, not on the (slow on e-ink) render cadence. No-op
+  // unless an averaging window is open.
+  void poll() {
+    if (_mode != AVG) return;
+    uint32_t now = millis();
+    if ((int32_t)(now - _avg_next_ms) >= 0) {
+      int32_t lat, lon;
+      if (ownPos(lat, lon)) { _avg_sum_lat += lat; _avg_sum_lon += lon; _avg_n++; }
+      _avg_next_ms = now + 1000;
+    }
+    if ((int32_t)(now - _avg_end_ms) >= 0) {       // window closed → mark the mean
+      if (_avg_n == 0) { _task->showAlert("No GPS fix", 1000); _mode = OFF; return; }
+      int32_t mlat = (int32_t)(_avg_sum_lat / (long long)_avg_n);
+      int32_t mlon = (int32_t)(_avg_sum_lon / (long long)_avg_n);
+      beginLabel(mlat, mlon);                       // opens the label keyboard
+    }
   }
 
   // Only called while active().
@@ -231,6 +296,7 @@ public:
     display.setColor(DisplayDriver::LIGHT);
     if (_kb_active) return _task->keyboard().render(display);  // keyboard owns the screen
     if (_mode == ADD) { renderAddForm(display); return 1000; }
+    if (_mode == AVG) { renderAvg(display);     return display.isEink() ? 1000 : 300; }
     if (_mode == NAV) { renderWpNav(display);   return 1000; }
     renderWpList(display);                          // LIST
     if (_ctx.active) _ctx.render(display);
@@ -290,6 +356,12 @@ public:
           }
         }
       }
+      return true;
+    }
+
+    // Averaging window — any cancel aborts the mark; otherwise just wait it out.
+    if (_mode == AVG) {
+      if (c == KEY_CANCEL) _mode = OFF;
       return true;
     }
 

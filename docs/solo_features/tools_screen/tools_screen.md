@@ -127,6 +127,7 @@ Cycle views with **LEFT / RIGHT**:
 | ---------- | --------- | ------------------------------------------------------- |
 | Min dist   | always    | Sample gate, 4 levels — metric: 5/10/25/100 m, imperial: 15/30/75/300 ft |
 | Auto-pause | always    | Off / 1 / 2 / 5 min — auto-freeze the trail after a stop, resume on movement (see below) |
+| Mark avg   | always    | Off / 5 / 10 / 30 s — GPS averaging for **Mark here** (see Waypoints below) |
 | Readout    | Summary view | Summary shows Speed or Pace (in the global unit system) |
 | Grid       | Map view  | Toggle scale grid on the map                            |
 
@@ -139,6 +140,8 @@ Cycle views with **LEFT / RIGHT**:
 A waypoint is a saved spot — your car, camp, a water source — that you can navigate back to later. Waypoints are **independent of the trail**: they live in their own flash file (`/waypoints`), survive a reboot, and are **not** cleared by *Reset trail*. Up to 16 can be stored — the Waypoints list header shows how many are in use (e.g. `WAYPOINTS 3/16`).
 
 **Dropping a waypoint** — **Hold Enter → Mark here**. This captures the current GPS fix and opens the on-screen keyboard for a short label (up to 11 characters — e.g. `CAR`, `CAMP`, `H2O`). Leaving it blank auto-names it `WP1`, `WP2`, … Marking works whether or not the trail is being recorded; it needs a GPS fix (otherwise it reports *No GPS fix*).
+
+**GPS averaging** — with **Settings → Mark avg** set (5 / 10 / 30 s), *Mark here* doesn't snapshot a single fix; it samples the GPS once a second for that window and stores the **mean** position, for a steadier mark than one instantaneous reading (handy for a precise spot — a cache, a car, a trailhead). A short screen shows the time left and the sample count while it runs; **Cancel** aborts. When the window closes it opens the label keyboard as usual. With **Mark avg = Off** (the default) marking is instant.
 
 **Adding by coordinates** — open **Hold Enter → Waypoints** and select the **+ Add by coords** row (always the last entry in the list). This creates a waypoint without being there — no GPS fix required (handy for a meeting point or a spot read off a map). It opens a small form with three editable rows plus **Save**:
 
