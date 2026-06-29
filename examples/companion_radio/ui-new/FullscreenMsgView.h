@@ -156,8 +156,8 @@ struct FullscreenMsgView {
   Result handleInput(char c) {
     if (c == KEY_UP)          { if (scroll > 0) scroll--; return NONE; }
     if (c == KEY_DOWN)        { if (scroll < _max_scroll) scroll++; return NONE; }
-    if (c == KEY_LEFT)        return NEXT;
-    if (c == KEY_RIGHT)       return PREV;
+    if (keyIsPrev(c))         return NEXT;   // page between messages (encoder too)
+    if (keyIsNext(c))         return PREV;
     if (c == KEY_CONTEXT_MENU) return REPLY;
     if (c == KEY_ENTER || c == KEY_CANCEL) return CLOSE;
     return NONE;

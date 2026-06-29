@@ -309,7 +309,7 @@ public:
       if (c == KEY_CANCEL) { _mode = OFF; return true; }
       if (c == KEY_UP)   { _add_sel = (_add_sel > 0) ? _add_sel - 1 : 3; return true; }
       if (c == KEY_DOWN) { _add_sel = (_add_sel < 3) ? _add_sel + 1 : 0; return true; }
-      if (c == KEY_LEFT || c == KEY_RIGHT) {
+      if (keyIsPrev(c) || keyIsNext(c)) {
         if      (_add_sel == 0) _add_lat_neg = !_add_lat_neg;   // N <-> S
         else if (_add_sel == 1) _add_lon_neg = !_add_lon_neg;   // E <-> W
         return true;

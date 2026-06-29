@@ -143,8 +143,8 @@ public:
     if (_action_menu.active) {
       // LEFT/RIGHT cycles the focused value — only meaningful in the Settings
       // submenu; the popup stays open so the user can keep tapping.
-      if (c == KEY_LEFT || c == KEY_RIGHT || c == KEY_PREV || c == KEY_NEXT) {
-        int dir = (c == KEY_RIGHT || c == KEY_NEXT) ? 1 : -1;
+      if (keyIsPrev(c) || keyIsNext(c)) {
+        int dir = keyIsNext(c) ? 1 : -1;
         int idx = _action_menu.selectedIndex();
         if (idx >= 0 && idx < _act_count && _menu_level == ML_SETTINGS)
           cycleSetting((ActionId)_act_map[idx], dir);
@@ -207,8 +207,8 @@ public:
     }
     if (c == KEY_CONTEXT_MENU) { openActionMenu(); return true; }
 
-    if (c == KEY_LEFT  || c == KEY_PREV) { _view = (uint8_t)((_view + V_COUNT - 1) % V_COUNT); return true; }
-    if (c == KEY_RIGHT || c == KEY_NEXT) { _view = (uint8_t)((_view + 1) % V_COUNT);          return true; }
+    if (keyIsPrev(c)) { _view = (uint8_t)((_view + V_COUNT - 1) % V_COUNT); return true; }
+    if (keyIsNext(c)) { _view = (uint8_t)((_view + 1) % V_COUNT);          return true; }
     if (_view == V_SUMMARY && c == KEY_UP) {
       _summary_scroll = (_summary_scroll > 0) ? _summary_scroll - 1 : _summary_max_scroll;
       return true;

@@ -1518,8 +1518,8 @@ public:
         }
         // LEFT/RIGHT cycle Notif/Melody in-place (menu stays open).
         if (!_pin_picker_active && _num_contacts > 0) {
-          bool left  = (c == KEY_LEFT || c == KEY_PREV);
-          bool right = (c == KEY_RIGHT || c == KEY_NEXT);
+          bool left  = keyIsPrev(c);
+          bool right = keyIsNext(c);
           if (left || right) {
             static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
             static const char* ML[]           = { "global", "M1", "M2" };
@@ -1674,8 +1674,8 @@ public:
       if (_ctx_menu.active) {
         // LEFT/RIGHT cycle Notif/Melody/Fav in-place (menu stays open).
         if (_num_channels > 0) {
-          bool left  = (c == KEY_LEFT || c == KEY_PREV);
-          bool right = (c == KEY_RIGHT || c == KEY_NEXT);
+          bool left  = keyIsPrev(c);
+          bool right = keyIsNext(c);
           if (left || right) {
             static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
             static const char* ML[]           = { "global", "M1", "M2" };

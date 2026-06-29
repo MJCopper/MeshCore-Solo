@@ -143,39 +143,21 @@ public:
     display.setColor(DisplayDriver::LIGHT);
     display.drawCenteredHeader("REPEATER");
 
-    const int item_h  = display.lineStep();
-    const int start_y = display.listStart();
-    int visible = display.listVisible(item_h);
-    if (visible < 1) visible = 1;
-
     // Config only — live forwarding stats live on Tools › Diagnostics.
-    int total = _item_count;
-    if (_sel < _scroll)            _scroll = _sel;
-    if (_sel >= _scroll + visible) _scroll = _sel - visible + 1;
-    int max_scroll = total - visible;
-    if (max_scroll < 0) max_scroll = 0;
-    if (_scroll > max_scroll) _scroll = max_scroll;
-    if (_scroll < 0) _scroll = 0;
-
-    const int reserve = scrollIndicatorReserve(display, total, visible);
-    for (int i = 0; i < visible && (_scroll + i) < total; i++) {
-      int row = _scroll + i;
-      int y = start_y + i * item_h;
-      char val[16];
-      bool sel = (row == _sel);
+    drawList(display, _item_count, _sel, _scroll, [&](int row, int y, bool sel, int reserve) {
       int item = _items[row];
-      display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
+      display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
       display.setCursor(2, y);
       display.print(itemLabel(item));
       if (item == IT_RFREQ && sel && _editor.active()) {
         _editor.render(display, display.valCol(), y);
       } else {
+        char val[16];
         itemValue(item, p, val, sizeof(val));
         display.drawTextRightAlign(display.width() - reserve - 2, y, val);
       }
       display.setColor(DisplayDriver::LIGHT);
-    }
-    drawScrollIndicator(display, start_y, visible * item_h, total, visible, _scroll);
+    });
     display.setColor(DisplayDriver::LIGHT);
     if (_picker.menu.active) _picker.menu.render(display);
     return (_picker.menu.active || _editor.active()) ? 50 : 500;

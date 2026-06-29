@@ -715,8 +715,7 @@ public:
           if (e.dist_km >= 0.0f) geo::fmtDist(right, sizeof(right), e.dist_km, useImperial());
           else                   strncpy(right, "?GPS", sizeof(right));
         }
-        display.setCursor(display.width() - display.getTextWidth(right) - 2 - reserve, y);
-        display.print(right);
+        display.drawTextRightAlign(display.width() - reserve - 2, y, right);
       });
     }
 
@@ -779,8 +778,8 @@ public:
       _detail_refresh_ms = millis();
       return true;
     }
-    if (c == KEY_LEFT)  { _filter = (_filter + F_COUNT - 1) % F_COUNT; refresh(); return true; }
-    if (c == KEY_RIGHT) { _filter = (_filter + 1) % F_COUNT;          refresh(); return true; }
+    if (keyIsPrev(c)) { _filter = (_filter + F_COUNT - 1) % F_COUNT; refresh(); return true; }
+    if (keyIsNext(c)) { _filter = (_filter + 1) % F_COUNT;          refresh(); return true; }
     return false;
   }
 };

@@ -164,8 +164,8 @@ public:
   bool handleInput(char c) override {
     bool up    = (c == KEY_UP);
     bool down  = (c == KEY_DOWN);
-    bool left  = (c == KEY_LEFT  || c == KEY_PREV);
-    bool right = (c == KEY_RIGHT || c == KEY_NEXT);
+    bool left  = keyIsPrev(c);
+    bool right = keyIsNext(c);
     bool enter = (c == KEY_ENTER);
     bool menu_key = (c == KEY_CONTEXT_MENU);
     bool cancel   = (c == KEY_CANCEL);
