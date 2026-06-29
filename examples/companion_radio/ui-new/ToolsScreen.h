@@ -58,7 +58,7 @@ public:
   ToolsScreen(UITask* task) : _task(task) {}
 
   // Open folded at the section list each time Tools is entered from Home.
-  void enter() {
+  void onShow() override {
     static uint8_t sizes[SECTION_COUNT];
     for (int i = 0; i < SECTION_COUNT; i++) sizes[i] = SECTIONS[i].count;
     _acc.begin(sizes, SECTION_COUNT);

@@ -1473,74 +1473,34 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   setCurrScreen(splash);
 }
 
-void UITask::gotoSettingsScreen() {
-  ((SettingsScreen*)settings)->markClean();
-  setCurrScreen(settings);
-}
+// onShow() is invoked by setCurrScreen(), so most navigators are just that.
+void UITask::gotoSettingsScreen()  { setCurrScreen(settings); }
+void UITask::gotoToolsScreen()     { setCurrScreen(tools_screen); }
+void UITask::gotoBotScreen()       { setCurrScreen(bot_screen); }
+void UITask::gotoNearbyScreen()    { setCurrScreen(nearby_screen); }
+void UITask::gotoDashboardConfig() { setCurrScreen(dashboard_config); }
+void UITask::gotoTrailScreen()     { setCurrScreen(trail_screen); }
+void UITask::gotoCompassScreen()   { setCurrScreen(compass_screen); }
+void UITask::gotoDiagnosticsScreen() { setCurrScreen(diag_screen); }
+void UITask::gotoRepeaterScreen()  { setCurrScreen(repeater_screen); }
+void UITask::gotoLiveShareScreen() { setCurrScreen(live_share_screen); }
 
-void UITask::gotoToolsScreen() {
-  ((ToolsScreen*)tools_screen)->enter();
-  setCurrScreen(tools_screen);
-}
-
+// Ringtone takes a slot argument that onShow() can't carry — pass it after the
+// reset (setCurrScreen's onShow runs first, then this layers the slot on top).
 void UITask::gotoRingtoneEditor(int slot) {
-  ((RingtoneEditorScreen*)ringtone_edit)->enter(slot);
   setCurrScreen(ringtone_edit);
+  ((RingtoneEditorScreen*)ringtone_edit)->selectSlot(slot);
 }
 
-void UITask::gotoBotScreen() {
-  ((BotScreen*)bot_screen)->enter();
-  setCurrScreen(bot_screen);
-}
-
-void UITask::gotoNearbyScreen() {
-  ((NearbyScreen*)nearby_screen)->enter();
-  setCurrScreen(nearby_screen);
-}
-
-void UITask::gotoDashboardConfig() {
-  ((DashboardConfigScreen*)dashboard_config)->enter();
-  setCurrScreen(dashboard_config);
-}
-
-void UITask::gotoTrailScreen() {
-  ((TrailScreen*)trail_screen)->enter();
-  setCurrScreen(trail_screen);
-}
-
+// Map is a sub-view variant of the Trail screen: reset via onShow(), then
+// switch into the map view.
 void UITask::gotoMapScreen() {
-  ((TrailScreen*)trail_screen)->enterMap();
   setCurrScreen(trail_screen);
+  ((TrailScreen*)trail_screen)->showMapView();
 }
 
-void UITask::gotoCompassScreen() {
-  ((CompassScreen*)compass_screen)->enter();
-  setCurrScreen(compass_screen);
-}
-
-void UITask::gotoDiagnosticsScreen() {
-  setCurrScreen(diag_screen);
-}
-
-void UITask::gotoRepeaterScreen() {
-  ((RepeaterScreen*)repeater_screen)->enter();
-  setCurrScreen(repeater_screen);
-}
-
-void UITask::gotoLiveShareScreen() {
-  ((LiveShareScreen*)live_share_screen)->enter();
-  setCurrScreen(live_share_screen);
-}
-
-void UITask::gotoLocatorScreen() {
-  ((LocatorScreen*)locator_screen)->enter();
-  setCurrScreen(locator_screen);
-}
-
-void UITask::gotoAutoAdvertScreen() {
-  ((AutoAdvertScreen*)auto_advert_screen)->enter();
-  setCurrScreen(auto_advert_screen);
-}
+void UITask::gotoLocatorScreen()    { setCurrScreen(locator_screen); }
+void UITask::gotoAutoAdvertScreen() { setCurrScreen(auto_advert_screen); }
 
 // Public method to handle ping result callback
 void UITask::handlePingResult(uint32_t tag, int16_t snr_out_x4, int16_t snr_back_x4, uint32_t rtt_ms) {
@@ -1789,6 +1749,7 @@ void UITask::userLedHandler() {
 
 void UITask::setCurrScreen(UIScreen* c) {
   curr = c;
+  if (c) c->onShow();   // central per-visit reset hook (see UIScreen::onShow)
   _next_refresh = 100;
 }
 

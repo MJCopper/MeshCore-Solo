@@ -96,7 +96,7 @@ public:
   TrailScreen(UITask* task, TrailStore* store)
     : _task(task), _store(store), _wp(task, store) {}
 
-  void enter() {
+  void onShow() override {
     _view = V_SUMMARY;
     _summary_scroll = 0;
     _list_scroll    = 0;
@@ -107,9 +107,10 @@ public:
     _wp.reset();
   }
 
-  // Enter straight into the Map view (used by the Home "Map" page). Remembers
-  // that we came from Home so KEY_CANCEL returns there, not to Tools.
-  void enterMap() { enter(); _view = V_MAP; _return_home = true; }
+  // Switch straight into the Map view (used by the Home "Map" page). Layered on
+  // top of onShow()'s reset by gotoMapScreen(); remembers we came from Home so
+  // KEY_CANCEL returns there, not to Tools.
+  void showMapView() { _view = V_MAP; _return_home = true; }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);

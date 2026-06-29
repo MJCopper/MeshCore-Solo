@@ -42,7 +42,7 @@ class BotScreen : public UIScreen {
 public:
   BotScreen(UITask* task, NodePrefs* prefs, KeyboardWidget* kb) : _task(task), _prefs(prefs), _kb(kb) {}
 
-  void enter() {
+  void onShow() override {
     _sel      = 0;
     _scroll   = 0;
     _kb_field = -1;

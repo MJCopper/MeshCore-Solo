@@ -57,5 +57,10 @@ public:
   virtual int render(DisplayDriver& display) =0;   // return value is number of millis until next render
   virtual bool handleInput(char c) { return false; }
   virtual void poll() { }
+  // Called by UITask::setCurrScreen() each time this screen becomes current —
+  // the place to reset per-visit state (selection, dirty flag, sub-views).
+  // Default no-op for screens that keep state across visits. Because it's
+  // invoked centrally, a new screen can't "forget" to be reset on show.
+  virtual void onShow() { }
 };
 

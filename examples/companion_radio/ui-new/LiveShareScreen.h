@@ -36,7 +36,7 @@ class LiveShareScreen : public UIScreen {
 public:
   LiveShareScreen(UITask* task, NodePrefs* prefs) : _task(task), _prefs(prefs) {}
 
-  void enter() { _dirty = false; _sel = 0; _scroll = 0; }
+  void onShow() override { _dirty = false; _sel = 0; _scroll = 0; }
 
   // Resolve the configured target's display name (channel name or contact name).
   void currentTargetName(char* buf, int n) {

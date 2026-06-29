@@ -57,7 +57,9 @@ class RingtoneEditorScreen : public UIScreen {
 public:
   RingtoneEditorScreen(UITask* task, NodePrefs* prefs) : _task(task), _prefs(prefs), _slot(0) {}
 
-  void enter(int slot = 0) {
+  // Load a melody slot for editing. Called by gotoRingtoneEditor() right after
+  // setCurrScreen() (whose onShow() can't carry the slot argument).
+  void selectSlot(int slot = 0) {
     _slot    = (slot == 1) ? 1 : 0;
     bool s2  = (_slot == 1);
     _bpm_idx = (_prefs && (s2 ? _prefs->ringtone2_bpm_idx : _prefs->ringtone_bpm_idx) < 5)
@@ -197,7 +199,7 @@ public:
             break;
           case MI_SWITCH:
             _task->stopMelody();
-            this->enter(1 - _slot);
+            this->selectSlot(1 - _slot);
             break;
           case MI_DURATION: break;  // already handled by LEFT/RIGHT
           case MI_BPM:      break;  // already handled by LEFT/RIGHT

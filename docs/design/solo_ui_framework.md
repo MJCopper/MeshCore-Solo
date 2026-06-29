@@ -33,6 +33,7 @@ public:
   virtual int  render(DisplayDriver& display) = 0;  // returns ms until the next render
   virtual bool handleInput(char c) { return false; }
   virtual void poll() { }
+  virtual void onShow() { }                         // reset per-visit state
 };
 ```
 
@@ -44,23 +45,23 @@ public:
 - **`handleInput(c)`** gets one key (`KEY_*`, see §7). Return `true` if consumed.
 - **`poll()`** runs every loop tick regardless of focus — rare, for background
   housekeeping (e.g. the shutdown button).
-
-Most screens also define a non-virtual **`enter()`** that resets per-visit state
-(`_sel = 0`, `_dirty = false`, …). It is called by the screen's `goto…()` wrapper,
-not by the base class.
+- **`onShow()`** is called by `setCurrScreen()` every time the screen becomes
+  current — override it to reset per-visit state (`_sel = 0`, `_dirty = false`,
+  sub-views). Default no-op for screens that keep state across visits. Because
+  it's invoked centrally, a navigator can't forget to reset on show.
 
 ### Wiring a screen into UITask
 
 1. Add a `UIScreen* my_screen;` member in `UITask.h` (near the others).
 2. Construct it in `UITask::begin()` (`UITask.cpp`):
    `my_screen = new MyScreen(this, …);`
-3. Add a navigator:
+3. Add a navigator — usually just the one line (the cast-free `onShow()` runs
+   inside `setCurrScreen`):
    ```cpp
-   void UITask::gotoMyScreen() {
-     ((MyScreen*)my_screen)->enter();
-     setCurrScreen(my_screen);   // sets curr + schedules an immediate redraw
-   }
+   void UITask::gotoMyScreen() { setCurrScreen(my_screen); }
    ```
+   Only screens needing a *parameter* at entry add a typed call after it (e.g.
+   `gotoRingtoneEditor` → `selectSlot(slot)`, `gotoMapScreen` → `showMapView()`).
 4. Reach it from somewhere — usually a row in `ToolsScreen.h` (add an `Action`
    enum value, a row in the right section table, and a `dispatch()` case).
 
@@ -292,7 +293,7 @@ class MyToolScreen : public UIScreen {
   static const int ROWS = 3;
 public:
   MyToolScreen(UITask* t, NodePrefs* p) : _task(t), _prefs(p) {}
-  void enter() { _sel = 0; _scroll = 0; _dirty = false; }
+  void onShow() override { _sel = 0; _scroll = 0; _dirty = false; }
 
   int render(DisplayDriver& d) override {
     d.setTextSize(1);

@@ -72,7 +72,7 @@ class LocatorScreen : public UIScreen {
 public:
   LocatorScreen(UITask* task, NodePrefs* prefs) : _task(task), _prefs(prefs) {}
 
-  void enter() { _dirty = false; _sel = 0; _scroll = 0; _picking = false; }
+  void onShow() override { _dirty = false; _sel = 0; _scroll = 0; _picking = false; }
 
   void valueLabel(Kind k, char* buf, int n) {
     switch (k) {

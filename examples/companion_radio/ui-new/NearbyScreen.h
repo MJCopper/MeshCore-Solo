@@ -587,7 +587,7 @@ public:
     _sort_label[0] = '\0';
   }
 
-  void enter() {
+  void onShow() override {
     _sel = _scroll = 0;
     _detail = false;
     _nav = false;

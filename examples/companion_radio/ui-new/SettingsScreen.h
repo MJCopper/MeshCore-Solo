@@ -651,7 +651,7 @@ public:
   }
 
 
-  void markClean() {
+  void onShow() override {
     _dirty = false;
     resetList();
     _editor.freq.active = false;

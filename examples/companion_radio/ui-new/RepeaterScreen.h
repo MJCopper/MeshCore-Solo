@@ -128,7 +128,7 @@ class RepeaterScreen : public UIScreen {
 public:
   RepeaterScreen(UITask* task) : _task(task), _dirty(false), _sel(0), _scroll(0), _item_count(1) {}
 
-  void enter() {
+  void onShow() override {
     _dirty = false; _sel = 0; _scroll = 0;
     _picker.menu.active = false; _editor.freq.active = false;
     _picker.saving = false; _picker.deleting = false;

@@ -37,7 +37,7 @@ class DashboardConfigScreen : public UIScreen {
 public:
   DashboardConfigScreen(UITask* task, NodePrefs* prefs) : _task(task), _prefs(prefs) {}
 
-  void enter() { _sel = 0; _dirty = false; }
+  void onShow() override { _sel = 0; _dirty = false; }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
