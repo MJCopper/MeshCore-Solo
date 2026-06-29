@@ -116,6 +116,17 @@ public:
 static const int QUICK_MSGS_MAX = 10;
 
 
+// ── Screen fragments — included into THIS translation unit only ───────────────
+// These headers are not standalone: they are compiled solely as part of
+// UITask.cpp, in the order below. Two consequences a new screen must respect:
+//   • Order matters. A `static inline` helper (drawList, msgReplyBody, geo::…)
+//     or a shared scratch buffer (FullscreenMsgView's s_wrap_*) is only visible
+//     to fragments included *after* the one that defines it. Add new screens
+//     after their dependencies.
+//   • Single-TU only. Some fragments define external-linkage symbols at file
+//     scope (e.g. NearbyScreen::FILTER_LABELS), so including any of them from a
+//     second .cpp is a duplicate-symbol link error. Keep them UITask-internal;
+//     anything genuinely shareable belongs in a real header (icons.h, GeoUtils.h).
 #include "FullscreenMsgView.h"
 #include "SensorPlaceholders.h"
 #include "SettingsScreen.h"

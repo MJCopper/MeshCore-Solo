@@ -14,6 +14,13 @@ into one translation unit (`ui-new/UITask.cpp`) — so a `static inline` helper 
 an earlier header is visible to later ones. Header-include order in `UITask.cpp`
 therefore matters; new screens go near the others.
 
+> **Single-TU only.** These fragments compile *only* as part of `UITask.cpp`.
+> Some define external-linkage symbols at file scope (e.g.
+> `NearbyScreen::FILTER_LABELS`), so including a fragment from a second `.cpp`
+> is a duplicate-symbol link error. Anything genuinely shared across TUs must
+> live in a real header (`icons.h`, `GeoUtils.h`, `DisplayDriver.h`), not a
+> screen fragment.
+
 ---
 
 ## 1. The screen model
