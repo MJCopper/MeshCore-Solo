@@ -209,15 +209,9 @@ class QuickMsgScreen : public UIScreen {
     return r;
   }
 
-  // Strip "@[nick] " reply prefix from a message body for compact list display.
-  static const char* skipReplyPrefix(const char* text) {
-    if (text[0] == '@' && text[1] == '[') {
-      const char* close = strchr(text + 2, ']');
-      if (close && close[1] == ' ' && close[2]) text = close + 2;
-    }
-    while (*text == '\n' || *text == '\r' || *text == ' ') text++;
-    return text;
-  }
+  // Strip the "@[nick] " reply prefix for compact list display (body only).
+  // Shares the one parser with the fullscreen view — see msgReplyBody().
+  static const char* skipReplyPrefix(const char* text) { return msgReplyBody(text); }
 
   // Split a DM-history entry into the name to show as the author and the body to
   // show beneath it. Room servers carry many guests, so incoming room posts are
@@ -350,15 +344,6 @@ class QuickMsgScreen : public UIScreen {
     }
   }
 
-
-  static void fmtMsgAge(char* buf, int n, uint32_t timestamp, uint32_t now) {
-    if (timestamp == 0 || now < timestamp) { buf[0] = '\0'; return; }
-    uint32_t age = now - timestamp;
-    if      (age < 60)    snprintf(buf, n, "%us", age);
-    else if (age < 3600)  snprintf(buf, n, "%um", age / 60);
-    else if (age < 86400) snprintf(buf, n, "%uh", age / 3600);
-    else                  snprintf(buf, n, ">1d");
-  }
 
   // count history entries for a specific channel
   int histCountForChannel(int ch_idx) const {
@@ -1207,7 +1192,7 @@ public:
         const char* body = dmDisplayParts(e, is_room, filtered_name, sender_buf, sizeof(sender_buf));
         const char* sender = sender_buf;
 
-        char age[6]; fmtMsgAge(age, sizeof(age), e.timestamp, now_ts);
+        char age[6]; geo::fmtAgeShort(age, sizeof(age), now_ts, e.timestamp);
         int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
 
         if (sel) {
@@ -1368,7 +1353,7 @@ public:
           msg_part[sizeof(msg_part) - 1] = '\0';
         }
 
-        char age[6]; fmtMsgAge(age, sizeof(age), _hist[ring_pos].timestamp, now_ts);
+        char age[6]; geo::fmtAgeShort(age, sizeof(age), now_ts, _hist[ring_pos].timestamp);
         int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
 
         if (sel) {

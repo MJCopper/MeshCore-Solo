@@ -51,14 +51,9 @@ public:
   }
 
   // Drop entries not refreshed within EXPIRY_SECS. `now` is RTC epoch seconds.
-  // Guarded against now < ts (RTC stepped backwards) so a clock fix can't wipe
-  // the table.
   void expire(uint32_t now) {
-    for (int i = 0; i < CAPACITY; i++) {
-      if (_e[i].used && now > _e[i].ts && (now - _e[i].ts) > EXPIRY_SECS) {
-        _e[i].used = false;
-      }
-    }
+    for (int i = 0; i < CAPACITY; i++)
+      if (_e[i].used && expired(_e[i], now)) _e[i].used = false;
   }
 
   void clear() { for (int i = 0; i < CAPACITY; i++) _e[i].used = false; }
@@ -66,9 +61,7 @@ public:
   // Slot-wise access (caller skips inactive slots via isActive()).
   const Entry& slotAt(int i) const { return _e[i]; }
   bool isActive(int i, uint32_t now) const {
-    const Entry& e = _e[i];
-    if (!e.used) return false;
-    return !(now > e.ts && (now - e.ts) > EXPIRY_SECS);
+    return _e[i].used && !expired(_e[i], now);
   }
 
   // Number of currently non-expired entries.
@@ -93,6 +86,13 @@ public:
 
 private:
   Entry _e[CAPACITY] = {};
+
+  // An entry is stale once EXPIRY_SECS have passed since its last update.
+  // Guarded against now < ts (RTC stepped backwards) so a clock fix can't
+  // mass-expire the table.
+  static bool expired(const Entry& e, uint32_t now) {
+    return now > e.ts && (now - e.ts) > EXPIRY_SECS;
+  }
 
   // Match an existing entry: verified shares by key, channel shares by name.
   int find(const uint8_t* key, const char* name, bool verified) const {
