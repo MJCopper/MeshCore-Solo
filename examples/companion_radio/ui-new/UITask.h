@@ -68,23 +68,28 @@ class UITask : public AbstractUITask {
   unsigned long _analogue_pin_read_millis = millis();
 #endif
 
-  UIScreen* splash;
-  UIScreen* home;
-  UIScreen* settings;
-  UIScreen* quick_msg;
-  UIScreen* tools_screen;
-  UIScreen* ringtone_edit;
-  UIScreen* bot_screen;
-  UIScreen* nearby_screen;
-  UIScreen* dashboard_config;
-  UIScreen* auto_advert_screen;
-  UIScreen* live_share_screen;
-  UIScreen* locator_screen;
-  UIScreen* trail_screen;
-  UIScreen* compass_screen;
-  UIScreen* diag_screen;
-  UIScreen* repeater_screen;
-  UIScreen* curr;
+  // Registering a new screen touches 4 sites: (1) the member below, (2) the
+  // `new XScreen()` in begin(), (3) the gotoXScreen() declaration further down,
+  // (4) its one-line definition in UITask.cpp. Sites 1/3/4 are compile-checked;
+  // only a forgotten (2) can slip through — the nullptr initialisers here turn
+  // that into an inert no-op (see UITask::setCurrScreen) rather than a crash.
+  UIScreen* splash = nullptr;
+  UIScreen* home = nullptr;
+  UIScreen* settings = nullptr;
+  UIScreen* quick_msg = nullptr;
+  UIScreen* tools_screen = nullptr;
+  UIScreen* ringtone_edit = nullptr;
+  UIScreen* bot_screen = nullptr;
+  UIScreen* nearby_screen = nullptr;
+  UIScreen* dashboard_config = nullptr;
+  UIScreen* auto_advert_screen = nullptr;
+  UIScreen* live_share_screen = nullptr;
+  UIScreen* locator_screen = nullptr;
+  UIScreen* trail_screen = nullptr;
+  UIScreen* compass_screen = nullptr;
+  UIScreen* diag_screen = nullptr;
+  UIScreen* repeater_screen = nullptr;
+  UIScreen* curr = nullptr;
   CayenneLPP _dash_lpp;
   TrailStore _trail;
   WaypointStore _waypoints;

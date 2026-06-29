@@ -1748,8 +1748,13 @@ void UITask::userLedHandler() {
 }
 
 void UITask::setCurrScreen(UIScreen* c) {
+  // Fail safe on a null target: a screen pointer left uninitialised (member
+  // declared + navigator wired, but the `new XScreen()` line forgotten in
+  // begin()) stays nullptr thanks to the in-class initialisers. Bail here so
+  // that mistake is an inert no-op instead of a null deref in render()/poll().
+  if (!c) return;
   curr = c;
-  if (c) c->onShow();   // central per-visit reset hook (see UIScreen::onShow)
+  c->onShow();          // central per-visit reset hook (see UIScreen::onShow)
   _next_refresh = 100;
 }
 
