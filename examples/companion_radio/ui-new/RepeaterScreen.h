@@ -211,7 +211,7 @@ public:
     }
 
     if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
-      if (_dirty) the_mesh.savePrefs();
+      _task->savePrefsIfDirty(_dirty);
       _task->gotoToolsScreen();
       return true;
     }

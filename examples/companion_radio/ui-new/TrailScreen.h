@@ -192,16 +192,16 @@ public:
           case ACT_EXPORT:        handleExport();      break;
           case ACT_EXPORT_SAVED:  handleExportSaved(); break;
         }
-        if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
+        _task->savePrefsIfDirty(_cfg_dirty);
       } else if (res == PopupMenu::CANCELLED) {
-        if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
+        _task->savePrefsIfDirty(_cfg_dirty);
         if (_menu_level != ML_MAIN) buildMainMenu();   // Cancel backs out of a submenu
       }
       return true;
     }
 
     if (c == KEY_CANCEL) {
-      if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
+      _task->savePrefsIfDirty(_cfg_dirty);
       if (_return_home) _task->gotoHomeScreen();
       else              _task->gotoToolsScreen();
       return true;

@@ -141,7 +141,7 @@ public:
     }
 
     if (cancel) {
-      if (_dirty) the_mesh.savePrefs();
+      _task->savePrefsIfDirty(_dirty);
       _task->gotoToolsScreen();
       return true;
     }

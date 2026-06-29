@@ -293,7 +293,7 @@ public:
       return true;
     }
     if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
-      if (_dirty) { the_mesh.savePrefs(); _dirty = false; }   // engine re-seeded per edit
+      _task->savePrefsIfDirty(_dirty);   // engine re-seeded per edit
       _task->gotoToolsScreen();
       return true;
     }

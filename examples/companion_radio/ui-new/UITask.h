@@ -355,6 +355,11 @@ public:
   void applyPowerSave();   // hardware duty-cycle RX on/off from prefs
   void applyApc();         // Adaptive Power Control on/off from prefs
   void applyRadioParams(); // freq/bw/sf/cr from prefs (radio preset change)
+  // Save-on-exit helper for the screen `_dirty` pattern: persists NodePrefs once
+  // only if `dirty`, then clears the flag. Standardises the screens' exit paths
+  // (some used to leave the flag set, relying on onShow() to reset it) and keeps
+  // the "did we touch flash?" answer in one place. Returns whether it saved.
+  bool savePrefsIfDirty(bool& dirty);
   void applyFont();
   void applyRotation();
   void applyFullRefreshInterval();

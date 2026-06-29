@@ -1758,6 +1758,13 @@ void UITask::setCurrScreen(UIScreen* c) {
   _next_refresh = 100;
 }
 
+bool UITask::savePrefsIfDirty(bool& dirty) {
+  if (!dirty) return false;
+  the_mesh.savePrefs();
+  dirty = false;
+  return true;
+}
+
 /*
   hardware-agnostic pre-shutdown activity should be done here
 */

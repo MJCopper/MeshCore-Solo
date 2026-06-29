@@ -754,7 +754,7 @@ public:
     }
 
     if (c == KEY_CANCEL) {
-      if (_dirty) the_mesh.savePrefs();
+      _task->savePrefsIfDirty(_dirty);
       _task->gotoHomeScreen();
       return true;
     }

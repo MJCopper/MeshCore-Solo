@@ -1606,9 +1606,7 @@ public:
             // sel == 1 (Notif) and sel == 2 (Melody): already cycled via LEFT/RIGHT; ENTER just closes.
           }
         }
-        if (res != PopupMenu::NONE && _ctx_dirty) {
-          the_mesh.savePrefs(); _ctx_dirty = false;
-        }
+        if (res != PopupMenu::NONE) _task->savePrefsIfDirty(_ctx_dirty);
         return true;
       }
       if (c == KEY_CANCEL) { _room_mode = false; _phase = MODE_SELECT; return true; }
@@ -1718,9 +1716,7 @@ public:
           }
           // sel 1/2/3 already handled by LEFT/RIGHT; ENTER just closes.
         }
-        if (res != PopupMenu::NONE && _ctx_dirty) {
-          the_mesh.savePrefs(); _ctx_dirty = false;
-        }
+        if (res != PopupMenu::NONE) _task->savePrefsIfDirty(_ctx_dirty);
         return true;
       }
       if (c == KEY_CANCEL) { _phase = MODE_SELECT; return true; }

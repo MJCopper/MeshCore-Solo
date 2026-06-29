@@ -161,7 +161,7 @@ public:
 
   bool handleInput(char c) override {
     if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
-      if (_dirty) { the_mesh.savePrefs(); _dirty = false; }
+      _task->savePrefsIfDirty(_dirty);
       _task->gotoToolsScreen();
       return true;
     }
