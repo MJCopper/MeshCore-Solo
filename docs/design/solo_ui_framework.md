@@ -65,9 +65,14 @@ public:
 4. Reach it from somewhere — usually a row in `ToolsScreen.h` (add an `Action`
    enum value, a row in the right section table, and a `dispatch()` case).
 
-That's the whole contract. The constructor takes `UITask* task` plus whatever
-it needs (`NodePrefs*`, `KeyboardWidget*`, …); the task back-pointer is how a
-screen calls shared services (`_task->showAlert(...)`, `_task->waypoints()`, …).
+That's the whole contract. Steps 1, 3 and 4 are compiler-checked (a mismatch
+won't link); only a forgotten step 2 can slip through — every screen pointer is
+nullptr-initialised in `UITask.h` and `setCurrScreen()` bails on null, so a
+missed `new` is an inert no-op rather than a null deref.
+
+The constructor takes `UITask* task` plus whatever it needs (`NodePrefs*`,
+`KeyboardWidget*`, …); the task back-pointer is how a screen calls shared
+services (`_task->showAlert(...)`, `_task->waypoints()`, …).
 
 ---
 
@@ -246,10 +251,13 @@ Device settings live in one `NodePrefs` struct (`NodePrefs.h`), saved via
   are atomic (temp-file + rename), so a crash mid-save can't corrupt settings.
 
 **The `_dirty` convention:** a multi-field editor screen mutates `_node_prefs`
-live for instant feedback but only calls `savePrefs()` once, on exit, gated by a
-`_dirty` flag — so LEFT/RIGHT value-cycling doesn't thrash flash. A one-shot
-action from a popup (no exit hook) saves immediately. Follow whichever matches
-your screen.
+live for instant feedback but only persists once, on exit, gated by a `_dirty`
+flag — so LEFT/RIGHT value-cycling doesn't thrash flash. Set `_dirty = true` at
+each edit site, then on the exit path call `_task->savePrefsIfDirty(_dirty)`
+(`UITask`) — it saves once *iff* dirty and clears the flag, so every screen's
+save-on-exit reads the same and the "did we touch flash?" decision lives in one
+place. A one-shot action from a popup (no exit hook) calls `the_mesh.savePrefs()`
+immediately. Follow whichever matches your screen.
 
 **The shared "active target"** (Locator/Nav destination) is set through
 `UITask::setTarget()` (defines it), `setTargetNow()` (defines + saves + toast),
@@ -311,7 +319,7 @@ public:
 
   bool handleInput(char c) override {
     if (c == KEY_CANCEL) {
-      if (_dirty) { the_mesh.savePrefs(); _dirty = false; }
+      _task->savePrefsIfDirty(_dirty);   // saves once iff dirty, then clears
       _task->gotoToolsScreen();
       return true;
     }
