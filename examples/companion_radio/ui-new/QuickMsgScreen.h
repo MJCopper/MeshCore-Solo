@@ -963,6 +963,11 @@ public:
       const char* ctxt = "[+ send]";
       int ctw = display.getTextWidth(ctxt);
       int cbx = 1;
+      // Reset to LIGHT first: the message loop above leaves the ink DARK when the
+      // last drawn box was the selected one, which would render an unselected
+      // [+ send] invisibly (dark-on-dark) — most visible in rooms, where there's
+      // always a selected message. With it selected we invert (light bar/dark text).
+      display.setColor(DisplayDriver::LIGHT);
       if (compose_sel) {
         display.fillRect(cbx, cby - 1, ctw + 4, lh + 1);
         display.setColor(DisplayDriver::DARK);
