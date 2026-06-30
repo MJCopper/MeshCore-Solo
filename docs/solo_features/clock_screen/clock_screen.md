@@ -59,3 +59,33 @@ Sensor fields show `--` when the sensor is not connected or has no data.
 <!-- screenshot pending: Dashboard Config — three field slots cycled with LEFT/RIGHT -->
 
 **Hold Enter** (or press the **Context menu** key) on the Clock page to open the Dashboard Config screen, where each of the three field slots can be cycled with **LEFT/RIGHT**.
+
+---
+
+### Clock tools — Alarm, Timer, Stopwatch
+
+**Press Enter** (short press) on the Clock page to open **Clock Tools**, a small menu with three time utilities. **Cancel** backs out one level (tool → menu → home).
+
+#### Alarm
+
+A single one-shot wake alarm. Rows: **Hour**, **Minute** and **Armed**. **Enter** on Hour or Minute opens the digit editor (LEFT/RIGHT moves between the tens/units, UP/DOWN changes the digit); **Enter** on Armed toggles ON/OFF. The configured time is shown next to the **Alarm** menu row when armed, and the setting persists across reboots.
+
+While an alarm is armed a bell icon signals it in two places: the top-left corner of the **Clock page** itself, and the **top status bar** of the other home pages (the status bar is hidden on the Clock page, which is why the clock face carries its own indicator). The bell is icon-only — the exact alarm time is on the **Alarm** row inside Clock Tools.
+
+The alarm is scheduled as an absolute fire instant, so it is **robust to clock re-syncs** — the mesh (every inbound packet), the companion app, GPS and the CLI can all jump the device clock at any moment. A correction that moves the clock a little still fires at the right wall-clock time; a jump that skips over the alarm time still fires (late). After firing once, the alarm disarms itself.
+
+The alarm only fires while the device is **awake** (it keeps running with the display off or locked). It cannot wake the device from a full **Shutdown** (the CPU and RAM are powered down), and needs a valid time source — it stays pending until the clock is synced.
+
+#### Timer (countdown)
+
+A large **HH:MM:SS** readout with one digit underlined. **LEFT/RIGHT** moves the cursor one digit at a time, **Up/Down** changes the digit under it (minute/second tens cap at 5, hours at 23), and **Enter** starts the countdown. While running it shows **H:MM:SS** — **Enter** stops it, **Cancel** returns to the menu and leaves it counting. When it reaches zero the device rings, even if you have navigated to another screen.
+
+#### Stopwatch
+
+**Enter** starts/stops; **Up/Down** resets when stopped; **Cancel** returns to the menu and leaves it running.
+
+#### Ringing
+
+When the alarm or timer fires the device plays a melody (overriding mute) and shows an alert. **Any key** silences it; otherwise it stops on its own after a minute.
+
+> **E-ink note:** the live timer/stopwatch readouts would thrash a slow e-paper panel if redrawn every second, so on e-ink they refresh only coarsely (and immediately on any key press). The underlying timing is exact regardless, and the countdown's buzzer always fires on time.
