@@ -149,6 +149,17 @@ class UITask : public AbstractUITask {
   char handleDoubleClick(char c);
   char handleTripleClick(char c);
 
+  // Key FIFO: a burst of taps captured during a blocking refresh (e-ink) is
+  // drained from the buttons into this queue, then all keys are applied before
+  // a single redraw — so rapid navigation steps neither get lost nor cost one
+  // slow refresh each. Also fixes losing a key when two buttons fire in the
+  // same loop iteration.
+  static const uint8_t KEY_QUEUE_SIZE = 16;
+  char _key_queue[KEY_QUEUE_SIZE];
+  uint8_t _kq_head = 0, _kq_tail = 0;
+  void enqueueKey(char c);
+  bool dequeueKey(char& c);
+
   void setCurrScreen(UIScreen* c);
 
 public:

@@ -202,7 +202,22 @@ int MomentaryButton::check(bool repeat_click) {
     }
   }
 
-  if (_pending_click && (millis() - _last_click_time) >= _multi_click_window) {
+  if (_multi_click_window == 0) {
+    // No multi-click semantics: every completed press is an independent CLICK.
+    // When a burst of taps is captured during a blocking refresh (e-ink), all
+    // their edges replay into _click_count in a single check(); emit them one
+    // CLICK per call (decrementing) instead of collapsing into a lone
+    // double/triple event the caller would ignore — so each tap survives as a
+    // discrete key. Waits for release (down_at == 0) so a held button doesn't
+    // fire mid-press.
+    if (_pending_click && down_at == 0) {
+      event = BUTTON_EVENT_CLICK;
+      if (--_click_count == 0) {
+        _last_click_time = 0;
+        _pending_click = false;
+      }
+    }
+  } else if (_pending_click && (millis() - _last_click_time) >= _multi_click_window) {
     if (down_at > 0) {
       // still pressed - wait for button release before processing clicks
       return event;
