@@ -236,6 +236,31 @@ encoder-next). `KEY_CANCEL` and `KEY_CONTEXT_MENU` stay screen-specific. Joystic
 rotation is handled upstream (`rotateJoystickKey`) — screens see already-rotated
 keys.
 
+### From hardware to `handleInput`
+
+Each physical button is a `MomentaryButton` (`src/helpers/ui/MomentaryButton.h`);
+`UITask::begin()` must call `begin()` on **every** one (the joystick directions
+and Back included, not just the user button) — that sets `pinMode` and, where
+enabled, claims the interrupt. `UITask::loop()` polls each button, maps its event
+to a `KEY_*` code, and dispatches it to the current screen.
+
+Two mechanisms keep input responsive when **`endFrame()` blocks the loop** for a
+slow e-ink refresh:
+
+- **IRQ edge capture** (`-D BUTTON_USE_INTERRUPTS`, e-ink boards). A GPIO
+  interrupt latches each press/release edge into a per-button ring buffer with
+  its own timestamp, so taps that land *during* a refresh aren't lost; `check()`
+  replays them afterwards. The nRF52 has only 8 GPIOTE channels (the radio takes
+  one) — if none is free a button silently falls back to polling, so it still
+  works, just without mid-refresh capture.
+- **Key queue + coalesced redraw.** `loop()` drains *all* pending events from the
+  buttons into a small key FIFO, applies the whole burst (`handleInput` per key),
+  then redraws **once**. So three joystick flicks captured during one refresh move
+  the selection three steps for the cost of a single panel update, instead of
+  collapsing into an ignored multi-click or one-step-per-refresh. Buttons created
+  with `multiclick=false` therefore emit one discrete `CLICK` per release;
+  `multiclick=true` buttons still report double/triple-click.
+
 ---
 
 ## 8. Persistence

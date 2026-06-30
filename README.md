@@ -47,7 +47,7 @@ All firmware files are published on the [releases page](https://github.com/Marek
 
 - [Settings Screen](./docs/solo_features/settings_screen/settings_screen.md) — configure display, sound, home page order, radio and system settings
 
-- [Clock Screen](./docs/solo_features/clock_screen/clock_screen.md) — view time and date plus up to three configurable data fields
+- [Clock Screen](./docs/solo_features/clock_screen/clock_screen.md) — view time and date plus up to three configurable data fields, with built-in clock tools (one-shot alarm, countdown timer, stopwatch)
 
 - [Screen Lock](./docs/solo_features/screen_lock/screen_lock.md) — lock the device to prevent accidental keypresses, with a lock screen showing time and sensor data
 
@@ -96,7 +96,7 @@ Updating to a newer version usually does not require erasing flash unless the re
 | -------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | [Messages Screen](./docs/solo_features/message_screen/message_screen.md)   | Sending messages, context menus, reply, navigate to / save shared locations, Notif/Melody overrides |
 | [Favourites Dial](./docs/solo_features/favourites_dial/favourites_dial.md) | Pinned contacts grid, unread badges, pin/unpin                        |
-| [Clock Screen](./docs/solo_features/clock_screen/clock_screen.md)          | Clock page, date, configurable data fields                            |
+| [Clock Screen](./docs/solo_features/clock_screen/clock_screen.md)          | Clock page, date, configurable data fields, alarm / timer / stopwatch  |
 | [Settings Screen](./docs/solo_features/settings_screen/settings_screen.md) | All settings sections with values and interactions                    |
 | [Screen Lock](./docs/solo_features/screen_lock/screen_lock.md)             | Lock/unlock sequence, lock screen, auto-lock                          |
 | [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md)          | GPS trail & waypoints, compass, navigation, nearby nodes, ringtone editor, auto-reply bot, auto-advert, live location sharing, locator, diagnostics, repeater |
