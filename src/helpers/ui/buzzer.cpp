@@ -9,6 +9,20 @@ void genericBuzzer::begin() {
     #endif
     pinMode(PIN_BUZZER, OUTPUT);
     digitalWrite(PIN_BUZZER, LOW); // need to pull low by default to avoid extreme power draw
+#if defined(NRF52_PLATFORM)
+    _isr_instance = this;
+    NRF_TIMER1->TASKS_STOP  = 1;
+    NRF_TIMER1->MODE        = TIMER_MODE_MODE_Timer << TIMER_MODE_MODE_Pos;
+    NRF_TIMER1->BITMODE     = TIMER_BITMODE_BITMODE_32Bit << TIMER_BITMODE_BITMODE_Pos;
+    NRF_TIMER1->PRESCALER   = 4;   // 16 MHz / 2^4 = 1 MHz -> 1 us/tick
+    NRF_TIMER1->SHORTS      = TIMER_SHORTS_COMPARE0_CLEAR_Msk | TIMER_SHORTS_COMPARE0_STOP_Msk;
+    NRF_TIMER1->INTENSET    = TIMER_INTENSET_COMPARE0_Msk;
+    // Lowest application priority: this only ever reschedules a tone, it must
+    // never contend with anything radio/BLE-timing-critical.
+    NVIC_SetPriority(TIMER1_IRQn, 7);
+    NVIC_ClearPendingIRQ(TIMER1_IRQn);
+    NVIC_EnableIRQ(TIMER1_IRQn);
+#endif
     startup();
 }
 
@@ -150,7 +164,41 @@ void genericBuzzer::_nrfStopPwm() {
     _pwm_on = false;
 }
 
+genericBuzzer* genericBuzzer::_isr_instance = nullptr;
+
+void genericBuzzer::_armNoteTimer(uint32_t dur_ms) {
+    NRF_TIMER1->TASKS_STOP  = 1;
+    NRF_TIMER1->TASKS_CLEAR = 1;
+    NRF_TIMER1->EVENTS_COMPARE[0] = 0;
+    NRF_TIMER1->CC[0] = dur_ms * 1000UL;   // 1 us/tick (see PRESCALER in begin())
+    NRF_TIMER1->TASKS_START = 1;
+}
+
+// Halt the timer AND drop any interrupt it already latched. Stopping the timer
+// and clearing EVENTS_COMPARE[0] de-asserts the IRQ source, but an interrupt
+// the NVIC latched just before we stopped stays pending and would fire one
+// spurious _nrfAdvance() after we return — skipping the first note of a new
+// melody, or sounding a blip just after an explicit stop. Order matters: clear
+// the event (with a read-back to flush the write buffer, per the nRF52 event
+// anomaly) before clearing the NVIC, else the still-set event re-latches it.
+void genericBuzzer::_disarmNoteTimer() {
+    NRF_TIMER1->TASKS_STOP = 1;
+    NRF_TIMER1->EVENTS_COMPARE[0] = 0;
+    (void)NRF_TIMER1->EVENTS_COMPARE[0];
+    NVIC_ClearPendingIRQ(TIMER1_IRQn);
+}
+
+// Static member (not a free function) so it can reach private state without a
+// friend declaration — same trick MomentaryButton's isrTrampolineN() uses.
+// The real ISR (TIMER1_IRQHandler, below) is just a one-line dispatch to this.
+void genericBuzzer::_timer1ISR() {
+    NRF_TIMER1->EVENTS_COMPARE[0] = 0;
+    (void)NRF_TIMER1->EVENTS_COMPARE[0];   // flush write buffer so the IRQ doesn't immediately re-fire (nRF52 anomaly)
+    if (_isr_instance) _isr_instance->_nrfAdvance();
+}
+
 void genericBuzzer::_nrfBegin(const char* melody) {
+    _disarmNoteTimer();   // drop any in-flight/pending note advance before reconfiguring
     _nrfStopPwm();
     if (!melody || !*melody) { _rtttl_done = true; return; }
     const char* notes;
@@ -163,7 +211,7 @@ void genericBuzzer::_nrfBegin(const char* melody) {
 void genericBuzzer::_nrfAdvance() {
     uint16_t freq; uint32_t dur_ms;
     if (_parseNext(_rtttl_pos, _def_dur, _def_oct, _def_bpm, freq, dur_ms)) {
-        _note_end_ms = millis() + dur_ms;
+        _armNoteTimer(dur_ms);
         if (freq > 0) _nrfStartPwm(freq); else _nrfStopPwm();
     } else {
         _nrfStopPwm();
@@ -191,12 +239,20 @@ void genericBuzzer::playForced(const char* melody) {
 bool genericBuzzer::isPlaying() { return !_rtttl_done; }
 
 void genericBuzzer::stop() {
+    _disarmNoteTimer();   // ensure no latched note-advance fires after we stop
     _nrfStopPwm();
     _rtttl_done = true;
 }
 
-void genericBuzzer::loop() {
-    if (!_rtttl_done && (millis() >= _note_end_ms)) _nrfAdvance();
+// No-op: TIMER1's compare interrupt (_timer1ISR -> _nrfAdvance) now drives
+// note advancement directly, so timing no longer depends on how often (or
+// whether) the caller's loop() gets to run. Kept as a real method, not
+// removed, since UITask polls buzzer.loop() unconditionally for both
+// platforms.
+void genericBuzzer::loop() {}
+
+extern "C" void TIMER1_IRQHandler(void) {
+    genericBuzzer::_timer1ISR();
 }
 
 void genericBuzzer::setVolume(uint8_t level) {

@@ -54,7 +54,6 @@ class genericBuzzer
         const char*   _rtttl_pos   = nullptr;
         bool          _rtttl_done  = true;
         bool          _pwm_on      = false;
-        unsigned long _note_end_ms = 0;
         uint8_t       _def_dur     = 4;
         uint8_t       _def_oct     = 5;
         uint16_t      _def_bpm     = 120;
@@ -69,5 +68,21 @@ class genericBuzzer
                                    uint16_t bpm, uint16_t& freq_hz, uint32_t& dur_ms);
         static void     _parseHeader(const char* melody, uint8_t& def_dur, uint8_t& def_oct,
                                      uint16_t& bpm, const char*& notes_start);
+
+        // TIMER1-driven note advance: a hardware compare interrupt calls
+        // _nrfAdvance() at the exact moment the current note's duration ends,
+        // so playback timing survives a blocking display refresh (e-ink)
+        // instead of waiting for the next loop() poll. Same reasoning as
+        // MomentaryButton's GPIO-IRQ edge capture, just timer- rather than
+        // pin-driven. TIMER0 is reserved by the SoftDevice; TIMER1 is free.
+        void _armNoteTimer(uint32_t dur_ms);
+        void _disarmNoteTimer();
+        static genericBuzzer* _isr_instance;
+
+    public:
+        // Must be public: the extern "C" TIMER1_IRQHandler (see buzzer.cpp) is
+        // a free function — the vector table requires that exact symbol — so
+        // it needs access from outside the class to dispatch into it.
+        static void _timer1ISR();
 #endif
 };

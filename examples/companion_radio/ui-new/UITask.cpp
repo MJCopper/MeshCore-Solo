@@ -1429,6 +1429,21 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 #if defined(PIN_USER_BTN)
   user_btn.begin();
 #endif
+#if UI_HAS_JOYSTICK
+  // The directional joystick + Back share the same MomentaryButton machinery as
+  // user_btn but were never begin()'d — they only worked because the pins
+  // default to INPUT and the board has external pulls. That left them on the
+  // polling path: with BUTTON_USE_INTERRUPTS (e-ink) they'd silently never
+  // attach a GPIOTE channel, so edges landing during a blocking panel refresh
+  // were lost. begin() sets pinMode and claims an IRQ slot for each.
+  joystick_left.begin();
+  joystick_right.begin();
+  back_btn.begin();
+#if UI_HAS_JOYSTICK_UPDOWN
+  joystick_up.begin();
+  joystick_down.begin();
+#endif
+#endif
 #if defined(PIN_USER_BTN_ANA)
   analog_btn.begin();
 #endif
@@ -1970,8 +1985,22 @@ static void formatDashVal(uint8_t field, char* val, int val_len, uint16_t batt_m
   }
 }
 
+void UITask::enqueueKey(char c) {
+  if (c == 0) return;
+  uint8_t next = (_kq_head + 1) % KEY_QUEUE_SIZE;
+  if (next == _kq_tail) return;  // full: drop newest rather than clobber unprocessed keys
+  _key_queue[_kq_head] = c;
+  _kq_head = next;
+}
+
+bool UITask::dequeueKey(char& c) {
+  if (_kq_tail == _kq_head) return false;
+  c = _key_queue[_kq_tail];
+  _kq_tail = (_kq_tail + 1) % KEY_QUEUE_SIZE;
+  return true;
+}
+
 void UITask::loop() {
-  char c = 0;
   // Background delivery: resend pending on-device DMs whose ACK timed out, and
   // finalise the ✗ marker — runs regardless of which screen is active.
   ((QuickMsgScreen*)quick_msg)->tickDmResends();
@@ -2003,32 +2032,27 @@ void UITask::loop() {
       }
       // eat the Enter — don't pass to curr
     } else {
-      c = checkDisplayOn(KEY_ENTER);
+      enqueueKey(checkDisplayOn(KEY_ENTER));
     }
   } else if (ev == BUTTON_EVENT_LONG_PRESS) {
-    c = handleLongPress(KEY_ENTER);  // REVISIT: could be mapped to different key code
+    enqueueKey(handleLongPress(KEY_ENTER));  // REVISIT: could be mapped to different key code
   }
+  // Drain each direction fully: a burst of taps captured during a blocking
+  // refresh replays as several CLICKs, queued here and applied before one
+  // redraw (see enqueueKey / the dispatch at the end of loop()).
 #if UI_HAS_JOYSTICK_UPDOWN
-  ev = joystick_up.check();
-  if (ev == BUTTON_EVENT_CLICK) {
-    c = checkDisplayOn(rotateJoystickKey(KEY_UP, joy_rot));
-  }
-  ev = joystick_down.check();
-  if (ev == BUTTON_EVENT_CLICK) {
-    c = checkDisplayOn(rotateJoystickKey(KEY_DOWN, joy_rot));
-  }
+  while (joystick_up.check() == BUTTON_EVENT_CLICK)
+    enqueueKey(checkDisplayOn(rotateJoystickKey(KEY_UP, joy_rot)));
+  while (joystick_down.check() == BUTTON_EVENT_CLICK)
+    enqueueKey(checkDisplayOn(rotateJoystickKey(KEY_DOWN, joy_rot)));
 #endif
-  ev = joystick_left.check();
-  if (ev == BUTTON_EVENT_CLICK) {
-    c = checkDisplayOn(rotateJoystickKey(KEY_LEFT, joy_rot));
-  } else if (ev == BUTTON_EVENT_LONG_PRESS) {
-    c = handleLongPress(rotateJoystickKey(KEY_LEFT, joy_rot));
+  while ((ev = joystick_left.check()) != BUTTON_EVENT_NONE) {
+    if (ev == BUTTON_EVENT_CLICK) enqueueKey(checkDisplayOn(rotateJoystickKey(KEY_LEFT, joy_rot)));
+    else { if (ev == BUTTON_EVENT_LONG_PRESS) enqueueKey(handleLongPress(rotateJoystickKey(KEY_LEFT, joy_rot))); break; }
   }
-  ev = joystick_right.check();
-  if (ev == BUTTON_EVENT_CLICK) {
-    c = checkDisplayOn(rotateJoystickKey(KEY_RIGHT, joy_rot));
-  } else if (ev == BUTTON_EVENT_LONG_PRESS) {
-    c = handleLongPress(rotateJoystickKey(KEY_RIGHT, joy_rot));
+  while ((ev = joystick_right.check()) != BUTTON_EVENT_NONE) {
+    if (ev == BUTTON_EVENT_CLICK) enqueueKey(checkDisplayOn(rotateJoystickKey(KEY_RIGHT, joy_rot)));
+    else { if (ev == BUTTON_EVENT_LONG_PRESS) enqueueKey(handleLongPress(rotateJoystickKey(KEY_RIGHT, joy_rot))); break; }
   }
   if (_lock_seq_used && millis() - _lock_seq_ms > 5000) {
     _lock_seq_used = false;  // safety reset if Back release event was missed
@@ -2040,34 +2064,34 @@ void UITask::loop() {
       _lock_seq_count = 0;
       _lock_seq_used = false;
     } else {
-      c = checkDisplayOn(KEY_CANCEL);
+      enqueueKey(checkDisplayOn(KEY_CANCEL));
     }
   } else if (ev == BUTTON_EVENT_TRIPLE_CLICK) {
-    if (!_locked) c = handleTripleClick(KEY_SELECT);
+    if (!_locked) enqueueKey(handleTripleClick(KEY_SELECT));
   }
 #elif defined(PIN_USER_BTN)
   int ev = user_btn.check();
   if (ev == BUTTON_EVENT_CLICK) {
-    c = checkDisplayOn(KEY_NEXT);
+    enqueueKey(checkDisplayOn(KEY_NEXT));
   } else if (ev == BUTTON_EVENT_LONG_PRESS) {
-    c = handleLongPress(KEY_ENTER);
+    enqueueKey(handleLongPress(KEY_ENTER));
   } else if (ev == BUTTON_EVENT_DOUBLE_CLICK) {
-    c = handleDoubleClick(KEY_PREV);
+    enqueueKey(handleDoubleClick(KEY_PREV));
   } else if (ev == BUTTON_EVENT_TRIPLE_CLICK) {
-    c = handleTripleClick(KEY_SELECT);
+    enqueueKey(handleTripleClick(KEY_SELECT));
   }
 #endif
 #if defined(PIN_USER_BTN_ANA)
   if (millis() - _analogue_pin_read_millis > 10) {
     int ev = analog_btn.check();
     if (ev == BUTTON_EVENT_CLICK) {
-      c = checkDisplayOn(KEY_NEXT);
+      enqueueKey(checkDisplayOn(KEY_NEXT));
     } else if (ev == BUTTON_EVENT_LONG_PRESS) {
-      c = handleLongPress(KEY_ENTER);
+      enqueueKey(handleLongPress(KEY_ENTER));
     } else if (ev == BUTTON_EVENT_DOUBLE_CLICK) {
-      c = handleDoubleClick(KEY_PREV);
+      enqueueKey(handleDoubleClick(KEY_PREV));
     } else if (ev == BUTTON_EVENT_TRIPLE_CLICK) {
-      c = handleTripleClick(KEY_SELECT);
+      enqueueKey(handleTripleClick(KEY_SELECT));
     }
     _analogue_pin_read_millis = millis();
   }
@@ -2085,32 +2109,28 @@ void UITask::loop() {
 #endif
 
   // A ringing alarm/timer is dismissed by ANY key, even when locked or on another
-  // screen — and that key is swallowed so it doesn't also act on the current view.
-  if (c != 0 && isRinging()) {
+  // screen — and the queued keys are swallowed so they don't also act on the view.
+  if (_kq_head != _kq_tail && isRinging()) {
     dismissRing();
-    c = 0;
+    _kq_head = _kq_tail = 0;
     _next_refresh = 0;
   }
 
-  if (c != 0) {
+  if (_kq_head != _kq_tail) {
     if (!_locked && curr) {
-      curr->handleInput(c);
+      // Apply the whole queued burst, then redraw once — N taps captured during
+      // a blocking refresh become N navigation steps at the cost of one refresh.
+      char k;
+      while (dequeueKey(k)) curr->handleInput(k);
       { uint32_t aoff = autoOffMillis(); if (aoff > 0) _auto_off = millis() + aoff; }  // extend auto-off timer
-#ifdef PIN_BUZZER
-      if (buzzer.isPlaying()) {
-        // Keep the next render at least 300 ms away so the blocking e-ink endFrame()
-        // doesn't extend the current note.  300 ms covers the slowest note at 120 BPM (1/4).
-        unsigned long deadline = millis() + 300;
-        if (_next_refresh < deadline) _next_refresh = deadline;
-      } else {
-        _next_refresh = 100;  // trigger refresh immediately
-      }
-#else
-      _next_refresh = 100;  // trigger refresh
-#endif
-    } else if (_locked) {
-      // Locked: eat all keys — wake window is set only when display first turns on
-      _next_refresh = 0;
+      // Note timing no longer depends on render cadence (TIMER1 IRQ advances
+      // notes directly — see buzzer.cpp), so a redraw right after a keypress
+      // can't clip a note; no need to hold it back while buzzer.isPlaying().
+      _next_refresh = 100;  // trigger refresh immediately
+    } else {
+      _kq_head = _kq_tail = 0;  // locked or no screen: eat all queued keys
+      // Locked: wake window is set only when display first turns on
+      if (_locked) _next_refresh = 0;
     }
   }
 
