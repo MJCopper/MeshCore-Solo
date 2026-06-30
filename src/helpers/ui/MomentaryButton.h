@@ -35,6 +35,12 @@ class MomentaryButton {
   volatile uint32_t _edge_time[EDGE_BUF_SIZE];
   volatile uint8_t _edge_head = 0, _edge_tail = 0;
   volatile uint32_t _last_isr_edge = 0;
+  // Self-heal debounce: only reconcile against the live pin once a divergence
+  // from `prev` has persisted, so a single raw read of a bouncing contact can't
+  // inject a phantom press/release pair (a double-click).
+  bool _healing = false;
+  uint8_t _heal_level = 0;
+  uint32_t _heal_since = 0;
 
   void pushEdge(uint8_t level, uint32_t at);
   bool popEdge(uint8_t &level, uint32_t &at);

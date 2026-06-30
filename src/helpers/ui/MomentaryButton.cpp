@@ -3,7 +3,13 @@
 #define MULTI_CLICK_WINDOW_MS  280
 
 #ifdef BUTTON_USE_INTERRUPTS
-#define ISR_DEBOUNCE_MS  5
+// Contact-bounce guard for the edge-capture ISR. Must be long enough to swallow
+// a switch's full settling burst, otherwise a bounce edge accepted just after a
+// clean release is replayed as a phantom press and — once the live-pin self-heal
+// pulls the level back — surfaces as a second CLICK (seen as a double-tap, e.g.
+// start+stop on the stopwatch). 5 ms was too tight for the joystick switch.
+// Still far below any human tap cadence (>100 ms), so real fast bursts are kept.
+#define ISR_DEBOUNCE_MS  25
 
 MomentaryButton* MomentaryButton::_isr_table[MomentaryButton::MAX_ISR_BUTTONS] = { nullptr };
 
@@ -168,10 +174,25 @@ int MomentaryButton::check(bool repeat_click) {
     // Self-heal: if an edge was ever lost (buffer overflow, a debounce-dropped
     // settling edge, or a missed GPIOTE event), prev would otherwise stay
     // diverged from the hardware until the next captured edge — a stuck button.
-    // Reconcile against the live pin; a no-op whenever the edge stream already
-    // matches it, which is the normal case.
+    // Reconcile against the live pin, but only once the divergence has been
+    // STABLE for ISR_DEBOUNCE_MS: a single raw read can catch a contact
+    // mid-bounce and would otherwise synthesise a phantom press/release pair
+    // (a double-click — e.g. start+stop on the stopwatch). A no-op whenever the
+    // edge stream already matches the pin, which is the normal case.
     int live = digitalRead(_pin);
-    if (live != prev) applyTransition(live, millis());
+    uint32_t now = millis();
+    if (live != prev) {
+      if (!_healing || live != _heal_level) {
+        _healing = true;
+        _heal_level = (uint8_t)live;
+        _heal_since = now;
+      } else if ((uint32_t)(now - _heal_since) >= ISR_DEBOUNCE_MS) {
+        applyTransition(live, now);
+        _healing = false;
+      }
+    } else {
+      _healing = false;
+    }
     btn = prev;
   } else
 #endif
