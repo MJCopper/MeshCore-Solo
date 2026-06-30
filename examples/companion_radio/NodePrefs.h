@@ -87,7 +87,7 @@ struct NodePrefs {  // persisted to file
   uint16_t home_pages_mask;    // bitmask of visible home pages (bit0=Clock..bit8=Shutdown); 0=all visible
   uint8_t  bot_enabled;         // 0=disabled, 1=DM bot active (responds to all DMs)
   uint8_t  bot_channel_enabled; // 0=disabled, 1=channel bot active for bot_channel_idx
-  uint8_t  bot_channel_idx;     // channel index for channel bot
+  uint8_t  bot_channel_idx;     // channel index for channel bot [del→onChannelRemoved]
   char     bot_trigger[64];     // DM trigger phrase (case-insensitive contains; "*" = any DM)
   char     bot_reply_dm[140];   // auto-reply text for DM
   char     bot_reply_ch[140];   // auto-reply text for channel
@@ -100,7 +100,7 @@ struct NodePrefs {  // persisted to file
   uint8_t  buzzer_auto;        // 0=manual (default), 1=auto-mute when BT connected
   struct DmNotifEntry { uint8_t prefix[4]; uint8_t state; }; // state: 0=default,1=muted,2=force-on
   static const int DM_NOTIF_TABLE_MAX = 16;
-  DmNotifEntry dm_notif[DM_NOTIF_TABLE_MAX]; // 16*5 = 80 bytes
+  DmNotifEntry dm_notif[DM_NOTIF_TABLE_MAX]; // 16*5 = 80 bytes [del→onContactRemoved]
   uint8_t  dashboard_fields[3]; // 0=None,1=Batt V,2=Temp,3=Hum,4=Pres,5=GPS,6=Alt,7=Lux,8=CO2,9=Nodes,10=Msgs,11=Batt %
   uint32_t advert_auto_interval_sec; // periodic 0-hop advert with GPS: 0=off, else seconds
   // Second melody slot (same packing as ringtone_*)
@@ -114,12 +114,12 @@ struct NodePrefs {  // persisted to file
   // Advert sound filter: 0=all adverts, 1=zero-hop only
   uint8_t  advert_sound_scope;
   // Per-channel melody override (2 bitmasks, 1 bit per channel)
-  uint64_t ch_notif_melody_set;  // bit i = channel i has explicit melody
+  uint64_t ch_notif_melody_set;  // bit i = channel i has explicit melody [del→onChannelRemoved]
   uint64_t ch_notif_melody_2;    // bit i = use melody 2 (else melody 1, when set bit is set)
   // Per-DM melody table
   struct DmMelodyEntry { uint8_t prefix[4]; uint8_t slot; }; // slot: 0=global,1=melody1,2=melody2
   static const int DM_MELODY_TABLE_MAX = 16;
-  DmMelodyEntry dm_melody[DM_MELODY_TABLE_MAX];
+  DmMelodyEntry dm_melody[DM_MELODY_TABLE_MAX]; // [del→onContactRemoved]
   uint8_t  use_lemon_font;      // 0=default Adafruit font, 1=Lemon font (Unicode, pixel-accurate wrap)
   uint8_t  display_rotation;    // 0-3; only used on e-ink displays
   // Home screen page order: each byte = HomePageBit + 1. 0 terminates the list.
@@ -138,7 +138,7 @@ struct NodePrefs {  // persisted to file
   // Layout transposes between landscape (3×2) and portrait (2×3).
   static const uint8_t FAVOURITES_COUNT = 6;
   static const uint8_t FAVOURITE_PREFIX_LEN = 6;
-  uint8_t favourite_contacts[FAVOURITES_COUNT][FAVOURITE_PREFIX_LEN];
+  uint8_t favourite_contacts[FAVOURITES_COUNT][FAVOURITE_PREFIX_LEN]; // [del→onContactRemoved]
 
   // GPS trail cadence. Logging on/off is a runtime state (Tools › Trail),
   // not a persisted preference.
@@ -229,8 +229,8 @@ struct NodePrefs {  // persisted to file
   // Configured from the Map (Trail screen) "Live share" menu.
   uint8_t  loc_share_enabled;       // 0=off (default), 1=auto-sharing on
   uint8_t  loc_share_target_type;   // 0=channel, 1=DM contact
-  uint8_t  loc_share_channel_idx;   // target channel index (when target_type==0)
-  uint8_t  loc_share_dm_prefix[6];  // target contact pubkey prefix (when target_type==1)
+  uint8_t  loc_share_channel_idx;   // target channel index (when target_type==0) [del→onChannelRemoved]
+  uint8_t  loc_share_dm_prefix[6];  // target contact pubkey prefix (when target_type==1) [del→onContactRemoved]
   uint8_t  loc_share_move_idx;      // movement gate level (index into locShareMoveMeters)
   uint8_t  loc_share_interval_idx;  // min send interval (index into locShareIntervalSecs)
   uint8_t  loc_share_heartbeat_idx; // stationary heartbeat (index into locShareHeartbeatSecs)
@@ -251,7 +251,7 @@ struct NodePrefs {  // persisted to file
   // re-reads the latest [LOC] position each evaluation (keyed by pubkey prefix),
   // so the geofence follows a moving person ("alert when my friend is near").
   uint8_t  locator_target_kind;  // 0=waypoint (static), 1=live contact
-  uint8_t  locator_key[6];       // contact pubkey prefix when target_kind==1
+  uint8_t  locator_key[6];       // contact pubkey prefix when target_kind==1 [del→onContactRemoved]
 
   // Trail auto-pause — when tracking, automatically freeze the trail (timer +
   // sampling) after the device has sat still for this long, and resume on the
@@ -263,6 +263,24 @@ struct NodePrefs {  // persisted to file
   // the closer it gets to the target, like a homing beeper. Independent of the
   // discrete arrive/leave alert (locator_mode).
   uint8_t  locator_beeper;       // 0=off (default), 1=on
+
+  // GPS averaging for waypoint marking — when set, "Mark here" samples the GPS
+  // fix for this many seconds and stores the mean position, for a more accurate
+  // mark than a single instantaneous fix. 0 = off (instant mark, the default).
+  // Index into gpsAvgSecs(). [Tools › Trail › Settings › Mark avg]
+  uint8_t  gps_avg_idx;
+
+  // Alarm clock — a single one-shot wake alarm, configured from the Clock page
+  // (Enter › Alarm). Stored as a local time-of-day; the actual fire instant is
+  // (re)computed as an absolute time in tickBackground(), which is what makes it
+  // robust to RTC re-syncs: the mesh (every inbound packet), the companion app,
+  // GPS and the CLI can all jump getCurrentTime() at any moment, but an absolute
+  // target instant stays correct across small corrections and still fires (late)
+  // if the clock jumps over it. Fires once, then alarm_on clears. The minutnik
+  // (countdown) and stoper (stopwatch) are runtime-only and not persisted.
+  uint8_t  alarm_on;    // 0=off (default), 1=armed (one-shot)
+  uint8_t  alarm_hour;  // 0-23, local time
+  uint8_t  alarm_min;   // 0-59
 
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
@@ -295,6 +313,17 @@ struct NodePrefs {  // persisted to file
     return L[m < LOCATOR_MODE_COUNT ? m : 0];
   }
 
+  // GPS-averaging durations for waypoint marking (seconds). 0 = off (instant).
+  static const uint8_t GPS_AVG_COUNT = 4;
+  static uint16_t gpsAvgSecs(uint8_t idx) {
+    static const uint16_t S[GPS_AVG_COUNT] = { 0, 5, 10, 30 };
+    return S[idx < GPS_AVG_COUNT ? idx : 0];
+  }
+  static const char* gpsAvgLabel(uint8_t idx) {
+    static const char* L[GPS_AVG_COUNT] = { "Off", "5s", "10s", "30s" };
+    return L[idx < GPS_AVG_COUNT ? idx : 0];
+  }
+
   // Trail auto-pause delays (seconds). 0 = off.
   static const uint8_t TRAIL_AUTOPAUSE_COUNT = 4;
   static uint16_t trailAutoPauseSecs(uint8_t idx) {
@@ -315,7 +344,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0015;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0017;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -384,6 +413,23 @@ struct NodePrefs {  // persisted to file
     if (pos < size) buf[pos] = '\0';
   }
 };
+
+// ── Serialization tripwire ───────────────────────────────────────────────────
+// NodePrefs is written/read field-by-field, in order, by DataStore::savePrefs()
+// and loadPrefsInt(); the on-disk format IS the struct's field layout. There is
+// no automatic check that those two hand-written sequences match the struct, so
+// a forgotten read/write silently misaligns EVERY field after it.
+//
+// This assert is the manual checkpoint. Changing a data member changes sizeof
+// and trips it. When it trips, do ALL of the following, then update the number:
+//   1. add the field's rd(...)   in DataStore::loadPrefsInt(), in struct order
+//   2. add the field's write(...) in DataStore::savePrefs(),   in struct order
+//   3. clamp it on load (an upgrader's file lacks it → stray bytes)
+//   4. bump SCHEMA_SENTINEL's low byte
+// (Padding can also shift sizeof; a "false" trip just means re-check + rebump.)
+static_assert(sizeof(NodePrefs) == 2488,
+              "NodePrefs layout changed — sync DataStore save/load + clamp, bump "
+              "SCHEMA_SENTINEL, then update this size (see steps above).");
 
 // Bounds for a usable repeater radio profile. The frequency range is passed in
 // by the caller from RadioLibWrapper::getFreqBounds() — the radio chip's own

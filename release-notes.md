@@ -10,6 +10,7 @@
 - **Trail auto-pause** — recording **freezes on stops** (banking elapsed time and breaking the map line across the idle gap) and **resumes on movement** without ending the session; the home-screen blink keeps going while paused.
 - **Collapsible Tools** — tools are grouped into fold-in-place **Location / Comms / System** sections, the same model as Settings (Tools always opens folded to the section list), and the home carousel now uses **page-indicator icons** instead of dots.
 - **Waypoint coordinate editor** — add a waypoint by scroll-editing its latitude/longitude digit by digit.
+- **On-device room login with saved passwords** — log in to a room server straight from the device (no phone app): pick the room and the password prompt appears automatically (a blank password works for open rooms), or re-login any time via the room's **context-menu "Login…"**. The password is **remembered across reboots**, so a room you've used before logs back in without retyping; a failed login (e.g. the server's password changed) forgets the stale password so the next attempt prompts again. Room passwords entered via the **phone app** are saved on the device too, so it can post to that room standalone after a reboot. Saved passwords are written with the same atomic, crash-safe persistence as contacts and channels.
 
 ### Fixes
 
@@ -20,6 +21,7 @@
 - **Nearby Nodes** — live `[LOC]` senders now respect the type filter and sort by their shared position; the distance-sorted list refreshes so live shares bubble to the top.
 - **Map** — live contacts are labelled before waypoints, so a person's name shows rather than a nearby waypoint's.
 - **GPS status icon** is hidden when GPS is turned off in Settings, instead of sitting there empty.
+- **Trail — start with GPS off** now prompts **"GPS is off — Enable GPS & start"** instead of silently starting a session that shows "Waiting for GPS fix" forever and records nothing.
 - Null-guarded the Locator target picker and clamped the loc-share channel index on load.
 
 ### Under the hood

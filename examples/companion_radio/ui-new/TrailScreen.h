@@ -72,14 +72,14 @@ class TrailScreen : public UIScreen {
   // (Start/Stop tracking, Reset). PopupMenu stores label pointers verbatim, so
   // the labels live in member buffers that get refreshed in openActionMenu()
   // and after every LEFT/RIGHT cycle.
-  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_AUTOPAUSE, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS, ACT_FILE, ACT_SETTINGS,
-                 ACT_SHARE_NOW };
+  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_AUTOPAUSE, ACT_MARK_AVG, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS, ACT_FILE, ACT_SETTINGS,
+                 ACT_SHARE_NOW, ACT_TRACKBACK };
   // The action popup is multi-level: a short main menu, plus "Trail file…" and
   // "Settings…" submenus. _menu_level tracks which is open so input is routed
   // correctly (settings rows cycle with LEFT/RIGHT; everything else is Enter).
   // Live-share *config* lives in its own tool (Tools › Live Share); the map only
   // keeps the one-shot "Share my pos" action.
-  enum MenuLevel { ML_MAIN, ML_FILE, ML_SETTINGS };
+  enum MenuLevel { ML_MAIN, ML_FILE, ML_SETTINGS, ML_CONFIRM_GPS };
   PopupMenu _action_menu;
   uint8_t   _menu_level = ML_MAIN;
   uint8_t   _act_map[16];  // max rows on any one level; pushAction guards the cap
@@ -88,6 +88,7 @@ class TrailScreen : public UIScreen {
   char      _act_units_label[24];
   char      _act_grid_label[16];
   char      _act_autopause_label[24];
+  char      _act_mark_avg_label[24];
   char      _act_toggle_label[20];
 
   static const int SUMMARY_ITEM_COUNT = 5;
@@ -96,7 +97,7 @@ public:
   TrailScreen(UITask* task, TrailStore* store)
     : _task(task), _store(store), _wp(task, store) {}
 
-  void enter() {
+  void onShow() override {
     _view = V_SUMMARY;
     _summary_scroll = 0;
     _list_scroll    = 0;
@@ -107,9 +108,10 @@ public:
     _wp.reset();
   }
 
-  // Enter straight into the Map view (used by the Home "Map" page). Remembers
-  // that we came from Home so KEY_CANCEL returns there, not to Tools.
-  void enterMap() { enter(); _view = V_MAP; _return_home = true; }
+  // Switch straight into the Map view (used by the Home "Map" page). Layered on
+  // top of onShow()'s reset by gotoMapScreen(); remembers we came from Home so
+  // KEY_CANCEL returns there, not to Tools.
+  void showMapView() { _view = V_MAP; _return_home = true; }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
@@ -135,6 +137,10 @@ public:
     return _store->isActive() ? 1000 : 5000;
   }
 
+  // Forward the loop tick to the waypoint UI so GPS averaging (Mark avg) can
+  // sample independently of the render cadence (slow on e-ink).
+  void poll() override { _wp.poll(); }
+
   bool handleInput(char c) override {
     // Waypoint management UI consumes all input while active.
     if (_wp.active()) return _wp.handleInput(c);
@@ -143,8 +149,8 @@ public:
     if (_action_menu.active) {
       // LEFT/RIGHT cycles the focused value — only meaningful in the Settings
       // submenu; the popup stays open so the user can keep tapping.
-      if (c == KEY_LEFT || c == KEY_RIGHT || c == KEY_PREV || c == KEY_NEXT) {
-        int dir = (c == KEY_RIGHT || c == KEY_NEXT) ? 1 : -1;
+      if (keyIsPrev(c) || keyIsNext(c)) {
+        int dir = keyIsNext(c) ? 1 : -1;
         int idx = _action_menu.selectedIndex();
         if (idx >= 0 && idx < _act_count && _menu_level == ML_SETTINGS)
           cycleSetting((ActionId)_act_map[idx], dir);
@@ -152,6 +158,16 @@ public:
       }
       auto res = _action_menu.handleInput(c);
       if (res == PopupMenu::SELECTED) {
+        // GPS-off confirmation popup: rows aren't ActionIds, route by level.
+        if (_menu_level == ML_CONFIRM_GPS) {
+          if (_action_menu.selectedIndex() == 0) {   // "Enable GPS & start"
+            _task->toggleGPS();                       // off → on (persists, shows GPS alert)
+            _store->setActive(true);
+            _task->showAlert("GPS on, tracking started", 1200);
+          }
+          _menu_level = ML_MAIN;   // popup already closed by handleInput()
+          return true;
+        }
         int sel = _action_menu.selectedIndex();
         ActionId act = (sel >= 0 && sel < _act_count) ? (ActionId)_act_map[sel] : ACT_TOGGLE;
         switch (act) {
@@ -161,35 +177,46 @@ public:
           case ACT_MIN_DIST:
           case ACT_UNITS:
           case ACT_GRID:
+          case ACT_MARK_AVG:
           case ACT_AUTOPAUSE: cycleSetting(act, 1); reopenSettingsAt(sel); return true;
           case ACT_SHARE_NOW:     shareMyLocationNow(); break;
-          case ACT_TOGGLE:        handleToggle();      break;
+          case ACT_TOGGLE:
+            // Starting a trail with GPS switched off logs nothing and just
+            // sits on "Waiting for GPS fix" forever -- prompt to enable it
+            // first (only on boards that actually have a toggleable GPS).
+            if (!_store->isActive() && _task->hasGPS() && !_task->getGPSState()) {
+              buildGpsConfirmMenu();
+              return true;
+            }
+            handleToggle();
+            break;
           case ACT_MARK:          _wp.markHere();      break;
           case ACT_WAYPOINTS:     _wp.openList();      break;
+          case ACT_TRACKBACK:     _wp.startTrackBack(); break;
           case ACT_SAVE:          handleSave();        break;
           case ACT_LOAD:          handleLoad();        break;
           case ACT_RESET:         handleReset();       break;
           case ACT_EXPORT:        handleExport();      break;
           case ACT_EXPORT_SAVED:  handleExportSaved(); break;
         }
-        if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
+        _task->savePrefsIfDirty(_cfg_dirty);
       } else if (res == PopupMenu::CANCELLED) {
-        if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
+        _task->savePrefsIfDirty(_cfg_dirty);
         if (_menu_level != ML_MAIN) buildMainMenu();   // Cancel backs out of a submenu
       }
       return true;
     }
 
     if (c == KEY_CANCEL) {
-      if (_cfg_dirty) { the_mesh.savePrefs(); _cfg_dirty = false; }
+      _task->savePrefsIfDirty(_cfg_dirty);
       if (_return_home) _task->gotoHomeScreen();
       else              _task->gotoToolsScreen();
       return true;
     }
     if (c == KEY_CONTEXT_MENU) { openActionMenu(); return true; }
 
-    if (c == KEY_LEFT  || c == KEY_PREV) { _view = (uint8_t)((_view + V_COUNT - 1) % V_COUNT); return true; }
-    if (c == KEY_RIGHT || c == KEY_NEXT) { _view = (uint8_t)((_view + 1) % V_COUNT);          return true; }
+    if (keyIsPrev(c)) { _view = (uint8_t)((_view + V_COUNT - 1) % V_COUNT); return true; }
+    if (keyIsNext(c)) { _view = (uint8_t)((_view + 1) % V_COUNT);          return true; }
     if (_view == V_SUMMARY && c == KEY_UP) {
       _summary_scroll = (_summary_scroll > 0) ? _summary_scroll - 1 : _summary_max_scroll;
       return true;
@@ -298,6 +325,8 @@ private:
               "Grid: %s",      _map_grid ? "ON" : "OFF");
     snprintf(_act_autopause_label, sizeof(_act_autopause_label),
               "Auto-pause: %s", NodePrefs::trailAutoPauseLabel(p ? p->trail_autopause_idx : 0));
+    snprintf(_act_mark_avg_label, sizeof(_act_mark_avg_label),
+              "Mark avg: %s", NodePrefs::gpsAvgLabel(p ? p->gps_avg_idx : 0));
     snprintf(_act_toggle_label, sizeof(_act_toggle_label),
               "%s tracking",  _store->isActive() ? "Stop" : "Start");
   }
@@ -325,9 +354,21 @@ private:
     // "Waypoints" opens the nav list — always available; it hosts the list,
     // backtrack (Trail-start row) and the "+ Add by coords" entry.
     pushAction(ACT_WAYPOINTS, "Waypoints...");
+    // Track back retraces the recorded route to its start; needs ≥2 points.
+    if (_store->count() >= 2) pushAction(ACT_TRACKBACK, "Track back");
     pushAction(ACT_SHARE_NOW,  "Share my pos");
     if (fileMenuHasItems()) pushAction(ACT_FILE, "Trail file...");
     pushAction(ACT_SETTINGS,  "Settings...");
+  }
+
+  // Confirmation shown when "Start tracking" is chosen with GPS off. Rows are
+  // plain (not ActionIds); handled by _menu_level in the SELECTED branch.
+  void buildGpsConfirmMenu() {
+    _menu_level = ML_CONFIRM_GPS;
+    _act_count  = 0;
+    _action_menu.begin("GPS is off", 2);
+    _action_menu.addItem("Enable GPS & start");
+    _action_menu.addItem("Cancel");
   }
 
   // Trail-file submenu — only the operations that make sense right now.
@@ -352,6 +393,7 @@ private:
     _action_menu.begin("Settings", 4);
     pushAction(ACT_MIN_DIST,  _act_min_dist_label);
     pushAction(ACT_AUTOPAUSE, _act_autopause_label);
+    pushAction(ACT_MARK_AVG,  _act_mark_avg_label);
     if (_view == V_SUMMARY) pushAction(ACT_UNITS, _act_units_label);
     if (_view == V_MAP)     pushAction(ACT_GRID,  _act_grid_label);
   }
@@ -363,6 +405,7 @@ private:
     if (act == ACT_UNITS    && p) { cycleUnits(p, dir);    _cfg_dirty = true; refreshActionLabels(); return true; }
     if (act == ACT_GRID)          { _map_grid = !_map_grid;                    refreshActionLabels(); return true; }
     if (act == ACT_AUTOPAUSE && p){ cycleAutoPause(p, dir); _cfg_dirty = true; refreshActionLabels(); return true; }
+    if (act == ACT_MARK_AVG  && p){ cycleMarkAvg(p, dir);   _cfg_dirty = true; refreshActionLabels(); return true; }
     return false;
   }
 
@@ -404,6 +447,13 @@ private:
     idx = (dir > 0) ? (idx + 1) % NodePrefs::TRAIL_AUTOPAUSE_COUNT
                     : (idx + NodePrefs::TRAIL_AUTOPAUSE_COUNT - 1) % NodePrefs::TRAIL_AUTOPAUSE_COUNT;
     p->trail_autopause_idx = idx;
+  }
+  void cycleMarkAvg(NodePrefs* p, int dir) {
+    uint8_t idx = p->gps_avg_idx;
+    if (idx >= NodePrefs::GPS_AVG_COUNT) idx = 0;
+    idx = (dir > 0) ? (idx + 1) % NodePrefs::GPS_AVG_COUNT
+                    : (idx + NodePrefs::GPS_AVG_COUNT - 1) % NodePrefs::GPS_AVG_COUNT;
+    p->gps_avg_idx = idx;
   }
 
   // One-shot manual share: build "[LOC]lat,lon" and hand it to the Messages

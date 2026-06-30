@@ -42,7 +42,7 @@ class BotScreen : public UIScreen {
 public:
   BotScreen(UITask* task, NodePrefs* prefs, KeyboardWidget* kb) : _task(task), _prefs(prefs), _kb(kb) {}
 
-  void enter() {
+  void onShow() override {
     _sel      = 0;
     _scroll   = 0;
     _kb_field = -1;
@@ -75,7 +75,7 @@ public:
                                     "Trigger Ch", "Reply Ch", "Commands",
                                     "Quiet from", "Quiet to" };
     drawList(display, ITEM_COUNT, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
-      display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+      drawRowSelection(display, y, sel, reserve);
       display.setCursor(2, y);
       display.print(labels[i]);
       display.setCursor(val_x, y);
@@ -141,7 +141,7 @@ public:
     }
 
     if (cancel) {
-      if (_dirty) the_mesh.savePrefs();
+      _task->savePrefsIfDirty(_dirty);
       _task->gotoToolsScreen();
       return true;
     }

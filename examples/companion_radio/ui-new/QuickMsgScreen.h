@@ -20,12 +20,12 @@ class QuickMsgScreen : public UIScreen {
   uint16_t _sorted[MAX_CONTACTS];
   ContactInfo _sel_contact;
   bool _room_mode;  // true = picking a room server, false = picking a DM contact
+  bool _login_mode; // true while KEYBOARD is collecting a room-login password
 
   // CHANNEL_PICK
   int _channel_sel, _channel_scroll;
   int _num_channels;
   uint8_t _channel_indices[MAX_GROUP_CHANNELS];
-  uint8_t _ch_unread[MAX_GROUP_CHANNELS];
   int _sel_channel_idx;
   bool _sending_to_channel;
 
@@ -40,17 +40,12 @@ class QuickMsgScreen : public UIScreen {
   int _active_msgs[QUICK_MSGS_MAX];
   int _active_msg_count;
 
-  // CHANNEL_HIST
+  // CHANNEL_HIST — selection + the unread "viewing session" bookkeeping. The
+  // history ring itself and the per-channel unread counters live in _history.
   int _hist_sel, _hist_scroll;
   FullscreenMsgView _fs;
-  int  _unread_at_entry;    // _ch_unread value when entering CHANNEL_HIST
+  int  _unread_at_entry;    // channel unread count when entering CHANNEL_HIST
   int  _viewing_max_seen;  // highest _hist_sel reached in current session
-  // Shared ring for all channels combined. addChannelMsg() decrements the
-  // matching _ch_unread when an entry is evicted so the badge can't claim
-  // unread messages that no longer exist in the ring. Each slot carries a full
-  // MSG_TEXT_BUF, so this ring dominates the screen's RAM footprint — kept
-  // modest to leave heap headroom (see DM_HIST_MAX).
-  static const int CH_HIST_MAX = 48;
 
   // KEYBOARD
   KeyboardWidget* _kb;
@@ -89,48 +84,15 @@ class QuickMsgScreen : public UIScreen {
   // auto-share target (channel / DM) instead of composing a message.
   bool      _pick_target = false;
 
-  // History text holds a full received message. Channel messages carry the
-  // sender embedded as "Name: body" in the payload, so a message can be up to
-  // the over-the-air maximum (MAX_TEXT_LEN). Size the buffers to that + NUL,
-  // otherwise long messages (and Polish text, where each accented char is two
-  // UTF-8 bytes) get their tail clipped.
-  static const int MSG_TEXT_BUF = MAX_TEXT_LEN + 1;
+  // The message-history rings (channel + DM), their per-entry delivery state and
+  // per-channel unread counters live in this store (see MessageHistory.h). The
+  // phase machine below keeps only the view state — selection, scroll, the
+  // fullscreen readers — and reaches entries through _history's accessors. The
+  // shared types (AckState, ChHistEntry, DmHistEntry, MSG_TEXT_BUF) are file-
+  // scope, so they're still referred to unqualified throughout this screen.
+  MessageHistory _history;
 
-  // Outgoing-message delivery state. DM: a real end-to-end ACK (✓ delivered to
-  // the recipient). Channel: only a "relayed into mesh" echo from a repeater (no
-  // recipient ACK exists for floods), so a missing echo is NOT shown as failure.
-  enum AckState : uint8_t { ACK_NONE = 0, ACK_PENDING, ACK_OK, ACK_FAIL };
-
-  struct ChHistEntry {
-    uint8_t  ch_idx;
-    char     text[MSG_TEXT_BUF];
-    uint32_t timestamp;
-    uint8_t  relay_status;   // AckState; only PENDING/OK used (no failure for floods)
-    uint32_t relay_seq;      // MyMesh relay seq to match against onChannelRelayed()
-  };
-  ChHistEntry _hist[CH_HIST_MAX];
-  int _hist_head, _hist_count;
-
-  // DM_HIST
-  struct DmHistEntry {
-    uint8_t  prefix[4];
-    uint8_t  outgoing;
-    char     text[MSG_TEXT_BUF];
-    uint32_t timestamp;
-    uint8_t  ack_status;       // AckState; meaningful only when outgoing
-    uint32_t ack_tag;          // expected_ack CRC to match against onMsgAck()
-    uint32_t ack_deadline_ms;  // millis() by which a pending ACK must arrive
-    // Sender-perspective message timestamp: the send timestamp for outgoing
-    // (reused verbatim on resend so the recipient treats it as a retry), or the
-    // sender_timestamp for incoming (used to dedup retried copies). 0 = unknown.
-    uint32_t msg_ts;
-    uint8_t  attempt;          // last attempt number sent (outgoing); next resend = attempt+1
-    uint8_t  resends_left;     // remaining auto-resends before the marker shows ✗
-  };
-  // Each slot carries a full MSG_TEXT_BUF; kept modest to bound heap use.
-  static const int DM_HIST_MAX = 32;
-  DmHistEntry _dm_hist[DM_HIST_MAX];
-  int _dm_hist_head, _dm_hist_count;
+  // DM_HIST view state (the ring itself is in _history).
   int _dm_hist_sel, _dm_hist_scroll;
   FullscreenMsgView _dm_fs;
 
@@ -208,15 +170,9 @@ class QuickMsgScreen : public UIScreen {
     return r;
   }
 
-  // Strip "@[nick] " reply prefix from a message body for compact list display.
-  static const char* skipReplyPrefix(const char* text) {
-    if (text[0] == '@' && text[1] == '[') {
-      const char* close = strchr(text + 2, ']');
-      if (close && close[1] == ' ' && close[2]) text = close + 2;
-    }
-    while (*text == '\n' || *text == '\r' || *text == ' ') text++;
-    return text;
-  }
+  // Strip the "@[nick] " reply prefix for compact list display (body only).
+  // Shares the one parser with the fullscreen view — see msgReplyBody().
+  static const char* skipReplyPrefix(const char* text) { return msgReplyBody(text); }
 
   // Split a DM-history entry into the name to show as the author and the body to
   // show beneath it. Room servers carry many guests, so incoming room posts are
@@ -255,6 +211,19 @@ class QuickMsgScreen : public UIScreen {
     if (slen > 31) slen = 31;
     snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.*s] ", slen, text);
     return true;
+  }
+
+  // Build "@[nick] " into _reply_prefix for a reply to a DM/room post, raw
+  // (UTF-8) so it goes out over the air intact — like buildChannelReplyPrefix,
+  // and unlike the old per-site code which ran the name through the lossy
+  // display transliterator. Addresses the same author the history shows
+  // (dmDisplayParts): in a room every post is stored "Author: text", so the
+  // addressee is that author, not the room server's own name (_sel_contact.name);
+  // a plain 1:1 DM uses the contact name. Caller ensures the post is incoming.
+  void buildDmReplyPrefix(const DmHistEntry& e) {
+    char nick[32];
+    dmDisplayParts(e, _sel_contact.type == ADV_TYPE_ROOM, _sel_contact.name, nick, sizeof(nick));
+    snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", nick);
   }
 
   void startReply(bool to_channel) {
@@ -336,38 +305,6 @@ class QuickMsgScreen : public UIScreen {
     }
   }
 
-
-  static void fmtMsgAge(char* buf, int n, uint32_t timestamp, uint32_t now) {
-    if (timestamp == 0 || now < timestamp) { buf[0] = '\0'; return; }
-    uint32_t age = now - timestamp;
-    if      (age < 60)    snprintf(buf, n, "%us", age);
-    else if (age < 3600)  snprintf(buf, n, "%um", age / 60);
-    else if (age < 86400) snprintf(buf, n, "%uh", age / 3600);
-    else                  snprintf(buf, n, ">1d");
-  }
-
-  // count history entries for a specific channel
-  int histCountForChannel(int ch_idx) const {
-    int n = 0;
-    for (int i = 0; i < _hist_count; i++) {
-      if (_hist[(_hist_head + i) % CH_HIST_MAX].ch_idx == (uint8_t)ch_idx) n++;
-    }
-    return n;
-  }
-
-  // get ring-buffer position of j-th history entry for channel (newest first)
-  int histEntryForChannel(int ch_idx, int j) const {
-    int n = 0;
-    for (int i = _hist_count - 1; i >= 0; i--) {
-      int pos = (_hist_head + i) % CH_HIST_MAX;
-      if (_hist[pos].ch_idx == (uint8_t)ch_idx) {
-        if (n == j) return pos;
-        n++;
-      }
-    }
-    return -1;
-  }
-
   // Delivery marker, drawn with the current ink colour and auto-scaled to the
   // font (see icons.h). Pending = a row of dots, one per send (so it grows with
   // each auto-resend); delivered = ✓; failed = ✗; ACK_NONE = nothing.
@@ -380,62 +317,32 @@ class QuickMsgScreen : public UIScreen {
     }
   }
 
-  // ack_tag != 0 marks an outgoing DM as awaiting an end-to-end ACK by
-  // ack_deadline_ms; 0 means "sent, no confirmation possible" (no path / incoming).
-  // msg_ts = sender-perspective timestamp (send ts for outgoing / sender_timestamp
-  // for incoming); resends = remaining auto-resends for an outgoing pending DM.
-  void storeDMMsg(const uint8_t* pub_key, bool outgoing, const char* text,
-                  uint32_t ack_tag = 0, uint32_t ack_deadline_ms = 0,
-                  uint32_t msg_ts = 0, uint8_t resends = 0) {
-    int pos;
-    if (_dm_hist_count < DM_HIST_MAX) {
-      pos = (_dm_hist_head + _dm_hist_count) % DM_HIST_MAX;
-      _dm_hist_count++;
+  // Selection frame for one history message box, shared by the DM/room and
+  // channel history lists. Selected = solid fill; unselected = outline with a
+  // filled header strip. Leaves the ink DARK (for the sender row drawn next).
+  static void drawHistRowFrame(DisplayDriver& d, int y, int bh, int reserve, int lh, bool sel) {
+    d.setColor(DisplayDriver::LIGHT);
+    if (sel) {
+      d.fillRect(0, y, d.width() - reserve, bh);
     } else {
-      pos = _dm_hist_head;
-      _dm_hist_head = (_dm_hist_head + 1) % DM_HIST_MAX;
+      d.drawRect(0, y, d.width() - reserve, bh);
+      d.fillRect(1, y + 1, d.width() - 2 - reserve, lh);
     }
-    memcpy(_dm_hist[pos].prefix, pub_key, 4);
-    _dm_hist[pos].outgoing = outgoing ? 1 : 0;
-    _dm_hist[pos].timestamp = rtc_clock.getCurrentTime();
-    strncpy(_dm_hist[pos].text, text, sizeof(DmHistEntry::text) - 1);
-    _dm_hist[pos].text[sizeof(DmHistEntry::text) - 1] = '\0';
-    _dm_hist[pos].ack_status      = (outgoing && ack_tag) ? ACK_PENDING : ACK_NONE;
-    _dm_hist[pos].ack_tag         = ack_tag;
-    _dm_hist[pos].ack_deadline_ms = ack_deadline_ms;
-    _dm_hist[pos].msg_ts          = msg_ts;
-    _dm_hist[pos].attempt         = 0;
-    _dm_hist[pos].resends_left    = (outgoing && ack_tag) ? resends : 0;
+    d.setColor(DisplayDriver::DARK);
   }
 
-  // Effective status for display. A pending ACK only reads as failed once its
-  // deadline has passed AND no auto-resends remain — while resends_left > 0 the
-  // entry stays pending (tickDmResends() retries / finalises it). Safety net for
-  // when the tick hasn't run yet; the tick is the authority that writes ACK_FAIL.
-  AckState dmEffectiveStatus(const DmHistEntry& e) const {
-    if (e.ack_status == ACK_PENDING && e.resends_left == 0 &&
-        (int32_t)(millis() - e.ack_deadline_ms) >= 0)
-      return ACK_FAIL;
-    return (AckState)e.ack_status;
-  }
-
-  int dmHistCountForContact(const uint8_t* prefix) const {
-    int n = 0;
-    for (int i = 0; i < _dm_hist_count; i++)
-      if (memcmp(_dm_hist[(_dm_hist_head + i) % DM_HIST_MAX].prefix, prefix, 4) == 0) n++;
-    return n;
-  }
-
-  int dmHistEntryForContact(const uint8_t* prefix, int j) const { // j=0 = newest
-    int n = 0;
-    for (int i = _dm_hist_count - 1; i >= 0; i--) {
-      int pos = (_dm_hist_head + i) % DM_HIST_MAX;
-      if (memcmp(_dm_hist[pos].prefix, prefix, 4) == 0) {
-        if (n == j) return pos;
-        n++;
-      }
-    }
-    return -1;
+  // Bottom-left "[+ send]" compose button, shared by both history lists:
+  // bordered when idle, inverted (filled) when selected. Always reset to LIGHT
+  // first so it stays visible regardless of the ink the message loop left.
+  static void drawComposeButton(DisplayDriver& d, int cby, int lh, bool sel) {
+    const char* ctxt = "[+ send]";
+    int ctw = d.getTextWidth(ctxt);
+    d.setColor(DisplayDriver::LIGHT);
+    if (sel) { d.fillRect(0, cby - 1, ctw + 4, lh + 2); d.setColor(DisplayDriver::DARK); }
+    else       d.drawRect(0, cby - 1, ctw + 4, lh + 2);
+    d.setCursor(2, cby);
+    d.print(ctxt);
+    d.setColor(DisplayDriver::LIGHT);
   }
 
   void afterSend(bool ok, const char* msg) {
@@ -450,21 +357,18 @@ class QuickMsgScreen : public UIScreen {
       int pos = addChannelMsg(_sel_channel_idx, entry);
       // Arm the "relayed into mesh" marker on this exact entry — MyMesh tracked
       // the flood it just originated and reports a heard repeater echo by seq.
-      if (pos >= 0) {
-        _hist[pos].relay_status = ACK_PENDING;
-        _hist[pos].relay_seq    = the_mesh.lastChannelRelaySeq();
-      }
+      if (pos >= 0) _history.armChannelRelay(pos, the_mesh.lastChannelRelaySeq());
       // After inserting sent msg at index 0, the unread index range is stale.
       // User is active in this channel — treat as fully read.
-      _ch_unread[_sel_channel_idx] = 0;
+      _history.setChUnread(_sel_channel_idx, 0);
       _unread_at_entry = 0;
       _viewing_max_seen = 0;
       _task->showAlert("Sent!", 600);
     } else if (ok) {
       NodePrefs* np = _task->getNodePrefs();
       uint8_t resends = np ? np->dm_resend_count : 0;
-      storeDMMsg(_sel_contact.id.pub_key, true, msg, _last_ack_tag,
-                 _last_ack_deadline_ms, _last_send_ts, resends);
+      _history.storeDMMsg(_sel_contact.id.pub_key, true, msg, _last_ack_tag,
+                          _last_ack_deadline_ms, _last_send_ts, resends);
       _dm_hist_sel = 0;
       _dm_hist_scroll = 0;
       _phase = DM_HIST;
@@ -519,7 +423,7 @@ class QuickMsgScreen : public UIScreen {
       for (int i = 0; i < total; i++) {
         if (!the_mesh.getContactByIdx(i, c) || c.type != ADV_TYPE_CHAT) continue;
         if (!show_all && !(c.flags & 0x01)) continue;
-        counts[_num_contacts] = dmHistCountForContact(c.id.pub_key);
+        counts[_num_contacts] = _history.dmHistCountForContact(c.id.pub_key);
         _sorted[_num_contacts++] = i;
       }
       // Sort by message count descending; contacts with no messages keep original order.
@@ -548,256 +452,188 @@ class QuickMsgScreen : public UIScreen {
   }
 
   // Returns per-channel notification state: 0=follow global, 1=muted, 2=force-on
-  uint8_t chNotifState(uint8_t ch_idx) const {
-    NodePrefs* p = _task->getNodePrefs();
-    if (!p) return 0;
-    uint64_t mask = 1ULL << ch_idx;
-    if (!(p->ch_notif_override & mask)) return 0;
-    return (p->ch_notif_muted & mask) ? 1 : 2;
+  // Per-contact/channel notification + melody overrides share two storage
+  // shapes, so the eight accessors below are thin wrappers over two primitives:
+  //
+  //  • Channels — a 3-state packed into a pair of channel-index bitmasks: a
+  //    "presence" mask (is there an override at all) + a "variant" mask. The two
+  //    uses disagree on which state the variant bit means, so the caller passes
+  //    the state value that corresponds to variant-set (v_set).
+  //  • DMs — a small {prefix[4], value} table: find by 4-byte prefix, update or
+  //    clear (clear frees the slot), else insert into the first free slot, else
+  //    overwrite slot 0. value 0 == "no override" == empty slot.
+
+  static uint8_t maskPairGet(uint64_t presence, uint64_t variant, uint8_t idx,
+                             uint8_t v_set, uint8_t v_clr) {
+    uint64_t m = 1ULL << idx;
+    if (!(presence & m)) return 0;
+    return (variant & m) ? v_set : v_clr;
+  }
+  static void maskPairSet(uint64_t& presence, uint64_t& variant, uint8_t idx,
+                          uint8_t state, uint8_t v_set) {
+    uint64_t m = 1ULL << idx;
+    if (state == 0) { presence &= ~m; variant &= ~m; return; }
+    presence |= m;
+    if (state == v_set) variant |= m; else variant &= ~m;
   }
 
+  template <class Entry>
+  static uint8_t prefTableGet(const Entry* tbl, int n, const uint8_t* pub_key,
+                              uint8_t Entry::* val) {
+    for (int i = 0; i < n; i++)
+      if (tbl[i].*val && memcmp(tbl[i].prefix, pub_key, 4) == 0) return tbl[i].*val;
+    return 0;
+  }
+  template <class Entry>
+  static void prefTableSet(Entry* tbl, int n, const uint8_t* pub_key,
+                           uint8_t Entry::* val, uint8_t v) {
+    for (int i = 0; i < n; i++)
+      if (tbl[i].*val && memcmp(tbl[i].prefix, pub_key, 4) == 0) {
+        if (v == 0) memset(&tbl[i], 0, sizeof(tbl[i])); else tbl[i].*val = v;
+        return;
+      }
+    if (v == 0) return;
+    for (int i = 0; i < n; i++)
+      if (tbl[i].*val == 0) { memcpy(tbl[i].prefix, pub_key, 4); tbl[i].*val = v; return; }
+    memcpy(tbl[0].prefix, pub_key, 4); tbl[0].*val = v;   // table full — overwrite slot 0
+  }
+
+  // Channel notif: state 1 = muted (variant bit set), 2 = force-on (variant clear).
+  uint8_t chNotifState(uint8_t ch_idx) const {
+    NodePrefs* p = _task->getNodePrefs();
+    return p ? maskPairGet(p->ch_notif_override, p->ch_notif_muted, ch_idx, 1, 2) : 0;
+  }
   void setChNotifState(uint8_t ch_idx, uint8_t state) {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return;
-    uint64_t mask = 1ULL << ch_idx;
-    if (state == 0) {
-      p->ch_notif_override &= ~mask;
-      p->ch_notif_muted    &= ~mask;
-    } else if (state == 1) {
-      p->ch_notif_override |= mask;
-      p->ch_notif_muted    |= mask;
-    } else {
-      p->ch_notif_override |= mask;
-      p->ch_notif_muted    &= ~mask;
-    }
+    if (p) maskPairSet(p->ch_notif_override, p->ch_notif_muted, ch_idx, state, 1);
   }
 
   uint8_t dmNotifState(const uint8_t* pub_key) const {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return 0;
-    for (int i = 0; i < NodePrefs::DM_NOTIF_TABLE_MAX; i++)
-      if (p->dm_notif[i].state && memcmp(p->dm_notif[i].prefix, pub_key, 4) == 0)
-        return p->dm_notif[i].state;
-    return 0;
+    return p ? prefTableGet(p->dm_notif, NodePrefs::DM_NOTIF_TABLE_MAX, pub_key,
+                            &NodePrefs::DmNotifEntry::state) : 0;
   }
-
   void setDmNotifState(const uint8_t* pub_key, uint8_t state) {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return;
-    for (int i = 0; i < NodePrefs::DM_NOTIF_TABLE_MAX; i++) {
-      if (p->dm_notif[i].state && memcmp(p->dm_notif[i].prefix, pub_key, 4) == 0) {
-        if (state == 0) { memset(&p->dm_notif[i], 0, sizeof(p->dm_notif[i])); }
-        else              p->dm_notif[i].state = state;
-        return;
-      }
-    }
-    if (state == 0) return;
-    for (int i = 0; i < NodePrefs::DM_NOTIF_TABLE_MAX; i++) {
-      if (p->dm_notif[i].state == 0) {
-        memcpy(p->dm_notif[i].prefix, pub_key, 4);
-        p->dm_notif[i].state = state;
-        return;
-      }
-    }
-    // table full — overwrite slot 0
-    memcpy(p->dm_notif[0].prefix, pub_key, 4);
-    p->dm_notif[0].state = state;
+    if (p) prefTableSet(p->dm_notif, NodePrefs::DM_NOTIF_TABLE_MAX, pub_key,
+                        &NodePrefs::DmNotifEntry::state, state);
   }
 
+  // Channel melody: slot 1 = melody 1 (variant bit clear), 2 = melody 2 (set).
   uint8_t chNotifMelody(uint8_t ch_idx) const {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return 0;
-    uint64_t mask = 1ULL << ch_idx;
-    if (!(p->ch_notif_melody_set & mask)) return 0;
-    return (p->ch_notif_melody_2 & mask) ? 2 : 1;
+    return p ? maskPairGet(p->ch_notif_melody_set, p->ch_notif_melody_2, ch_idx, 2, 1) : 0;
   }
-
   void setChNotifMelody(uint8_t ch_idx, uint8_t slot) {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return;
-    uint64_t mask = 1ULL << ch_idx;
-    if (slot == 0) {
-      p->ch_notif_melody_set &= ~mask;
-      p->ch_notif_melody_2   &= ~mask;
-    } else if (slot == 1) {
-      p->ch_notif_melody_set |= mask;
-      p->ch_notif_melody_2   &= ~mask;
-    } else {
-      p->ch_notif_melody_set |= mask;
-      p->ch_notif_melody_2   |= mask;
-    }
+    if (p) maskPairSet(p->ch_notif_melody_set, p->ch_notif_melody_2, ch_idx, slot, 2);
   }
 
   uint8_t dmMelodySlot(const uint8_t* pub_key) const {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return 0;
-    for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++)
-      if (p->dm_melody[i].slot && memcmp(p->dm_melody[i].prefix, pub_key, 4) == 0)
-        return p->dm_melody[i].slot;
-    return 0;
+    return p ? prefTableGet(p->dm_melody, NodePrefs::DM_MELODY_TABLE_MAX, pub_key,
+                            &NodePrefs::DmMelodyEntry::slot) : 0;
   }
-
   void setDmMelody(const uint8_t* pub_key, uint8_t slot) {
     NodePrefs* p = _task->getNodePrefs();
-    if (!p) return;
-    for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++) {
-      if (p->dm_melody[i].slot && memcmp(p->dm_melody[i].prefix, pub_key, 4) == 0) {
-        if (slot == 0) memset(&p->dm_melody[i], 0, sizeof(p->dm_melody[i]));
-        else           p->dm_melody[i].slot = slot;
-        return;
-      }
-    }
-    if (slot == 0) return;
-    for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++) {
-      if (p->dm_melody[i].slot == 0) {
-        memcpy(p->dm_melody[i].prefix, pub_key, 4);
-        p->dm_melody[i].slot = slot;
-        return;
-      }
-    }
-    memcpy(p->dm_melody[0].prefix, pub_key, 4);
-    p->dm_melody[0].slot = slot;
+    if (p) prefTableSet(p->dm_melody, NodePrefs::DM_MELODY_TABLE_MAX, pub_key,
+                        &NodePrefs::DmMelodyEntry::slot, slot);
   }
 
 public:
   QuickMsgScreen(UITask* task, KeyboardWidget* kb)
     : _task(task), _kb(kb), _phase(MODE_SELECT), _mode_sel(0),
-      _contact_sel(0), _contact_scroll(0), _num_contacts(0), _room_mode(false),
+      _contact_sel(0), _contact_scroll(0), _num_contacts(0), _room_mode(false), _login_mode(false),
       _channel_sel(0), _channel_scroll(0), _num_channels(0),
       _sel_channel_idx(0), _sending_to_channel(false),
       _msg_sel(0), _msg_scroll(0), _active_msg_count(0),
       _hist_sel(0), _hist_scroll(0),
       _unread_at_entry(0), _viewing_max_seen(0),
-      _hist_head(0), _hist_count(0),
-      _dm_hist_head(0), _dm_hist_count(0),
       _dm_hist_sel(-1), _dm_hist_scroll(0),
       _ctx_dirty(false), _pin_picker_active(false), _dm_direct_entry(false), _reply_mode(false) {
-    memset(_ch_unread, 0, sizeof(_ch_unread));
+    // The history rings + per-channel unread counters init in MessageHistory.
   }
 
-  // Returns the ring position the message was stored at, or -1 if rejected, so
+  // Public entry points (routed from MyMesh / the bot via UITask) — thin
+  // forwarders to the history store. addChannelMsg computes the "viewing" flag
+  // (a phase-machine fact the store can't see) and returns the ring position so
   // the outgoing path can attach a relay seq to that exact entry.
-  int addChannelMsg(uint8_t ch_idx, const char* text) {
-    // Guard against bogus channel indices (e.g. findChannelIdx() returned -1
-    // and was cast to uint8_t → 255). Storing such an entry would burn a ring
-    // slot for a message that no visible channel can ever surface.
-    if (ch_idx >= MAX_GROUP_CHANNELS) return -1;
-    int pos;
-    if (_hist_count < CH_HIST_MAX) {
-      pos = (_hist_head + _hist_count) % CH_HIST_MAX;
-      _hist_count++;
-    } else {
-      pos = _hist_head;
-      // Evicting the oldest entry — drop its share of the unread counter so
-      // the badge can't claim a message the ring no longer holds.
-      uint8_t evicted = _hist[pos].ch_idx;
-      if (evicted < MAX_GROUP_CHANNELS && _ch_unread[evicted] > 0) {
-        _ch_unread[evicted]--;
-      }
-      _hist_head = (_hist_head + 1) % CH_HIST_MAX;
-    }
-    _hist[pos].ch_idx = ch_idx;
-    _hist[pos].timestamp = rtc_clock.getCurrentTime();
-    strncpy(_hist[pos].text, text, sizeof(_hist[pos].text) - 1);
-    _hist[pos].text[sizeof(_hist[pos].text) - 1] = '\0';
-    _hist[pos].relay_status = ACK_NONE;
-    _hist[pos].relay_seq = 0;
-
+  int addChannelMsg(uint8_t ch_idx, const char* text, uint32_t timestamp = 0) {
     bool viewing = (_phase == CHANNEL_HIST && _sel_channel_idx == (int)ch_idx);
-    if (!viewing && _ch_unread[ch_idx] < 99) _ch_unread[ch_idx]++;
-    return pos;
+    return _history.addChannelMsg(ch_idx, text, viewing, timestamp);
   }
-
-  // Called when a repeater echo of one of our channel sends is heard.
-  void markChannelRelayed(uint32_t seq) {
-    if (seq == 0) return;
-    for (int i = 0; i < _hist_count; i++) {
-      ChHistEntry& e = _hist[(_hist_head + i) % CH_HIST_MAX];
-      if (e.relay_status == ACK_PENDING && e.relay_seq == seq) {
-        e.relay_status = ACK_OK;
-        return;
-      }
-    }
-  }
-
+  void markChannelRelayed(uint32_t seq) { _history.markChannelRelayed(seq); }
   void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text,
                 uint32_t sender_timestamp = 0) {
-    // Drop retried copies of an incoming DM: a resend reuses the sender's
-    // timestamp and text but carries a fresh packet hash, so the mesh dup-filter
-    // lets it through. Match on prefix + sender_timestamp + text to suppress it.
-    if (!outgoing && sender_timestamp != 0) {
-      for (int i = 0; i < _dm_hist_count; i++) {
-        const DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
-        if (!e.outgoing && e.msg_ts == sender_timestamp &&
-            memcmp(e.prefix, pub_key, 4) == 0 && strcmp(e.text, text) == 0)
-          return;  // duplicate retry — already in history
-      }
-    }
-    storeDMMsg(pub_key, outgoing, text, 0, 0, outgoing ? 0 : sender_timestamp, 0);
+    _history.addDMMsg(pub_key, outgoing, text, sender_timestamp);
   }
+  void markDmDelivered(uint32_t ack_crc) { _history.markDmDelivered(ack_crc); }
 
-  // Called when an end-to-end ACK arrives (routed from MyMesh::onAckRecv).
-  // Marks the matching pending outgoing DM as delivered.
-  void markDmDelivered(uint32_t ack_crc) {
-    if (ack_crc == 0) return;
-    for (int i = 0; i < _dm_hist_count; i++) {
-      DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
-      if (e.outgoing && e.ack_status == ACK_PENDING && e.ack_tag == ack_crc) {
-        e.ack_status = ACK_OK;
-        return;
-      }
-    }
-  }
+  // Rooms successfully logged in to this power-on session. RAM-only — the
+  // server's ACL (see ClientACL) is the real permission store and survives
+  // reboot on its own, but the device has no way to query it, so this is just
+  // a local memo to skip re-prompting for a password already entered this
+  // session when the same room is picked again.
+  static const int ROOM_LOGIN_TABLE_SIZE = 8;
+  uint8_t _room_login_prefix[ROOM_LOGIN_TABLE_SIZE][4];
+  int _room_login_head = 0, _room_login_count = 0;
 
-  // Look up a contact by 4-byte pub_key prefix (as stored in DmHistEntry).
-  bool contactByPrefix(const uint8_t* prefix, ContactInfo& out) const {
-    int total = the_mesh.getNumContacts();
-    for (int i = 0; i < total; i++) {
-      ContactInfo c;
-      if (the_mesh.getContactByIdx(i, c) && memcmp(c.id.pub_key, prefix, 4) == 0) {
-        out = c;
-        return true;
-      }
-    }
+  bool isRoomLoggedIn(const uint8_t* pub_key) const {
+    for (int i = 0; i < _room_login_count; i++)
+      if (memcmp(_room_login_prefix[i], pub_key, 4) == 0) return true;
     return false;
   }
 
-  // Background tick (called every UI loop, regardless of the active screen) that
-  // drives auto-resend of on-device DMs. When a pending DM passes its deadline
-  // with no ACK: resend with the next attempt# (reusing the original timestamp so
-  // the recipient dedups) while resends remain, else mark it failed (✗).
-  void tickDmResends() {
-    uint32_t now = millis();
-    for (int i = 0; i < _dm_hist_count; i++) {
-      DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
-      if (!e.outgoing || e.ack_status != ACK_PENDING) continue;
-      if ((int32_t)(now - e.ack_deadline_ms) < 0) continue;   // still waiting
-      if (e.resends_left == 0) { e.ack_status = ACK_FAIL; continue; }
-      ContactInfo c;
-      if (!contactByPrefix(e.prefix, c)) { e.ack_status = ACK_FAIL; continue; }
-      uint32_t expected_ack = 0, est_timeout = 0;
-      uint8_t next_attempt = e.attempt + 1;
-      if (the_mesh.sendMessage(c, e.msg_ts, next_attempt, e.text,
-                               expected_ack, est_timeout) > 0 && expected_ack) {
-        e.attempt         = next_attempt;
-        e.ack_tag         = expected_ack;   // each attempt has a distinct ACK CRC
-        e.ack_deadline_ms = now + est_timeout + 4000;
-        e.resends_left--;
-      } else {
-        e.ack_status = ACK_FAIL;            // couldn't compose/send — give up
-      }
+  void markRoomLoggedIn(const uint8_t* pub_key) {
+    if (isRoomLoggedIn(pub_key)) return;
+    int pos;
+    if (_room_login_count < ROOM_LOGIN_TABLE_SIZE) {
+      pos = (_room_login_head + _room_login_count) % ROOM_LOGIN_TABLE_SIZE;
+      _room_login_count++;
+    } else {
+      pos = _room_login_head;
+      _room_login_head = (_room_login_head + 1) % ROOM_LOGIN_TABLE_SIZE;
     }
+    memcpy(_room_login_prefix[pos], pub_key, 4);
   }
+
+  // Password of the room-login attempt currently in flight -- set right
+  // before sendRoomLogin(), read back in onRoomLoginResult() so a successful
+  // attempt can be persisted (see MyMesh::saveRoomPassword()).
+  char _login_pw[16];
+
+  void startRoomLogin(const char* password) {
+    strncpy(_login_pw, password, sizeof(_login_pw) - 1);
+    _login_pw[sizeof(_login_pw) - 1] = 0;
+    bool sent = the_mesh.sendRoomLogin(_sel_contact, password);
+    _task->showAlert(sent ? "Logging in..." : "Login failed", sent ? 1000 : 1500);
+  }
+
+  // Result of an on-device sendRoomLogin() (MyMesh::onContactResponse(), routed
+  // via AbstractUITask::onRoomLoginResult()). Surfaces as a transient alert.
+  void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
+    (void)permissions;
+    if (success) {
+      markRoomLoggedIn(pub_key);
+      the_mesh.saveRoomPassword(pub_key, _login_pw);
+    } else {
+      // Saved password (if any) no longer works -- forget it so the next
+      // ENTER on this room falls back to a manual prompt instead of
+      // silently retrying the same bad password forever.
+      the_mesh.forgetRoomPassword(pub_key);
+    }
+    _task->showAlert(success ? "Login OK" : "Login failed", 1200);
+  }
+
+  // Background tick (called every UI loop, regardless of the active screen) that
+  // drives auto-resend of on-device DMs — forwarded to the history store.
+  void tickDmResends() { _history.tickDmResends(); }
 
   int getDMUnreadTotal() const {
     return _task->getDMUnreadTotal();
   }
 
-  int getTotalChannelUnread() const {
-    int total = 0;
-    for (int i = 0; i < MAX_GROUP_CHANNELS; i++) total += _ch_unread[i];
-    return total;
-  }
+  int getTotalChannelUnread() const { return _history.getTotalChannelUnread(); }
 
   void markReadAlert(int n) {
     char msg[32];
@@ -805,10 +641,11 @@ public:
     _task->showAlert(msg, 800);
   }
 
-  void clearAllChannelUnread() {
-    memset(_ch_unread, 0, sizeof(_ch_unread));
-  }
+  void clearAllChannelUnread() { _history.clearAllChannelUnread(); }
 
+  // Update the viewing-session unread bookkeeping (UI state) and push the
+  // resulting count down into the store. The ring lives in _history, but this
+  // "what has the user seen on screen" logic is pure phase-machine state.
   void updateChannelUnread() {
     if (_sel_channel_idx < 0 || _sel_channel_idx >= MAX_GROUP_CHANNELS) return;
     // histEntryForChannel is newest-first: index 0 = newest (unread), higher = older.
@@ -820,7 +657,7 @@ public:
     if (seen_to > _viewing_max_seen) _viewing_max_seen = seen_to;
     // Each step down from 0 sees one more message; seen count = max_seen + 1.
     int remaining = _unread_at_entry - (_viewing_max_seen + 1);
-    _ch_unread[_sel_channel_idx] = (uint8_t)(remaining > 0 ? remaining : 0);
+    _history.setChUnread(_sel_channel_idx, (uint8_t)(remaining > 0 ? remaining : 0));
   }
 
   void reset() {
@@ -832,6 +669,7 @@ public:
     _sending_to_channel = false;
 
     _room_mode = false;
+    _login_mode = false;
     buildContactList();
     buildChannelList();
 
@@ -846,30 +684,9 @@ public:
     _viewing_max_seen = 0;
   }
 
-  // Recent DM contacts, newest first, deduped. Resolves the 4-byte
-  // _dm_hist prefix to a 6-byte pub_key prefix by walking the contact
-  // list once per unique sender. Returns the number filled.
+  // Recent DM contacts, newest first, deduped (forwarded to the history store).
   int getRecentDMContacts(uint8_t out[][NodePrefs::FAVOURITE_PREFIX_LEN], int max) const {
-    int n = 0;
-    for (int i = _dm_hist_count - 1; i >= 0 && n < max; i--) {
-      int pos = (_dm_hist_head + i) % DM_HIST_MAX;
-      const uint8_t* p4 = _dm_hist[pos].prefix;
-      // Skip if already collected.
-      bool dup = false;
-      for (int j = 0; j < n; j++) if (memcmp(out[j], p4, 4) == 0) { dup = true; break; }
-      if (dup) continue;
-      // Find a real contact whose pub_key starts with this 4-byte prefix.
-      for (int idx = 0; ; idx++) {
-        ContactInfo c;
-        if (!the_mesh.getContactByIdx(idx, c)) break;
-        if (memcmp(c.id.pub_key, p4, 4) == 0) {
-          memcpy(out[n], c.id.pub_key, NodePrefs::FAVOURITE_PREFIX_LEN);
-          n++;
-          break;
-        }
-      }
-    }
-    return n;
+    return _history.getRecentDMContacts(out, max);
   }
 
   // Jump straight into a contact's DM history (used by the Favourites dial).
@@ -984,7 +801,7 @@ public:
       drawList(display, _num_contacts, _contact_sel, _contact_scroll, [&](int list_idx, int y, bool sel, int reserve) {
         int mesh_idx = _sorted[list_idx];
 
-        display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
+        drawRowSelection(display, y, sel, reserve);
 
         ContactInfo c;
         if (the_mesh.getContactByIdx(mesh_idx, c)) {
@@ -1017,10 +834,10 @@ public:
       }
 
       drawList(display, _num_channels, _channel_sel, _channel_scroll, [&](int list_idx, int y, bool sel, int reserve) {
-        display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
+        drawRowSelection(display, y, sel, reserve);
         ChannelDetails ch;
         if (the_mesh.getChannel(_channel_indices[list_idx], ch)) {
-          uint8_t unread = _ch_unread[_channel_indices[list_idx]];
+          uint8_t unread = _history.chUnread(_channel_indices[list_idx]);
           char badge[5] = "";
           int bw = 0;
           if (unread > 0) {
@@ -1044,21 +861,21 @@ public:
       display.translateUTF8ToBlocks(filtered_name, _sel_contact.name, sizeof(filtered_name));
 
       if (_dm_fs.active && _dm_hist_sel >= 0) {
-        int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
+        int ring_pos = _history.dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
         if (ring_pos >= 0) {
-          const DmHistEntry& e = _dm_hist[ring_pos];
+          const DmHistEntry& e = _history.dmAtPos(ring_pos);
           char sender_buf[33];
           const char* body = dmDisplayParts(e, _sel_contact.type == ADV_TYPE_ROOM,
                                             filtered_name, sender_buf, sizeof(sender_buf));
           const char* sender = sender_buf;
-          int dm_count = dmHistCountForContact(_sel_contact.id.pub_key);
+          int dm_count = _history.dmHistCountForContact(_sel_contact.id.pub_key);
           int ret = _dm_fs.render(display, sender, body,
                                   _dm_hist_sel < dm_count - 1,
                                   _dm_hist_sel > 0);
           if (e.outgoing) {  // delivery marker in the (inverted) header bar
             display.setColor(DisplayDriver::DARK);
             drawAckGlyph(display, 2 + display.getTextWidth(sender) + 3, 1,
-                         dmEffectiveStatus(e), e.attempt + 1);
+                         _history.dmEffectiveStatus(e), e.attempt + 1);
             display.setColor(DisplayDriver::LIGHT);
           }
           if (_ctx_menu.active) _ctx_menu.render(display);
@@ -1076,7 +893,7 @@ public:
       display.drawTextCentered(display.width()/2, 0, title);
       display.fillRect(0, lh + 1, display.width(), display.sepH());
 
-      int dm_count = dmHistCountForContact(_sel_contact.id.pub_key);
+      int dm_count = _history.dmHistCountForContact(_sel_contact.id.pub_key);
       uint32_t now_ts = rtc_clock.getCurrentTime();
       bool is_room = (_sel_contact.type == ADV_TYPE_ROOM);
 
@@ -1091,8 +908,8 @@ public:
       HistScroll hs = computeHistScroll(display, portrait_expand, dm_count, _dm_hist_scroll,
           hist_start_y, cby, lh,
           [&](int idx) -> const char* {
-            int rp = dmHistEntryForContact(_sel_contact.id.pub_key, idx);
-            return rp >= 0 ? _dm_hist[rp].text : nullptr;
+            int rp = _history.dmHistEntryForContact(_sel_contact.id.pub_key, idx);
+            return rp >= 0 ? _history.dmAtPos(rp).text : nullptr;
           });
       int reserve = hs.reserve;
       {
@@ -1101,10 +918,10 @@ public:
         for (int ii = 0; ii < MAX_VIS_BOXES && (_dm_hist_scroll + ii) < dm_count; ii++) {
           int bh = fixed_bh;
           if (portrait_expand) {
-            int rp = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_scroll + ii);
+            int rp = _history.dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_scroll + ii);
             if (rp >= 0) {
               char hsb[33];
-              const char* hbody = dmDisplayParts(_dm_hist[rp], is_room, filtered_name, hsb, sizeof(hsb));
+              const char* hbody = dmDisplayParts(_history.dmAtPos(rp), is_room, filtered_name, hsb, sizeof(hsb));
               display.translateUTF8ToBlocks(s_wrap_trans, hbody, sizeof(s_wrap_trans));
               int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 8);
               bh = (1 + (nl > 0 ? nl : 1)) * lh + 1;
@@ -1122,31 +939,22 @@ public:
         int y = box_ys[i];
         int bh = box_hs[i];
 
-        int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, item);
+        int ring_pos = _history.dmHistEntryForContact(_sel_contact.id.pub_key, item);
         if (ring_pos < 0) continue;
 
-        const DmHistEntry& e = _dm_hist[ring_pos];
+        const DmHistEntry& e = _history.dmAtPos(ring_pos);
         char sender_buf[33];
         const char* body = dmDisplayParts(e, is_room, filtered_name, sender_buf, sizeof(sender_buf));
         const char* sender = sender_buf;
 
-        char age[6]; fmtMsgAge(age, sizeof(age), e.timestamp, now_ts);
+        char age[6]; geo::fmtAgeShort(age, sizeof(age), now_ts, e.timestamp);
         int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
 
-        if (sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y, display.width() - reserve, bh);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-          display.drawRect(0, y, display.width() - reserve, bh);
-          display.fillRect(1, y + 1, display.width() - 2 - reserve, lh);
-          display.setColor(DisplayDriver::DARK);
-        }
+        drawHistRowFrame(display, y, bh, reserve, lh, sel);
         display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w - reserve, sender);
         if (e.outgoing) {                       // delivery marker after "Me"
           int gx = 3 + display.getTextWidth(sender) + 3;
-          drawAckGlyph(display, gx, y + 1, dmEffectiveStatus(e), e.attempt + 1);
+          drawAckGlyph(display, gx, y + 1, _history.dmEffectiveStatus(e), e.attempt + 1);
         }
         if (age[0]) { display.setCursor(display.width() - age_w - reserve, y + 1); display.print(age); }
         if (!sel) display.setColor(DisplayDriver::LIGHT);
@@ -1170,26 +978,16 @@ public:
         drawScrollIndicatorPx(display, hist_start_y + 1, hs.view_px,
                               hs.total_px, hs.view_px, hs.scroll_px);
 
-      bool compose_sel = (_dm_hist_sel == -1);
-      const char* ctxt = "[+ send]";
-      int ctw = display.getTextWidth(ctxt);
-      int cbx = 1;
-      if (compose_sel) {
-        display.fillRect(cbx, cby - 1, ctw + 4, lh + 1);
-        display.setColor(DisplayDriver::DARK);
-      }
-      display.setCursor(cbx + 2, cby);
-      display.print(ctxt);
-      display.setColor(DisplayDriver::LIGHT);
+      drawComposeButton(display, cby, lh, _dm_hist_sel == -1);
       if (_ctx_menu.active) _ctx_menu.render(display);
       return dm_count > 0 ? 500 : 2000;
 
     } else if (_phase == CHANNEL_HIST) {
       if (_fs.active && _hist_sel >= 0) {
-        int fs_hist_count = histCountForChannel(_sel_channel_idx);
-        int ring_pos = histEntryForChannel(_sel_channel_idx, _hist_sel);
+        int fs_hist_count = _history.histCountForChannel(_sel_channel_idx);
+        int ring_pos = _history.histEntryForChannel(_sel_channel_idx, _hist_sel);
         if (ring_pos >= 0) {
-          const char* ftext = _hist[ring_pos].text;
+          const char* ftext = _history.chAtPos(ring_pos).text;
           const char* fsep = strstr(ftext, ": ");
           char fsender[33], fmsg[MSG_TEXT_BUF];
           if (fsep) {
@@ -1204,7 +1002,7 @@ public:
                                _hist_sel < fs_hist_count - 1,
                                _hist_sel > 0);
           // Channels: ✓ only once a repeater echo confirms relay (see list view).
-          if (strcmp(fsender, "Me") == 0 && _hist[ring_pos].relay_status == ACK_OK) {
+          if (strcmp(fsender, "Me") == 0 && _history.chAtPos(ring_pos).relay_status == ACK_OK) {
             display.setColor(DisplayDriver::DARK);
             drawAckGlyph(display, 2 + display.getTextWidth(fsender) + 3, 1, ACK_OK);
             display.setColor(DisplayDriver::LIGHT);
@@ -1225,7 +1023,7 @@ public:
       display.drawTextCentered(display.width()/2, 0, title);
       display.fillRect(0, lh + 1, display.width(), display.sepH());
 
-      int ch_hist_count = histCountForChannel(_sel_channel_idx);
+      int ch_hist_count = _history.histCountForChannel(_sel_channel_idx);
       uint32_t now_ts = rtc_clock.getCurrentTime();
 
       // Portrait e-ink (height > width): variable-height boxes that show the full
@@ -1237,9 +1035,9 @@ public:
       HistScroll hs = computeHistScroll(display, portrait_expand, ch_hist_count, _hist_scroll,
           hist_start_y, cby, lh,
           [&](int idx) -> const char* {
-            int rp = histEntryForChannel(_sel_channel_idx, idx);
+            int rp = _history.histEntryForChannel(_sel_channel_idx, idx);
             if (rp < 0) return nullptr;
-            const char* t = _hist[rp].text;
+            const char* t = _history.chAtPos(rp).text;
             const char* s = strstr(t, ": ");
             return s ? s + 2 : t;
           });
@@ -1250,9 +1048,9 @@ public:
         for (int ii = 0; ii < MAX_VIS_BOXES && (_hist_scroll + ii) < ch_hist_count; ii++) {
           int bh = fixed_bh;
           if (portrait_expand) {
-            int rp = histEntryForChannel(_sel_channel_idx, _hist_scroll + ii);
+            int rp = _history.histEntryForChannel(_sel_channel_idx, _hist_scroll + ii);
             if (rp >= 0) {
-              const char* rtext = _hist[rp].text;
+              const char* rtext = _history.chAtPos(rp).text;
               const char* rsep = strstr(rtext, ": ");
               const char* rbody = rsep ? rsep + 2 : rtext;
               display.translateUTF8ToBlocks(s_wrap_trans, skipReplyPrefix(rbody), sizeof(s_wrap_trans));
@@ -1274,10 +1072,10 @@ public:
         int y = box_ys[i];
         int bh = box_hs[i];
 
-        int ring_pos = histEntryForChannel(_sel_channel_idx, item);
+        int ring_pos = _history.histEntryForChannel(_sel_channel_idx, item);
         if (ring_pos < 0) continue;
 
-        const char* text = _hist[ring_pos].text;
+        const char* text = _history.chAtPos(ring_pos).text;
         const char* sep = strstr(text, ": ");
         char sender[33], msg_part[MSG_TEXT_BUF];
         if (sep) {
@@ -1291,24 +1089,15 @@ public:
           msg_part[sizeof(msg_part) - 1] = '\0';
         }
 
-        char age[6]; fmtMsgAge(age, sizeof(age), _hist[ring_pos].timestamp, now_ts);
+        char age[6]; geo::fmtAgeShort(age, sizeof(age), now_ts, _history.chAtPos(ring_pos).timestamp);
         int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
 
-        if (sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(0, y, display.width() - reserve, bh);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-          display.drawRect(0, y, display.width() - reserve, bh);
-          display.fillRect(1, y + 1, display.width() - 2 - reserve, lh);
-          display.setColor(DisplayDriver::DARK);
-        }
+        drawHistRowFrame(display, y, bh, reserve, lh, sel);
         display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w - reserve, sender);
         // Channels have no recipient ACK — only show ✓ once a repeater echo
         // confirms the send was relayed into the mesh; otherwise no marker
         // (absence is normal, not a failure).
-        if (strcmp(sender, "Me") == 0 && _hist[ring_pos].relay_status == ACK_OK) {
+        if (strcmp(sender, "Me") == 0 && _history.chAtPos(ring_pos).relay_status == ACK_OK) {
           int gx = 3 + display.getTextWidth(sender) + 3;
           drawAckGlyph(display, gx, y + 1, ACK_OK);
         }
@@ -1333,22 +1122,7 @@ public:
         drawScrollIndicatorPx(display, hist_start_y + 1, hs.view_px,
                               hs.total_px, hs.view_px, hs.scroll_px);
 
-      // small compose button (bottom-left, always bordered, inverted when selected)
-      bool compose_sel = (_hist_sel == -1);
-      const char* ctxt = "[+ send]";
-      int ctw = display.getTextWidth(ctxt);
-      int cbx = 1;
-      if (compose_sel) {
-        display.setColor(DisplayDriver::LIGHT);
-        display.fillRect(cbx - 1, cby - 1, ctw + 4, lh + 2);
-        display.setColor(DisplayDriver::DARK);
-      } else {
-        display.setColor(DisplayDriver::LIGHT);
-        display.drawRect(cbx - 1, cby - 1, ctw + 4, lh + 2);
-      }
-      display.setCursor(cbx + 1, cby);
-      display.print(ctxt);
-      display.setColor(DisplayDriver::LIGHT);
+      drawComposeButton(display, cby, lh, _hist_sel == -1);
       if (_ctx_menu.active) _ctx_menu.render(display);
 
     } else if (_phase == KEYBOARD) {
@@ -1375,7 +1149,7 @@ public:
 
       int total_msg_items = 1 + _active_msg_count;
       drawList(display, total_msg_items, _msg_sel, _msg_scroll, [&](int idx, int y, bool sel, int reserve) {
-        display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
+        drawRowSelection(display, y, sel, reserve);
 
         if (idx == 0) {
           display.setCursor(2, y);
@@ -1443,10 +1217,21 @@ public:
     } else if (_phase == CONTACT_PICK) {
       // Context menu consumes all input while open
       if (_ctx_menu.active) {
+        if (_room_mode) {
+          auto res = _ctx_menu.handleInput(c);
+          if (res == PopupMenu::SELECTED && _num_contacts > 0) {
+            if (the_mesh.getContactByIdx(_sorted[_contact_sel], _sel_contact)) {
+              _login_mode = true;
+              _kb->begin("", 15); // room/repeater password: max 15 chars
+              _phase = KEYBOARD;
+            }
+          }
+          return true;
+        }
         // LEFT/RIGHT cycle Notif/Melody in-place (menu stays open).
         if (!_pin_picker_active && _num_contacts > 0) {
-          bool left  = (c == KEY_LEFT || c == KEY_PREV);
-          bool right = (c == KEY_RIGHT || c == KEY_NEXT);
+          bool left  = keyIsPrev(c);
+          bool right = keyIsNext(c);
           if (left || right) {
             static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
             static const char* ML[]           = { "global", "M1", "M2" };
@@ -1533,9 +1318,7 @@ public:
             // sel == 1 (Notif) and sel == 2 (Melody): already cycled via LEFT/RIGHT; ENTER just closes.
           }
         }
-        if (res != PopupMenu::NONE && _ctx_dirty) {
-          the_mesh.savePrefs(); _ctx_dirty = false;
-        }
+        if (res != PopupMenu::NONE) _task->savePrefsIfDirty(_ctx_dirty);
         return true;
       }
       if (c == KEY_CANCEL) { _room_mode = false; _phase = MODE_SELECT; return true; }
@@ -1545,6 +1328,22 @@ public:
       if (c == KEY_ENTER && _num_contacts > 0) {
         if (the_mesh.getContactByIdx(_sorted[_contact_sel], _sel_contact)) {
           if (_pick_target) { commitPickTargetDM(_sel_contact); return true; }
+          if (_room_mode && !isRoomLoggedIn(_sel_contact.id.pub_key)) {
+            // Posting to a room requires a login handshake first (even with a
+            // blank password) — go straight to the password prompt instead of
+            // a history view that would silently fail to send.
+            char saved_pw[sizeof(_login_pw)];
+            if (the_mesh.getRoomPassword(_sel_contact.id.pub_key, saved_pw, sizeof(saved_pw))) {
+              // Logged in to this room before, on an earlier boot -- retry
+              // with the remembered password instead of prompting again.
+              startRoomLogin(saved_pw);
+            } else {
+              _login_mode = true;
+              _kb->begin("", 15); // room/repeater password: max 15 chars
+              _phase = KEYBOARD;
+            }
+            return true;
+          }
           _task->clearDMUnread(_sel_contact.id.pub_key);
           _dm_hist_sel = -1;
           _dm_hist_scroll = 0;
@@ -1552,6 +1351,11 @@ public:
           _phase = DM_HIST;
           if (_share_mode) beginShareCompose(false);
         }
+        return true;
+      }
+      if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && _room_mode) {
+        _ctx_menu.begin("Room options", 1);
+        _ctx_menu.addItem("Login...");
         return true;
       }
       if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && !_room_mode) {
@@ -1580,8 +1384,8 @@ public:
       if (_ctx_menu.active) {
         // LEFT/RIGHT cycle Notif/Melody/Fav in-place (menu stays open).
         if (_num_channels > 0) {
-          bool left  = (c == KEY_LEFT || c == KEY_PREV);
-          bool right = (c == KEY_RIGHT || c == KEY_NEXT);
+          bool left  = keyIsPrev(c);
+          bool right = keyIsNext(c);
           if (left || right) {
             static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
             static const char* ML[]           = { "global", "M1", "M2" };
@@ -1618,15 +1422,13 @@ public:
           uint8_t ch_idx = _channel_indices[_channel_sel];
           int sel = _ctx_menu.selectedIndex();
           if (sel == 0) {
-            int cleared = (int)_ch_unread[ch_idx];
-            _ch_unread[ch_idx] = 0;
+            int cleared = (int)_history.chUnread(ch_idx);
+            _history.setChUnread(ch_idx, 0);
             markReadAlert(cleared);
           }
           // sel 1/2/3 already handled by LEFT/RIGHT; ENTER just closes.
         }
-        if (res != PopupMenu::NONE && _ctx_dirty) {
-          the_mesh.savePrefs(); _ctx_dirty = false;
-        }
+        if (res != PopupMenu::NONE) _task->savePrefsIfDirty(_ctx_dirty);
         return true;
       }
       if (c == KEY_CANCEL) { _phase = MODE_SELECT; return true; }
@@ -1636,8 +1438,8 @@ public:
       if (c == KEY_ENTER && _num_channels > 0) {
         _sel_channel_idx = _channel_indices[_channel_sel];
         if (_pick_target) { commitPickTargetChannel(_sel_channel_idx); return true; }
-        int hc = histCountForChannel(_sel_channel_idx);
-        _unread_at_entry = (int)_ch_unread[_sel_channel_idx];
+        int hc = _history.histCountForChannel(_sel_channel_idx);
+        _unread_at_entry = (int)_history.chUnread(_sel_channel_idx);
         _hist_scroll = 0;
         _hist_sel = hc > 0 ? 0 : -1;
         _viewing_max_seen = _hist_sel >= 0 ? _hist_sel : 0;
@@ -1670,7 +1472,7 @@ public:
       }
 
     } else if (_phase == DM_HIST) {
-      int dm_count = dmHistCountForContact(_sel_contact.id.pub_key);
+      int dm_count = _history.dmHistCountForContact(_sel_contact.id.pub_key);
       if (_dm_fs.active) {
         if (_ctx_menu.active) {
           auto res = _ctx_menu.handleInput(c);
@@ -1689,14 +1491,11 @@ public:
         } else if (res == FullscreenMsgView::CLOSE) {
           _dm_fs.active = false;
         } else if (res == FullscreenMsgView::REPLY) {
-          int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
+          int ring_pos = _history.dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
           if (ring_pos >= 0) {
-            bool reply_ok = !_dm_hist[ring_pos].outgoing;
-            if (reply_ok) {
-              char _tname[32]; DisplayDriver::translateUTF8Static(_tname, _sel_contact.name, sizeof(_tname));
-              snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _tname);
-            }
-            buildFsMenu(_dm_hist[ring_pos].text, reply_ok);
+            bool reply_ok = !_history.dmAtPos(ring_pos).outgoing;
+            if (reply_ok) buildDmReplyPrefix(_history.dmAtPos(ring_pos));
+            buildFsMenu(_history.dmAtPos(ring_pos).text, reply_ok);
           }
         }
         return true;
@@ -1748,20 +1547,17 @@ public:
         return true;
       }
       if (c == KEY_CONTEXT_MENU && _dm_hist_sel >= 0) {
-        int ring_pos = dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
+        int ring_pos = _history.dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
         if (ring_pos >= 0) {
-          bool reply_ok = !_dm_hist[ring_pos].outgoing;
-          if (reply_ok) {
-            char _tname[32]; DisplayDriver::translateUTF8Static(_tname, _sel_contact.name, sizeof(_tname));
-            snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", _tname);
-          }
-          buildFsMenu(_dm_hist[ring_pos].text, reply_ok);
+          bool reply_ok = !_history.dmAtPos(ring_pos).outgoing;
+          if (reply_ok) buildDmReplyPrefix(_history.dmAtPos(ring_pos));
+          buildFsMenu(_history.dmAtPos(ring_pos).text, reply_ok);
         }
         return true;
       }
 
     } else if (_phase == CHANNEL_HIST) {
-      int ch_hist_count = histCountForChannel(_sel_channel_idx);
+      int ch_hist_count = _history.histCountForChannel(_sel_channel_idx);
       if (_fs.active) {
         if (_ctx_menu.active) {
           auto res = _ctx_menu.handleInput(c);
@@ -1780,9 +1576,9 @@ public:
         } else if (res == FullscreenMsgView::CLOSE) {
           _fs.active = false;
         } else if (res == FullscreenMsgView::REPLY) {
-          int ring_pos = histEntryForChannel(_sel_channel_idx, _hist_sel);
+          int ring_pos = _history.histEntryForChannel(_sel_channel_idx, _hist_sel);
           if (ring_pos >= 0)
-            buildFsMenu(_hist[ring_pos].text, buildChannelReplyPrefix(_hist[ring_pos].text));
+            buildFsMenu(_history.chAtPos(ring_pos).text, buildChannelReplyPrefix(_history.chAtPos(ring_pos).text));
         }
         return true;
       }
@@ -1823,14 +1619,28 @@ public:
         return true;
       }
       if (c == KEY_CONTEXT_MENU && _hist_sel >= 0) {
-        int ring_pos = histEntryForChannel(_sel_channel_idx, _hist_sel);
+        int ring_pos = _history.histEntryForChannel(_sel_channel_idx, _hist_sel);
         if (ring_pos >= 0)
-          buildFsMenu(_hist[ring_pos].text, buildChannelReplyPrefix(_hist[ring_pos].text));
+          buildFsMenu(_history.chAtPos(ring_pos).text, buildChannelReplyPrefix(_history.chAtPos(ring_pos).text));
         return true;
       }
 
     } else if (_phase == KEYBOARD) {
       auto res = _kb->handleInput(c);
+      if (_login_mode) {
+        if (res == KeyboardWidget::CANCELLED) {
+          _login_mode = false;
+          _phase = CONTACT_PICK;
+        } else if (res == KeyboardWidget::DONE) {
+          // Blank password is valid (guest/no-password rooms) — unlike normal
+          // message text, an empty submit here is a deliberate "log in with no
+          // password" attempt, so it isn't suppressed like an empty message is.
+          _login_mode = false;
+          startRoomLogin(_kb->buf);
+          _phase = CONTACT_PICK;
+        }
+        return true;
+      }
       if (res == KeyboardWidget::CANCELLED) {
         if (_share_mode) { _share_mode = false; _task->gotoHomeScreen(); }
         else             { _phase = MSG_PICK; }

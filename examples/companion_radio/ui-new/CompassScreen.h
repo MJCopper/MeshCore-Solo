@@ -27,7 +27,7 @@ class CompassScreen : public UIScreen {
 
 public:
   CompassScreen(UITask* task) : _task(task) {}
-  void enter() {}
+  void onShow() override {}
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);

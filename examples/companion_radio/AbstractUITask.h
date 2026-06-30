@@ -47,6 +47,10 @@ public:
   // A repeater rebroadcast of one of our channel sends was heard (seq from
   // lastChannelRelaySeq()) — drives the channel "relayed into mesh" marker.
   virtual void onChannelRelayed(uint32_t seq) { (void)seq; }
+  // Result of an on-device-UI-triggered MyMesh::sendRoomLogin() arrived.
+  // pub_key is the contact's key prefix (>=4 bytes valid); permissions is the
+  // room/repeater ACL byte (only meaningful when success is true).
+  virtual void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) { (void)pub_key; (void)success; (void)permissions; }
   // True only when a BLE central is actually bonded/connected. On a dual
   // (BLE+USB) interface hasConnection() is always true (USB counts), so use
   // this for BLE-specific UI like the pairing-PIN prompt.
@@ -61,7 +65,7 @@ public:
   virtual void msgRead(int msgcount) = 0;
   virtual void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount, uint8_t contact_type = 0, const uint8_t* pub_key = nullptr) = 0;
   virtual void notify(UIEventType t = UIEventType::none) = 0;
-  virtual void addChannelMsg(uint8_t channel_idx, const char* text) {}
+  virtual void addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp = 0) {}
   virtual void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) {}
   // A node shared its current position via a [LOC] message. pub_key is the
   // sender's key prefix for a verified DM share, or null for a channel share
@@ -69,5 +73,16 @@ public:
   virtual void onSharedLocation(const uint8_t* pub_key, const char* name,
                                 int32_t lat_1e6, int32_t lon_1e6,
                                 uint32_t ts, bool verified) {}
+  // A contact is gone — removed explicitly (companion app / CLI command) or
+  // silently auto-evicted to make room when the contact table is full. Lets
+  // UI state that references contacts by pubkey (favourite slots, the
+  // Locator/Live Share target) drop a reference that would otherwise dangle.
+  // Default no-op.
+  virtual void onContactRemoved(const uint8_t* pub_key) {}
+  // A channel slot was cleared (companion app set it to an empty secret).
+  // Drop any setting that referenced it by index — otherwise a new channel
+  // added later at the same slot would silently inherit the old one's bot/
+  // share target or notification melody. Default no-op.
+  virtual void onChannelRemoved(uint8_t channel_idx) {}
   virtual void loop() = 0;
 };

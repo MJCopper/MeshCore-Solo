@@ -1,11 +1,6 @@
 #pragma once
-#include <math.h>
 #include "../GeoUtils.h"
 #include "NavView.h"
-
-#ifndef M_PI
-  #define M_PI 3.14159265358979323846
-#endif
 
 // ── Nearby Nodes ──────────────────────────────────────────────────────────────
 // One list / detail / action-menu interaction path over two sources:
@@ -111,14 +106,13 @@ class NearbyScreen : public UIScreen {
 
   bool useImperial() const { return _task && _task->useImperial(); }
 
+  // Full "X ago" form for the detail view, built on the shared short-age tag
+  // so there's one bucket ladder (see geo::fmtAgeShort).
   static void fmtAge(char* buf, int n, uint32_t lastmod) {
-    uint32_t now = rtc_clock.getCurrentTime();
-    if (now < lastmod || lastmod == 0) { snprintf(buf, n, "unknown"); return; }
-    uint32_t age = now - lastmod;
-    if      (age < 60)     snprintf(buf, n, "%us ago",  age);
-    else if (age < 3600)   snprintf(buf, n, "%um ago",  age / 60);
-    else if (age < 86400)  snprintf(buf, n, "%uh ago",  age / 3600);
-    else                   snprintf(buf, n, ">1d ago");
+    char s[8];
+    geo::fmtAgeShort(s, sizeof(s), rtc_clock.getCurrentTime(), lastmod);
+    if (!s[0]) { snprintf(buf, n, "unknown"); return; }
+    snprintf(buf, n, "%s ago", s);
   }
 
   static const char* typeName(uint8_t t) {
@@ -593,7 +587,7 @@ public:
     _sort_label[0] = '\0';
   }
 
-  void enter() {
+  void onShow() override {
     _sel = _scroll = 0;
     _detail = false;
     _nav = false;
@@ -692,7 +686,7 @@ public:
       drawList(display, _count, _sel, _scroll, [&](int idx, int y, bool sel, int reserve) {
         const Entry& e = _entries[idx];
 
-        display.drawSelectionRow(0, y - 1, display.width() - reserve, item_h - 1, sel);
+        drawRowSelection(display, y, sel, reserve);
 
         char filt[32];
         int tx = 2;
@@ -715,20 +709,13 @@ public:
         if (_source == SRC_SCAN) {
           snprintf(right, sizeof(right), "%d", (int)e.rssi);
         } else if (_sort == SORT_TIME) {
-          uint32_t now = rtc_clock.getCurrentTime();
-          if (e.lastmod == 0 || now < e.lastmod)  snprintf(right, sizeof(right), "?");
-          else {
-            uint32_t age = now - e.lastmod;
-            if      (age < 60)   snprintf(right, sizeof(right), "%us", age);
-            else if (age < 3600) snprintf(right, sizeof(right), "%um", age / 60);
-            else                 snprintf(right, sizeof(right), "%uh", age / 3600);
-          }
+          geo::fmtAgeShort(right, sizeof(right), rtc_clock.getCurrentTime(), e.lastmod);
+          if (!right[0]) snprintf(right, sizeof(right), "?");   // unknown / RTC not synced
         } else {
           if (e.dist_km >= 0.0f) geo::fmtDist(right, sizeof(right), e.dist_km, useImperial());
           else                   strncpy(right, "?GPS", sizeof(right));
         }
-        display.setCursor(display.width() - display.getTextWidth(right) - 2 - reserve, y);
-        display.print(right);
+        display.drawTextRightAlign(display.width() - reserve - 2, y, right);
       });
     }
 
@@ -791,8 +778,8 @@ public:
       _detail_refresh_ms = millis();
       return true;
     }
-    if (c == KEY_LEFT)  { _filter = (_filter + F_COUNT - 1) % F_COUNT; refresh(); return true; }
-    if (c == KEY_RIGHT) { _filter = (_filter + 1) % F_COUNT;          refresh(); return true; }
+    if (keyIsPrev(c)) { _filter = (_filter + F_COUNT - 1) % F_COUNT; refresh(); return true; }
+    if (keyIsNext(c)) { _filter = (_filter + 1) % F_COUNT;          refresh(); return true; }
     return false;
   }
 };

@@ -36,7 +36,7 @@ class LiveShareScreen : public UIScreen {
 public:
   LiveShareScreen(UITask* task, NodePrefs* prefs) : _task(task), _prefs(prefs) {}
 
-  void enter() { _dirty = false; _sel = 0; _scroll = 0; }
+  void onShow() override { _dirty = false; _sel = 0; _scroll = 0; }
 
   // Resolve the configured target's display name (channel name or contact name).
   void currentTargetName(char* buf, int n) {
@@ -92,7 +92,7 @@ public:
     const int valx = display.width() / 2 + 6;
     drawList(display, ROW_COUNT, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
       Row r = rows(i);
-      display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+      drawRowSelection(display, y, sel, reserve);
       display.setCursor(4, y);
       display.print(r.label);
       char val[24];
@@ -161,7 +161,7 @@ public:
 
   bool handleInput(char c) override {
     if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
-      if (_dirty) { the_mesh.savePrefs(); _dirty = false; }
+      _task->savePrefsIfDirty(_dirty);
       _task->gotoToolsScreen();
       return true;
     }

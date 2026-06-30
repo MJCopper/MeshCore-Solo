@@ -116,9 +116,21 @@ public:
 static const int QUICK_MSGS_MAX = 10;
 
 
+// ── Screen fragments — included into THIS translation unit only ───────────────
+// These headers are not standalone: they are compiled solely as part of
+// UITask.cpp, in the order below. Two consequences a new screen must respect:
+//   • Order matters. A `static inline` helper (drawList, msgReplyBody, geo::…)
+//     or a shared scratch buffer (FullscreenMsgView's s_wrap_*) is only visible
+//     to fragments included *after* the one that defines it. Add new screens
+//     after their dependencies.
+//   • Single-TU only. Some fragments define external-linkage symbols at file
+//     scope (e.g. NearbyScreen::FILTER_LABELS), so including any of them from a
+//     second .cpp is a duplicate-symbol link error. Keep them UITask-internal;
+//     anything genuinely shareable belongs in a real header (icons.h, GeoUtils.h).
 #include "FullscreenMsgView.h"
 #include "SensorPlaceholders.h"
 #include "SettingsScreen.h"
+#include "MessageHistory.h"   // RAM history rings (DM + channel) used by QuickMsgScreen
 #include "QuickMsgScreen.h"
 
 // ── Custom screens (separate files to ease upstream merges) ───────────────────
@@ -134,6 +146,7 @@ static const int QUICK_MSGS_MAX = 10;
 #include "DiagnosticsScreen.h"
 #include "RepeaterScreen.h"
 #include "ToolsScreen.h"
+#include "ClockToolsScreen.h"   // Alarm / Timer / Stopwatch (Clock page › Enter)
 
 #ifndef BATT_MIN_MILLIVOLTS
   #define BATT_MIN_MILLIVOLTS 3200
@@ -461,6 +474,13 @@ class HomeScreen : public UIScreen {
       battLeftX = mx;
     }
 #endif
+
+    // Alarm armed — a persistent status cue (like mute), always shown (no blink).
+    if (_node_prefs && _node_prefs->alarm_on) {
+      int alX = battLeftX - ind - ind_gap;
+      drawBoxedIcon(display, alX, ind, ind_h, ICON_ALARM);
+      battLeftX = alX;
+    }
 
     // BT connection indicator (left of muted/battery icons)
     int leftmostX = battLeftX;
@@ -790,6 +810,16 @@ public:
         static const char* mo[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
         snprintf(buf, sizeof(buf),"%s %d %s %d", wd[ti->tm_wday], ti->tm_mday, mo[ti->tm_mon], 1900 + ti->tm_year);
         display.drawTextCentered(display.width() / 2, date_y, buf);
+
+        // Alarm armed: a small bell in the top-left corner. The status bar (and
+        // its bell) is hidden on this page, so signal the armed alarm here. Just
+        // the glyph — no time text — so it stays clear of the centred clock
+        // digits (which can reach the corner when seconds are shown), matching
+        // the icon-only status-bar indicator. The exact time is in Clock Tools.
+        if (_node_prefs && _node_prefs->alarm_on) {
+          display.setColor(DisplayDriver::LIGHT);
+          miniIconDrawTop(display, 0, 0, ICON_ALARM);
+        }
 
         int sep_y  = date_y + lh + 1;
         int dash0  = sep_y + display.sepH() + 2;
@@ -1372,6 +1402,10 @@ public:
       _shutdown_init = true;  // need to wait for button to be released
       return true;
     }
+    if (c == KEY_ENTER && _page == HomePage::CLOCK) {
+      _task->gotoClockTools();   // Alarm / Timer / Stopwatch
+      return true;
+    }
     if (c == KEY_CONTEXT_MENU && _page == HomePage::CLOCK) {
       _task->gotoDashboardConfig();
       return true;
@@ -1470,6 +1504,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   compass_screen     = new CompassScreen(this);
   diag_screen        = new DiagnosticsScreen(this);
   repeater_screen    = new RepeaterScreen(this);
+  clock_tools        = new ClockToolsScreen(this, node_prefs);
   applyBrightness();
   applyFont();
   applyRotation();
@@ -1477,74 +1512,110 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   setCurrScreen(splash);
 }
 
-void UITask::gotoSettingsScreen() {
-  ((SettingsScreen*)settings)->markClean();
-  setCurrScreen(settings);
+// onShow() is invoked by setCurrScreen(), so most navigators are just that.
+void UITask::gotoSettingsScreen()  { setCurrScreen(settings); }
+void UITask::gotoToolsScreen()     { setCurrScreen(tools_screen); }
+void UITask::gotoBotScreen()       { setCurrScreen(bot_screen); }
+void UITask::gotoNearbyScreen()    { setCurrScreen(nearby_screen); }
+void UITask::gotoDashboardConfig() { setCurrScreen(dashboard_config); }
+void UITask::gotoTrailScreen()     { setCurrScreen(trail_screen); }
+void UITask::gotoCompassScreen()   { setCurrScreen(compass_screen); }
+void UITask::gotoDiagnosticsScreen() { setCurrScreen(diag_screen); }
+void UITask::gotoRepeaterScreen()  { setCurrScreen(repeater_screen); }
+void UITask::gotoClockTools()      { setCurrScreen(clock_tools); }
+void UITask::gotoLiveShareScreen() { setCurrScreen(live_share_screen); }
+
+void UITask::wakeForAlarm() {
+  if (_display != NULL) _display->turnOn();
+  _next_refresh = 0;   // draw the alert overlay immediately
 }
 
-void UITask::gotoToolsScreen() {
-  ((ToolsScreen*)tools_screen)->enter();
-  setCurrScreen(tools_screen);
+// ── Clock tools engine (alarm / countdown / ring) ───────────────────────────
+// Lives here, not in ClockToolsScreen, so it fires regardless of the current
+// screen. The melody overrides mute (playMelody → buzzer.playForced); the ring
+// auto-stops after CLOCK_RING_MS if no key dismisses it (see UITask::loop).
+static const char*    CLOCK_ALARM_MELODY       = "alarm:d=8,o=6,b=125:c,c,c,c,p,c,c,c,c,p";
+static const uint32_t CLOCK_RING_MS            = 60000;
+static const uint32_t CLOCK_ALARM_CATCHUP_SECS = 6 * 3600;  // fire late up to 6 h, else reschedule
+
+// Next absolute wall instant matching alarm_hour:alarm_min in local time,
+// strictly after now_wall (an alarm set to the current minute waits a day).
+uint32_t UITask::computeAlarmNextFire(uint32_t now_wall) const {
+  int tz = _node_prefs ? _node_prefs->tz_offset_hours : 0;
+  int64_t now_local = (int64_t)now_wall + (int64_t)tz * 3600;
+  time_t t = (time_t)now_local;
+  struct tm* ti = gmtime(&t);
+  int64_t sod = ti->tm_hour * 3600 + ti->tm_min * 60 + ti->tm_sec;  // secs since local midnight
+  int64_t target = (now_local - sod)
+                 + (int64_t)_node_prefs->alarm_hour * 3600 + (int64_t)_node_prefs->alarm_min * 60;
+  if (target <= now_local) target += 86400;
+  return (uint32_t)(target - (int64_t)tz * 3600);
 }
 
+void UITask::fireClockAlert(const char* label) {
+  snprintf(_ring_label, sizeof(_ring_label), "%s", label);
+  _ringing = true;
+  _ring_until_ms = millis() + CLOCK_RING_MS;
+  wakeForAlarm();
+  showAlert(label, CLOCK_RING_MS);
+  playMelody(CLOCK_ALARM_MELODY);
+}
+
+void UITask::evaluateAlarm() {
+  if (!_node_prefs || !_node_prefs->alarm_on) return;
+  uint32_t now_ms = millis();
+  if (now_ms - _alarm_check_ms < 500) return;   // ~2 Hz is plenty for a minute alarm
+  _alarm_check_ms = now_ms;
+  uint32_t now_wall = rtc_clock.getCurrentTime();
+  if (now_wall < 1000000000UL) return;           // need a real time sync first
+  if (_alarm_next_fire == 0) _alarm_next_fire = computeAlarmNextFire(now_wall);
+  if (now_wall < _alarm_next_fire) return;
+  if (now_wall - _alarm_next_fire < CLOCK_ALARM_CATCHUP_SECS) {
+    char lbl[20];
+    snprintf(lbl, sizeof(lbl), "Alarm %02d:%02d", _node_prefs->alarm_hour, _node_prefs->alarm_min);
+    _node_prefs->alarm_on = 0;                    // one-shot
+    bool dirty = true; savePrefsIfDirty(dirty);
+    _alarm_next_fire = 0;
+    fireClockAlert(lbl);
+  } else {
+    // Clock jumped implausibly far past the target — reschedule rather than
+    // ringing absurdly late.
+    _alarm_next_fire = computeAlarmNextFire(now_wall);
+  }
+}
+
+void UITask::tickClockTools() {
+  uint32_t now_ms = millis();
+  // Ring maintenance: repeat the melody until dismissed or the window elapses.
+  if (_ringing) {
+    if (now_ms >= _ring_until_ms) { stopMelody(); _ringing = false; clearAlert(); }
+    else if (!isMelodyPlaying())  playMelody(CLOCK_ALARM_MELODY);
+  }
+  // Countdown timer (millis — sync-immune).
+  if (_timer_running && now_ms >= _timer_deadline_ms) {
+    _timer_running = false;
+    fireClockAlert("Timer done");
+  }
+  // Alarm (wall clock — absolute schedule for sync robustness).
+  evaluateAlarm();
+}
+
+// Ringtone takes a slot argument that onShow() can't carry — pass it after the
+// reset (setCurrScreen's onShow runs first, then this layers the slot on top).
 void UITask::gotoRingtoneEditor(int slot) {
-  ((RingtoneEditorScreen*)ringtone_edit)->enter(slot);
   setCurrScreen(ringtone_edit);
+  ((RingtoneEditorScreen*)ringtone_edit)->selectSlot(slot);
 }
 
-void UITask::gotoBotScreen() {
-  ((BotScreen*)bot_screen)->enter();
-  setCurrScreen(bot_screen);
-}
-
-void UITask::gotoNearbyScreen() {
-  ((NearbyScreen*)nearby_screen)->enter();
-  setCurrScreen(nearby_screen);
-}
-
-void UITask::gotoDashboardConfig() {
-  ((DashboardConfigScreen*)dashboard_config)->enter();
-  setCurrScreen(dashboard_config);
-}
-
-void UITask::gotoTrailScreen() {
-  ((TrailScreen*)trail_screen)->enter();
-  setCurrScreen(trail_screen);
-}
-
+// Map is a sub-view variant of the Trail screen: reset via onShow(), then
+// switch into the map view.
 void UITask::gotoMapScreen() {
-  ((TrailScreen*)trail_screen)->enterMap();
   setCurrScreen(trail_screen);
+  ((TrailScreen*)trail_screen)->showMapView();
 }
 
-void UITask::gotoCompassScreen() {
-  ((CompassScreen*)compass_screen)->enter();
-  setCurrScreen(compass_screen);
-}
-
-void UITask::gotoDiagnosticsScreen() {
-  setCurrScreen(diag_screen);
-}
-
-void UITask::gotoRepeaterScreen() {
-  ((RepeaterScreen*)repeater_screen)->enter();
-  setCurrScreen(repeater_screen);
-}
-
-void UITask::gotoLiveShareScreen() {
-  ((LiveShareScreen*)live_share_screen)->enter();
-  setCurrScreen(live_share_screen);
-}
-
-void UITask::gotoLocatorScreen() {
-  ((LocatorScreen*)locator_screen)->enter();
-  setCurrScreen(locator_screen);
-}
-
-void UITask::gotoAutoAdvertScreen() {
-  ((AutoAdvertScreen*)auto_advert_screen)->enter();
-  setCurrScreen(auto_advert_screen);
-}
+void UITask::gotoLocatorScreen()    { setCurrScreen(locator_screen); }
+void UITask::gotoAutoAdvertScreen() { setCurrScreen(auto_advert_screen); }
 
 // Public method to handle ping result callback
 void UITask::handlePingResult(uint32_t tag, int16_t snr_out_x4, int16_t snr_back_x4, uint32_t rtt_ms) {
@@ -1643,9 +1714,9 @@ int UITask::getRecentDMContacts(uint8_t out[][NodePrefs::FAVOURITE_PREFIX_LEN], 
   return ((QuickMsgScreen*)quick_msg)->getRecentDMContacts(out, max);
 }
 
-void UITask::addChannelMsg(uint8_t channel_idx, const char* text) {
+void UITask::addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp) {
   _last_notif_ch_idx = (int)channel_idx;
-  ((QuickMsgScreen*)quick_msg)->addChannelMsg(channel_idx, text);
+  ((QuickMsgScreen*)quick_msg)->addChannelMsg(channel_idx, text, timestamp);
 }
 
 int UITask::getChannelUnreadCount() const {
@@ -1658,6 +1729,15 @@ void UITask::onMsgAck(uint32_t ack_crc) {
 
 void UITask::onChannelRelayed(uint32_t seq) {
   ((QuickMsgScreen*)quick_msg)->markChannelRelayed(seq);
+}
+
+void UITask::onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
+  ((QuickMsgScreen*)quick_msg)->onRoomLoginResult(pub_key, success, permissions);
+  // Unlike the keypress-driven showAlert() calls elsewhere, this fires from a
+  // background mesh response with no keypress to schedule a redraw — without
+  // forcing one, the alert's short expiry can lapse before the next scheduled
+  // refresh ever draws it.
+  _next_refresh = 0;
 }
 
 void UITask::addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp) {
@@ -1783,8 +1863,21 @@ void UITask::userLedHandler() {
 }
 
 void UITask::setCurrScreen(UIScreen* c) {
+  // Fail safe on a null target: a screen pointer left uninitialised (member
+  // declared + navigator wired, but the `new XScreen()` line forgotten in
+  // begin()) stays nullptr thanks to the in-class initialisers. Bail here so
+  // that mistake is an inert no-op instead of a null deref in render()/poll().
+  if (!c) return;
   curr = c;
+  c->onShow();          // central per-visit reset hook (see UIScreen::onShow)
   _next_refresh = 100;
+}
+
+bool UITask::savePrefsIfDirty(bool& dirty) {
+  if (!dirty) return false;
+  the_mesh.savePrefs();
+  dirty = false;
+  return true;
 }
 
 /*
@@ -2015,6 +2108,14 @@ void UITask::loop() {
   }
 #endif
 
+  // A ringing alarm/timer is dismissed by ANY key, even when locked or on another
+  // screen — and the queued keys are swallowed so they don't also act on the view.
+  if (_kq_head != _kq_tail && isRinging()) {
+    dismissRing();
+    _kq_head = _kq_tail = 0;
+    _next_refresh = 0;
+  }
+
   if (_kq_head != _kq_tail) {
     if (!_locked && curr) {
       // Apply the whole queued burst, then redraw once — N taps captured during
@@ -2047,6 +2148,10 @@ void UITask::loop() {
 #endif
 
   if (curr) curr->poll();
+
+  // Alarm + countdown run regardless of the current screen / display state, so
+  // they're driven here (not via the current screen's poll()).
+  tickClockTools();
 
   if (_display != NULL && _display->isOn()) {
     if (_locked && millis() > _lock_wake_until) {
@@ -2157,7 +2262,7 @@ void UITask::loop() {
       _auto_off = millis() + AUTO_OFF_MILLIS;
     }
 #endif
-    if (!_locked && autoOffMillis() > 0 && millis() > _auto_off) {
+    if (!_locked && autoOffMillis() > 0 && millis() > _auto_off && !isRinging()) {
       _display->turnOff();
 #ifdef PIN_LED
       digitalWrite(PIN_LED, LOW);  // turn off status LED with display to save power
@@ -2410,6 +2515,85 @@ void UITask::clearTarget() {
   resetLocator();
 }
 
+void UITask::clearTargetIfWaypoint(int32_t lat_1e6, int32_t lon_1e6) {
+  if (!_node_prefs || !_node_prefs->locator_has_target || _node_prefs->locator_target_kind != 0) return;
+  if (_node_prefs->locator_lat_1e6 != lat_1e6 || _node_prefs->locator_lon_1e6 != lon_1e6) return;
+  clearTarget();
+  the_mesh.savePrefs();
+}
+
+// CONTRACT: every NodePrefs field that keys on a contact pubkey/prefix is
+// cleared here, so a removed contact can't leave a dangling reference. If you
+// add such a field, add its cleanup below (and mark the field in NodePrefs.h).
+// Currently covered: favourite_contacts, locator_key, loc_share_dm_prefix,
+// dm_notif[], dm_melody[]. Called for both explicit removal and silent
+// auto-eviction (see MyMesh CMD_REMOVE_CONTACT / onContactOverwrite).
+void UITask::onContactRemoved(const uint8_t* pub_key) {
+  if (!_node_prefs || !pub_key) return;
+  bool changed = false;
+
+  int slot = findFavouriteSlot(pub_key);
+  if (slot >= 0) { clearFavouriteSlot(slot); changed = true; }
+
+  if (_node_prefs->locator_has_target && _node_prefs->locator_target_kind == 1
+      && memcmp(_node_prefs->locator_key, pub_key, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
+    clearTarget();
+    changed = true;
+  }
+  // Fail closed rather than guess a new recipient: a contact target that's
+  // gone just turns auto-share off, it doesn't fall back to some other target.
+  if (_node_prefs->loc_share_target_type == 1
+      && memcmp(_node_prefs->loc_share_dm_prefix, pub_key, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
+    _node_prefs->loc_share_enabled = 0;
+    changed = true;
+  }
+  // Per-contact mute/melody overrides — only 16 slots shared across every
+  // contact, so an orphaned entry isn't just stale, it can eventually starve
+  // new overrides for contacts that still exist. Keyed by a 4-byte prefix
+  // (narrower than the 6-byte one above), so compare only that many bytes.
+  for (int i = 0; i < NodePrefs::DM_NOTIF_TABLE_MAX; i++) {
+    if (_node_prefs->dm_notif[i].state && memcmp(_node_prefs->dm_notif[i].prefix, pub_key, 4) == 0) {
+      memset(&_node_prefs->dm_notif[i], 0, sizeof(_node_prefs->dm_notif[i]));
+      changed = true;
+    }
+  }
+  for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++) {
+    if (_node_prefs->dm_melody[i].slot && memcmp(_node_prefs->dm_melody[i].prefix, pub_key, 4) == 0) {
+      memset(&_node_prefs->dm_melody[i], 0, sizeof(_node_prefs->dm_melody[i]));
+      changed = true;
+    }
+  }
+
+  if (changed) the_mesh.savePrefs();
+}
+
+// CONTRACT: every NodePrefs field that keys on a channel index is cleared here,
+// so a channel re-added at a freed slot can't inherit the old one's settings.
+// If you add such a field, add its cleanup below (and mark it in NodePrefs.h).
+// Currently covered: bot_channel_idx, loc_share_channel_idx, ch_notif_melody_*.
+void UITask::onChannelRemoved(uint8_t channel_idx) {
+  if (!_node_prefs) return;
+  bool changed = false;
+
+  if (_node_prefs->bot_channel_enabled && _node_prefs->bot_channel_idx == channel_idx) {
+    _node_prefs->bot_channel_enabled = 0;
+    changed = true;
+  }
+  // Fail closed, same policy as onContactRemoved()'s Live Share case.
+  if (_node_prefs->loc_share_target_type == 0 && _node_prefs->loc_share_channel_idx == channel_idx) {
+    _node_prefs->loc_share_enabled = 0;
+    changed = true;
+  }
+  uint64_t mask = 1ULL << channel_idx;
+  if (_node_prefs->ch_notif_melody_set & mask) {
+    _node_prefs->ch_notif_melody_set &= ~mask;
+    _node_prefs->ch_notif_melody_2   &= ~mask;
+    changed = true;
+  }
+
+  if (changed) the_mesh.savePrefs();
+}
+
 // Homing beeper: while armed with a target and inside the radius, emit a short
 // tick whose interval shrinks linearly with distance — slow at the edge, rapid
 // near the centre. Polls distance a few times a second; silent outside the
@@ -2622,6 +2806,16 @@ bool UITask::getGPSState() {
       if (strcmp(_sensors->getSettingName(i), "gps") == 0) {
         return !strcmp(_sensors->getSettingValue(i), "1");
       }
+    }
+  }
+  return false;
+}
+
+bool UITask::hasGPS() {
+  if (_sensors != NULL) {
+    int num = _sensors->getNumSettings();
+    for (int i = 0; i < num; i++) {
+      if (strcmp(_sensors->getSettingName(i), "gps") == 0) return true;
     }
   }
   return false;

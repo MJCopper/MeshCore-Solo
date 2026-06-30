@@ -20,7 +20,7 @@ class AutoAdvertScreen : public UIScreen {
 public:
   AutoAdvertScreen(UITask* task, NodePrefs* prefs) : _task(task), _prefs(prefs) {}
 
-  void enter() { _dirty = false; }
+  void onShow() override { _dirty = false; }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
@@ -51,7 +51,7 @@ public:
 
   bool handleInput(char c) override {
     if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
-      if (_dirty) the_mesh.savePrefs();
+      _task->savePrefsIfDirty(_dirty);
       _task->gotoToolsScreen();
       return true;
     }

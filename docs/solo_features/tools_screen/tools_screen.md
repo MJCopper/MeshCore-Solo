@@ -104,9 +104,10 @@ Cycle views with **LEFT / RIGHT**:
 
 | Item                  | Action                                              |
 | --------------------- | --------------------------------------------------- |
-| Start / Stop tracking | Begin or end a recording session                    |
+| Start / Stop tracking | Begin or end a recording session. If **GPS is off**, choosing Start asks **"GPS is off — Enable GPS & start"** so a session can't silently run with nothing to record |
 | Mark here             | Drop a waypoint at the current GPS fix (see below)  |
 | Waypoints…            | Open the waypoint list / navigation / add-by-coords |
+| Track back            | Retrace the recorded route back to its start (needs ≥2 points; see below) |
 | Share my pos          | Send your current position as a one-shot `[LOC]` message — pick a contact or channel (see **Live Share**) |
 | Trail file…           | Open the file submenu (below)                        |
 | Settings…             | Open the settings submenu (below)                    |
@@ -127,6 +128,7 @@ Cycle views with **LEFT / RIGHT**:
 | ---------- | --------- | ------------------------------------------------------- |
 | Min dist   | always    | Sample gate, 4 levels — metric: 5/10/25/100 m, imperial: 15/30/75/300 ft |
 | Auto-pause | always    | Off / 1 / 2 / 5 min — auto-freeze the trail after a stop, resume on movement (see below) |
+| Mark avg   | always    | Off / 5 / 10 / 30 s — GPS averaging for **Mark here** (see Waypoints below) |
 | Readout    | Summary view | Summary shows Speed or Pace (in the global unit system) |
 | Grid       | Map view  | Toggle scale grid on the map                            |
 
@@ -134,11 +136,17 @@ Cycle views with **LEFT / RIGHT**:
 
 **Auto-pause** — when set, a recording trail automatically **pauses** after the device has stayed within ~15 m of one spot for the chosen delay: the elapsed timer and point sampling both freeze, and the map line breaks across the idle gap. It **resumes on its own** as soon as you move again. This keeps a stop (a break, a meal, parking) out of your distance and average-speed stats without you having to remember to stop and restart tracking. A paused trail is still "on" (the **G** marker keeps blinking) — the Summary **Status** row shows `paused`. The stop is detected with its own coarse movement gate, independent of **Min dist**, so GPS jitter while you're parked doesn't keep it awake.
 
+### Track back
+
+**Hold Enter → Track back** retraces the trail you just recorded, back to where you started — useful for returning the same way in poor visibility or unfamiliar ground. It reuses the navigation view (distance + two absolute bearings; see *Waypoints › Navigating*), but instead of a single fixed target it walks the recorded breadcrumbs in reverse: it snaps onto the route at the **nearest recorded point**, guides you to it, then automatically advances to the next earlier point as you reach each one (within ~20 m). The header shows how many points remain (`Back: 12 pt`), reading `Trail start` on the final leg; arriving there shows `Back at start` and exits. **Cancel** leaves track-back at any time. It needs a trail with at least two points and a GPS fix; it doesn't require tracking to still be running.
+
 ### Waypoints
 
 A waypoint is a saved spot — your car, camp, a water source — that you can navigate back to later. Waypoints are **independent of the trail**: they live in their own flash file (`/waypoints`), survive a reboot, and are **not** cleared by *Reset trail*. Up to 16 can be stored — the Waypoints list header shows how many are in use (e.g. `WAYPOINTS 3/16`).
 
 **Dropping a waypoint** — **Hold Enter → Mark here**. This captures the current GPS fix and opens the on-screen keyboard for a short label (up to 11 characters — e.g. `CAR`, `CAMP`, `H2O`). Leaving it blank auto-names it `WP1`, `WP2`, … Marking works whether or not the trail is being recorded; it needs a GPS fix (otherwise it reports *No GPS fix*).
+
+**GPS averaging** — with **Settings → Mark avg** set (5 / 10 / 30 s), *Mark here* doesn't snapshot a single fix; it samples the GPS once a second for that window and stores the **mean** position, for a steadier mark than one instantaneous reading (handy for a precise spot — a cache, a car, a trailhead). A short screen shows the time left and the sample count while it runs; **Cancel** aborts. When the window closes it opens the label keyboard as usual. With **Mark avg = Off** (the default) marking is instant.
 
 **Adding by coordinates** — open **Hold Enter → Waypoints** and select the **+ Add by coords** row (always the last entry in the list). This creates a waypoint without being there — no GPS fix required (handy for a meeting point or a spot read off a map). It opens a small form with three editable rows plus **Save**:
 
@@ -253,7 +261,7 @@ The tool holds both directions of sharing in one flat list. Navigate with **UP/D
 
 <!-- screenshot pending: Locator screen with a target set (e.g. "@Bob (5m)"), radius/mode/beeper rows -->
 
-A single **geofence** that beeps and shows an alert when you cross **into** or **out of** a radius. The target can be a **saved waypoint** (a fixed place — "tell me when I'm back at camp") or a **live contact** (a person sharing their position via Live Share — "alert me when my friend gets near / falls behind"). A waypoint target is a **snapshot** (coordinate + label copied), so it keeps working even if you later edit or delete that waypoint; a contact target follows the person's latest shared position.
+A single **geofence** that beeps and shows an alert when you cross **into** or **out of** a radius. The target can be a **saved waypoint** (a fixed place — "tell me when I'm back at camp") or a **live contact** (a person sharing their position via Live Share — "alert me when my friend gets near / falls behind"). A waypoint target is a **snapshot** (coordinate + label copied), so it keeps working even if you later edit that waypoint; a contact target follows the person's latest shared position. **Deleting** the target's waypoint, or the target contact being removed from the contacts list, clears the Locator target back to `none` instead of leaving it pointed at something that's gone.
 
 Navigate with **UP/DOWN**, change a value with **LEFT/RIGHT** (or **Enter**); **Cancel/Back** saves and returns to Tools.
 

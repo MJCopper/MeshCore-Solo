@@ -352,6 +352,7 @@ uint8_t MyMesh::getAutoAddMaxHops() const {
 
 void MyMesh::onContactOverwrite(const uint8_t* pub_key) {
     _store->deleteBlobByKey(pub_key, PUB_KEY_SIZE); // delete from storage
+  if (_ui) _ui->onContactRemoved(pub_key); // same cleanup as an explicit CMD_REMOVE_CONTACT
   if (_serial->isConnected()) {
     out_frame[0] = PUSH_CODE_CONTACT_DELETED;
     memcpy(&out_frame[1], pub_key, PUB_KEY_SIZE);
@@ -720,7 +721,7 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
     _serial->writeFrame(frame, 1);
   }
 #ifdef DISPLAY_CLASS
-  if (_ui) _ui->addChannelMsg(channel_idx, text);
+  if (_ui) _ui->addChannelMsg(channel_idx, text, timestamp);
   if (_ui) _ui->notify(UIEventType::channelMessage);
   const char *channel_name = "Unknown";
   ChannelDetails channel_details;
@@ -845,11 +846,13 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     pending_login = 0;
 
     int i = 0;
+    bool login_ok = false;
     if (memcmp(&data[4], "OK", 2) == 0) { // legacy Repeater login OK response
       out_frame[i++] = PUSH_CODE_LOGIN_SUCCESS;
       out_frame[i++] = 0; // legacy: is_admin = false
       memcpy(&out_frame[i], contact.id.pub_key, 6);
       i += 6;                                     // pub_key_prefix
+      login_ok = true;
     } else if (data[4] == RESP_SERVER_LOGIN_OK) { // new login response
       uint16_t keep_alive_secs = ((uint16_t)data[5]) * 16;
       if (keep_alive_secs > 0) {
@@ -863,13 +866,40 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
       i += 4; // NEW: include server timestamp
       out_frame[i++] = data[7]; // NEW (v7): ACL permissions
       out_frame[i++] = data[12]; // FIRMWARE_VER_LEVEL
+      login_ok = true;
     } else {
       out_frame[i++] = PUSH_CODE_LOGIN_FAIL;
       out_frame[i++] = 0; // reserved
       memcpy(&out_frame[i], contact.id.pub_key, 6);
       i += 6; // pub_key_prefix
     }
+    // Persist app/USB-entered room passwords too, so the device can later post
+    // to that room standalone (after reboot, no phone) without re-prompting --
+    // same store the on-device login path uses. Rooms only; a failed login
+    // forgets any stale saved password, mirroring onRoomLoginResult().
+    if (contact.type == ADV_TYPE_ROOM) {
+      if (login_ok) saveRoomPassword(contact.id.pub_key, pending_login_pw);
+      else          forgetRoomPassword(contact.id.pub_key);
+    }
     _serial->writeFrame(out_frame, i);
+  } else if (ui_pending_login && memcmp(&ui_pending_login, contact.id.pub_key, 4) == 0) { // check for on-device UI login response
+    ui_pending_login = 0;
+
+    bool success;
+    uint8_t permissions = 0;
+    if (memcmp(&data[4], "OK", 2) == 0) { // legacy Repeater login OK response
+      success = true;
+    } else if (data[4] == RESP_SERVER_LOGIN_OK) { // new login response
+      uint16_t keep_alive_secs = ((uint16_t)data[5]) * 16;
+      if (keep_alive_secs > 0) {
+        startConnection(contact, keep_alive_secs);
+      }
+      success = true;
+      permissions = data[7]; // ACL permissions
+    } else {
+      success = false;
+    }
+    _ui->onRoomLoginResult(contact.id.pub_key, success, permissions);
   } else if (len > 4 && // check for status response
              pending_status &&
              memcmp(&pending_status, contact.id.pub_key, 4) == 0 // legacy matching scheme
@@ -908,6 +938,104 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     i += (len - 4);
     _serial->writeFrame(out_frame, i);
   }
+}
+
+#define ROOM_PW_FILE "/room_pw"
+#define ROOM_PW_TMP  "/room_pw.tmp"
+#define MAX_SAVED_ROOM_PASSWORDS 16
+
+namespace {
+  struct RoomPwRec {
+    uint8_t key[4];   // pub-key prefix
+    char pw[16];      // up to 15 chars + NUL
+  };
+}
+
+bool MyMesh::getRoomPassword(const uint8_t* pub_key, char* out_password, uint8_t max_len) {
+  File f = _store->openRead(ROOM_PW_FILE);
+  if (!f) return false;
+
+  RoomPwRec rec;
+  bool found = false;
+  while (f.read((uint8_t *)&rec, sizeof(rec)) == sizeof(rec)) {
+    if (memcmp(rec.key, pub_key, 4) == 0) {
+      strncpy(out_password, rec.pw, max_len - 1);
+      out_password[max_len - 1] = 0;
+      found = true;
+      break;
+    }
+  }
+  f.close();
+  return found;
+}
+
+bool MyMesh::saveRoomPassword(const uint8_t* pub_key, const char* password) {
+  // The table is tiny (<= MAX_SAVED_ROOM_PASSWORDS * 20 bytes), so just load
+  // it whole, update/append/evict in RAM, then rewrite -- simpler and just
+  // as crash-safe as a record seek given how rarely this runs (once per new
+  // room login).
+  RoomPwRec recs[MAX_SAVED_ROOM_PASSWORDS];
+  int count = 0;
+  File rf = _store->openRead(ROOM_PW_FILE);
+  if (rf) {
+    RoomPwRec rec;
+    while (count < MAX_SAVED_ROOM_PASSWORDS && rf.read((uint8_t *)&rec, sizeof(rec)) == sizeof(rec)) {
+      if (memcmp(rec.key, pub_key, 4) != 0) { // drop stale entry for this key -- replaced below
+        recs[count++] = rec;
+      }
+    }
+    rf.close();
+  }
+
+  RoomPwRec new_rec;
+  memcpy(new_rec.key, pub_key, 4);
+  strncpy(new_rec.pw, password, sizeof(new_rec.pw) - 1);
+  new_rec.pw[sizeof(new_rec.pw) - 1] = 0;
+
+  if (count < MAX_SAVED_ROOM_PASSWORDS) {
+    recs[count++] = new_rec;
+  } else { // table full and not already present -- evict oldest (front)
+    memmove(&recs[0], &recs[1], sizeof(RoomPwRec) * (MAX_SAVED_ROOM_PASSWORDS - 1));
+    recs[MAX_SAVED_ROOM_PASSWORDS - 1] = new_rec;
+  }
+
+  // Write to a temp file and atomically swap it over /room_pw, so an
+  // interrupted save leaves the previous good table intact rather than a
+  // truncated mix (mirrors how contacts/channels are persisted).
+  File wf = _store->openWrite(ROOM_PW_TMP);
+  if (!wf) return false;
+  size_t want = sizeof(RoomPwRec) * count;
+  bool ok = (wf.write((uint8_t *)recs, want) == want);
+  wf.close();
+  if (!ok) { _store->removeFile(ROOM_PW_TMP); return false; } // keep previous good file
+  return _store->commitFile(ROOM_PW_TMP, ROOM_PW_FILE);
+}
+
+void MyMesh::forgetRoomPassword(const uint8_t* pub_key) {
+  RoomPwRec recs[MAX_SAVED_ROOM_PASSWORDS];
+  int count = 0;
+  File rf = _store->openRead(ROOM_PW_FILE);
+  if (!rf) return;
+
+  RoomPwRec rec;
+  bool removed = false;
+  while (count < MAX_SAVED_ROOM_PASSWORDS && rf.read((uint8_t *)&rec, sizeof(rec)) == sizeof(rec)) {
+    if (memcmp(rec.key, pub_key, 4) == 0) {
+      removed = true;
+    } else {
+      recs[count++] = rec;
+    }
+  }
+  rf.close();
+  if (!removed) return; // nothing to do, avoid a pointless rewrite
+
+  File wf = _store->openWrite(ROOM_PW_TMP);
+  if (!wf) return;
+  size_t want = sizeof(RoomPwRec) * count;
+  bool ok = (wf.write((uint8_t *)recs, want) == want);
+  wf.close();
+  if (!ok) { _store->removeFile(ROOM_PW_TMP); return; } // keep previous good file
+  _store->commitFile(ROOM_PW_TMP, ROOM_PW_FILE);
 }
 
 bool MyMesh::onContactPathRecv(ContactInfo& contact, uint8_t* in_path, uint8_t in_path_len, uint8_t* out_path, uint8_t out_path_len, uint8_t extra_type, uint8_t* extra, uint8_t extra_len) {
@@ -1537,6 +1665,11 @@ void MyMesh::startInterface(BaseSerialInterface &serial) {
   serial.enable();
 }
 
+static bool isAllZero(const uint8_t* buf, size_t n) {
+  for (size_t i = 0; i < n; i++) if (buf[i]) return false;
+  return true;
+}
+
 void MyMesh::handleCmdFrame(size_t len) {
   if (cmd_frame[0] == CMD_DEVICE_QUERY && len >= 2) { // sent when app establishes connection
     app_target_ver = cmd_frame[1];                    // which version of protocol does app understand
@@ -1823,6 +1956,8 @@ void MyMesh::handleCmdFrame(size_t len) {
     ContactInfo *recipient = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
     if (recipient && removeContact(*recipient)) {
       _store->deleteBlobByKey(pub_key, PUB_KEY_SIZE);
+      forgetRoomPassword(pub_key); // drop any saved room login -- useless without the contact
+      if (_ui) _ui->onContactRemoved(pub_key); // drop any favourite slot / Locator / Live Share target pointed at it
       dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
       writeOKFrame();
     } else {
@@ -2068,6 +2203,8 @@ void MyMesh::handleCmdFrame(size_t len) {
       } else {
         clearPendingReqs();
         memcpy(&pending_login, recipient->id.pub_key, 4); // match this to onContactResponse()
+        strncpy(pending_login_pw, password, sizeof(pending_login_pw) - 1); // saved on success if it's a room
+        pending_login_pw[sizeof(pending_login_pw) - 1] = 0;
         out_frame[0] = RESP_CODE_SENT;
         out_frame[1] = (result == MSG_SEND_SENT_FLOOD) ? 1 : 0;
         memcpy(&out_frame[2], &pending_login, 4);
@@ -2246,6 +2383,12 @@ void MyMesh::handleCmdFrame(size_t len) {
     memcpy(channel.channel.secret, &cmd_frame[2 + 32], 32); // 256-bit key
     if (setChannel(channel_idx, channel)) {
       saveChannels();
+      // An all-zero secret is this codebase's "empty slot" sentinel (same
+      // check loadChannels()/saveChannels() use) -- the app just cleared this
+      // channel, so drop anything that referenced it by index, the same way
+      // onContactRemoved() does for contacts.
+      if (_ui && isAllZero(channel.channel.secret, sizeof(channel.channel.secret)))
+        _ui->onChannelRemoved(channel_idx);
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx
@@ -2258,6 +2401,8 @@ void MyMesh::handleCmdFrame(size_t len) {
     memcpy(channel.channel.secret, &cmd_frame[2 + 32], 16); // 128-bit key
     if (setChannel(channel_idx, channel)) {
       saveChannels();
+      if (_ui && isAllZero(channel.channel.secret, sizeof(channel.channel.secret)))
+        _ui->onChannelRemoved(channel_idx);
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx

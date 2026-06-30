@@ -68,23 +68,29 @@ class UITask : public AbstractUITask {
   unsigned long _analogue_pin_read_millis = millis();
 #endif
 
-  UIScreen* splash;
-  UIScreen* home;
-  UIScreen* settings;
-  UIScreen* quick_msg;
-  UIScreen* tools_screen;
-  UIScreen* ringtone_edit;
-  UIScreen* bot_screen;
-  UIScreen* nearby_screen;
-  UIScreen* dashboard_config;
-  UIScreen* auto_advert_screen;
-  UIScreen* live_share_screen;
-  UIScreen* locator_screen;
-  UIScreen* trail_screen;
-  UIScreen* compass_screen;
-  UIScreen* diag_screen;
-  UIScreen* repeater_screen;
-  UIScreen* curr;
+  // Registering a new screen touches 4 sites: (1) the member below, (2) the
+  // `new XScreen()` in begin(), (3) the gotoXScreen() declaration further down,
+  // (4) its one-line definition in UITask.cpp. Sites 1/3/4 are compile-checked;
+  // only a forgotten (2) can slip through — the nullptr initialisers here turn
+  // that into an inert no-op (see UITask::setCurrScreen) rather than a crash.
+  UIScreen* splash = nullptr;
+  UIScreen* home = nullptr;
+  UIScreen* settings = nullptr;
+  UIScreen* quick_msg = nullptr;
+  UIScreen* tools_screen = nullptr;
+  UIScreen* ringtone_edit = nullptr;
+  UIScreen* bot_screen = nullptr;
+  UIScreen* nearby_screen = nullptr;
+  UIScreen* dashboard_config = nullptr;
+  UIScreen* auto_advert_screen = nullptr;
+  UIScreen* live_share_screen = nullptr;
+  UIScreen* locator_screen = nullptr;
+  UIScreen* trail_screen = nullptr;
+  UIScreen* compass_screen = nullptr;
+  UIScreen* diag_screen = nullptr;
+  UIScreen* repeater_screen = nullptr;
+  UIScreen* clock_tools = nullptr;
+  UIScreen* curr = nullptr;
   CayenneLPP _dash_lpp;
   TrailStore _trail;
   WaypointStore _waypoints;
@@ -120,6 +126,25 @@ class UITask : public AbstractUITask {
   void evaluateLocator();
   void fireLocator(bool arrived);
   void locatorProximityBeeper();
+
+  // Clock tools engine — owned here (not by ClockToolsScreen) so the one-shot
+  // alarm and the countdown timer fire every loop regardless of the current
+  // screen / display state. ClockToolsScreen is pure UI over this state. The
+  // alarm is scheduled as an ABSOLUTE wall instant, recomputed from the stored
+  // time-of-day, so it survives RTC re-syncs (mesh/app/GPS/CLI all jump the
+  // clock) — small corrections still fire on time, a jump over the target still
+  // fires (late). See evaluateAlarm(). Timer + ring are millis-based.
+  uint32_t _alarm_next_fire = 0;   // unix; 0 = (re)compute lazily once time is valid
+  uint32_t _alarm_check_ms  = 0;   // throttle the wall-clock read to ~2 Hz
+  bool     _timer_running = false;
+  uint32_t _timer_deadline_ms = 0;
+  bool     _ringing = false;
+  uint32_t _ring_until_ms = 0;
+  char     _ring_label[20] = {0};
+  uint32_t computeAlarmNextFire(uint32_t now_wall) const;
+  void     evaluateAlarm();                    // alarm scheduling + fire detection
+  void     fireClockAlert(const char* label);  // wake + alert + melody + start ring
+  void     tickClockTools();                   // driven from loop(): ring + timer + alarm
 
   // Course-over-ground ring — a heading source independent of trail recording.
   // Filled from the same periodic GPS poll regardless of _trail.isActive().
@@ -218,6 +243,22 @@ public:
   // Unset the active target (locator_has_target = 0). Distinct from setTarget()
   // because there's no "kind" for nothing — clearing is its own operation.
   void clearTarget();
+  // One-shot: if the active target is exactly this waypoint, clear it and
+  // persist immediately (setTargetNow()'s save-on-the-spot policy) — called
+  // from waypoint deletion so the Locator can't keep pointing at a spot
+  // that no longer exists.
+  void clearTargetIfWaypoint(int32_t lat_1e6, int32_t lon_1e6);
+  // A contact was removed (companion app / CLI): drop any UI reference to its
+  // pubkey that would otherwise dangle — a pinned favourite slot, the Locator
+  // target if it was this contact, the Live Share target if it was this
+  // contact (auto-share turns off rather than guessing a new recipient), and
+  // any per-contact mute/melody override (those tables have only 16 shared
+  // slots, so an orphan isn't just stale — it can starve other contacts).
+  void onContactRemoved(const uint8_t* pub_key) override;
+  // A channel slot was cleared: turn off anything armed against it by index
+  // (the bot's channel, Live Share's channel target) and drop its per-channel
+  // melody bit, so a future channel re-added at the same slot starts clean.
+  void onChannelRemoved(uint8_t channel_idx) override;
   // Resolve a person target (6-byte pubkey prefix) to a current position:
   // prefers an active [LOC] live share, falls back to their last-advertised
   // GPS fix. Returns false when neither is known. Optional live/ts report
@@ -235,6 +276,24 @@ public:
   void gotoCompassScreen();
   void gotoDiagnosticsScreen();
   void gotoRepeaterScreen();
+  void gotoClockTools();   // Alarm / Timer / Stopwatch (from the home Clock page)
+  // Wake the display for an alarm/timer ring (force an immediate refresh).
+  void wakeForAlarm();
+  // Clear any active alert overlay early (alarm dismiss).
+  void clearAlert() { _alert_expiry = 0; }
+  // Clock tools engine API — ClockToolsScreen drives these; the engine itself
+  // runs in tickClockTools() from loop() so it fires regardless of the screen.
+  void onAlarmChanged() { _alarm_next_fire = 0; }   // re-schedule after an alarm edit
+  void startTimer(uint32_t duration_ms) { _timer_running = true; _timer_deadline_ms = millis() + duration_ms; }
+  void stopTimer() { _timer_running = false; }
+  bool isTimerRunning() const { return _timer_running; }
+  uint32_t timerRemainingMs() const {
+    if (!_timer_running) return 0;
+    uint32_t now = millis();
+    return (now >= _timer_deadline_ms) ? 0 : (_timer_deadline_ms - now);
+  }
+  bool isRinging() const { return _ringing; }
+  void dismissRing() { stopMelody(); _ringing = false; clearAlert(); }
   TrailStore& trail() { return _trail; }
   WaypointStore& waypoints() { return _waypoints; }
   LiveTrackStore& liveTrack() { return _livetrack; }
@@ -256,10 +315,11 @@ public:
   void stopMelody();
   bool isMelodyPlaying();
   void showAlert(const char* text, int duration_millis);
-  void addChannelMsg(uint8_t channel_idx, const char* text) override;
+  void addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp = 0) override;
   void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) override;
   void onMsgAck(uint32_t ack_crc) override;
   void onChannelRelayed(uint32_t seq) override;
+  void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) override;
   int  getDMUnreadTotal() const;
   int  getMsgCount() const { return _msgcount; }
   int  getChannelUnreadCount() const;
@@ -333,6 +393,7 @@ public:
   void cycleBuzzerMode();   // ON → OFF → Auto → ON
   int  getBuzzerMode(); // 0=ON, 1=OFF, 2=Auto
   bool getGPSState();
+  bool hasGPS();   // true if this board exposes a toggleable GPS (distinct from GPS being off)
   void toggleGPS();
   void applyBrightness();
   void setBrightnessLevel(uint8_t level);
@@ -343,6 +404,11 @@ public:
   void applyPowerSave();   // hardware duty-cycle RX on/off from prefs
   void applyApc();         // Adaptive Power Control on/off from prefs
   void applyRadioParams(); // freq/bw/sf/cr from prefs (radio preset change)
+  // Save-on-exit helper for the screen `_dirty` pattern: persists NodePrefs once
+  // only if `dirty`, then clears the flag. Standardises the screens' exit paths
+  // (some used to leave the flag set, relying on onShow() to reset it) and keeps
+  // the "did we touch flash?" answer in one place. Returns whether it saved.
+  bool savePrefsIfDirty(bool& dirty);
   void applyFont();
   void applyRotation();
   void applyFullRefreshInterval();

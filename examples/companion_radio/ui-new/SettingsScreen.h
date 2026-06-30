@@ -422,7 +422,7 @@ class SettingsScreen : public UIScreen {
   void renderItem(DisplayDriver& display, int item, int y, bool sel) {
     NodePrefs* p = _task->getNodePrefs();
 
-    display.drawSelectionRow(0, y - 1, display.width() - _reserve, display.lineStep() - 1, sel);
+    drawRowSelection(display, y, sel, _reserve);
 
     display.setCursor(2, y);
 
@@ -651,7 +651,7 @@ public:
   }
 
 
-  void markClean() {
+  void onShow() override {
     _dirty = false;
     resetList();
     _editor.freq.active = false;
@@ -671,7 +671,7 @@ public:
       [&](int sec, int y, bool sel, int reserve, bool collapsed) {
         _reserve = reserve;
         display.setColor(DisplayDriver::LIGHT);
-        display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+        drawRowSelection(display, y, sel, reserve);
         display.setCursor(2, y);
         display.print(collapsed ? "+" : "-");
         display.print(" ");
@@ -754,7 +754,7 @@ public:
     }
 
     if (c == KEY_CANCEL) {
-      if (_dirty) the_mesh.savePrefs();
+      _task->savePrefsIfDirty(_dirty);
       _task->gotoHomeScreen();
       return true;
     }

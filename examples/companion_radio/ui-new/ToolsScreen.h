@@ -58,7 +58,7 @@ public:
   ToolsScreen(UITask* task) : _task(task) {}
 
   // Open folded at the section list each time Tools is entered from Home.
-  void enter() {
+  void onShow() override {
     static uint8_t sizes[SECTION_COUNT];
     for (int i = 0; i < SECTION_COUNT; i++) sizes[i] = SECTIONS[i].count;
     _acc.begin(sizes, SECTION_COUNT);
@@ -75,7 +75,7 @@ public:
     _acc.render(display,
       // Section header: "[+/-] <icon> Name"
       [&](int sec, int y, bool sel, int reserve, bool collapsed) {
-        display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+        drawRowSelection(display, y, sel, reserve);
         display.setCursor(2, y);
         display.print(collapsed ? "+" : "-");
         const int icon_x = 2 + cw + 2;
@@ -85,7 +85,7 @@ public:
       },
       // Item: indented "<icon> Label"
       [&](int sec, int item, int y, bool sel, int reserve) {
-        display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+        drawRowSelection(display, y, sel, reserve);
         const int icon_x = 2 + cw + 2;   // align item icons under the header icon
         // drawIcon(display, icon_x, y, SECTIONS[sec].tools[item].icon); // icons disabled for now, don't fit visually
         display.setCursor(icon_x + g, y);

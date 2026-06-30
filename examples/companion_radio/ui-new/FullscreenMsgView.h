@@ -10,11 +10,34 @@ static const int FS_CHARS_MAX = 80;  // max bytes per wrapped line
 // fullscreen message view and the history list are never laid out in the same
 // frame (opening the fullscreen view early-returns before the list loop runs),
 // so one static buffer serves both. This keeps ~1.5 KB of line buffers off the
-// render-call stack (see CODE_REVIEW.md "Render-path stack peak") at the cost of
-// a fixed RAM allocation. Only used inside render()/wrap helpers — never across
-// a yield, so the single instance is safe.
+// render-call stack at the cost of a fixed RAM allocation. Only used inside
+// render()/wrap helpers — never across a yield, so the single instance is safe.
 static char s_wrap_trans[512];
 static char s_wrap_lines[12][FS_CHARS_MAX];
+
+// Parse a leading "@[nick] " reply prefix. Returns the message body that
+// follows it (and any leading whitespace); when nick/nick_n are supplied,
+// fills nick with the addressee, or "" when there's no prefix. One parser for
+// both the history list (body only — see QuickMsgScreen::skipReplyPrefix) and
+// the fullscreen view (which also shows the "To:" nick).
+static inline const char* msgReplyBody(const char* text, char* nick = nullptr, int nick_n = 0) {
+  if (nick && nick_n > 0) nick[0] = '\0';
+  const char* body = text;
+  if (text[0] == '@' && text[1] == '[') {
+    const char* close = strchr(text + 2, ']');
+    if (close && close[1] == ' ' && close[2]) {
+      if (nick && nick_n > 0) {
+        int len = (int)(close - text) - 2;
+        if (len > nick_n - 1) len = nick_n - 1;
+        memcpy(nick, text + 2, len);
+        nick[len] = '\0';
+      }
+      body = close + 2;
+    }
+  }
+  while (*body == '\n' || *body == '\r' || *body == ' ') body++;
+  return body;
+}
 
 struct FullscreenMsgView {
   int  scroll;
@@ -80,19 +103,9 @@ struct FullscreenMsgView {
     const int lineH  = display.getLineHeight();
     const int max_px = display.width() - 6;
 
-    // detect @recipient at start of message
-    char to_nick[32] = "";
-    const char* body = text;
-    if (text[0] == '@' && text[1] == '[') {
-      const char* close = strchr(text + 2, ']');
-      if (close && close[1] == ' ' && close[2]) {
-        int len = (int)(close - text) - 2;
-        if (len >= (int)sizeof(to_nick)) len = sizeof(to_nick) - 1;
-        memcpy(to_nick, text + 2, len);
-        to_nick[len] = '\0';
-        body = close + 2;
-      }
-    }
+    // "@[nick] " reply prefix → "To:" header + body (shared parser).
+    char to_nick[32];
+    const char* body = msgReplyBody(text, to_nick, sizeof(to_nick));
 
     const int cw       = display.getCharWidth();
     const int header_h = to_nick[0] ? (lineH * 2 + 4) : (lineH + 2);
@@ -143,8 +156,8 @@ struct FullscreenMsgView {
   Result handleInput(char c) {
     if (c == KEY_UP)          { if (scroll > 0) scroll--; return NONE; }
     if (c == KEY_DOWN)        { if (scroll < _max_scroll) scroll++; return NONE; }
-    if (c == KEY_LEFT)        return NEXT;
-    if (c == KEY_RIGHT)       return PREV;
+    if (keyIsPrev(c))         return NEXT;   // page between messages (encoder too)
+    if (keyIsNext(c))         return PREV;
     if (c == KEY_CONTEXT_MENU) return REPLY;
     if (c == KEY_ENTER || c == KEY_CANCEL) return CLOSE;
     return NONE;

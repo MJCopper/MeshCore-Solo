@@ -72,7 +72,7 @@ class LocatorScreen : public UIScreen {
 public:
   LocatorScreen(UITask* task, NodePrefs* prefs) : _task(task), _prefs(prefs) {}
 
-  void enter() { _dirty = false; _sel = 0; _scroll = 0; _picking = false; }
+  void onShow() override { _dirty = false; _sel = 0; _scroll = 0; _picking = false; }
 
   void valueLabel(Kind k, char* buf, int n) {
     switch (k) {
@@ -116,7 +116,7 @@ public:
     const int valx = display.width() / 2 + 6;
     drawList(display, rc, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
       Row r = rows(i);
-      display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+      drawRowSelection(display, y, sel, reserve);
       display.setCursor(4, y);
       display.print(r.label);
       char val[24];
@@ -265,7 +265,7 @@ public:
     display.drawCenteredHeader("PICK TARGET");
     uint32_t now = rtc_clock.getCurrentTime();
     drawList(display, _target_n, _pick_sel, _pick_scroll, [&](int i, int y, bool sel, int reserve) {
-      display.drawSelectionRow(0, y - 1, display.width() - reserve, display.lineStep() - 1, sel);
+      drawRowSelection(display, y, sel, reserve);
       const Target& t = _targets[i];
       char row[36];
       if (t.kind != 1) {
@@ -293,7 +293,7 @@ public:
       return true;
     }
     if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
-      if (_dirty) { the_mesh.savePrefs(); _dirty = false; }   // engine re-seeded per edit
+      _task->savePrefsIfDirty(_dirty);   // engine re-seeded per edit
       _task->gotoToolsScreen();
       return true;
     }
