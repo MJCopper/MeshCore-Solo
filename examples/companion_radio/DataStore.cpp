@@ -428,6 +428,9 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   if (_prefs.alarm_on > 1)    _prefs.alarm_on = 0;
   if (_prefs.alarm_hour > 23) _prefs.alarm_hour = 0;
   if (_prefs.alarm_min > 59)  _prefs.alarm_min = 0;
+  // → 0xC0DE0018: keyboard type (QWERTY/T9).
+  rd(&_prefs.keyboard_type, sizeof(_prefs.keyboard_type));
+  if (_prefs.keyboard_type > 1) _prefs.keyboard_type = 0;
   // Pre-0x10 files leave stray sentinel bytes here, same as a never-configured
   // device. Either way there's no valid saved profile, so default to a profile
   // in the same band as the companion's own network (_prefs.freq, already read
@@ -632,6 +635,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.alarm_on,           sizeof(_prefs.alarm_on));
     file.write((uint8_t *)&_prefs.alarm_hour,         sizeof(_prefs.alarm_hour));
     file.write((uint8_t *)&_prefs.alarm_min,          sizeof(_prefs.alarm_min));
+    file.write((uint8_t *)&_prefs.keyboard_type,      sizeof(_prefs.keyboard_type));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good
