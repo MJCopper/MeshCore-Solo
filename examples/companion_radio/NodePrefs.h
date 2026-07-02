@@ -285,8 +285,8 @@ struct NodePrefs {  // persisted to file
   uint8_t  alarm_min;   // 0-59
 
   // On-screen keyboard layout, shared across every text-entry screen (Settings >
-  // Keyboard). 0=QWERTY grid (default), 1=T9 multi-tap (phone-keypad groups,
-  // cycled with repeated Enter presses — see KeyboardWidget.h).
+  // Keyboard). 0=ABC grid, alphabetical order (default), 1=T9 multi-tap
+  // (phone-keypad groups, cycled with repeated Enter presses — see KeyboardWidget.h).
   uint8_t  keyboard_type;
 
   // Single source of truth for the live-share option tables (shared by the Map

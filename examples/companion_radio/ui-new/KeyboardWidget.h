@@ -34,7 +34,7 @@ static const int KB_SPECIAL    = 6;   // ⇧ ⎵ ⌫ {} #@/abc ✓
 // presses on the same cell within KB_T9_TIMEOUT_MS cycle through the group, ending
 // on the cell's own digit (computed as '1'+cell, not stored here) before wrapping.
 // Keys 0/*/# aren't part of the grid — space/backspace/etc. already live on the
-// special row below, shared with the QWERTY layout.
+// special row below, shared with the ABC layout.
 static const int KB_T9_ROWS = 3;
 static const int KB_T9_COLS = 3;
 static const uint32_t KB_T9_TIMEOUT_MS = 800;
@@ -68,7 +68,7 @@ struct KeyboardWidget {
 
   // Live setting lookup — set once by UITask::begin(). NULL only in tests/tools
   // that construct a KeyboardWidget standalone, in which case isT9() defaults
-  // to QWERTY.
+  // to ABC.
   NodePrefs* prefs = nullptr;
   bool isT9() const { return prefs && prefs->keyboard_type == 1; }
 

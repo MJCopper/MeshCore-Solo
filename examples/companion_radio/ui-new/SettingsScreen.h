@@ -557,7 +557,7 @@ class SettingsScreen : public UIScreen {
     } else if (item == KEYBOARD_TYPE) {
       display.print("Type");
       display.setCursor(valCol(display), y);
-      display.print((p && p->keyboard_type) ? "T9" : "QWERTY");
+      display.print((p && p->keyboard_type) ? "T9" : "ABC");
     } else if (item == BATT_DISPLAY) {
       display.print("BattDisp");
       display.setCursor(valCol(display), y);
