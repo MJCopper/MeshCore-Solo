@@ -54,7 +54,7 @@ class SettingsScreen : public UIScreen {
     HOME_SENSORS,
 #endif
     HOME_SETTINGS, HOME_QUICK_MSG,
-    HOME_TOOLS, HOME_SHUTDOWN,
+    HOME_TOOLS, HOME_SHUTDOWN, HOME_MAP,
     // Radio section
     SECTION_RADIO,
     TX_POWER,
@@ -215,7 +215,7 @@ class SettingsScreen : public UIScreen {
     return item == HOME_CLOCK    || item == HOME_RECENT     || item == HOME_RADIO   ||
            item == HOME_BT       || item == HOME_ADVERT     || item == HOME_TOOLS   ||
            item == HOME_SHUTDOWN || item == HOME_SETTINGS   || item == HOME_QUICK_MSG ||
-           item == HOME_FAVOURITES
+           item == HOME_FAVOURITES || item == HOME_MAP
 #if ENV_INCLUDE_GPS == 1
            || item == HOME_GPS
 #endif
@@ -267,6 +267,7 @@ class SettingsScreen : public UIScreen {
 #endif
     if (item == HOME_TOOLS)     return NodePrefs::HPB_TOOLS;
     if (item == HOME_SHUTDOWN)  return NodePrefs::HPB_SHUTDOWN;
+    if (item == HOME_MAP)       return NodePrefs::HPB_MAP;
     if (item == HOME_SETTINGS)  return NodePrefs::HPB_SETTINGS;
     if (item == HOME_QUICK_MSG) return NodePrefs::HPB_QUICK_MSG;
     return -1;

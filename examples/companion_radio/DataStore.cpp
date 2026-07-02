@@ -469,11 +469,20 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   if (sentinel != NodePrefs::SCHEMA_SENTINEL) {
     MESH_DEBUG_PRINTLN("prefs schema sentinel mismatch: got 0x%08X, expected 0x%08X — re-saving on next change",
                        (unsigned)sentinel, (unsigned)NodePrefs::SCHEMA_SENTINEL);
-    // 0xC0DE0001 → 0xC0DE0002: FAVOURITES home page added. Older saves have it
-    // implicitly off (their mask doesn't include HP_FAVOURITES); turn it on so
-    // upgraded users see the new page by default and can toggle it later.
-    if (_prefs.home_pages_mask != 0) {
+    // 0xC0DE0001 → 0xC0DE0002: FAVOURITES home page added. Only pre-0x0002 saves
+    // lack the bit; turn it on once so those upgraders see the new page by
+    // default. Must be gated to that transition — running it on every sentinel
+    // mismatch (as it did) re-enabled Favourites on each firmware update,
+    // clobbering a user who had deliberately hidden it.
+    if (sentinel < 0xC0DE0002 && _prefs.home_pages_mask != 0) {
       _prefs.home_pages_mask |= NodePrefs::HP_FAVOURITES;
+    }
+    // 0xC0DE0017 → 0xC0DE0018: MAP home page moved into home_pages_mask (it was
+    // always-on before, with no visibility toggle). Turn its bit on once for
+    // pre-0x0018 saves so upgraders keep seeing the page; gated to this
+    // transition so a user who later hides it isn't overridden on the next update.
+    if (sentinel < 0xC0DE0018 && _prefs.home_pages_mask != 0) {
+      _prefs.home_pages_mask |= NodePrefs::HP_MAP;
     }
     // 0xC0DE0003 → 0xC0DE0004: trail_units_idx added after trail_min_delta_idx.
     // On a 0xC0DE0003 file the sentinel bytes sit where trail_units_idx is now,

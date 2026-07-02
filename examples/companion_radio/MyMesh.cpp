@@ -1504,7 +1504,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.ringtone2_bpm_idx = 2;  // 120 bpm default
   _prefs.notif_melody_ad = 0;    // built-in advert sound by default
   _prefs.advert_sound_scope = ADVERT_SOUND_SCOPE_ALL;  // sound every advert by default
-  _prefs.home_pages_mask = 0x01FF;  // all pages visible
+  _prefs.home_pages_mask = NodePrefs::HP_ALL;  // all pages visible (incl. Favourites + Map)
   _prefs.bot_enabled = 0;
   _prefs.bot_channel_enabled = 0;
   _prefs.bot_channel_idx = 0;

@@ -344,7 +344,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0017;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0018;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -362,7 +362,8 @@ struct NodePrefs {  // persisted to file
     HPB_SETTINGS   = 9,
     HPB_QUICK_MSG  = 10,
     HPB_FAVOURITES = 11,
-    HPB_COUNT      = 12,
+    HPB_MAP        = 12,
+    HPB_COUNT      = 13,
   };
 
   // Length of the persisted page_order[] array. Stable across firmware versions
@@ -382,14 +383,15 @@ struct NodePrefs {  // persisted to file
   static const uint16_t HP_TOOLS      = 1 << HPB_TOOLS;
   static const uint16_t HP_SHUTDOWN   = 1 << HPB_SHUTDOWN;
   static const uint16_t HP_FAVOURITES = 1 << HPB_FAVOURITES;
-  static const uint16_t HP_ALL        = 0x01FF | HP_FAVOURITES;
+  static const uint16_t HP_MAP        = 1 << HPB_MAP;
+  static const uint16_t HP_ALL        = 0x01FF | HP_FAVOURITES | HP_MAP;
 
   // Label for home page by bit-index; returns "" for out-of-range.
   // Array indices match HomePageBit values.
   static const char* homePageLabel(uint8_t bit) {
     static const char* labels[HPB_COUNT] = {
       "Clock", "Recent", "Radio", "Bluetooth", "Advert",
-      "GPS", "Sensors", "Tools", "Shutdown", "Settings", "Messages", "Favourites"
+      "GPS", "Sensors", "Tools", "Shutdown", "Settings", "Messages", "Favourites", "Map"
     };
     return (bit < HPB_COUNT) ? labels[bit] : "";
   }
