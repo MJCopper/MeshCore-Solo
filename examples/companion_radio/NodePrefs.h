@@ -436,7 +436,7 @@ struct NodePrefs {  // persisted to file
 //   3. clamp it on load (an upgrader's file lacks it → stray bytes)
 //   4. bump SCHEMA_SENTINEL's low byte
 // (Padding can also shift sizeof; a "false" trip just means re-check + rebump.)
-static_assert(sizeof(NodePrefs) == 2488,
+static_assert(sizeof(NodePrefs) == 2496,
               "NodePrefs layout changed — sync DataStore save/load + clamp, bump "
               "SCHEMA_SENTINEL, then update this size (see steps above).");
 
