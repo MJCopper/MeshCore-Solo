@@ -284,6 +284,11 @@ struct NodePrefs {  // persisted to file
   uint8_t  alarm_hour;  // 0-23, local time
   uint8_t  alarm_min;   // 0-59
 
+  // On-screen keyboard layout, shared across every text-entry screen (Settings >
+  // Keyboard). 0=QWERTY grid (default), 1=T9 multi-tap (phone-keypad groups,
+  // cycled with repeated Enter presses — see KeyboardWidget.h).
+  uint8_t  keyboard_type;
+
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
   static const uint8_t LOC_SHARE_MOVE_COUNT = 4;
@@ -346,7 +351,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0019;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE001A;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
