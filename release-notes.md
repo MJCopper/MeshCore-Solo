@@ -1,3 +1,10 @@
+## MeshCore Solo Companion Firmware v1.22
+
+### Fixes
+
+- **Home page visibility no longer resets on update** — the prefs schema-migration that turned the **Favourites** page on ran on *every* firmware update (any schema-version bump), so a page you'd deliberately hidden kept coming back after each release. It's now gated to the single upgrade that introduced Favourites, so your hidden pages stay hidden.
+- **Map page in Home Pages settings** — the **Map** home page shipped with no entry under **Settings › Home Pages**, so it was always shown and couldn't be moved. It's now a first-class page there: **toggle its visibility** and **reorder it** like any other (visible by default; existing users keep it on). Reordering also now covers the **Shutdown** page, which was previously pinned to the end of the carousel.
+
 ## MeshCore Solo Companion Firmware v1.21
 
 ### What's new
