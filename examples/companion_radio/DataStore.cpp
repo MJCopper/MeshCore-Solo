@@ -319,7 +319,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.clock_12h,                 sizeof(_prefs.clock_12h));
   rd(&_prefs.use_lemon_font,            sizeof(_prefs.use_lemon_font));
   rd(&_prefs.display_rotation,          sizeof(_prefs.display_rotation));
-  rd(_prefs.page_order,                 sizeof(_prefs.page_order));
+  rd(_prefs.page_order,                 NodePrefs::PAGE_ORDER_LEN_V1);  // tail slots read below (append-only)
   rd(&_prefs.joystick_rotation,         sizeof(_prefs.joystick_rotation));
 #if !FEAT_JOYSTICK_ROTATION_SETTING
   // No UI to change it on this build, so force the default — this also corrects
@@ -464,6 +464,17 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   // which is out of range — fall back to the default of 2 resends.
   if (_prefs.dm_resend_count > 5) _prefs.dm_resend_count = 2;
 
+  // → 0xC0DE0019: page_order grew 11 → 13 so Shutdown and Map become reorderable.
+  // The extra slots are appended here at the tail (not inline) so a pre-0x19 save,
+  // whose order ended right after the old 11 bytes, still loads without shifting
+  // every field after it. On such files these bytes are the old sentinel tail or
+  // EOF, so clamp anything out of range back to 0 (empty); ensurePageOrderInit
+  // then appends the missing pages into the freed slots.
+  for (uint8_t i = NodePrefs::PAGE_ORDER_LEN_V1; i < NodePrefs::PAGE_ORDER_LEN; i++) {
+    rd(&_prefs.page_order[i], sizeof(_prefs.page_order[i]));
+    if (_prefs.page_order[i] > NodePrefs::HPB_COUNT) _prefs.page_order[i] = 0;
+  }
+
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
   // so we just log it — next savePrefs writes the current sentinel.
@@ -472,11 +483,20 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   if (sentinel != NodePrefs::SCHEMA_SENTINEL) {
     MESH_DEBUG_PRINTLN("prefs schema sentinel mismatch: got 0x%08X, expected 0x%08X — re-saving on next change",
                        (unsigned)sentinel, (unsigned)NodePrefs::SCHEMA_SENTINEL);
-    // 0xC0DE0001 → 0xC0DE0002: FAVOURITES home page added. Older saves have it
-    // implicitly off (their mask doesn't include HP_FAVOURITES); turn it on so
-    // upgraded users see the new page by default and can toggle it later.
-    if (_prefs.home_pages_mask != 0) {
+    // 0xC0DE0001 → 0xC0DE0002: FAVOURITES home page added. Only pre-0x0002 saves
+    // lack the bit; turn it on once so those upgraders see the new page by
+    // default. Must be gated to that transition — running it on every sentinel
+    // mismatch (as it did) re-enabled Favourites on each firmware update,
+    // clobbering a user who had deliberately hidden it.
+    if (sentinel < 0xC0DE0002 && _prefs.home_pages_mask != 0) {
       _prefs.home_pages_mask |= NodePrefs::HP_FAVOURITES;
+    }
+    // 0xC0DE0017 → 0xC0DE0018: MAP home page moved into home_pages_mask (it was
+    // always-on before, with no visibility toggle). Turn its bit on once for
+    // pre-0x0018 saves so upgraders keep seeing the page; gated to this
+    // transition so a user who later hides it isn't overridden on the next update.
+    if (sentinel < 0xC0DE0018 && _prefs.home_pages_mask != 0) {
+      _prefs.home_pages_mask |= NodePrefs::HP_MAP;
     }
     // 0xC0DE0003 → 0xC0DE0004: trail_units_idx added after trail_min_delta_idx.
     // On a 0xC0DE0003 file the sentinel bytes sit where trail_units_idx is now,
@@ -580,7 +600,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.clock_12h, sizeof(_prefs.clock_12h));
     file.write((uint8_t *)&_prefs.use_lemon_font, sizeof(_prefs.use_lemon_font));
     file.write((uint8_t *)&_prefs.display_rotation, sizeof(_prefs.display_rotation));
-    file.write((uint8_t *)_prefs.page_order, sizeof(_prefs.page_order));
+    file.write((uint8_t *)_prefs.page_order, NodePrefs::PAGE_ORDER_LEN_V1);  // head; tail slots written below
     file.write((uint8_t *)&_prefs.joystick_rotation, sizeof(_prefs.joystick_rotation));
     file.write((uint8_t *)&_prefs.eink_full_refresh_every, sizeof(_prefs.eink_full_refresh_every));
     file.write((uint8_t *)&_prefs.page_order_set, sizeof(_prefs.page_order_set));
@@ -636,6 +656,10 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.alarm_hour,         sizeof(_prefs.alarm_hour));
     file.write((uint8_t *)&_prefs.alarm_min,          sizeof(_prefs.alarm_min));
     file.write((uint8_t *)&_prefs.keyboard_type,      sizeof(_prefs.keyboard_type));
+    // page_order tail slots (see loadPrefsInt): entries beyond PAGE_ORDER_LEN_V1,
+    // appended here so the on-disk head stays the original 11 bytes.
+    file.write((uint8_t *)&_prefs.page_order[NodePrefs::PAGE_ORDER_LEN_V1],
+               NodePrefs::PAGE_ORDER_LEN - NodePrefs::PAGE_ORDER_LEN_V1);
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good

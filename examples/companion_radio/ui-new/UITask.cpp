@@ -359,6 +359,7 @@ class HomeScreen : public UIScreen {
 #endif
     if (page == TOOLS)     return NodePrefs::HPB_TOOLS;
     if (page == SHUTDOWN)  return NodePrefs::HPB_SHUTDOWN;
+    if (page == MAP)       return NodePrefs::HPB_MAP;
     return -1;  // SETTINGS, QUICK_MSG always visible (no mask bit)
   }
 
@@ -382,6 +383,7 @@ class HomeScreen : public UIScreen {
       case NodePrefs::HPB_SHUTDOWN:  return SHUTDOWN;
       case NodePrefs::HPB_SETTINGS:  return SETTINGS;
       case NodePrefs::HPB_QUICK_MSG: return QUICK_MSG;
+      case NodePrefs::HPB_MAP:       return MAP;
       default: return -1;
     }
   }

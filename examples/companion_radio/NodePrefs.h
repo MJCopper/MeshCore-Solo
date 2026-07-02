@@ -125,9 +125,11 @@ struct NodePrefs {  // persisted to file
   // Home screen page order: each byte = HomePageBit + 1. 0 terminates the list.
   // Validity gated by page_order_set magic (see below) — not by entry value range,
   // so a junk byte in 1..HPB_COUNT cannot trigger custom-order mode.
-  // (Array length = HPB_COUNT, declared as literal so the field offset is stable
-  // across builds that add new HomePageBit entries.)
-  uint8_t  page_order[11];
+  // Declared as a literal (not HPB_COUNT) so the field offset stays stable across
+  // builds that add HomePageBit entries. The first PAGE_ORDER_LEN_V1 bytes persist
+  // at this offset (backward-compatible); the remaining slots live at the file
+  // tail (see DataStore) so pre-0x0019 saves still load without shifting.
+  uint8_t  page_order[13];
   uint8_t  joystick_rotation;   // 0-3 steps CW; independent of display_rotation
   uint8_t  eink_full_refresh_every; // index into {0,5,10,20,30}: full refresh every N partials (0=off)
   uint8_t  page_order_set;      // 0xA5 = page_order is user-configured; anything else = use default
@@ -349,7 +351,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0018;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0019;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -367,13 +369,19 @@ struct NodePrefs {  // persisted to file
     HPB_SETTINGS   = 9,
     HPB_QUICK_MSG  = 10,
     HPB_FAVOURITES = 11,
-    HPB_COUNT      = 12,
+    HPB_MAP        = 12,
+    HPB_COUNT      = 13,
   };
 
-  // Length of the persisted page_order[] array. Stable across firmware versions
-  // (don't grow without a schema migration). When HPB_COUNT exceeds this, extra
-  // visible pages are appended at navigation time via buildVisibleOrder fallback.
-  static const uint8_t PAGE_ORDER_LEN = 11;
+  // Number of usable page_order[] slots — one per home page (== HPB_COUNT), so
+  // every page can be reordered. Any page still missing from a saved order is
+  // appended at navigation time via buildVisibleOrder's fallback.
+  static const uint8_t PAGE_ORDER_LEN = 13;
+  // Bytes of page_order persisted at the original file offset. Slots beyond this
+  // (PAGE_ORDER_LEN - PAGE_ORDER_LEN_V1) are stored at the file tail, so a
+  // pre-0x0019 save — whose order was exactly this long — loads without shifting
+  // every field written after page_order.
+  static const uint8_t PAGE_ORDER_LEN_V1 = 11;
 
   // Bitmasks for home_pages_mask (bit=1 → page visible; 0 field = all visible).
   // SETTINGS and QUICK_MSG have no mask bit — they're always visible.
@@ -387,14 +395,15 @@ struct NodePrefs {  // persisted to file
   static const uint16_t HP_TOOLS      = 1 << HPB_TOOLS;
   static const uint16_t HP_SHUTDOWN   = 1 << HPB_SHUTDOWN;
   static const uint16_t HP_FAVOURITES = 1 << HPB_FAVOURITES;
-  static const uint16_t HP_ALL        = 0x01FF | HP_FAVOURITES;
+  static const uint16_t HP_MAP        = 1 << HPB_MAP;
+  static const uint16_t HP_ALL        = 0x01FF | HP_FAVOURITES | HP_MAP;
 
   // Label for home page by bit-index; returns "" for out-of-range.
   // Array indices match HomePageBit values.
   static const char* homePageLabel(uint8_t bit) {
     static const char* labels[HPB_COUNT] = {
       "Clock", "Recent", "Radio", "Bluetooth", "Advert",
-      "GPS", "Sensors", "Tools", "Shutdown", "Settings", "Messages", "Favourites"
+      "GPS", "Sensors", "Tools", "Shutdown", "Settings", "Messages", "Favourites", "Map"
     };
     return (bit < HPB_COUNT) ? labels[bit] : "";
   }
@@ -432,7 +441,7 @@ struct NodePrefs {  // persisted to file
 //   3. clamp it on load (an upgrader's file lacks it → stray bytes)
 //   4. bump SCHEMA_SENTINEL's low byte
 // (Padding can also shift sizeof; a "false" trip just means re-check + rebump.)
-static_assert(sizeof(NodePrefs) == 2488,
+static_assert(sizeof(NodePrefs) == 2496,
               "NodePrefs layout changed — sync DataStore save/load + clamp, bump "
               "SCHEMA_SENTINEL, then update this size (see steps above).");
 

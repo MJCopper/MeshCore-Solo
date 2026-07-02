@@ -54,7 +54,7 @@ class SettingsScreen : public UIScreen {
     HOME_SENSORS,
 #endif
     HOME_SETTINGS, HOME_QUICK_MSG,
-    HOME_TOOLS, HOME_SHUTDOWN,
+    HOME_TOOLS, HOME_SHUTDOWN, HOME_MAP,
     // Radio section
     SECTION_RADIO,
     TX_POWER,
@@ -220,7 +220,7 @@ class SettingsScreen : public UIScreen {
     return item == HOME_CLOCK    || item == HOME_RECENT     || item == HOME_RADIO   ||
            item == HOME_BT       || item == HOME_ADVERT     || item == HOME_TOOLS   ||
            item == HOME_SHUTDOWN || item == HOME_SETTINGS   || item == HOME_QUICK_MSG ||
-           item == HOME_FAVOURITES
+           item == HOME_FAVOURITES || item == HOME_MAP
 #if ENV_INCLUDE_GPS == 1
            || item == HOME_GPS
 #endif
@@ -272,6 +272,7 @@ class SettingsScreen : public UIScreen {
 #endif
     if (item == HOME_TOOLS)     return NodePrefs::HPB_TOOLS;
     if (item == HOME_SHUTDOWN)  return NodePrefs::HPB_SHUTDOWN;
+    if (item == HOME_MAP)       return NodePrefs::HPB_MAP;
     if (item == HOME_SETTINGS)  return NodePrefs::HPB_SETTINGS;
     if (item == HOME_QUICK_MSG) return NodePrefs::HPB_QUICK_MSG;
     return -1;
@@ -313,9 +314,9 @@ class SettingsScreen : public UIScreen {
         memset(p->page_order, 0, sizeof(p->page_order));
       } else {
         if (!has_fav) {
-          // Insert FAVOURITES right after CLOCK. If the array is full, the last
-          // entry (typically SHUTDOWN, which still appears via the missing-page
-          // fallback at end of nav) is overwritten to make room.
+          // Insert FAVOURITES right after CLOCK. Real orders are shorter than
+          // PAGE_ORDER_LEN so there's room; only a pathologically full order would
+          // drop its last entry, which buildVisibleOrder's fallback re-appends.
           int insert_at = clock_at + 1;
           int tail = (len < NodePrefs::PAGE_ORDER_LEN) ? len : NodePrefs::PAGE_ORDER_LEN - 1;
           for (int i = tail; i > insert_at; i--) p->page_order[i] = p->page_order[i - 1];
@@ -333,6 +334,9 @@ class SettingsScreen : public UIScreen {
             present |= (uint16_t)(1u << (v - 1));
             cur_len++;
           }
+          // Every page has a slot now (PAGE_ORDER_LEN == HPB_COUNT), so all pages
+          // are required — any missing from a stale saved order (SHUTDOWN and MAP
+          // for pre-0x0019 upgraders) is appended into the free tail slots below.
           static const uint8_t REQUIRED[] = {
             NodePrefs::HPB_CLOCK, NodePrefs::HPB_FAVOURITES,
             NodePrefs::HPB_RECENT, NodePrefs::HPB_RADIO,
@@ -343,26 +347,9 @@ class SettingsScreen : public UIScreen {
 #if UI_SENSORS_PAGE == 1
             NodePrefs::HPB_SENSORS,
 #endif
-            NodePrefs::HPB_SETTINGS, NodePrefs::HPB_TOOLS, NodePrefs::HPB_QUICK_MSG,
+            NodePrefs::HPB_SETTINGS, NodePrefs::HPB_MAP, NodePrefs::HPB_TOOLS,
+            NodePrefs::HPB_QUICK_MSG, NodePrefs::HPB_SHUTDOWN,
           };
-          // If any required page is missing, evict SHUTDOWN to make room — it is
-          // handled by buildVisibleOrder's fallback and need not be in the explicit
-          // list. This frees a slot regardless of whether the array is full or not,
-          // so multiple missing pages (e.g. TOOLS + QUICK_MSG) can all be appended.
-          bool any_missing = false;
-          for (int ri = 0; ri < (int)(sizeof(REQUIRED)/sizeof(REQUIRED[0])); ri++) {
-            if (!(present & (uint16_t)(1u << REQUIRED[ri]))) { any_missing = true; break; }
-          }
-          if (any_missing && (present & (uint16_t)(1u << NodePrefs::HPB_SHUTDOWN))) {
-            for (int i = 0; i < cur_len; i++) {
-              if (p->page_order[i] == NodePrefs::HPB_SHUTDOWN + 1) {
-                for (int j = i; j < cur_len - 1; j++) p->page_order[j] = p->page_order[j + 1];
-                p->page_order[--cur_len] = 0;
-                present &= ~(uint16_t)(1u << NodePrefs::HPB_SHUTDOWN);
-                break;
-              }
-            }
-          }
           for (int ri = 0; ri < (int)(sizeof(REQUIRED)/sizeof(REQUIRED[0])); ri++) {
             uint8_t bit = REQUIRED[ri];
             if (!(present & (uint16_t)(1u << bit)) && cur_len < NodePrefs::PAGE_ORDER_LEN)
@@ -372,10 +359,9 @@ class SettingsScreen : public UIScreen {
         return;
       }
     }
-    // Default: CLOCK FAVOURITES RECENT RADIO BT ADVERT [GPS] [SENSORS] SETTINGS TOOLS MESSAGES
-    // SHUTDOWN is omitted from the explicit list (PAGE_ORDER_LEN = 11 leaves room for the
-    // common case GPS+SENSORS+all-others) and appended by buildVisibleOrder's missing-page
-    // fallback at the end of the navigation sequence.
+    // Default: CLOCK FAVOURITES RECENT RADIO BT ADVERT [GPS] [SENSORS] SETTINGS
+    // MAP TOOLS MESSAGES SHUTDOWN — mirrors the home-carousel enum order. Every
+    // page has an explicit slot now (PAGE_ORDER_LEN == HPB_COUNT).
     int j = 0;
     p->page_order[j++] = NodePrefs::HPB_CLOCK      + 1;
     p->page_order[j++] = NodePrefs::HPB_FAVOURITES + 1;
@@ -390,8 +376,10 @@ class SettingsScreen : public UIScreen {
     p->page_order[j++] = NodePrefs::HPB_SENSORS    + 1;
 #endif
     p->page_order[j++] = NodePrefs::HPB_SETTINGS   + 1;
+    p->page_order[j++] = NodePrefs::HPB_MAP        + 1;
     p->page_order[j++] = NodePrefs::HPB_TOOLS      + 1;
     p->page_order[j++] = NodePrefs::HPB_QUICK_MSG  + 1;
+    p->page_order[j++] = NodePrefs::HPB_SHUTDOWN   + 1;
     while (j < NodePrefs::PAGE_ORDER_LEN) p->page_order[j++] = 0;
     p->page_order_set = NodePrefs::PAGE_ORDER_MAGIC;
   }
