@@ -428,7 +428,8 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   if (_prefs.alarm_on > 1)    _prefs.alarm_on = 0;
   if (_prefs.alarm_hour > 23) _prefs.alarm_hour = 0;
   if (_prefs.alarm_min > 59)  _prefs.alarm_min = 0;
-  // → 0xC0DE0018: keyboard type (QWERTY/T9).
+  // → 0xC0DE001A: keyboard type (QWERTY/T9). Pre-0x1A files leave stray sentinel
+  // tail bytes here; clamp back to the QWERTY default (0).
   rd(&_prefs.keyboard_type, sizeof(_prefs.keyboard_type));
   if (_prefs.keyboard_type > 1) _prefs.keyboard_type = 0;
   // Pre-0x10 files leave stray sentinel bytes here, same as a never-configured
