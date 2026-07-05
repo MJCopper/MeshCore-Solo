@@ -1239,12 +1239,10 @@ public:
           // before it instead of underneath. Badge and name share one baseline.
           char badge[5] = "";
           int  bw = 0;
-          if (found) {
-            uint8_t unread = _task->getDMUnread(ci.id.pub_key);
-            if (unread > 0) {
-              snprintf(badge, sizeof(badge), "%d", unread);
-              bw = display.getTextWidth(badge) + 3;  // badge + 3 px gap
-            }
+          uint8_t unread = _task->getDMUnread(ci.id.pub_key);
+          if (unread > 0) {
+            snprintf(badge, sizeof(badge), "%d", unread);
+            bw = display.getTextWidth(badge) + 3;  // badge + 3 px gap
           }
           int name_y     = cy + (cell_h - line_h) / 2;
           int name_max_w = cell_w - 4 - bw;
