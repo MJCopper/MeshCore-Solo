@@ -53,6 +53,11 @@ class QuickMsgScreen : public UIScreen {
   // Context menu (opened by KEY_CONTEXT_MENU in CHANNEL_PICK / CONTACT_PICK / histories)
   PopupMenu _ctx_menu;
   bool      _ctx_dirty;
+  // Channel the open channel-context menu acts on, frozen at open time. The
+  // Fav toggle can remove the highlighted channel from a fav-only list, so
+  // re-reading _channel_indices[_channel_sel] mid-interaction could silently
+  // retarget the menu at a different channel.
+  uint8_t   _ctx_ch_idx = 0;
   char      _ctx_notif_item[22];
   char      _ctx_melody_item[20];
   char      _ctx_pin_item[28];   // "Pin to dial" or "Unpin (slot N)"
@@ -1389,7 +1394,7 @@ public:
           if (left || right) {
             static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
             static const char* ML[]           = { "global", "M1", "M2" };
-            uint8_t ch_idx = _channel_indices[_channel_sel];
+            uint8_t ch_idx = _ctx_ch_idx;   // frozen at menu open — see declaration
             int sel = _ctx_menu.selectedIndex();
             if (sel == 1) {
               uint8_t v = chNotifState(ch_idx);
@@ -1410,8 +1415,10 @@ public:
                 bool is_fav = (p2->ch_fav_bitmask & (1ULL << ch_idx));
                 snprintf(_ctx_ch_fav_item, sizeof(_ctx_ch_fav_item), is_fav ? "Fav: yes" : "Fav: no");
                 _ctx_dirty = true;
-                buildChannelList();
-                if (_channel_sel >= _num_channels) _channel_sel = _num_channels > 0 ? _num_channels - 1 : 0;
+                // List rebuild is deferred to menu close: with the fav-only
+                // filter on, un-favouriting this channel removes it from the
+                // list, and rebuilding under the open menu would shift
+                // _channel_sel onto a different channel mid-interaction.
               }
             }
             return true;
@@ -1419,7 +1426,7 @@ public:
         }
         auto res = _ctx_menu.handleInput(c);
         if (res == PopupMenu::SELECTED && _num_channels > 0) {
-          uint8_t ch_idx = _channel_indices[_channel_sel];
+          uint8_t ch_idx = _ctx_ch_idx;   // frozen at menu open — see declaration
           int sel = _ctx_menu.selectedIndex();
           if (sel == 0) {
             int cleared = (int)_history.chUnread(ch_idx);
@@ -1428,7 +1435,12 @@ public:
           }
           // sel 1/2/3 already handled by LEFT/RIGHT; ENTER just closes.
         }
-        if (res != PopupMenu::NONE) _task->savePrefsIfDirty(_ctx_dirty);
+        if (res != PopupMenu::NONE) {
+          _task->savePrefsIfDirty(_ctx_dirty);
+          // Apply any Fav change to the visible list now that the menu is done.
+          buildChannelList();
+          if (_channel_sel >= _num_channels) _channel_sel = _num_channels > 0 ? _num_channels - 1 : 0;
+        }
         return true;
       }
       if (c == KEY_CANCEL) { _phase = MODE_SELECT; return true; }
@@ -1453,6 +1465,7 @@ public:
       }
       if (c == KEY_CONTEXT_MENU && _num_channels > 0) {
         uint8_t ch_idx = _channel_indices[_channel_sel];
+        _ctx_ch_idx = ch_idx;   // freeze the menu's target channel
         static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
         snprintf(_ctx_notif_item, sizeof(_ctx_notif_item), "Notif: %s",
                  NOTIF_LABELS[chNotifState(ch_idx)]);

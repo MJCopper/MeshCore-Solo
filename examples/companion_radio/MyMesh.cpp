@@ -211,6 +211,10 @@ void MyMesh::updateContactFromFrame(ContactInfo &contact, uint32_t& last_mod, co
   memcpy(contact.out_path, &frame[i], MAX_PATH_SIZE);
   i += MAX_PATH_SIZE;
   memcpy(contact.name, &frame[i], 32);
+  // The frame comes from the app and nothing guarantees a NUL inside the 32
+  // bytes; an unterminated name would later overrun strcpy/strlen consumers
+  // (e.g. the AdvertPath name cache).
+  contact.name[sizeof(contact.name) - 1] = '\0';
   i += 32;
   memcpy(&contact.last_advert_timestamp, &frame[i], 4);
   i += 4;

@@ -493,39 +493,46 @@ class HomeScreen : public UIScreen {
       else
         drawSlotIcon(display, btX, ind, ind_h, ICON_BLUETOOTH); // plain glyph: available, not linked
       leftmostX = btX - ind_gap;
+    } else {
+      leftmostX = battLeftX - ind_gap;   // no BT icon; keep the same first-slot spacing
+    }
 
-      // "A" indicator — left of BT; blinks on OLED, always shown on e-ink
-      if (_node_prefs && _node_prefs->advert_auto_interval_sec > 0) {
-        int aX = leftmostX - ind;
-        if (blinkOn()) drawBoxedIcon(display, aX, ind, ind_h, ICON_ADVERT);
-        leftmostX = aX - 1;
-      }
+    // Background-mode indicators — deliberately OUTSIDE the isSerialEnabled()
+    // gate above: auto-advert, live share, the trail and the repeater all keep
+    // running with Bluetooth switched off, so their at-a-glance cues must not
+    // vanish with the BT icon.
 
-      // Live location sharing active. Same blink convention — another
-      // "leave it on and forget" broadcast, like auto-advert above. Reuses
-      // the diamond the map uses for a live-tracked contact, so the glyph
-      // already means "sharing position" elsewhere in the UI.
-      if (_node_prefs && _node_prefs->loc_share_enabled) {
-        int lsX = leftmostX - ind;
-        if (blinkOn()) drawBoxedIcon(display, lsX, ind, ind_h, ICON_MAP_CONTACT);
-        leftmostX = lsX - 1;
-      }
+    // "A" indicator — blinks on OLED, always shown on e-ink
+    if (_node_prefs && _node_prefs->advert_auto_interval_sec > 0) {
+      int aX = leftmostX - ind;
+      if (blinkOn()) drawBoxedIcon(display, aX, ind, ind_h, ICON_ADVERT);
+      leftmostX = aX - 1;
+    }
 
-      // GPS trail logging active. Same blink convention.
-      if (_task->trail().isActive()) {
-        int gX = leftmostX - ind;
-        if (blinkOn()) drawBoxedIcon(display, gX, ind, ind_h, ICON_TRAIL);
-        leftmostX = gX - 1;
-      }
+    // Live location sharing active. Same blink convention — another
+    // "leave it on and forget" broadcast, like auto-advert above. Reuses
+    // the diamond the map uses for a live-tracked contact, so the glyph
+    // already means "sharing position" elsewhere in the UI.
+    if (_node_prefs && _node_prefs->loc_share_enabled) {
+      int lsX = leftmostX - ind;
+      if (blinkOn()) drawBoxedIcon(display, lsX, ind, ind_h, ICON_MAP_CONTACT);
+      leftmostX = lsX - 1;
+    }
 
-      // Repeater relaying. Same blink convention — a "leave it on and forget"
-      // mode, so an at-a-glance cue matters (especially on a Custom profile,
-      // where the device is off your own network while this is shown).
-      if (_node_prefs && _node_prefs->client_repeat) {
-        int rX = leftmostX - ind;
-        if (blinkOn()) drawBoxedIcon(display, rX, ind, ind_h, ICON_REPEATER);
-        leftmostX = rX - 1;
-      }
+    // GPS trail logging active. Same blink convention.
+    if (_task->trail().isActive()) {
+      int gX = leftmostX - ind;
+      if (blinkOn()) drawBoxedIcon(display, gX, ind, ind_h, ICON_TRAIL);
+      leftmostX = gX - 1;
+    }
+
+    // Repeater relaying. Same blink convention — a "leave it on and forget"
+    // mode, so an at-a-glance cue matters (especially on a Custom profile,
+    // where the device is off your own network while this is shown).
+    if (_node_prefs && _node_prefs->client_repeat) {
+      int rX = leftmostX - ind;
+      if (blinkOn()) drawBoxedIcon(display, rX, ind, ind_h, ICON_REPEATER);
+      leftmostX = rX - 1;
     }
 
     // GPS fix status — boxed (lit) when the receiver has a valid fix, plain
@@ -1528,11 +1535,6 @@ void UITask::gotoRepeaterScreen()  { setCurrScreen(repeater_screen); }
 void UITask::gotoClockTools()      { setCurrScreen(clock_tools); }
 void UITask::gotoLiveShareScreen() { setCurrScreen(live_share_screen); }
 
-void UITask::wakeForAlarm() {
-  if (_display != NULL) _display->turnOn();
-  _next_refresh = 0;   // draw the alert overlay immediately
-}
-
 // ── Clock tools engine (alarm / countdown / ring) ───────────────────────────
 // Lives here, not in ClockToolsScreen, so it fires regardless of the current
 // screen. The melody overrides mute (playMelody → buzzer.playForced); the ring
@@ -1540,6 +1542,16 @@ void UITask::wakeForAlarm() {
 static const char*    CLOCK_ALARM_MELODY       = "alarm:d=8,o=6,b=125:c,c,c,c,p,c,c,c,c,p";
 static const uint32_t CLOCK_RING_MS            = 60000;
 static const uint32_t CLOCK_ALARM_CATCHUP_SECS = 6 * 3600;  // fire late up to 6 h, else reschedule
+
+void UITask::wakeForAlarm() {
+  if (_display != NULL) _display->turnOn();
+  // Locked: the lock-screen blanking check (loop()) turns the display straight
+  // back off once _lock_wake_until is in the past — which it always is by the
+  // time an alarm fires. Hold the wake window open for the whole ring so the
+  // lock screen (and its alert overlay) stays visible while ringing.
+  if (_locked) _lock_wake_until = millis() + CLOCK_RING_MS;
+  _next_refresh = 0;   // draw the alert overlay immediately
+}
 
 // Next absolute wall instant matching alarm_hour:alarm_min in local time,
 // strictly after now_wall (an alarm set to the current minute waits a day).
@@ -1590,12 +1602,14 @@ void UITask::evaluateAlarm() {
 void UITask::tickClockTools() {
   uint32_t now_ms = millis();
   // Ring maintenance: repeat the melody until dismissed or the window elapses.
+  // Signed-difference compares (like the trail/loc-share timers) so deadlines
+  // landing past the millis() rollover don't read as already elapsed.
   if (_ringing) {
-    if (now_ms >= _ring_until_ms) { stopMelody(); _ringing = false; clearAlert(); }
+    if ((int32_t)(now_ms - _ring_until_ms) >= 0) { stopMelody(); _ringing = false; clearAlert(); }
     else if (!isMelodyPlaying())  playMelody(CLOCK_ALARM_MELODY);
   }
   // Countdown timer (millis — sync-immune).
-  if (_timer_running && now_ms >= _timer_deadline_ms) {
+  if (_timer_running && (int32_t)(now_ms - _timer_deadline_ms) >= 0) {
     _timer_running = false;
     fireClockAlert("Timer done");
   }
@@ -1865,6 +1879,30 @@ void UITask::userLedHandler() {
 #endif
 }
 
+// Centred alert box. Long text used to be drawn as one drawTextCentered line
+// that overflowed the border on both sides (e.g. "GPS on, tracking started"
+// is already wider than a 128 px OLED); wrap it to up to three lines inside
+// the box instead. Uses the shared wrap scratch (s_wrap_*) — single-threaded
+// render path, same contract as the message views.
+void UITask::renderAlertOverlay() {
+  _display->setTextSize(1);
+  const int lh    = _display->getLineHeight();
+  const int pad   = 3;
+  const int box_w = _display->width() - 8;
+  const int box_x = 4;
+  _display->translateUTF8ToBlocks(s_wrap_trans, _alert, sizeof(s_wrap_trans));
+  int nl = FullscreenMsgView::wrapLines(*_display, s_wrap_trans, box_w - pad * 2, s_wrap_lines, 3);
+  if (nl < 1) nl = 1;
+  int box_h = nl * lh + pad * 2;
+  int box_y = (_display->height() - box_h) / 2;
+  _display->setColor(DisplayDriver::DARK);
+  _display->fillRect(box_x, box_y, box_w, box_h);
+  _display->setColor(DisplayDriver::LIGHT);
+  _display->drawRect(box_x, box_y, box_w, box_h);
+  for (int i = 0; i < nl; i++)
+    _display->drawTextCentered(_display->width() / 2, box_y + pad + i * lh, s_wrap_lines[i]);
+}
+
 void UITask::setCurrScreen(UIScreen* c) {
   // Fail safe on a null target: a screen pointer left uninitialised (member
   // declared + navigator wired, but the `new XScreen()` line forgotten in
@@ -2117,6 +2155,9 @@ void UITask::loop() {
     dismissRing();
     _kq_head = _kq_tail = 0;
     _next_refresh = 0;
+    // Locked: wakeForAlarm() held the wake window open for the whole ring;
+    // once dismissed, fall back to the usual brief lock-screen glance.
+    if (_locked) _lock_wake_until = millis() + 5000;
   }
 
   if (_kq_head != _kq_tail) {
@@ -2226,24 +2267,16 @@ void UITask::loop() {
       _display->setColor(DisplayDriver::DARK);
       _display->setCursor(hx, hy);
       _display->print(hint);
+      // Alert overlay on top — without this a ringing alarm on a locked device
+      // played its melody against a screen that never said what was ringing.
+      if (millis() < _alert_expiry) renderAlertOverlay();
       _display->endFrame();
       _next_refresh = millis() + Features::LOCKSCREEN_REFRESH_MS;
     } else if (!_locked && millis() >= _next_refresh && curr) {
       _display->startFrame();
       int delay_millis = curr->render(*_display);
       if (millis() < _alert_expiry) {  // alert overlay on top of any screen
-        _display->setTextSize(1);
-        int lh    = _display->getLineHeight();
-        int pad   = 3;
-        int box_h = lh + pad * 2;
-        int box_w = _display->width() - 8;
-        int box_x = 4;
-        int box_y = (_display->height() - box_h) / 2;
-        _display->setColor(DisplayDriver::DARK);
-        _display->fillRect(box_x, box_y, box_w, box_h);
-        _display->setColor(DisplayDriver::LIGHT);
-        _display->drawRect(box_x, box_y, box_w, box_h);
-        _display->drawTextCentered(_display->width() / 2, box_y + pad, _alert);
+        renderAlertOverlay();
         // Keep refreshing the underlying screen at its own cadence (capped at the
         // alert's expiry) so layouts that settle over a frame — e.g. the message-
         // history scrollbar reserve — don't stay stuck behind the alert. Unchanged

@@ -187,6 +187,12 @@ class UITask : public AbstractUITask {
 
   void setCurrScreen(UIScreen* c);
 
+  // Centred alert overlay (the showAlert() box). Wraps long text to up to
+  // three lines inside the box instead of letting it overflow the border.
+  // Shared by the normal render path and the lock screen (so a ringing
+  // alarm's label is visible while locked).
+  void renderAlertOverlay();
+
 public:
 
   UITask(mesh::MainBoard* board, BaseSerialInterface* serial) : AbstractUITask(board, serial), _display(NULL), _sensors(NULL), _node_prefs(NULL), _dash_lpp(200) {
@@ -290,7 +296,10 @@ public:
   uint32_t timerRemainingMs() const {
     if (!_timer_running) return 0;
     uint32_t now = millis();
-    return (now >= _timer_deadline_ms) ? 0 : (_timer_deadline_ms - now);
+    // Signed-difference compare so a deadline that lands past the millis()
+    // rollover (~49.7 days) doesn't read as already elapsed.
+    if ((int32_t)(now - _timer_deadline_ms) >= 0) return 0;
+    return _timer_deadline_ms - now;
   }
   bool isRinging() const { return _ringing; }
   void dismissRing() { stopMelody(); _ringing = false; clearAlert(); }
