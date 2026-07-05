@@ -476,6 +476,12 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     if (_prefs.page_order[i] > NodePrefs::HPB_COUNT) _prefs.page_order[i] = 0;
   }
 
+  // → 0xC0DE001B: append trail_autosave_lowbatt at the tail. A pre-0x1B file has
+  // the old sentinel bytes / EOF here; rd() zero-inits when absent and the clamp
+  // below turns any stray value into 0 (off), so upgraders default to off.
+  rd(&_prefs.trail_autosave_lowbatt, sizeof(_prefs.trail_autosave_lowbatt));
+  if (_prefs.trail_autosave_lowbatt > 1) _prefs.trail_autosave_lowbatt = 0;
+
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
   // so we just log it — next savePrefs writes the current sentinel.
@@ -661,6 +667,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     // appended here so the on-disk head stays the original 11 bytes.
     file.write((uint8_t *)&_prefs.page_order[NodePrefs::PAGE_ORDER_LEN_V1],
                NodePrefs::PAGE_ORDER_LEN - NodePrefs::PAGE_ORDER_LEN_V1);
+    file.write((uint8_t *)&_prefs.trail_autosave_lowbatt, sizeof(_prefs.trail_autosave_lowbatt));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good

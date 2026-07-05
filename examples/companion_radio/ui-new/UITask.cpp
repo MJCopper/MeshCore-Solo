@@ -1927,6 +1927,19 @@ bool UITask::savePrefsIfDirty(bool& dirty) {
 void UITask::shutdown(bool restart){
   the_mesh.saveRTCTime();
 
+  // Auto-save the live GPS trail before power-off when the user enabled it
+  // (Tools › Trail › Settings › Auto-save). This covers the low-battery
+  // auto-shutdown, which otherwise loses the whole route. Overwrites /trail
+  // (same file as the manual Trail › Save); guarded on count()>0 so an empty
+  // trail can't wipe a previously saved one.
+  if (_node_prefs && _node_prefs->trail_autosave_lowbatt && _trail.count() > 0) {
+    DataStore* ds = the_mesh.getDataStore();
+    if (ds) {
+      File f = ds->openWrite("/trail");
+      if (f) { _trail.writeTo(f); f.close(); }
+    }
+  }
+
   #ifdef PIN_BUZZER
   /* note: we have a choice here -
      we can do a blocking buzzer.loop() with non-deterministic consequences

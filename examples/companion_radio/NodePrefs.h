@@ -289,6 +289,12 @@ struct NodePrefs {  // persisted to file
   // (phone-keypad groups, cycled with repeated Enter presses — see KeyboardWidget.h).
   uint8_t  keyboard_type;
 
+  // Auto-save the live GPS trail to /trail on shutdown (covers the low-battery
+  // auto-shutdown, which otherwise loses the whole route). Only writes when the
+  // trail has points and the toggle is on. 0 = off (default), 1 = on.
+  // [Tools › Trail › Settings › Auto-save]
+  uint8_t  trail_autosave_lowbatt;
+
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
   static const uint8_t LOC_SHARE_MOVE_COUNT = 4;
@@ -351,7 +357,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE001A;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE001B;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage

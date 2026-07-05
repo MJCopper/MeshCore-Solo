@@ -72,7 +72,7 @@ class TrailScreen : public UIScreen {
   // (Start/Stop tracking, Reset). PopupMenu stores label pointers verbatim, so
   // the labels live in member buffers that get refreshed in openActionMenu()
   // and after every LEFT/RIGHT cycle.
-  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_AUTOPAUSE, ACT_MARK_AVG, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS, ACT_FILE, ACT_SETTINGS,
+  enum ActionId { ACT_MIN_DIST, ACT_UNITS, ACT_GRID, ACT_AUTOPAUSE, ACT_MARK_AVG, ACT_AUTOSAVE, ACT_TOGGLE, ACT_SAVE, ACT_LOAD, ACT_RESET, ACT_EXPORT, ACT_EXPORT_SAVED, ACT_MARK, ACT_WAYPOINTS, ACT_FILE, ACT_SETTINGS,
                  ACT_SHARE_NOW, ACT_TRACKBACK };
   // The action popup is multi-level: a short main menu, plus "Trail file…" and
   // "Settings…" submenus. _menu_level tracks which is open so input is routed
@@ -89,6 +89,7 @@ class TrailScreen : public UIScreen {
   char      _act_grid_label[16];
   char      _act_autopause_label[24];
   char      _act_mark_avg_label[24];
+  char      _act_autosave_label[24];
   char      _act_toggle_label[20];
 
   static const int SUMMARY_ITEM_COUNT = 5;
@@ -178,6 +179,7 @@ public:
           case ACT_UNITS:
           case ACT_GRID:
           case ACT_MARK_AVG:
+          case ACT_AUTOSAVE:
           case ACT_AUTOPAUSE: cycleSetting(act, 1); reopenSettingsAt(sel); return true;
           case ACT_SHARE_NOW:     shareMyLocationNow(); break;
           case ACT_TOGGLE:
@@ -327,6 +329,8 @@ private:
               "Auto-pause: %s", NodePrefs::trailAutoPauseLabel(p ? p->trail_autopause_idx : 0));
     snprintf(_act_mark_avg_label, sizeof(_act_mark_avg_label),
               "Mark avg: %s", NodePrefs::gpsAvgLabel(p ? p->gps_avg_idx : 0));
+    snprintf(_act_autosave_label, sizeof(_act_autosave_label),
+              "Auto-save: %s", (p && p->trail_autosave_lowbatt) ? "ON" : "OFF");
     snprintf(_act_toggle_label, sizeof(_act_toggle_label),
               "%s tracking",  _store->isActive() ? "Stop" : "Start");
   }
@@ -394,6 +398,7 @@ private:
     pushAction(ACT_MIN_DIST,  _act_min_dist_label);
     pushAction(ACT_AUTOPAUSE, _act_autopause_label);
     pushAction(ACT_MARK_AVG,  _act_mark_avg_label);
+    pushAction(ACT_AUTOSAVE,  _act_autosave_label);
     if (_view == V_SUMMARY) pushAction(ACT_UNITS, _act_units_label);
     if (_view == V_MAP)     pushAction(ACT_GRID,  _act_grid_label);
   }
@@ -406,6 +411,7 @@ private:
     if (act == ACT_GRID)          { _map_grid = !_map_grid;                    refreshActionLabels(); return true; }
     if (act == ACT_AUTOPAUSE && p){ cycleAutoPause(p, dir); _cfg_dirty = true; refreshActionLabels(); return true; }
     if (act == ACT_MARK_AVG  && p){ cycleMarkAvg(p, dir);   _cfg_dirty = true; refreshActionLabels(); return true; }
+    if (act == ACT_AUTOSAVE  && p){ p->trail_autosave_lowbatt = !p->trail_autosave_lowbatt; _cfg_dirty = true; refreshActionLabels(); return true; }
     return false;
   }
 
