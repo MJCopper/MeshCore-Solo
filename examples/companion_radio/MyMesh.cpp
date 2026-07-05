@@ -1169,6 +1169,28 @@ MyMesh::PingResult* MyMesh::getPingResult(uint32_t tag) {
   return NULL;
 }
 
+// True when this (tag, responder) pair was already seen recently; records it
+// otherwise. A discover response is often heard more than once — the zero-hop
+// direct copy and a re-flooded copy relayed by another repeater carry
+// different packet hashes, so the mesh duplicate filter passes both. Without
+// this, the standalone scan appended the same node twice and an app-driven
+// discover had both copies forwarded, so the app listed one repeater as two.
+bool MyMesh::isDupDiscoverResp(uint32_t tag, const uint8_t* pub_key) {
+  for (int i = 0; i < DISCOVER_SEEN_MAX; i++) {
+    DiscoverSeen& e = _disc_seen[i];
+    if (e.until != 0 && !millisHasNowPassed(e.until)
+        && e.tag == tag && memcmp(e.pk, pub_key, sizeof(e.pk)) == 0) {
+      return true;
+    }
+  }
+  DiscoverSeen& s = _disc_seen[_disc_seen_head];
+  _disc_seen_head = (_disc_seen_head + 1) % DISCOVER_SEEN_MAX;
+  s.tag = tag;
+  memcpy(s.pk, pub_key, sizeof(s.pk));
+  s.until = futureMillis(10000);   // copies of one response arrive within seconds
+  return false;
+}
+
 void MyMesh::onControlDataRecv(mesh::Packet *packet) {
   // If we have an active standalone discover, check if this is a matching response.
   // Tag matching provides isolation — no isBLEConnected check needed.
@@ -1181,6 +1203,7 @@ void MyMesh::onControlDataRecv(mesh::Packet *packet) {
     if (tag == _pending_node_discover_tag) {
       uint8_t node_type = packet->payload[0] & 0x0F;
       const uint8_t* pub_key = &packet->payload[6];
+      if (isDupDiscoverResp(tag, pub_key)) return;  // second copy of the same response
       ContactInfo* known = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
       if (known) {
         known->lastmod = getRTCClock()->getCurrentTime();
@@ -1205,6 +1228,16 @@ void MyMesh::onControlDataRecv(mesh::Packet *packet) {
       if (_ui) _ui->notify(packet->isRouteFlood() ? UIEventType::advertReceivedFlood : UIEventType::advertReceivedZeroHop);
       return;  // our discover — don't forward to BLE app
     }
+  }
+
+  // App-driven discover: drop duplicate copies of the same response before
+  // forwarding, so the app doesn't list one responder twice. (Our own
+  // standalone discover already returned above on a tag match.)
+  if ((packet->payload[0] & 0xF0) == CTL_TYPE_NODE_DISCOVER_RESP &&
+      packet->payload_len >= 6 + PUB_KEY_SIZE) {
+    uint32_t fwd_tag;
+    memcpy(&fwd_tag, &packet->payload[2], 4);
+    if (isDupDiscoverResp(fwd_tag, &packet->payload[6])) return;
   }
 
   if (packet->payload_len + 4 > sizeof(out_frame)) {
@@ -1478,6 +1511,8 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _discover_count = 0;
   _pending_node_discover_tag = 0;
   _pending_node_discover_until = 0;
+  memset(_disc_seen, 0, sizeof(_disc_seen));
+  _disc_seen_head = 0;
 
   // Ping state
   _ping_callback = NULL;

@@ -405,6 +405,18 @@ private:
   uint32_t        _pending_node_discover_tag;
   unsigned long   _pending_node_discover_until;
 
+  // Dedup for NODE_DISCOVER_RESP copies heard more than once: the responder's
+  // zero-hop direct copy and a re-flooded copy relayed by another repeater
+  // carry different packet hashes, so the mesh duplicate filter passes both.
+  // Keyed by (tag, responder pubkey prefix) with a short expiry — covers both
+  // the standalone on-device scan and responses forwarded to the app (which
+  // would otherwise list the same repeater twice).
+  #define DISCOVER_SEEN_MAX 16
+  struct DiscoverSeen { uint32_t tag; uint8_t pk[6]; unsigned long until; };
+  DiscoverSeen _disc_seen[DISCOVER_SEEN_MAX];
+  uint8_t      _disc_seen_head;
+  bool isDupDiscoverResp(uint32_t tag, const uint8_t* pub_key);   // records when new
+
   // ── Ping/Trace state ──────────────────────────────────────────────────────
   PingResult _ping_results[PING_RESULT_MAX];
   PingCallback _ping_callback;
