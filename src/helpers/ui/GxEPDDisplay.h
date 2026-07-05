@@ -64,6 +64,7 @@ class GxEPDDisplay : public DisplayDriver {
   int _text_sz = 1;
   uint8_t _full_refresh_interval = 0;
   uint8_t _partial_count = 0;
+  bool _force_full = false;   // set by forceFullRefresh(); consumed by the next endFrame()
 
   int16_t drawLemonChar(int16_t x, int16_t y, uint32_t cp, int sc);
   uint8_t lemonXAdvance(uint32_t cp, int sc);
@@ -144,5 +145,6 @@ public:
   }
   void setDisplayRotation(uint8_t rot) override;
   void setFullRefreshInterval(uint8_t n) override { _full_refresh_interval = n; _partial_count = 0; }
+  void forceFullRefresh() override { _force_full = true; }
   void endFrame() override;
 };

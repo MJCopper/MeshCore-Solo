@@ -1192,6 +1192,7 @@ public:
 
       if (_fav_sel >= NodePrefs::FAVOURITES_COUNT) _fav_sel = 0;
 
+      bool fav_changed = false;   // a stale (gone) slot was pruned this pass → persist once after the loop
       for (uint8_t i = 0; i < NodePrefs::FAVOURITES_COUNT; i++) {
         int row = i / cols;
         int col = i % cols;
@@ -1218,9 +1219,21 @@ public:
               ci = c; found = true; break;
             }
           }
+          if (!found) {
+            // Pinned contact is gone — prefs outlived the contact list (e.g. a
+            // wiped /contacts3; onContactRemoved only catches a live delete).
+            // Clear the stale slot at render time so it reverts to an empty "+"
+            // tile instead of showing "(gone)". Persisted once after the loop.
+            if (_node_prefs)
+              memset(_node_prefs->favourite_contacts[i], 0, NodePrefs::FAVOURITE_PREFIX_LEN);
+            fav_changed = true;
+            int plus_y = cy + (cell_h - line_h) / 2;
+            display.drawTextCentered(cx + cell_w / 2, plus_y, "+");
+            if (sel) display.setColor(DisplayDriver::LIGHT);
+            continue;
+          }
           char name[24];
-          if (found) display.translateUTF8ToBlocks(name, ci.name, sizeof(name));
-          else       strncpy(name, "(gone)", sizeof(name) - 1), name[sizeof(name) - 1] = '\0';
+          display.translateUTF8ToBlocks(name, ci.name, sizeof(name));
 
           // Reserve space for the unread badge so the name's ellipsis lands
           // before it instead of underneath. Badge and name share one baseline.
@@ -1247,6 +1260,10 @@ public:
         }
         if (sel) display.setColor(DisplayDriver::LIGHT);
       }
+      // Persist any pruned slots once, outside the loop — a render pass can clear
+      // several gone tiles but only one flash write is needed. Self-healing: once
+      // cleared, the slot is empty next frame so this can't re-fire per frame.
+      if (fav_changed) the_mesh.savePrefs();
       if (_pin_menu.active) _pin_menu.render(display);
     } else if (_page == HomePage::SHUTDOWN) {
       display.setColor(DisplayDriver::LIGHT);
@@ -1910,6 +1927,10 @@ void UITask::setCurrScreen(UIScreen* c) {
   // that mistake is an inert no-op instead of a null deref in render()/poll().
   if (!c) return;
   curr = c;
+  // E-ink: force a full refresh on the first frame of the new screen so leftover
+  // ghosting from the previous screen is cleared (the N-partials interval alone
+  // doesn't catch navigation). No-op on OLED.
+  if (_display) _display->forceFullRefresh();
   c->onShow();          // central per-visit reset hook (see UIScreen::onShow)
   _next_refresh = 100;
 }

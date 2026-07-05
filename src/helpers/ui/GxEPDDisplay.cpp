@@ -275,10 +275,14 @@ void GxEPDDisplay::endFrame() {
   uint32_t crc = display_crc.finalize();
   if (crc != last_display_crc_value) {
     bool partial = true;
-    if (_full_refresh_interval > 0 && ++_partial_count >= _full_refresh_interval) {
+    // A forced full refresh (e.g. screen change) clears inter-screen ghosting.
+    // Short-circuit so _partial_count isn't bumped on the forced pass; the block
+    // resets it either way, matching the interval-driven full refresh.
+    if (_force_full || (_full_refresh_interval > 0 && ++_partial_count >= _full_refresh_interval)) {
       partial = false;
       _partial_count = 0;
     }
+    _force_full = false;
     display.display(partial);
     last_display_crc_value = crc;
   }
