@@ -732,6 +732,7 @@ public:
         switch (_picker.onSelected(_picker.menu.selectedIndex(), p, radioTarget(p))) {
           case RadioPresetPicker::START_SAVE:
             _kb->begin("", (int)sizeof(p->user_radio_presets[0].name) - 1);
+            _kb->clearPlaceholders();   // {loc}/{time} are for messages, not preset names
             break;
           case RadioPresetPicker::APPLIED:
             _task->applyRadioParams();

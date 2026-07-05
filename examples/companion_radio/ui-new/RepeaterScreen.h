@@ -188,6 +188,7 @@ public:
         switch (_picker.onSelected(_picker.menu.selectedIndex(), p, rptTarget(p))) {
           case RadioPresetPicker::START_SAVE:
             _task->keyboard().begin("", (int)sizeof(p->user_radio_presets[0].name) - 1);
+            _task->keyboard().clearPlaceholders();   // {loc}/{time} are for messages, not preset names
             break;
           case RadioPresetPicker::APPLIED:
             the_mesh.applyRepeaterRadio();   // live if currently relaying on the profile
