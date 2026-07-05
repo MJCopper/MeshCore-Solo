@@ -23,6 +23,12 @@ class SH1106Display : public DisplayDriver
   uint8_t _precharge;
   bool _use_lemon = false;
   int  _text_sz;
+  // Frame-skip: endFrame() hashes the GFX buffer (FNV-1a, no external dep — the
+  // CRC32 lib is only wired into e-ink builds) and skips the I²C flush when it's
+  // byte-identical to the last one pushed. _force_redraw guarantees the first
+  // frame and the frame after turnOn()/clear() always flush.
+  uint32_t _last_frame_hash = 0;
+  bool     _force_redraw = true;
 
   bool i2c_probe(TwoWire &wire, uint8_t addr);
   int16_t drawLemonChar(int16_t x, int16_t y, uint32_t cp);

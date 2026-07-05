@@ -23,6 +23,7 @@ void SH1106Display::turnOn()
   display.oled_commandList(pre, 2);
   display.setContrast(_contrast);
   _isOn = true;
+  _force_redraw = true;   // panel was off — guarantee the next endFrame() flushes
 }
 
 void SH1106Display::turnOff()
@@ -35,6 +36,7 @@ void SH1106Display::clear()
 {
   display.clearDisplay();
   display.display();
+  _force_redraw = true;   // next endFrame() must flush even if its CRC matches a pre-clear frame
 }
 
 void SH1106Display::startFrame(Color bkg)
@@ -189,5 +191,17 @@ void SH1106Display::setBrightness(uint8_t level)
 
 void SH1106Display::endFrame()
 {
+  // Skip the I²C flush when the frame is byte-identical to the last one pushed.
+  // The most-shown screens (clock, home) are static between updates, so this
+  // cuts redundant display() traffic and a little power. FNV-1a over the 1 KB
+  // GFX buffer (~1k xor+mul, cheap); _force_redraw guarantees the first frame
+  // and the frame after wake/clear.
+  const uint8_t* buf = display.getBuffer();
+  uint16_t n = (uint16_t)((width() * height()) / 8);
+  uint32_t h = 2166136261u;
+  for (uint16_t i = 0; i < n; i++) { h ^= buf[i]; h *= 16777619u; }
+  if (!_force_redraw && h == _last_frame_hash) return;
+  _force_redraw = false;
+  _last_frame_hash = h;
   display.display();
 }
