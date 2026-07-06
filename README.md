@@ -145,3 +145,14 @@ git config merge.ours.driver true
 ### Contributing
 
 Contributions are welcome. Fork the repository, make your changes, and open a pull request. Please follow the existing code style and keep changes focused.
+
+---
+
+## Contributors
+
+Big thanks to the people who contributed to this fork:
+
+- [vanous](https://github.com/vanous)
+- [marczykm](https://github.com/marczykm)
+
+Built on upstream [MeshCore](https://github.com/meshcore-dev/MeshCore) and its [community](https://github.com/meshcore-dev/MeshCore/graphs/contributors).
