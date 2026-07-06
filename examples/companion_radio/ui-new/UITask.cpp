@@ -1209,29 +1209,27 @@ public:
             if (prefix[b] != 0) { filled = true; break; }
         }
 
+        ContactInfo ci;
+        bool has_contact = false;
         if (filled) {
-          ContactInfo ci;
-          bool found = false;
           for (int idx = 0; ; idx++) {
             ContactInfo c;
             if (!the_mesh.getContactByIdx(idx, c)) break;
             if (memcmp(c.id.pub_key, prefix, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
-              ci = c; found = true; break;
+              ci = c; has_contact = true; break;
             }
           }
-          if (!found) {
+          if (!has_contact && _node_prefs) {
             // Pinned contact is gone — prefs outlived the contact list (e.g. a
             // wiped /contacts3; onContactRemoved only catches a live delete).
-            // Clear the stale slot at render time so it reverts to an empty "+"
-            // tile instead of showing "(gone)". Persisted once after the loop.
-            if (_node_prefs)
-              memset(_node_prefs->favourite_contacts[i], 0, NodePrefs::FAVOURITE_PREFIX_LEN);
+            // Clear the stale slot so it renders as an empty "+" tile (below)
+            // instead of "(gone)". Persisted once after the loop.
+            memset(_node_prefs->favourite_contacts[i], 0, NodePrefs::FAVOURITE_PREFIX_LEN);
             fav_changed = true;
-            int plus_y = cy + (cell_h - line_h) / 2;
-            display.drawTextCentered(cx + cell_w / 2, plus_y, "+");
-            if (sel) display.setColor(DisplayDriver::LIGHT);
-            continue;
           }
+        }
+
+        if (has_contact) {
           char name[24];
           display.translateUTF8ToBlocks(name, ci.name, sizeof(name));
 

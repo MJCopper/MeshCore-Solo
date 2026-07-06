@@ -51,6 +51,13 @@ static const int KB_MAX_LEN    = 160;
 // very wide display (small font → many chars per line) can't overrun them.
 static const int KB_PREVIEW_CAP = 46;
 
+// Uppercase one char when Shift (caps) is on. The keyboard applies this at every
+// draw and commit site — a-z only, everything else (digits, punctuation) passes
+// through unchanged.
+static inline char kbApplyCaps(char ch, bool caps) {
+  return (caps && ch >= 'a' && ch <= 'z') ? (char)(ch - 'a' + 'A') : ch;
+}
+
 static const int KB_PH_MAX     = 12;  // max placeholders in list
 static const int KB_PH_LEN     = 9;   // max placeholder string length incl. null
 static const int KB_PH_VISIBLE = 3;   // items shown at once in overlay
@@ -175,7 +182,7 @@ struct KeyboardWidget {
           // (".,!?'-", 6 chars) + digit already fills a narrow OLED cell.
           char label[10];
           snprintf(label, sizeof(label), "%c%s", (char)('1' + cell), KB_T9_GROUPS[page][cell]);
-          if (caps) for (char* p = label; *p; p++) if (*p >= 'a' && *p <= 'z') *p = *p - 'a' + 'A';
+          if (caps) for (char* p = label; *p; p++) *p = kbApplyCaps(*p, caps);
           int cx = c * cell_w;
           display.drawSelectionRow(cx, y - 1, cell_w - 1, cell_h, sel);
           int tw = display.getTextWidth(label);
@@ -188,8 +195,7 @@ struct KeyboardWidget {
         int y = chars_y + r * cell_h;
         for (int c = 0; c < cols; c++) {
           bool sel = (row == r && col == c);
-          char ch = KB_CHARS[page][r][c];
-          if (caps && ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
+          char ch = kbApplyCaps(KB_CHARS[page][r][c], caps);
           char ch_buf[2] = { ch == ' ' ? '_' : ch, '\0' };
           int cx = c * cell_w;
           display.drawSelectionRow(cx, y - 1, cell_w - 1, cell_h, sel);
@@ -301,13 +307,11 @@ struct KeyboardWidget {
         if (cycling) {
           t9_cycle = (t9_cycle + 1) % total;
           if (len > 0) {
-            char ch = (t9_cycle < glen) ? group[t9_cycle] : (char)('1' + cell);
-            if (caps && ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
+            char ch = kbApplyCaps((t9_cycle < glen) ? group[t9_cycle] : (char)('1' + cell), caps);
             buf[len - 1] = ch;
           }
         } else if (len < max_len) {
-          char ch = group[0];
-          if (caps && ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
+          char ch = kbApplyCaps(group[0], caps);
           buf[len++] = ch;
           buf[len] = '\0';
           t9_cell = cell;
@@ -316,8 +320,7 @@ struct KeyboardWidget {
         t9_last_ms = millis();
       } else if (row < rows) {
         if (len < max_len) {
-          char ch = KB_CHARS[page][row][col];
-          if (caps && ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
+          char ch = kbApplyCaps(KB_CHARS[page][row][col], caps);
           buf[len++] = ch;
           buf[len] = '\0';
         }
