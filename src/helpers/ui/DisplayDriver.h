@@ -165,6 +165,45 @@ public:
     }
   }
 
+  // Format a small unread count into buf: "1".."99", then "99+". count >= 1.
+  // No stdio — DisplayDriver.h only pulls stdint/string.
+  static void fmtBadgeCount(char* buf, int count) {
+    if (count > 99)       { buf[0]='9'; buf[1]='9'; buf[2]='+'; buf[3]=0; }
+    else if (count >= 10) { buf[0]=(char)('0'+count/10); buf[1]=(char)('0'+count%10); buf[2]=0; }
+    else                  { buf[0]=(char)('0'+count); buf[1]=0; }
+  }
+  // Pixel width the pill from drawUnreadBadge(count) occupies — for reserving
+  // the name column before it. Mirrors the pill's horizontal padding.
+  int unreadBadgeWidth(int count) {
+    char buf[5]; fmtBadgeCount(buf, count);
+    return getTextWidth(buf) + (sepH() + 1) * 2;
+  }
+  // Right-aligned unread-count "pill": a filled capsule ending at right_x,
+  // aligned to a text row of height getLineHeight() at y, with the count
+  // knocked out. On a selected/inverted row pass sel=true so the pill inverts
+  // too (paper capsule + ink digits) and stays visible. The four corners are
+  // knocked back to the surrounding colour for a rounded-capsule look.
+  // Restores ink to LIGHT. Returns the pill width.
+  int drawUnreadBadge(int right_x, int y, int count, bool sel) {
+    char buf[5]; fmtBadgeCount(buf, count);
+    int pw = getTextWidth(buf) + (sepH() + 1) * 2;
+    int ph = getLineHeight();
+    int px = right_x - pw;
+    Color body = sel ? DARK : LIGHT;
+    Color ink  = sel ? LIGHT : DARK;
+    setColor(body);
+    fillRect(px, y, pw, ph);
+    setColor(ink);
+    fillRect(px, y, 1, 1);
+    fillRect(px + pw - 1, y, 1, 1);
+    fillRect(px, y + ph - 1, 1, 1);
+    fillRect(px + pw - 1, y + ph - 1, 1, 1);
+    setCursor(px + sepH() + 1, y);
+    print(buf);
+    setColor(LIGHT);
+    return pw;
+  }
+
   // Inverted title bar: light background, dark ellipsized label, then the
   // standard separator line. The label is UTF-8 translated by
   // drawTextEllipsized. Leaves ink colour LIGHT for following content.

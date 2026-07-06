@@ -403,6 +403,13 @@ struct NodePrefs {  // persisted to file
   static const uint16_t HP_FAVOURITES = 1 << HPB_FAVOURITES;
   static const uint16_t HP_MAP        = 1 << HPB_MAP;
   static const uint16_t HP_ALL        = 0x01FF | HP_FAVOURITES | HP_MAP;
+  // Factory-default carousel — the everyday pages only, so a fresh device isn't
+  // 13 pages to joystick through. Messages + Settings are always visible (no
+  // mask bit), so the mask covers: Clock, Tools, Shutdown, Favourites, Map.
+  // Recent / Radio / Bluetooth / Advert / GPS / Sensors are opt-in via
+  // Settings › Home Pages. Existing users keep their saved mask (loaded from
+  // /new_prefs); this only seeds brand-new / factory-reset devices.
+  static const uint16_t HP_DEFAULT    = HP_CLOCK | HP_TOOLS | HP_SHUTDOWN | HP_FAVOURITES | HP_MAP;
 
   // Label for home page by bit-index; returns "" for out-of-range.
   // Array indices match HomePageBit values.

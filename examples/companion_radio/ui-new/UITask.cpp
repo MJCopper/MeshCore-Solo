@@ -1235,21 +1235,14 @@ public:
 
           // Reserve space for the unread badge so the name's ellipsis lands
           // before it instead of underneath. Badge and name share one baseline.
-          char badge[5] = "";
-          int  bw = 0;
           uint8_t unread = _task->getDMUnread(ci.id.pub_key);
-          if (unread > 0) {
-            snprintf(badge, sizeof(badge), "%d", unread);
-            bw = display.getTextWidth(badge) + 3;  // badge + 3 px gap
-          }
+          int  bw = unread > 0 ? display.unreadBadgeWidth(unread) + 3 : 0;  // badge + 3 px gap
           int name_y     = cy + (cell_h - line_h) / 2;
           int name_max_w = cell_w - 4 - bw;
           if (name_max_w < 6) name_max_w = 6;
           display.drawTextEllipsized(cx + 2, name_y, name_max_w, name);
-          if (badge[0]) {
-            display.setCursor(cx + cell_w - (bw - 3) - 2, name_y);
-            display.print(badge);
-          }
+          if (unread > 0)
+            display.drawUnreadBadge(cx + cell_w - 2, name_y, unread, sel);
         } else {
           int plus_y = cy + (cell_h - line_h) / 2;
           display.drawTextCentered(cx + cell_w / 2, plus_y, "+");

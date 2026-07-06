@@ -804,13 +804,8 @@ public:
         display.drawSelectionRow(0, y - 1, display.width(), item_h - 1, sel);
         display.setCursor(2, y);
         display.print(opts[i]);
-        if (badges[i] > 0) {
-          char badge[5];
-          snprintf(badge, sizeof(badge), "%d", badges[i]);
-          int bw = display.getTextWidth(badge) + 2;
-          display.setCursor(display.width() - bw, y);
-          display.print(badge);
-        }
+        if (badges[i] > 0)
+          display.drawUnreadBadge(display.width() - 1, y, badges[i], sel);
       }
       display.setColor(DisplayDriver::LIGHT);
       if (_ctx_menu.active) _ctx_menu.render(display);
@@ -833,17 +828,10 @@ public:
           char filtered[sizeof(c.name)];
           display.translateUTF8ToBlocks(filtered, c.name, sizeof(filtered));
           uint8_t dm_unread = _task->getDMUnread(c.id.pub_key);
-          char badge[5] = "";
-          int bw = 0;
-          if (dm_unread > 0) {
-            snprintf(badge, sizeof(badge), "%d", (int)dm_unread);
-            bw = display.getTextWidth(badge) + 2;
-          }
-          display.drawTextEllipsized(2, y, display.width() - 2 - bw - 1 - reserve, filtered);
-          if (dm_unread > 0) {
-            display.setCursor(display.width() - bw + 1 - reserve, y);
-            display.print(badge);
-          }
+          int bw = dm_unread > 0 ? display.unreadBadgeWidth(dm_unread) + 2 : 0;
+          display.drawTextEllipsized(2, y, display.width() - 2 - bw - reserve, filtered);
+          if (dm_unread > 0)
+            display.drawUnreadBadge(display.width() - reserve, y, dm_unread, sel);
         }
       });
 
@@ -863,17 +851,10 @@ public:
         ChannelDetails ch;
         if (the_mesh.getChannel(_channel_indices[list_idx], ch)) {
           uint8_t unread = _history.chUnread(_channel_indices[list_idx]);
-          char badge[5] = "";
-          int bw = 0;
-          if (unread > 0) {
-            snprintf(badge, sizeof(badge), "%d", (int)unread);
-            bw = display.getTextWidth(badge) + 2;
-          }
+          int bw = unread > 0 ? display.unreadBadgeWidth(unread) + 2 : 0;
           display.drawTextEllipsized(2, y, display.width() - 4 - bw - reserve, ch.name);
-          if (unread > 0) {
-            display.setCursor(display.width() - bw - reserve, y);
-            display.print(badge);
-          }
+          if (unread > 0)
+            display.drawUnreadBadge(display.width() - reserve, y, unread, sel);
         }
       });
 
@@ -913,10 +894,8 @@ public:
       int cby = display.height() - lh - 2;
 
       char title[24];
-      display.setColor(DisplayDriver::LIGHT);
       snprintf(title, sizeof(title), "%.23s", filtered_name);
-      display.drawTextCentered(display.width()/2, 0, title);
-      display.fillRect(0, lh + 1, display.width(), display.sepH());
+      display.drawCenteredHeader(title);
 
       int dm_count = _history.dmHistCountForContact(_sel_contact.id.pub_key);
       uint32_t now_ts = rtc_clock.getCurrentTime();
@@ -1045,8 +1024,7 @@ public:
       the_mesh.getChannel(_sel_channel_idx, ch);
       char title[24];
       snprintf(title, sizeof(title), "%.23s", ch.name);
-      display.drawTextCentered(display.width()/2, 0, title);
-      display.fillRect(0, lh + 1, display.width(), display.sepH());
+      display.drawCenteredHeader(title);
 
       int ch_hist_count = _history.histCountForChannel(_sel_channel_idx);
       uint32_t now_ts = rtc_clock.getCurrentTime();
