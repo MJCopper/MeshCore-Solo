@@ -111,6 +111,11 @@ public:
   int  getRecentlyHeard(AdvertPath dest[], int max_num);
   int  getDiscoverResults(DiscoverResult dest[], int max_count);
 
+  // On-device contact management — lets Nearby Nodes add a discovered node or
+  // delete a contact without the phone app. Mirrors the CMD_ADD/REMOVE paths.
+  bool addDiscoveredContact(const uint8_t* pub_key, const char* name, uint8_t type);
+  bool deleteContactByKey(const uint8_t* pub_key);
+
   // Ping/Trace functionality
   #define PING_RESULT_MAX 4
   typedef void (*PingCallback)(uint32_t tag, int16_t snr_out_x4, int16_t snr_back_x4, uint32_t rtt_ms);

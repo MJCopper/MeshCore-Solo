@@ -23,7 +23,8 @@ class NearbyScreen : public UIScreen {
   enum Source : uint8_t { SRC_STORED, SRC_SCAN };
 
   // ── action-menu actions (matched by id, not by row index) ────────────────────
-  enum Action : uint8_t { ACT_NAV, ACT_PING, ACT_WAYPOINT, ACT_LOCATOR, ACT_SORT, ACT_SCAN };
+  enum Action : uint8_t { ACT_NAV, ACT_PING, ACT_WAYPOINT, ACT_LOCATOR,
+                          ACT_ADD, ACT_DELETE, ACT_FAV, ACT_SORT, ACT_SCAN };
 
   // ── unified list entry ───────────────────────────────────────────────────────
   struct Entry {
@@ -75,8 +76,9 @@ class NearbyScreen : public UIScreen {
   // ── popups ────────────────────────────────────────────────────────────────────
   PopupMenu _menu;            // unified action menu (Hold Enter), list + detail
   PopupMenu _ping_menu;       // ping (special: read-only result rows)
+  PopupMenu _confirm;         // delete-contact confirmation (destructive → 2-step)
 
-  Action  _menu_actions[8];   // parallel to _menu rows — stable action ids
+  Action  _menu_actions[10];  // parallel to _menu rows — stable action ids
   int     _menu_action_count;
   char    _sort_label[16];    // dynamic label for the Sort row
 
@@ -184,6 +186,7 @@ class NearbyScreen : public UIScreen {
     }
 
     mergeLiveTrack();
+    mergeRecentlyHeard();
     sortStored();
     clampSelection();
   }
@@ -265,6 +268,38 @@ class NearbyScreen : public UIScreen {
         e.is_live       = true;
         e.live_verified = s.verified;
       }
+    }
+  }
+
+  // Fold passively-heard adverts that aren't already listed (contact or live) into
+  // the list as name+age rows — no full key/GPS, so informational only. This is
+  // what absorbs the old standalone "Recent adverts" home page. Gated to the All
+  // filter because AdvertPath carries no node type to filter or sort-by-dist on.
+  void mergeRecentlyHeard() {
+    if (_filter != F_ALL || !_task) return;
+    static AdvertPath heard[8];   // scratch — refreshStored isn't reentrant
+    int n = the_mesh.getRecentlyHeard(heard, 8);
+    for (int i = 0; i < n && _count < MAX_NEARBY; i++) {
+      AdvertPath& a = heard[i];
+      if (a.name[0] == 0) continue;
+      bool dup = false;
+      for (int j = 0; j < _count; j++) {
+        if (_entries[j].has_key &&
+            memcmp(_entries[j].pub_key, a.pubkey_prefix, sizeof(a.pubkey_prefix)) == 0) { dup = true; break; }
+        if (strncmp(_entries[j].name, a.name, sizeof(a.name) - 1) == 0) { dup = true; break; }
+      }
+      if (dup) continue;
+      Entry& e = _entries[_count++];
+      memset(&e, 0, sizeof(e));
+      strncpy(e.name, a.name, sizeof(e.name) - 1);
+      e.name[sizeof(e.name) - 1] = '\0';
+      e.type        = ADV_TYPE_CHAT;   // unknown from AdvertPath — best-effort label
+      e.has_key     = false;
+      e.dist_km     = -1.0f;
+      e.lastmod     = a.recv_timestamp;
+      e.contact_idx = -1;
+      e.is_known    = false;
+      e.is_live     = false;
     }
   }
 
@@ -353,6 +388,52 @@ class NearbyScreen : public UIScreen {
     if (!e) return;
     if (e->lat_e6 == 0 && e->lon_e6 == 0) { _task->showAlert("No node GPS", 1000); return; }
     _task->addWaypoint(e->lat_e6, e->lon_e6, e->name);   // WaypointStore truncates the label
+  }
+
+  // Toggle the given contact in the Favourites dial: unpin if already pinned, else
+  // pin to the first empty slot. Persisted immediately (same as the Messages picker).
+  void toggleFavourite(const uint8_t* pub_key) {
+    int slot = _task->findFavouriteSlot(pub_key);
+    if (slot >= 0) {
+      _task->clearFavouriteSlot(slot);
+      the_mesh.savePrefs();
+      _task->showAlert("Unfavourited", 1000);
+      return;
+    }
+    for (int s = 0; s < NodePrefs::FAVOURITES_COUNT; s++) {
+      if (_task->isFavouriteSlotEmpty(s)) {
+        _task->setFavouriteSlot(s, pub_key);
+        the_mesh.savePrefs();
+        _task->showAlert("Favourited", 1000);
+        return;
+      }
+    }
+    _task->showAlert("Favourites full", 1200);
+  }
+
+  // Deleting a contact is destructive → confirm first (default highlight = Cancel).
+  void startDeleteConfirm() {
+    const Entry* e = selected();
+    if (!e || !e->has_key || !entryIsContact(e)) return;
+    _confirm.begin("Delete contact?", 2);
+    _confirm.addItem("Delete");
+    _confirm.addItem("Cancel");
+    _confirm.setSelected(1);
+    _confirm.active = true;
+  }
+
+  void doDeleteSelected() {
+    const Entry* e = selected();
+    if (!e || !e->has_key || !entryIsContact(e)) return;
+    uint8_t key[PUB_KEY_SIZE];
+    memcpy(key, e->pub_key, PUB_KEY_SIZE);
+    if (the_mesh.deleteContactByKey(key)) {
+      _task->showAlert("Contact deleted", 1200);
+      _detail = false;   // the node this detail/nav view showed is gone
+      _nav    = false;
+      refresh();
+      clampSelection();
+    }
   }
 
   // ── ping ──────────────────────────────────────────────────────────────────────
@@ -445,15 +526,24 @@ class NearbyScreen : public UIScreen {
              "Sort: %s", _sort == SORT_TIME ? "Recent" : "Dist");
   }
 
+  // A row is already a contact when it carries a contacts[] index (stored source)
+  // or the live-scan flagged it known. Full 32-byte key required to add/delete.
+  bool entryIsContact(const Entry* e) const {
+    return e && ((e->contact_idx >= 0) || (_source == SRC_SCAN && e->is_known));
+  }
+
   void openActionMenu() {
     const Entry* e = selected();
     bool stored  = (_source == SRC_STORED);
     bool has_gps = e && stored && (e->lat_e6 != 0 || e->lon_e6 != 0);
     bool has_key = e && e->has_key;
+    bool is_contact = entryIsContact(e);
+    bool can_add = e && has_key && !is_contact;   // a new node we can save
+    bool is_fav  = e && has_key && _task->findFavouriteSlot(e->pub_key) >= 0;
 
     buildSortLabel();
     _menu_action_count = 0;
-    _menu.begin("Options", 7);
+    _menu.begin("Options", 10);
     auto add = [&](const char* label, Action a) {
       _menu.addItem(label);
       _menu_actions[_menu_action_count++] = a;
@@ -465,6 +555,9 @@ class NearbyScreen : public UIScreen {
     // Needs both a position and a stable identity — a person target is keyed
     // by pubkey prefix, so a name-only live-scan/channel row can't offer this.
     if (has_gps && has_key) add("Set as target", ACT_LOCATOR);
+    if (can_add)            add("Add contact", ACT_ADD);
+    if (is_contact && has_key) add(is_fav ? "Unfavourite" : "Favourite", ACT_FAV);
+    if (is_contact && has_key) add("Delete contact", ACT_DELETE);
     if (stored) add(_sort_label, ACT_SORT);   // sort is meaningless for live-scan rows
     add(stored ? "Discover scan" : "Rescan", ACT_SCAN);
   }
@@ -491,6 +584,24 @@ class NearbyScreen : public UIScreen {
           _task->setTargetNow(1, e->pub_key, e->lat_e6, e->lon_e6, e->name);
         break;
       }
+      case ACT_ADD: {
+        const Entry* e = selected();
+        if (e && e->has_key) {
+          if (the_mesh.addDiscoveredContact(e->pub_key, e->name, e->type)) {
+            _task->showAlert("Contact added", 1200);
+            refresh();   // now a known contact — re-sort / re-mark this pass
+          } else {
+            _task->showAlert("Contacts full", 1200);
+          }
+        }
+        break;
+      }
+      case ACT_FAV: {
+        const Entry* e = selected();
+        if (e && e->has_key) toggleFavourite(e->pub_key);
+        break;
+      }
+      case ACT_DELETE:   startDeleteConfirm(); break;
       case ACT_SORT:     break;  // adjusted in-place via LEFT/RIGHT, not ENTER
       case ACT_SCAN:     enterScan();            break;
     }
@@ -572,8 +683,60 @@ class NearbyScreen : public UIScreen {
   bool renderActivePopup(DisplayDriver& display) {
     updatePingMenuState();
     if (_ping_menu.active)   { _ping_menu.render(display);   return true; }
+    if (_confirm.active)     { _confirm.render(display);     return true; }
     if (_menu.active)        { _menu.render(display);        return true; }
     return false;
+  }
+
+  // One filter tab: short label; the active one is an inverted pill (same look as
+  // a selected row) so it reads as "you are here" in the tab strip.
+  void drawTab(DisplayDriver& display, int x, int w, const char* label, bool active) {
+    int lh = display.getLineHeight();
+    if (active) {
+      display.setColor(DisplayDriver::LIGHT);
+      display.fillRect(x, 0, w, lh + 1);
+      display.setColor(DisplayDriver::DARK);
+    } else {
+      display.setColor(DisplayDriver::LIGHT);
+    }
+    display.drawTextCentered(x + w / 2, 0, label);
+    display.setColor(DisplayDriver::LIGHT);
+  }
+
+  // Header as a circular filter tab bar: the active filter sits centred as a
+  // filled pill, neighbours fan out either side and wrap around (the tab before
+  // "All" is "Snsr", and vice-versa), matching the wrap-around LEFT/RIGHT cycle.
+  // Only whole tabs are drawn — a tab that would spill past a screen edge is
+  // skipped rather than clipped, so labels never wrap onto a second line.
+  void drawFilterTabs(DisplayDriver& display) {
+    const int pad = 3, gap = 2;
+    int w[F_COUNT];
+    for (int i = 0; i < F_COUNT; i++)
+      w[i] = display.getTextWidth(FILTER_LABELS[i]) + pad * 2;
+
+    int ax = display.width() / 2 - w[_filter] / 2;   // active tab centred
+    drawTab(display, ax, w[_filter], FILTER_LABELS[_filter], true);
+
+    int lx = ax - gap;                                // next left tab's right edge
+    int rx = ax + w[_filter] + gap;                   // next right tab's left edge
+    bool lfit = true, rfit = true;
+    for (int k = 1; k <= F_COUNT / 2 && (lfit || rfit); k++) {
+      int li = (_filter - k + F_COUNT) % F_COUNT;
+      int ri = (_filter + k) % F_COUNT;
+      if (lfit) {
+        int x = lx - w[li];
+        if (x >= 0) { drawTab(display, x, w[li], FILTER_LABELS[li], false); lx = x - gap; }
+        else lfit = false;
+      }
+      // Skip the right side when it lands on the same tab as the left (the single
+      // opposite tab on an even count) so it isn't drawn twice.
+      if (rfit && ri != li) {
+        if (rx + w[ri] <= display.width()) { drawTab(display, rx, w[ri], FILTER_LABELS[ri], false); rx += w[ri] + gap; }
+        else rfit = false;
+      }
+    }
+    display.setColor(DisplayDriver::LIGHT);
+    display.fillRect(0, display.headerH() - display.sepH(), display.width(), display.sepH());
   }
 
 public:
@@ -596,6 +759,7 @@ public:
     _scanning = false;
     _menu.active = false;
     _ping_menu.active = false;
+    _confirm.active = false;
     _pinging = false;
     resetPingLines();
     _task->clearPing();
@@ -651,9 +815,9 @@ public:
     int dist_col = display.width() - display.getCharWidth() * 7;
 
     display.setColor(DisplayDriver::LIGHT);
-    char title[28];
     const char* flt = (_filter != F_ALL) ? FILTER_LABELS[_filter] : nullptr;
     if (_source == SRC_SCAN) {
+      char title[28];
       const char* base = _scanning ? "SCANNING" : "SCAN";
       if (flt) {
         if (!_scanning && _count == 0) snprintf(title, sizeof(title), "SCAN %s: none", flt);
@@ -661,11 +825,11 @@ public:
       } else if (_scanning)            snprintf(title, sizeof(title), "SCANNING (%d)", _count);
       else if (_count == 0)            snprintf(title, sizeof(title), "SCAN: none");
       else                             snprintf(title, sizeof(title), "SCAN (%d)", _count);
+      display.drawCenteredHeader(title);
     } else {
-      snprintf(title, sizeof(title), "NEARBY %s %s",
-               FILTER_LABELS[_filter], _sort == SORT_TIME ? "recent" : "dist");
+      // Stored list: the filter is a visible tab strip (LEFT/RIGHT switches tabs).
+      drawFilterTabs(display);
     }
-    display.drawCenteredHeader(title);
 
     if (_count == 0) {
       char empty[24];
@@ -695,8 +859,15 @@ public:
           // the same marker the map uses for a live-tracked contact. DM-verified
           // vs channel-only is spelled out in the detail view.
           int iw = ICON_MAP_CONTACT.w * miniIconScale(display);
-          miniIconDrawCentered(display, 2 + iw / 2, y + display.getLineHeight() / 2 - 1, ICON_MAP_CONTACT);
-          tx = 2 + iw + 2;
+          miniIconDrawCentered(display, tx + iw / 2, y + display.getLineHeight() / 2 - 1, ICON_MAP_CONTACT);
+          tx += iw + 2;
+        }
+        // Star = pinned to the Favourites dial (same glyph as the Favourites page
+        // icon). Shown next to any live diamond so both states read at once.
+        if (e.has_key && _task->findFavouriteSlot(e.pub_key) >= 0) {
+          int iw = ICON_PG_STAR.w * miniIconScale(display);
+          miniIconDrawCentered(display, tx + iw / 2, y + display.getLineHeight() / 2 - 1, ICON_PG_STAR);
+          tx += iw + 2;
         }
         display.translateUTF8ToBlocks(filt, e.name, sizeof(filt));
         if (_source == SRC_SCAN && !e.name[0]) {  // unknown node → "[Type]"
@@ -732,6 +903,16 @@ public:
     }
 
     // ── popups (same handling in list and detail) ─────────────────────────────
+    if (_confirm.active) {
+      auto res = _confirm.handleInput(c);
+      if (res == PopupMenu::SELECTED) {
+        if (_confirm.selectedIndex() == 0) doDeleteSelected();
+        _confirm.active = false;
+      } else if (res == PopupMenu::CANCELLED) {
+        _confirm.active = false;
+      }
+      return true;
+    }
     if (_ping_menu.active)   { handlePingMenuInput(c); return true; }
     if (_menu.active) {
       // LEFT/RIGHT on the Sort row toggles the value in-place and rebuilds the

@@ -424,6 +424,35 @@ int MyMesh::getRecentlyHeard(AdvertPath dest[], int max_num) {
   return max_num;
 }
 
+bool MyMesh::addDiscoveredContact(const uint8_t* pub_key, const char* name, uint8_t type) {
+  if (lookupContactByPubKey(pub_key, PUB_KEY_SIZE)) return true;  // already a contact
+  ContactInfo c;
+  memset(&c, 0, sizeof(c));
+  c.id = mesh::Identity(pub_key);
+  strncpy(c.name, name ? name : "", sizeof(c.name) - 1);
+  c.name[sizeof(c.name) - 1] = '\0';
+  c.type = type;
+  c.out_path_len = OUT_PATH_UNKNOWN;   // no path yet → flood until one is learned
+  c.lastmod = getRTCClock()->getCurrentTime();
+  c.shared_secret_valid = false;
+  if (!addContact(c)) return false;    // contacts table full
+  dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
+  return true;
+}
+
+// Full delete sequence shared by CMD_REMOVE_CONTACT and the on-device Nearby menu:
+// drop the contact, its persisted blob and any saved room login, run the UI cleanup
+// (favourite slot / Locator / Live Share target), then schedule the lazy write.
+bool MyMesh::deleteContactByKey(const uint8_t* pub_key) {
+  ContactInfo* recipient = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
+  if (!recipient || !removeContact(*recipient)) return false;
+  _store->deleteBlobByKey(pub_key, PUB_KEY_SIZE);
+  forgetRoomPassword(pub_key);
+  if (_ui) _ui->onContactRemoved(pub_key);
+  dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
+  return true;
+}
+
 void MyMesh::onContactPathUpdated(const ContactInfo &contact) {
   out_frame[0] = PUSH_CODE_PATH_UPDATED;
   memcpy(&out_frame[1], contact.id.pub_key, PUB_KEY_SIZE);
@@ -1991,17 +2020,8 @@ void MyMesh::handleCmdFrame(size_t len) {
       }
     }
   } else if (cmd_frame[0] == CMD_REMOVE_CONTACT) {
-    uint8_t *pub_key = &cmd_frame[1];
-    ContactInfo *recipient = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
-    if (recipient && removeContact(*recipient)) {
-      _store->deleteBlobByKey(pub_key, PUB_KEY_SIZE);
-      forgetRoomPassword(pub_key); // drop any saved room login -- useless without the contact
-      if (_ui) _ui->onContactRemoved(pub_key); // drop any favourite slot / Locator / Live Share target pointed at it
-      dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
-      writeOKFrame();
-    } else {
-      writeErrFrame(ERR_CODE_NOT_FOUND); // not found, or unable to remove
-    }
+    if (deleteContactByKey(&cmd_frame[1])) writeOKFrame();
+    else writeErrFrame(ERR_CODE_NOT_FOUND); // not found, or unable to remove
   } else if (cmd_frame[0] == CMD_SHARE_CONTACT) {
     uint8_t *pub_key = &cmd_frame[1];
     ContactInfo *recipient = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);

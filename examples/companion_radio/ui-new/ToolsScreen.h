@@ -111,7 +111,7 @@ public:
 };
 
 const ToolsScreen::Tool ToolsScreen::LOCATION_TOOLS[] = {
-  { "Nearby Nodes", &ICON_MAP_CONTACT,  ACT_NEARBY },
+  { "Nodes", &ICON_MAP_CONTACT,  ACT_NEARBY },
   { "Live Share",   &ICON_GPS,          ACT_LIVESHARE },
   { "Trail",        &ICON_TRAIL,        ACT_TRAIL },
   { "Locator",    &ICON_MAP_WAYPOINT, ACT_LOCATOR },
