@@ -272,7 +272,6 @@ public:
   virtual void setBrightness(uint8_t level) { }  // level 0-4 (min to max), no-op default
   virtual void setDisplayRotation(uint8_t rot) { }  // 0-3, no-op for fixed-orientation displays
   virtual void setFullRefreshInterval(uint8_t n) { }  // e-ink: do full refresh every n partial refreshes (0=never)
-  virtual void forceFullRefresh() { }  // e-ink: make the next frame a full (non-partial) refresh — clears ghosting on screen change; no-op on OLED
   virtual void endFrame() = 0;
 
 #ifdef ENABLE_SCREENSHOT

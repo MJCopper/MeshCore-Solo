@@ -26,7 +26,6 @@
 ### Under the hood
 
 - **OLED draws less** — the SH1106 driver now skips pushing a frame over I²C when it's byte-identical to the last one, cutting redundant traffic and a little power on the static screens (clock, home) that don't change between updates.
-- **e-ink: cleaner screen changes** — switching screens now forces a full (non-partial) refresh on the first frame of the new screen, clearing leftover ghosting from the previous screen that the periodic partial-refresh interval didn't catch.
 
 ## MeshCore Solo Companion Firmware v1.21
 

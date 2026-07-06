@@ -1923,10 +1923,6 @@ void UITask::setCurrScreen(UIScreen* c) {
   // that mistake is an inert no-op instead of a null deref in render()/poll().
   if (!c) return;
   curr = c;
-  // E-ink: force a full refresh on the first frame of the new screen so leftover
-  // ghosting from the previous screen is cleared (the N-partials interval alone
-  // doesn't catch navigation). No-op on OLED.
-  if (_display) _display->forceFullRefresh();
   c->onShow();          // central per-visit reset hook (see UIScreen::onShow)
   _next_refresh = 100;
 }
