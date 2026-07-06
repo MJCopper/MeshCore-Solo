@@ -1228,6 +1228,7 @@ public:
             if (the_mesh.getContactByIdx(_sorted[_contact_sel], _sel_contact)) {
               _login_mode = true;
               _kb->begin("", 15); // room/repeater password: max 15 chars
+              _kb->clearPlaceholders();   // {loc}/{time} are for messages, not a password
               _phase = KEYBOARD;
             }
           }
@@ -1345,6 +1346,7 @@ public:
             } else {
               _login_mode = true;
               _kb->begin("", 15); // room/repeater password: max 15 chars
+              _kb->clearPlaceholders();   // {loc}/{time} are for messages, not a password
               _phase = KEYBOARD;
             }
             return true;
