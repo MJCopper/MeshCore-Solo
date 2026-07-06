@@ -621,6 +621,15 @@ public:
     if (success) {
       markRoomLoggedIn(pub_key);
       the_mesh.saveRoomPassword(pub_key, _login_pw);
+      // Auto-enter the room's chat right after a successful login so the user
+      // doesn't have to press Enter a second time. The login result is async,
+      // so only do it if they're still sitting on this same room in the picker
+      // (didn't navigate away, open a menu, or enter a share/pick sub-flow).
+      if (_phase == CONTACT_PICK && _room_mode && !_ctx_menu.active
+          && !_share_mode && !_pick_target
+          && memcmp(_sel_contact.id.pub_key, pub_key, 4) == 0) {
+        openDmHistory();
+      }
     } else {
       // Saved password (if any) no longer works -- forget it so the next
       // ENTER on this room falls back to a manual prompt instead of
@@ -628,6 +637,17 @@ public:
       the_mesh.forgetRoomPassword(pub_key);
     }
     _task->showAlert(success ? "Login OK" : "Login failed", 1200);
+  }
+
+  // Open the message history for the currently selected contact/room and reset
+  // the scroll/selection view state. Shared by the Enter-on-contact path and the
+  // post-login auto-enter.
+  void openDmHistory() {
+    _task->clearDMUnread(_sel_contact.id.pub_key);
+    _dm_hist_sel = -1;
+    _dm_hist_scroll = 0;
+    _dm_fs.active = false;
+    _phase = DM_HIST;
   }
 
   // Background tick (called every UI loop, regardless of the active screen) that
@@ -1351,11 +1371,7 @@ public:
             }
             return true;
           }
-          _task->clearDMUnread(_sel_contact.id.pub_key);
-          _dm_hist_sel = -1;
-          _dm_hist_scroll = 0;
-          _dm_fs.active = false;
-          _phase = DM_HIST;
+          openDmHistory();
           if (_share_mode) beginShareCompose(false);
         }
         return true;

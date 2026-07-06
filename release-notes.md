@@ -20,7 +20,8 @@
   - toggling a **channel's favourite from its context menu** could retarget the menu onto a different channel once the list re-sorted.
 - **A repeater could appear twice** on the discovery scan and in the app — a discover response often arrives more than once (the direct copy plus a re-flooded copy carry different packet hashes, so the mesh's duplicate filter passes both), and each copy was listed. Duplicate copies of the same response are now dropped for a few seconds after the first.
 - **Favourites self-heal** — a pinned favourite whose contact no longer exists (e.g. after clearing contacts) now reverts to an empty **+** tile instead of showing **(gone)**, and the stale pin is cleared from prefs.
-- **Radio preset names no longer seed `{loc}`/`{time}` placeholders** — those only make sense in a message; the preset-name keyboard (Settings › Radio and Tools › Repeater "+ Save current…") now opens empty. The message-slot editor still keeps them.
+- **Radio preset names no longer seed `{loc}`/`{time}` placeholders** — those only make sense in a message; the preset-name keyboard (Settings › Radio and Tools › Repeater "+ Save current…") now opens empty. The message-slot editor still keeps them. The room-login **password** keyboard drops them too.
+- **Room chat opens automatically after a successful login** — logging in to a room server (first-time or a remembered password) used to drop you back on the room list, needing a second **Enter** to actually open the chat. The chat now opens on its own once the login succeeds, as long as you're still on that room in the picker.
 
 ### Under the hood
 
