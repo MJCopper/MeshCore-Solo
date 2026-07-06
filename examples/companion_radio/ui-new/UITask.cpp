@@ -342,7 +342,6 @@ class HomeScreen : public UIScreen {
   NodePrefs* _node_prefs;
   uint8_t _page;
   bool _shutdown_init;
-  AdvertPath recent[UI_RECENT_LIST_SIZE];
 
   int pageBit(int page) const {
     if (page == CLOCK)      return NodePrefs::HPB_CLOCK;
@@ -389,6 +388,7 @@ class HomeScreen : public UIScreen {
   }
 
   bool isPageVisible(int page) const {
+    if (page == RECENT) return false;  // Recent adverts folded into Nearby Nodes; page retired
     int bit = pageBit(page);
     if (bit < 0) return true;
     uint16_t mask = (_node_prefs && _node_prefs->home_pages_mask) ? _node_prefs->home_pages_mask : NodePrefs::HP_ALL;
@@ -919,31 +919,6 @@ public:
           }
         }
       }
-    } else if (_page == HomePage::RECENT) {
-      the_mesh.getRecentlyHeard(recent, UI_RECENT_LIST_SIZE);
-      display.setColor(DisplayDriver::LIGHT);
-      int y = content_y;
-      for (int i = 0; i < UI_RECENT_LIST_SIZE; i++, y += step) {
-        auto a = &recent[i];
-        if (a->name[0] == 0) continue;  // empty slot
-        int secs = _rtc->getCurrentTime() - a->recv_timestamp;
-        if (secs < 60) {
-          snprintf(tmp, sizeof(tmp),"%ds", secs);
-        } else if (secs < 60*60) {
-          snprintf(tmp, sizeof(tmp),"%dm", secs / 60);
-        } else {
-          snprintf(tmp, sizeof(tmp),"%dh", secs / (60*60));
-        }
-
-        int timestamp_width = display.getTextWidth(tmp);
-        int max_name_width = display.width() - timestamp_width - 1;
-
-        char filtered_recent_name[sizeof(a->name)];
-        display.translateUTF8ToBlocks(filtered_recent_name, a->name, sizeof(filtered_recent_name));
-        display.drawTextEllipsized(0, y, max_name_width, filtered_recent_name);
-        display.setCursor(display.width() - timestamp_width - 1, y);
-        display.print(tmp);
-      }
     } else if (_page == HomePage::RADIO) {
       display.setColor(DisplayDriver::LIGHT);
       // freq / sf
@@ -1362,9 +1337,6 @@ public:
     }
     if (c == KEY_NEXT || c == KEY_RIGHT) {
       _page = navPage(_page, +1);
-      if (_page == HomePage::RECENT) {
-        _task->showAlert("Recent adverts", 800);
-      }
       return true;
     }
     if (c == KEY_ENTER && _page == HomePage::BLUETOOTH) {

@@ -46,7 +46,7 @@ class SettingsScreen : public UIScreen {
     AD_SOUND_SCOPE,
     // Home pages section
     SECTION_HOME_PAGES,
-    HOME_CLOCK, HOME_FAVOURITES, HOME_RECENT, HOME_RADIO, HOME_BT, HOME_ADVERT,
+    HOME_CLOCK, HOME_FAVOURITES, HOME_RADIO, HOME_BT, HOME_ADVERT,
 #if ENV_INCLUDE_GPS == 1
     HOME_GPS,
 #endif
@@ -217,8 +217,8 @@ class SettingsScreen : public UIScreen {
   }
 
   bool isHomePage(int item) const {
-    return item == HOME_CLOCK    || item == HOME_RECENT     || item == HOME_RADIO   ||
-           item == HOME_BT       || item == HOME_ADVERT     || item == HOME_TOOLS   ||
+    return item == HOME_CLOCK    || item == HOME_RADIO      || item == HOME_BT      ||
+           item == HOME_ADVERT   || item == HOME_TOOLS      ||
            item == HOME_SHUTDOWN || item == HOME_SETTINGS   || item == HOME_QUICK_MSG ||
            item == HOME_FAVOURITES || item == HOME_MAP
 #if ENV_INCLUDE_GPS == 1
@@ -260,7 +260,6 @@ class SettingsScreen : public UIScreen {
   int homePageBitIndex(int item) const {
     if (item == HOME_CLOCK)     return NodePrefs::HPB_CLOCK;
     if (item == HOME_FAVOURITES) return NodePrefs::HPB_FAVOURITES;
-    if (item == HOME_RECENT)    return NodePrefs::HPB_RECENT;
     if (item == HOME_RADIO)     return NodePrefs::HPB_RADIO;
     if (item == HOME_BT)        return NodePrefs::HPB_BLUETOOTH;
     if (item == HOME_ADVERT)    return NodePrefs::HPB_ADVERT;
