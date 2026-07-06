@@ -169,15 +169,18 @@ struct KeyboardWidget {
         for (int c = 0; c < cols; c++) {
           bool sel = (row == r && col == c);
           int cell = r * cols + c;
-          char group[10];
-          strncpy(group, KB_T9_GROUPS[page][cell], sizeof(group) - 1);
-          group[sizeof(group) - 1] = '\0';
-          if (caps) for (char* p = group; *p; p++) if (*p >= 'a' && *p <= 'z') *p = *p - 'a' + 'A';
+          // Label the cell "<digit><group>" so it reads like a phone keypad. The
+          // digit is what the multi-tap cycle lands on after the letters (see
+          // handleInput: '1'+cell). No separator space — the widest group
+          // (".,!?'-", 6 chars) + digit already fills a narrow OLED cell.
+          char label[10];
+          snprintf(label, sizeof(label), "%c%s", (char)('1' + cell), KB_T9_GROUPS[page][cell]);
+          if (caps) for (char* p = label; *p; p++) if (*p >= 'a' && *p <= 'z') *p = *p - 'a' + 'A';
           int cx = c * cell_w;
           display.drawSelectionRow(cx, y - 1, cell_w - 1, cell_h, sel);
-          int tw = display.getTextWidth(group);
+          int tw = display.getTextWidth(label);
           display.setCursor(cx + (cell_w - tw) / 2, y);
-          display.print(group);
+          display.print(label);
         }
       }
     } else {

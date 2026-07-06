@@ -8,7 +8,7 @@
 | :-----------------------: | :-----------------------: |
 | ![](./overview_oled.png) | ![](./overview_eink.png) |
 
-The Tools screen is a hub for GPS trail recording, nearby node browsing, ringtone editing, auto-reply bot, auto-advert, live location sharing, locator, compass, device diagnostics, and repeater mode. Tools are grouped into collapsible **Location** / **Comms** / **System** sections — the same fold-in-place model as Settings; Tools always opens folded back to the section list. Navigate with **UP/DOWN**, press **Enter** on a section header to expand or collapse it, or on a tool to open it.
+The Tools screen is a hub for GPS trail recording, nearby node browsing, ringtone editing, auto-reply bot, auto-advert, live location sharing, locator, compass, clock tools (alarm / timer / stopwatch), device diagnostics, and repeater mode. Tools are grouped into collapsible **Location** / **Comms** / **System** sections — the same fold-in-place model as Settings; Tools always opens folded back to the section list. Navigate with **UP/DOWN**, press **Enter** on a section header to expand or collapse it, or on a tool to open it.
 
 ---
 
@@ -129,12 +129,15 @@ Cycle views with **LEFT / RIGHT**:
 | Min dist   | always    | Sample gate, 4 levels — metric: 5/10/25/100 m, imperial: 15/30/75/300 ft |
 | Auto-pause | always    | Off / 1 / 2 / 5 min — auto-freeze the trail after a stop, resume on movement (see below) |
 | Mark avg   | always    | Off / 5 / 10 / 30 s — GPS averaging for **Mark here** (see Waypoints below) |
+| Auto-save  | always    | Off / On — auto-write the live trail to flash on shutdown, so a **low-battery auto-shutdown** doesn't lose the route (see below) |
 | Readout    | Summary view | Summary shows Speed or Pace (in the global unit system) |
 | Grid       | Map view  | Toggle scale grid on the map                            |
 
 (Trail file… appears only when a live or saved trail exists. Mark here needs a GPS fix; Waypoints is always available.)
 
 **Auto-pause** — when set, a recording trail automatically **pauses** after the device has stayed within ~15 m of one spot for the chosen delay: the elapsed timer and point sampling both freeze, and the map line breaks across the idle gap. It **resumes on its own** as soon as you move again. This keeps a stop (a break, a meal, parking) out of your distance and average-speed stats without you having to remember to stop and restart tracking. A paused trail is still "on" (the **G** marker keeps blinking) — the Summary **Status** row shows `paused`. The stop is detected with its own coarse movement gate, independent of **Min dist**, so GPS jitter while you're parked doesn't keep it awake.
+
+**Auto-save** — with this on (default off), the live trail is written to flash automatically when the device powers off, so a **low-battery auto-shutdown** no longer discards the whole route. It saves to the same `/trail` file as the manual **Trail file… → Save**, and only writes when the trail actually has points — an empty trail can't overwrite a previously saved one. Off by default so a normal shutdown doesn't silently overwrite a saved trail you meant to keep.
 
 ### Track back
 

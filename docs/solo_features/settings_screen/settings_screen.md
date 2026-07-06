@@ -94,6 +94,16 @@ The **repeater** mode and its flood filters live on their own screen — see **T
 
 ---
 
+### Keyboard
+
+| Setting  | Options    | Notes                                                                                              |
+| -------- | ---------- | -------------------------------------------------------------------------------------------------- |
+| Layout   | ABC / T9   | On-screen keyboard style. **ABC**: an a-b-c…z grid, one key per letter (the original layout). **T9**: phone-keypad multi-tap — each key is labelled with its **digit** and a letter group (e.g. `2abc`); repeated **Enter** presses cycle through the letters and then the digit itself. |
+
+Applies to every on-screen text field (messages, waypoint labels, room passwords, preset names). Earlier releases labelled the grid *QWERTY*; the layout has always been alphabetical, so it is now named **ABC**.
+
+---
+
 ### Contacts
 
 | Setting  | Options          | Notes                                                |

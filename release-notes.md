@@ -1,9 +1,31 @@
 ## MeshCore Solo Companion Firmware v1.22
 
+### What's new
+
+- **T9 on-screen keyboard** — a new keyboard option under **Settings › Keyboard**. Alongside the existing alphabetical **ABC** grid, pick **T9** for phone-keypad-style entry: each key is labelled with its digit and a letter group (e.g. `2abc`), and repeated **Enter** presses cycle through the letters and then the digit. (The alphabetical grid was previously mislabelled *QWERTY* in Settings — it's always been a-b-c order and is now correctly named **ABC**.)
+- **Auto-save GPS trail on shutdown** — a new **Tools › Trail › Settings › Auto-save** toggle (default off). With it on, the live trail is written to flash automatically at power-off, so a **low-battery auto-shutdown** no longer loses the whole route. It only writes when the trail actually has points, so an empty trail can't overwrite a previously saved one. Saves to the same `/trail` file as the manual **Trail › Save**.
+- **Clock Tools from the Tools menu** — the Alarm / Timer / Stopwatch screen (reachable by pressing **Enter** on the Clock home page) now also has its own entry under **Tools › System**, so it's discoverable without first finding it on the clock face.
+- **Map & Shutdown pages are reorderable** — the **Map** home page shipped with no entry under **Settings › Home Pages**, so it was always shown and couldn't be moved. It's now a first-class page there: **toggle its visibility** and **reorder it** like any other (visible by default; existing users keep it on). Reordering also now covers the **Shutdown** page, which was previously pinned to the end of the carousel.
+
 ### Fixes
 
+- **Battery reads high and jittery on Wio Tracker L1** — a power-saving change had switched the battery-voltage divider on for only ~10 ms before each reading, too short for the high-impedance divider node to settle, so a full LiPo could report 4.6–5.0 V. The divider is now held on continuously again (a negligible ~2 µA on the 2×1 MΩ divider), giving stable, accurate readings. The CPU-sleep and LED energy savings from the same optimisation pass are untouched.
 - **Home page visibility no longer resets on update** — the prefs schema-migration that turned the **Favourites** page on ran on *every* firmware update (any schema-version bump), so a page you'd deliberately hidden kept coming back after each release. It's now gated to the single upgrade that introduced Favourites, so your hidden pages stay hidden.
-- **Map page in Home Pages settings** — the **Map** home page shipped with no entry under **Settings › Home Pages**, so it was always shown and couldn't be moved. It's now a first-class page there: **toggle its visibility** and **reorder it** like any other (visible by default; existing users keep it on). Reordering also now covers the **Shutdown** page, which was previously pinned to the end of the carousel.
+- **A batch of solo-mode fixes** from a UI audit:
+  - a **locked device didn't show the alarm** — it woke the display, then immediately re-blanked, so a ringing alarm played to a dark screen. The lock screen now draws the alert and holds the wake for the whole ring.
+  - **background-mode status icons vanished when Bluetooth was off** — the auto-advert / live-share / trail / repeater indicators were nested inside the "BT on" check and are now always shown while their mode is active.
+  - a **long alert message** ("GPS on, tracking started") spilled past its box on a narrow screen — it now wraps to up to three lines and the box grows to fit.
+  - a **contact name pushed from the phone app** wasn't guaranteed to be NUL-terminated.
+  - the **timer / alarm could mis-fire** for a deadline landing past the ~49-day `millis()` rollover.
+  - toggling a **channel's favourite from its context menu** could retarget the menu onto a different channel once the list re-sorted.
+- **A repeater could appear twice** on the discovery scan and in the app — a discover response often arrives more than once (the direct copy plus a re-flooded copy carry different packet hashes, so the mesh's duplicate filter passes both), and each copy was listed. Duplicate copies of the same response are now dropped for a few seconds after the first.
+- **Favourites self-heal** — a pinned favourite whose contact no longer exists (e.g. after clearing contacts) now reverts to an empty **+** tile instead of showing **(gone)**, and the stale pin is cleared from prefs.
+- **Radio preset names no longer seed `{loc}`/`{time}` placeholders** — those only make sense in a message; the preset-name keyboard (Settings › Radio and Tools › Repeater "+ Save current…") now opens empty. The message-slot editor still keeps them.
+
+### Under the hood
+
+- **OLED draws less** — the SH1106 driver now skips pushing a frame over I²C when it's byte-identical to the last one, cutting redundant traffic and a little power on the static screens (clock, home) that don't change between updates.
+- **e-ink: cleaner screen changes** — switching screens now forces a full (non-partial) refresh on the first frame of the new screen, clearing leftover ghosting from the previous screen that the periodic partial-refresh interval didn't catch.
 
 ## MeshCore Solo Companion Firmware v1.21
 

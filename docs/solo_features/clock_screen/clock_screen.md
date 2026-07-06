@@ -64,7 +64,7 @@ Sensor fields show `--` when the sensor is not connected or has no data.
 
 ### Clock tools — Alarm, Timer, Stopwatch
 
-**Press Enter** (short press) on the Clock page to open **Clock Tools**, a small menu with three time utilities. **Cancel** backs out one level (tool → menu → home).
+**Press Enter** (short press) on the Clock page to open **Clock Tools**, a small menu with three time utilities. **Cancel** backs out one level (tool → menu → home). The same menu also has an entry under **Tools › System**, so it's reachable without the Clock page.
 
 #### Alarm
 
