@@ -469,84 +469,47 @@ class HomeScreen : public UIScreen {
       display.fillRect(battLeftX + bm, bm, fillW, iconH - 2 * bm);
     }
 
-#ifdef PIN_BUZZER
-    if (_task->isBuzzerQuiet()) {
-      int mx = battLeftX - ind - ind_gap;
-      drawBoxedIcon(display, mx, ind, ind_h, ICON_MUTE);
-      battLeftX = mx;
-    }
-#endif
-
-    // Alarm armed — a persistent status cue (like mute), always shown (no blink).
-    if (_node_prefs && _node_prefs->alarm_on) {
-      int alX = battLeftX - ind - ind_gap;
-      drawBoxedIcon(display, alX, ind, ind_h, ICON_ALARM);
-      battLeftX = alX;
-    }
-
-    // BT connection indicator (left of muted/battery icons)
-    int leftmostX = battLeftX;
-    if (_task->isSerialEnabled()) {
-      int btX = battLeftX - ind - ind_gap;
-      if (_task->isBLEConnected())                              // BT icon reflects BLE link, not USB
-        drawBoxedIcon(display, btX, ind, ind_h, ICON_BLUETOOTH);
-      else
-        drawSlotIcon(display, btX, ind, ind_h, ICON_BLUETOOTH); // plain glyph: available, not linked
-      leftmostX = btX - ind_gap;
-    } else {
-      leftmostX = battLeftX - ind_gap;   // no BT icon; keep the same first-slot spacing
-    }
-
-    // Background-mode indicators — deliberately OUTSIDE the isSerialEnabled()
-    // gate above: auto-advert, live share, the trail and the repeater all keep
-    // running with Bluetooth switched off, so their at-a-glance cues must not
-    // vanish with the BT icon.
-
-    // "A" indicator — blinks on OLED, always shown on e-ink
-    if (_node_prefs && _node_prefs->advert_auto_interval_sec > 0) {
-      int aX = leftmostX - ind;
-      if (blinkOn()) drawBoxedIcon(display, aX, ind, ind_h, ICON_ADVERT);
-      leftmostX = aX - 1;
-    }
-
-    // Live location sharing active. Same blink convention — another
-    // "leave it on and forget" broadcast, like auto-advert above. Reuses
-    // the diamond the map uses for a live-tracked contact, so the glyph
-    // already means "sharing position" elsewhere in the UI.
-    if (_node_prefs && _node_prefs->loc_share_enabled) {
-      int lsX = leftmostX - ind;
-      if (blinkOn()) drawBoxedIcon(display, lsX, ind, ind_h, ICON_MAP_CONTACT);
-      leftmostX = lsX - 1;
-    }
-
-    // GPS trail logging active. Same blink convention.
-    if (_task->trail().isActive()) {
-      int gX = leftmostX - ind;
-      if (blinkOn()) drawBoxedIcon(display, gX, ind, ind_h, ICON_TRAIL);
-      leftmostX = gX - 1;
-    }
-
-    // Repeater relaying. Same blink convention — a "leave it on and forget"
-    // mode, so an at-a-glance cue matters (especially on a Custom profile,
-    // where the device is off your own network while this is shown).
-    if (_node_prefs && _node_prefs->client_repeat) {
-      int rX = leftmostX - ind;
-      if (blinkOn()) drawBoxedIcon(display, rX, ind, ind_h, ICON_REPEATER);
-      leftmostX = rX - 1;
-    }
-
-    // GPS fix status — boxed (lit) when the receiver has a valid fix, plain
-    // glyph while searching. Hidden entirely on boards with no GPS hardware
-    // and while the GPS setting itself is off, so it doesn't sit there as a
-    // permanently-empty slot or imply a search that isn't happening.
+    // Secondary status icons, laid out right→left in PRIORITY order so a crowded
+    // bar sheds its least-important cues instead of crushing the node name. Once
+    // an icon won't fit above the reserved name area, every lower-priority icon
+    // after it is dropped too (the list is ordered high→low). A blinking icon
+    // still reserves its slot while off, so the name width doesn't flicker.
+    //
+    // Priority: BT > GPS fix > alarm > mute > auto-advert > trail > live-share >
+    // repeater. Battery (drawn above) is always rightmost. The background modes
+    // (advert / trail / live-share / repeater) stay outside any BT gate — they
+    // keep running with Bluetooth off, so their cue must not vanish with it.
     LocationProvider* loc = _sensors ? _sensors->getLocationProvider() : nullptr;
-    if (loc && _node_prefs && _node_prefs->gps_enabled) {
-      int gX = leftmostX - ind - ind_gap;
-      if (loc->isValid()) drawBoxedIcon(display, gX, ind, ind_h, ICON_GPS);
-      else                drawSlotIcon(display, gX, ind, ind_h, ICON_GPS);
-      leftmostX = gX - 1;
+    bool gps_on  = loc && _node_prefs && _node_prefs->gps_enabled;
+    bool mute_on = false;
+#ifdef PIN_BUZZER
+    mute_on = _task->isBuzzerQuiet();
+#endif
+    struct Sicon { bool active; const MiniIcon* icon; bool boxed; bool blink; };
+    const Sicon icons[] = {
+      { _task->isSerialEnabled(), &ICON_BLUETOOTH, _task->isSerialEnabled() && _task->isBLEConnected(), false },
+      { gps_on,                   &ICON_GPS,        gps_on && loc->isValid(),                            false },
+      { _node_prefs && _node_prefs->alarm_on,                      &ICON_ALARM,       true, false },
+      { mute_on,                                                   &ICON_MUTE,        true, false },
+      { _node_prefs && _node_prefs->advert_auto_interval_sec > 0,  &ICON_ADVERT,      true, true  },
+      { _task->trail().isActive(),                                 &ICON_TRAIL,       true, true  },
+      { _node_prefs && _node_prefs->loc_share_enabled,             &ICON_MAP_CONTACT, true, true  },
+      { _node_prefs && _node_prefs->client_repeat,                 &ICON_REPEATER,    true, true  },
+    };
+
+    int x = battLeftX;
+    const int name_min = display.getCharWidth() * 5;   // always keep ~5 chars for the name
+    for (const Sicon& s : icons) {
+      if (!s.active) continue;
+      int ix = x - ind - ind_gap;
+      if (ix < name_min) break;                        // out of room — drop this + all lower priority
+      if (!s.blink || blinkOn()) {
+        if (s.boxed) drawBoxedIcon(display, ix, ind, ind_h, *s.icon);
+        else         drawSlotIcon(display, ix, ind, ind_h, *s.icon);
+      }
+      x = ix;
     }
-    return leftmostX;
+    return x;
   }
 
   CayenneLPP sensors_lpp;
