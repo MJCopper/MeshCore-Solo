@@ -17,14 +17,16 @@ struct PopupMenu {
   int         _cap;       // actual visible cap, updated each render()
   bool        active;
   const char* _title;
+  bool        anchor_tr = false;  // opt-in: drop from the top-right ≡ hint instead of centring
 
   enum Result { NONE, SELECTED, CANCELLED };
 
   PopupMenu() : _count(0), _sel(0), _scroll(0), _visible(3), _cap(3), active(false), _title(nullptr) {}
 
-  void begin(const char* title, int visible = 3) {
+  void begin(const char* title, int visible = 3, bool anchor_top_right = false) {
     _count = 0; _sel = 0; _scroll = 0;
     _visible = visible; _cap = visible; active = true; _title = title;
+    anchor_tr = anchor_top_right;
   }
 
   void addItem(const char* item) {
@@ -86,8 +88,17 @@ struct PopupMenu {
     int bh = title_h + vis * item_h + 1;   // +1 keeps the last row off the bottom border
 
     // Centre on screen (clamped to the margins on small displays).
-    int bx = (display.width()  - bw) / 2;
-    int by = (display.height() - bh) / 2;
+    int bx, by;
+    if (anchor_tr) {
+      // Drop out of the top-right ≡ hint: right-aligned under the header, so the
+      // menu reads as emerging from the glyph that spawned it.
+      bx = display.width() - bw - margin;
+      by = display.headerH();
+      if (by + bh > display.height() - margin) by = display.height() - margin - bh;
+    } else {
+      bx = (display.width()  - bw) / 2;
+      by = (display.height() - bh) / 2;
+    }
     if (bx < margin) bx = margin;
     if (by < margin) by = margin;
 

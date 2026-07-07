@@ -255,7 +255,7 @@ class QuickMsgScreen : public UIScreen {
     int n = (reply_allowed ? 1 : 0) + (has_loc ? 2 : 0);
     if (n == 0) return;
     _fs_act_n = 0;
-    _ctx_menu.begin("Options", n);
+    _ctx_menu.begin("Options", n, true);
     if (reply_allowed) { _ctx_menu.addItem("Reply");         _fs_act[_fs_act_n++] = FS_REPLY; }
     if (has_loc)       { _ctx_menu.addItem("Navigate");      _fs_act[_fs_act_n++] = FS_NAV;
                          _ctx_menu.addItem("Save waypoint"); _fs_act[_fs_act_n++] = FS_SAVE; }
@@ -791,7 +791,7 @@ public:
     int cw      = display.getCharWidth();
 
     if (_phase == MODE_SELECT) {
-      display.drawCenteredHeader("MESSAGE");
+      display.drawCenteredHeader("MESSAGE", true, _ctx_menu.active);
       const char* opts[] = { "Direct message", "Channels", "Room Servers" };
       int badges[3] = {
         getDMUnreadTotal(),
@@ -811,7 +811,7 @@ public:
       if (_ctx_menu.active) _ctx_menu.render(display);
 
     } else if (_phase == CONTACT_PICK) {
-      display.drawCenteredHeader(_room_mode ? "SELECT ROOM" : "SELECT CONTACT");
+      display.drawCenteredHeader(_room_mode ? "SELECT ROOM" : "SELECT CONTACT", true, _ctx_menu.active);
 
       if (_num_contacts == 0) {
         display.drawTextCentered(display.width()/2, display.height()/2, _room_mode ? "No room servers" : "No favourites");
@@ -839,7 +839,7 @@ public:
       if (_ctx_menu.active) _ctx_menu.render(display);
 
     } else if (_phase == CHANNEL_PICK) {
-      display.drawCenteredHeader("SELECT CHANNEL");
+      display.drawCenteredHeader("SELECT CHANNEL", true, _ctx_menu.active);
 
       if (_num_channels == 0) {
         display.drawTextCentered(display.width()/2, display.height()/2, "No channels");
@@ -895,7 +895,7 @@ public:
 
       char title[24];
       snprintf(title, sizeof(title), "%.23s", filtered_name);
-      display.drawCenteredHeader(title);
+      display.drawCenteredHeader(title, true, _ctx_menu.active);
 
       int dm_count = _history.dmHistCountForContact(_sel_contact.id.pub_key);
       uint32_t now_ts = rtc_clock.getCurrentTime();
@@ -1024,7 +1024,7 @@ public:
       the_mesh.getChannel(_sel_channel_idx, ch);
       char title[24];
       snprintf(title, sizeof(title), "%.23s", ch.name);
-      display.drawCenteredHeader(title);
+      display.drawCenteredHeader(title, true, _ctx_menu.active);
 
       int ch_hist_count = _history.histCountForChannel(_sel_channel_idx);
       uint32_t now_ts = rtc_clock.getCurrentTime();
@@ -1200,7 +1200,7 @@ public:
       if (c == KEY_CONTEXT_MENU) {
         // PopupMenu stores the title pointer verbatim — use static strings.
         static const char* MODE_TITLES[] = { "DM options", "Channel options", "Room options" };
-        _ctx_menu.begin(MODE_TITLES[_mode_sel < 3 ? _mode_sel : 0], 1);
+        _ctx_menu.begin(MODE_TITLES[_mode_sel < 3 ? _mode_sel : 0], 1, true);
         _ctx_menu.addItem("Mark all read");
         return true;
       }
@@ -1314,7 +1314,7 @@ public:
                     snprintf(_pin_slot_labels[s], sizeof(_pin_slot_labels[s]), "Slot %d: %s", s + 1, nm);
                   }
                 }
-                _ctx_menu.begin("Pick slot", 3);
+                _ctx_menu.begin("Pick slot", 3, true);
                 for (int s = 0; s < NodePrefs::FAVOURITES_COUNT; s++) _ctx_menu.addItem(_pin_slot_labels[s]);
                 _pin_picker_active = true;
               }
@@ -1355,7 +1355,7 @@ public:
         return true;
       }
       if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && _room_mode) {
-        _ctx_menu.begin("Room options", 1);
+        _ctx_menu.begin("Room options", 1, true);
         _ctx_menu.addItem("Login...");
         return true;
       }
@@ -1371,7 +1371,7 @@ public:
         int pinned_slot = _task->findFavouriteSlot(ci.id.pub_key);
         if (pinned_slot >= 0) snprintf(_ctx_pin_item, sizeof(_ctx_pin_item), "Unpin (slot %d)", pinned_slot + 1);
         else                  snprintf(_ctx_pin_item, sizeof(_ctx_pin_item), "Pin to dial");
-        _ctx_menu.begin("Contact options", 3);
+        _ctx_menu.begin("Contact options", 3, true);
         _ctx_menu.addItem("Mark as read");
         _ctx_menu.addItem(_ctx_notif_item);
         _ctx_menu.addItem(_ctx_melody_item);
@@ -1471,7 +1471,7 @@ public:
         { NodePrefs* p2 = _task->getNodePrefs();
           bool is_fav = p2 && (p2->ch_fav_bitmask & (1ULL << ch_idx));
           snprintf(_ctx_ch_fav_item, sizeof(_ctx_ch_fav_item), is_fav ? "Fav: yes" : "Fav: no"); }
-        _ctx_menu.begin("Channel options", 4);
+        _ctx_menu.begin("Channel options", 4, true);
         _ctx_menu.addItem("Mark all read");
         _ctx_menu.addItem(_ctx_notif_item);
         _ctx_menu.addItem(_ctx_melody_item);

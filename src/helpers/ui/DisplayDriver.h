@@ -207,23 +207,52 @@ public:
   // Inverted title bar: light background, dark ellipsized label, then the
   // standard separator line. The label is UTF-8 translated by
   // drawTextEllipsized. Leaves ink colour LIGHT for following content.
-  void drawInvertedHeader(const char* label) {
+  // Pixel width the ≡ context-menu hint reserves at the header's right edge.
+  int menuHintWidth() const { return getCharWidth() + 3; }
+
+  // Small ≡ glyph at the header's top-right, signalling the screen has a
+  // Hold-Enter context menu. Three stacked bars, drawn in colour c (LIGHT on a
+  // plain header, DARK on an inverted bar). When active (the menu is open) the
+  // corner cell is highlighted and the bars knocked out, tying the glyph to the
+  // popup it spawned. Call after the header body.
+  void drawContextMenuHint(Color c = LIGHT, bool active = false) {
+    int gw = getCharWidth() + 1;
+    int gx = width() - gw - 1;
+    int th = sepH();
+    int gy = (getLineHeight() - (th * 3 + 4)) / 2;
+    if (gy < 0) gy = 0;
+    Color bars = c;
+    if (active) {
+      setColor(c);
+      fillRect(gx - 1, 0, gw + 2, headerH() - sepH());
+      bars = (c == LIGHT) ? DARK : LIGHT;
+    }
+    setColor(bars);
+    for (int i = 0; i < 3; i++) fillRect(gx, gy + i * (th + 2), gw, th);
+    setColor(LIGHT);
+  }
+
+  void drawInvertedHeader(const char* label, bool menu_hint = false, bool menu_open = false) {
     int hdr = headerH();
     setColor(LIGHT);
     fillRect(0, 0, width(), hdr - 1);
+    int reserve = menu_hint ? menuHintWidth() : 0;
     setColor(DARK);
-    drawTextEllipsized(2, 1, width() - 4, (label && label[0]) ? label : "");
+    drawTextEllipsized(2, 1, width() - 4 - reserve, (label && label[0]) ? label : "");
+    if (menu_hint) drawContextMenuHint(DARK, menu_open);
     setColor(LIGHT);
     fillRect(0, hdr - 1, width(), sepH());
   }
 
   // Centred screen title + bottom separator line — the standard top bar for
   // full-screen list/detail views. Leaves ink LIGHT; callers can draw extra
-  // header content (counters, etc.) afterwards.
-  void drawCenteredHeader(const char* title) {
+  // header content (counters, etc.) afterwards. menu_hint adds the ≡ glyph;
+  // menu_open highlights it while the context menu is on screen.
+  void drawCenteredHeader(const char* title, bool menu_hint = false, bool menu_open = false) {
     setColor(LIGHT);
     drawTextCentered(width() / 2, 0, title);
     fillRect(0, headerH() - sepH(), width(), sepH());
+    if (menu_hint) drawContextMenuHint(LIGHT, menu_open);
   }
 
   // Advance a UTF-8 pointer by one codepoint, returning the decoded value.

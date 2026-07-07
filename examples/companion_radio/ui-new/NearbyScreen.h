@@ -415,7 +415,7 @@ class NearbyScreen : public UIScreen {
   void startDeleteConfirm() {
     const Entry* e = selected();
     if (!e || !e->has_key || !entryIsContact(e)) return;
-    _confirm.begin("Delete contact?", 2);
+    _confirm.begin("Delete contact?", 2, true);
     _confirm.addItem("Delete");
     _confirm.addItem("Cancel");
     _confirm.setSelected(1);
@@ -451,7 +451,7 @@ class NearbyScreen : public UIScreen {
 
   void rebuildPingMenu() {
     int keep = _ping_menu.selectedIndex();  // preserve selection across a rebuild
-    _ping_menu.begin("Ping", 4);
+    _ping_menu.begin("Ping", 4, true);
     _ping_menu.addItem("Send");
     if (_ping_time_str[0])      _ping_menu.addItem(_ping_time_str);
     if (_ping_snr_out_str[0])   _ping_menu.addItem(_ping_snr_out_str);
@@ -543,7 +543,7 @@ class NearbyScreen : public UIScreen {
 
     buildSortLabel();
     _menu_action_count = 0;
-    _menu.begin("Options", 10);
+    _menu.begin("Options", 10, true);
     auto add = [&](const char* label, Action a) {
       _menu.addItem(label);
       _menu_actions[_menu_action_count++] = a;
@@ -611,7 +611,7 @@ class NearbyScreen : public UIScreen {
   void renderStoredDetail(DisplayDriver& display) {
     const Entry& e = _entries[_sel];
     const int hdr  = display.listStart();   // content top (gap below the header separator)
-    display.drawInvertedHeader(e.name);
+    display.drawInvertedHeader(e.name, true, ctxMenuOpen());
 
     int step = display.lineStep();
     if (step * 5 > display.height() - hdr) step = (display.height() - hdr) / 5;
@@ -648,7 +648,7 @@ class NearbyScreen : public UIScreen {
     char label[32];
     if (e.name[0]) { strncpy(label, e.name, 31); label[31] = '\0'; }
     else           { snprintf(label, sizeof(label), "[%s]", typeName(e.type)); }
-    display.drawInvertedHeader(label);
+    display.drawInvertedHeader(label, true, ctxMenuOpen());
 
     char b64[48];
     pubKeyToBase64(e.pub_key, b64, sizeof(b64));
@@ -678,6 +678,10 @@ class NearbyScreen : public UIScreen {
     display.setCursor(2, hdr + step * 4);
     display.print(e.is_known ? "Status: known" : "Status: new");
   }
+
+  // Any Hold-Enter popup on screen → highlight the ≡ hint so it reads as the
+  // source of the open menu.
+  bool ctxMenuOpen() const { return _menu.active || _confirm.active || _ping_menu.active; }
 
   // Draw whichever popup is active over the current view. Returns true if one was.
   bool renderActivePopup(DisplayDriver& display) {
@@ -719,6 +723,7 @@ class NearbyScreen : public UIScreen {
 
     int lx = ax - gap;                                // next left tab's right edge
     int rx = ax + w[_filter] + gap;                   // next right tab's left edge
+    int rx_limit = display.width() - display.menuHintWidth();  // leave room for the ≡ hint
     bool lfit = true, rfit = true;
     for (int k = 1; k <= F_COUNT / 2 && (lfit || rfit); k++) {
       int li = (_filter - k + F_COUNT) % F_COUNT;
@@ -731,12 +736,13 @@ class NearbyScreen : public UIScreen {
       // Skip the right side when it lands on the same tab as the left (the single
       // opposite tab on an even count) so it isn't drawn twice.
       if (rfit && ri != li) {
-        if (rx + w[ri] <= display.width()) { drawTab(display, rx, w[ri], FILTER_LABELS[ri], false); rx += w[ri] + gap; }
+        if (rx + w[ri] <= rx_limit) { drawTab(display, rx, w[ri], FILTER_LABELS[ri], false); rx += w[ri] + gap; }
         else rfit = false;
       }
     }
     display.setColor(DisplayDriver::LIGHT);
     display.fillRect(0, display.headerH() - display.sepH(), display.width(), display.sepH());
+    display.drawContextMenuHint(DisplayDriver::LIGHT, ctxMenuOpen());   // Nodes list has a Hold-Enter menu
   }
 
 public:
@@ -825,7 +831,7 @@ public:
       } else if (_scanning)            snprintf(title, sizeof(title), "SCANNING (%d)", _count);
       else if (_count == 0)            snprintf(title, sizeof(title), "SCAN: none");
       else                             snprintf(title, sizeof(title), "SCAN (%d)", _count);
-      display.drawCenteredHeader(title);
+      display.drawCenteredHeader(title, true, ctxMenuOpen());
     } else {
       // Stored list: the filter is a visible tab strip (LEFT/RIGHT switches tabs).
       drawFilterTabs(display);
