@@ -12,7 +12,7 @@ class BotScreen : public UIScreen {
   // UP/DOWN moves within the active tab's rows. Because LEFT/RIGHT is fully
   // owned by tab-switching, every row's value is edited via Enter only — no
   // more inline LEFT/RIGHT cycling.
-  enum Tab : uint8_t { TAB_DIRECT, TAB_CHANNEL, TAB_ROOM, TAB_OTHER, TAB_COUNT };
+  enum Tab : uint8_t { TAB_CHANNEL, TAB_ROOM, TAB_DIRECT, TAB_OTHER, TAB_COUNT };
   static const char* TAB_LABELS[TAB_COUNT];
 
   enum Kind : uint8_t { ENABLE_DM, DM_SCOPE, COMMANDS_DM, TRIGGER_DM, REPLY_DM,
@@ -54,9 +54,9 @@ class BotScreen : public UIScreen {
       { QUIET_TO,   "Quiet to" },
     };
     switch (tab) {
-      case TAB_DIRECT:  return DIRECT[idx];
       case TAB_CHANNEL: return CHANNEL_ROWS[idx];
       case TAB_ROOM:    return ROOM_ROWS[idx];
+      case TAB_DIRECT:  return DIRECT[idx];
       default:          return OTHER[idx];
     }
   }
@@ -150,7 +150,7 @@ class BotScreen : public UIScreen {
 
 public:
   BotScreen(UITask* task, NodePrefs* prefs, KeyboardWidget* kb)
-    : _task(task), _prefs(prefs), _tab(TAB_DIRECT), _kb(kb) {}
+    : _task(task), _prefs(prefs), _tab(TAB_CHANNEL), _kb(kb) {}
 
   void onShow() override {
     // _tab persists across visits (like NearbyScreen's _filter) — only reset
@@ -412,5 +412,5 @@ private:
   }
 };
 
-const char* BotScreen::TAB_LABELS[BotScreen::TAB_COUNT] = { "Direct", "Channel", "Room", "Other" };
+const char* BotScreen::TAB_LABELS[BotScreen::TAB_COUNT] = { "Channel", "Room", "Direct", "Other" };
 const int   BotScreen::ROWS_PER_TAB[BotScreen::TAB_COUNT] = { 5, 5, 5, 2 };

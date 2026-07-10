@@ -368,21 +368,11 @@ Melodies can be assigned in **Settings › Sound** (global default) or overridde
 
 Automatically replies to incoming messages that contain a configured trigger word (case-insensitive, contains match). The bot has three independent targets — **DM**, a monitored **Channel**, and a monitored **Room** — each with its own trigger/reply pair.
 
-The screen is a **circular tab carousel**, the same style as Tools › Nearby Nodes' filter tabs: **LEFT/RIGHT** switches between the **Direct** / **Channel** / **Room** / **Other** tabs, **UP/DOWN** moves between the rows within the active tab, and **Enter** acts on the selected row (LEFT/RIGHT is reserved entirely for tab-switching, so every row's value is changed via Enter, not by cycling it in place).
+The screen is a **circular tab carousel**, the same style as Tools › Nearby Nodes' filter tabs: **LEFT/RIGHT** switches between the **Channel** / **Room** / **Direct** / **Other** tabs (opens on Channel), **UP/DOWN** moves between the rows within the active tab, and **Enter** acts on the selected row (LEFT/RIGHT is reserved entirely for tab-switching, so every row's value is changed via Enter, not by cycling it in place).
 
 Each target has its own **Enable** toggle on its own tab, and they're fully independent — you can run only a channel bot, only a room bot, only DM, or any combination, with no need to also switch on the others.
 
 Each target also has its own **Commands** toggle (see below) — DM, channel and room can each independently answer `!` queries or stay quiet, same as Enable.
-
-#### Direct tab
-
-| Setting    | Description                                                                      |
-| ---------- | -------------------------------------------------------------------------------- |
-| Enable     | ON / OFF — **Enter** toggles. Enables DM listening.                              |
-| DM allow   | **All** / **Fav** — **Enter** toggles. Who the DM bot (trigger-reply and commands) responds to. All (default): any DM sender. Fav: only contacts you've starred (the same star Settings › Contacts filters on) — use this to keep a public bot from being spammed by strangers while it still answers people you trust. |
-| Commands   | ON / OFF — **Enter** toggles. Answer `!` query commands (see below) in DMs.      |
-| Trigger    | Word or phrase that activates the DM reply (case-insensitive). A lone `*` means **reply to every DM** (away mode) and is shown as `(any msg)`. **Enter** opens the keyboard. |
-| Reply      | Reply text for DMs; supports `{time}`, `{loc}`, `{name}`, `{hops}` and sensor placeholders. **Enter** opens the keyboard. |
 
 #### Channel tab
 
@@ -390,7 +380,7 @@ Each target also has its own **Commands** toggle (see below) — DM, channel and
 | ------- | --------------------------------------------------------------------------------- |
 | Enable  | ON / OFF — **Enter** toggles. Independent of which channel is picked below, so switching it off and back on remembers the last channel. |
 | Channel | Which channel the bot monitors — always shows the last-picked channel (or `(none)` if none exist yet), regardless of Enable. **Enter** opens the full channel picker (the same one Live Share's **To** row uses). |
-| Commands | ON / OFF — **Enter** toggles. Answer `!` query commands on the monitored channel, independent of the DM tab's Commands setting. |
+| Commands | ON / OFF — **Enter** toggles. Answer `!` query commands on the monitored channel, independent of the other two tabs' Commands settings. |
 | Trigger | Independent trigger for the monitored channel. `*` means **reply to every channel message** — bounded by the per-channel cooldown, but use sparingly on a busy channel. |
 | Reply   | Reply text for channel messages; supports the same placeholders as Direct's Reply. |
 
@@ -403,6 +393,16 @@ Each target also has its own **Commands** toggle (see below) — DM, channel and
 | Commands | ON / OFF — **Enter** toggles. Answer `!` query commands on the monitored room, independent of the other two tabs' Commands settings. |
 | Trigger | Independent trigger for the monitored room. `*` means **reply to every post in the room**. |
 | Reply   | Reply text for room posts; supports the same placeholders as Direct's Reply.      |
+
+#### Direct tab
+
+| Setting    | Description                                                                      |
+| ---------- | -------------------------------------------------------------------------------- |
+| Enable     | ON / OFF — **Enter** toggles. Enables DM listening.                              |
+| DM allow   | **All** / **Fav** — **Enter** toggles. Who the DM bot (trigger-reply and commands) responds to. All (default): any DM sender. Fav: only contacts you've starred (the same star Settings › Contacts filters on) — use this to keep a public bot from being spammed by strangers while it still answers people you trust. |
+| Commands   | ON / OFF — **Enter** toggles. Answer `!` query commands (see below) in DMs.      |
+| Trigger    | Word or phrase that activates the DM reply (case-insensitive). A lone `*` means **reply to every DM** (away mode) and is shown as `(any msg)`. **Enter** opens the keyboard. |
+| Reply      | Reply text for DMs; supports `{time}`, `{loc}`, `{name}`, `{hops}` and sensor placeholders. **Enter** opens the keyboard. |
 
 #### Other tab
 
