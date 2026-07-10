@@ -1496,14 +1496,30 @@ void UITask::wakeForAlarm() {
 
 // Next absolute wall instant matching alarm_hour:alarm_min in local time,
 // strictly after now_wall (an alarm set to the current minute waits a day).
+// With alarm_repeat_mask == 0 that's just tomorrow's occurrence (one-shot).
+// With a repeat mask set, scan today..+6 days for the next weekday whose bit
+// is set (struct tm's tm_wday convention, same as the mask) — today counts
+// only if its time hasn't already passed.
 uint32_t UITask::computeAlarmNextFire(uint32_t now_wall) const {
   int tz = _node_prefs ? _node_prefs->tz_offset_hours : 0;
   int64_t now_local = (int64_t)now_wall + (int64_t)tz * 3600;
   time_t t = (time_t)now_local;
   struct tm* ti = gmtime(&t);
   int64_t sod = ti->tm_hour * 3600 + ti->tm_min * 60 + ti->tm_sec;  // secs since local midnight
-  int64_t target = (now_local - sod)
-                 + (int64_t)_node_prefs->alarm_hour * 3600 + (int64_t)_node_prefs->alarm_min * 60;
+  int64_t midnight = now_local - sod;
+  int64_t time_of_day = (int64_t)_node_prefs->alarm_hour * 3600 + (int64_t)_node_prefs->alarm_min * 60;
+  uint8_t mask = _node_prefs->alarm_repeat_mask;
+  if (mask != 0) {
+    for (int d = 0; d < 7; d++) {
+      if (mask & (1 << ((ti->tm_wday + d) % 7))) {
+        int64_t target = midnight + (int64_t)d * 86400 + time_of_day;
+        if (target > now_local) return (uint32_t)(target - (int64_t)tz * 3600);
+      }
+    }
+    // Mask had no bit set (shouldn't happen — the UI only offers non-empty
+    // presets) — fall through to the one-shot calculation so it still fires.
+  }
+  int64_t target = midnight + time_of_day;
   if (target <= now_local) target += 86400;
   return (uint32_t)(target - (int64_t)tz * 3600);
 }
@@ -1529,8 +1545,12 @@ void UITask::evaluateAlarm() {
   if (now_wall - _alarm_next_fire < CLOCK_ALARM_CATCHUP_SECS) {
     char lbl[20];
     snprintf(lbl, sizeof(lbl), "Alarm %02d:%02d", _node_prefs->alarm_hour, _node_prefs->alarm_min);
-    _node_prefs->alarm_on = 0;                    // one-shot
-    bool dirty = true; savePrefsIfDirty(dirty);
+    if (_node_prefs->alarm_repeat_mask == 0) {
+      _node_prefs->alarm_on = 0;                  // one-shot
+      bool dirty = true; savePrefsIfDirty(dirty);
+    }
+    // Repeating: alarm_on stays set: computeAlarmNextFire() re-arms it for the
+    // next matching weekday below.
     _alarm_next_fire = 0;
     fireClockAlert(lbl);
   } else {

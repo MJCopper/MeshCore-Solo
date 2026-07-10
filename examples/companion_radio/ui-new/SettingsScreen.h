@@ -70,6 +70,7 @@ class SettingsScreen : public UIScreen {
     // Keyboard section
     SECTION_KEYBOARD,
     KEYBOARD_TYPE,
+    KEYBOARD_ALPHABET,
     // Contacts section
     SECTION_CONTACTS, DM_FILTER, CH_FILTER, ROOM_FILTER,
     // Messages section
@@ -557,6 +558,10 @@ class SettingsScreen : public UIScreen {
       display.print("Type");
       display.setCursor(valCol(display), y);
       display.print((p && p->keyboard_type) ? "T9" : "ABC");
+    } else if (item == KEYBOARD_ALPHABET) {
+      display.print("Alphabet");
+      display.setCursor(valCol(display), y);
+      display.print(NodePrefs::keyboardAlphabetLabel(p ? p->keyboard_alt_alphabet : 0));
     } else if (item == BATT_DISPLAY) {
       display.print("BattDisp");
       display.setCursor(valCol(display), y);
@@ -883,6 +888,14 @@ public:
     }
     if (_selected == KEYBOARD_TYPE && p && (left || right || enter)) {
       p->keyboard_type ^= 1;
+      _dirty = true;
+      return true;
+    }
+    if (_selected == KEYBOARD_ALPHABET && p && (left || right || enter)) {
+      int idx = p->keyboard_alt_alphabet;
+      if (right || enter) idx = (idx + 1) % NodePrefs::KB_ALPHABET_COUNT;
+      else if (left)      idx = (idx + NodePrefs::KB_ALPHABET_COUNT - 1) % NodePrefs::KB_ALPHABET_COUNT;
+      p->keyboard_alt_alphabet = (uint8_t)idx;
       _dirty = true;
       return true;
     }

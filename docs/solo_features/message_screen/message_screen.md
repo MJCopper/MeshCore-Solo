@@ -47,9 +47,10 @@ Posting to a **room server** requires a login handshake first, so the device can
 - **Passwords are remembered across reboots.** After a successful login the password is saved on the device, so picking that room again — even after a power cycle — logs back in silently and drops you straight into the chat.
 - **A wrong or changed password self-heals.** If a saved password stops working (e.g. the server's password was changed), the failed login forgets it, so the next **Enter** prompts you to type a new one.
 - **Re-login any time** with **Hold Enter** on the room → **Login…** (see the room context menu below) — useful to switch to a new password without waiting for a failure.
+- **Log out** with **Hold Enter** on a room you're currently logged into → **Logout** (only offered once logged in). Forgets the saved password on the device, so the next time you open that room it prompts for one again instead of silently reusing the old one.
 - Passwords set from the **phone app** are saved on the device too, so it can post to that room standalone after a reboot.
 
-> The on-screen keyboard is limited to ASCII (letters, digits and common symbols); accented characters such as `ą`/`ę` can't be typed on the device. A password containing them can still be set from the phone app — the device stores and replays it byte-for-byte.
+> The on-screen keyboard's default (Latin) page is ASCII only. Typing accented or non-Latin characters — Polish/Czech/German/French diacritics, Cyrillic, or Greek — needs Settings › Keyboard › Alphabet set to the matching alphabet first; the keyboard's **#@/abc** key then cycles Latin → that alphabet → Symbols → Latin. A password containing characters outside whatever's currently enabled can still be set from the phone app — the device stores and replays it byte-for-byte.
 
 ---
 
@@ -105,11 +106,12 @@ A location is any `lat,lon` pair in the text — exactly what the `{loc}` placeh
 
 When **Pin to dial** is selected, a slot picker opens (Slot 1–6 showing current occupant name or "empty"). Choosing a slot that already holds another contact moves the new contact there.
 
-In the **Rooms** list the context menu instead offers a single item:
+In the **Rooms** list the context menu instead offers:
 
 | Item    | Action                                                                       |
 | ------- | ---------------------------------------------------------------------------- |
 | Login…  | Opens the password prompt to (re-)log in to this room (see Rooms — logging in) |
+| Logout  | Only shown once logged in. Forgets the saved password so the next open prompts for one again |
 
 ---
 

@@ -482,6 +482,19 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.trail_autosave_lowbatt, sizeof(_prefs.trail_autosave_lowbatt));
   if (_prefs.trail_autosave_lowbatt > 1) _prefs.trail_autosave_lowbatt = 0;
 
+  // → 0xC0DE001C: append alarm_repeat_mask at the tail. A pre-0x1C file has the
+  // old sentinel bytes / EOF here; any value that isn't one of the four presets
+  // clamps to 0 (no repeat / one-shot), matching the original alarm behaviour
+  // upgraders already had.
+  rd(&_prefs.alarm_repeat_mask, sizeof(_prefs.alarm_repeat_mask));
+  if (NodePrefs::alarmRepeatIdxForMask(_prefs.alarm_repeat_mask) == 0) _prefs.alarm_repeat_mask = 0;
+
+  // → 0xC0DE001D: append keyboard_alt_alphabet at the tail. A pre-0x1D file has
+  // the old sentinel bytes / EOF here; clamp anything out of range to 0 (Latin
+  // only), matching the keyboard's original (Latin-only) behaviour.
+  rd(&_prefs.keyboard_alt_alphabet, sizeof(_prefs.keyboard_alt_alphabet));
+  if (_prefs.keyboard_alt_alphabet >= NodePrefs::KB_ALPHABET_COUNT) _prefs.keyboard_alt_alphabet = 0;
+
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
   // so we just log it — next savePrefs writes the current sentinel.
@@ -668,6 +681,8 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.page_order[NodePrefs::PAGE_ORDER_LEN_V1],
                NodePrefs::PAGE_ORDER_LEN - NodePrefs::PAGE_ORDER_LEN_V1);
     file.write((uint8_t *)&_prefs.trail_autosave_lowbatt, sizeof(_prefs.trail_autosave_lowbatt));
+    file.write((uint8_t *)&_prefs.alarm_repeat_mask,      sizeof(_prefs.alarm_repeat_mask));
+    file.write((uint8_t *)&_prefs.keyboard_alt_alphabet,  sizeof(_prefs.keyboard_alt_alphabet));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good

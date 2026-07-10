@@ -145,15 +145,16 @@ class ClockToolsScreen : public UIScreen {
   int renderAlarm(DisplayDriver& d) {
     d.drawCenteredHeader("ALARM");
     if (!_prefs) return 60000;
-    const char* rows[3] = { "Hour", "Minute", "Armed" };
-    if (_sel > 2) _sel = 2;
+    const char* rows[4] = { "Hour", "Minute", "Repeat", "Armed" };
+    if (_sel > 3) _sel = 3;
     const int valx = d.width() / 2 + 6;
-    drawList(d, 3, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
+    drawList(d, 4, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
       drawRowSelection(d, y, sel, reserve);
       d.setCursor(4, y); d.print(rows[i]);
-      char b[6];
+      char b[10];
       if (i == 0)      snprintf(b, sizeof(b), "%02u", _prefs->alarm_hour);
       else if (i == 1) snprintf(b, sizeof(b), "%02u", _prefs->alarm_min);
+      else if (i == 2) snprintf(b, sizeof(b), "%s", NodePrefs::alarmRepeatLabel(NodePrefs::alarmRepeatIdxForMask(_prefs->alarm_repeat_mask)));
       else             snprintf(b, sizeof(b), "%s", _prefs->alarm_on ? "ON" : "OFF");
       EditKind k = (i == 0) ? EK_A_HOUR : (i == 1) ? EK_A_MIN : EK_NONE;
       drawValue(d, y, valx, reserve, sel, k, b);
@@ -226,12 +227,16 @@ class ClockToolsScreen : public UIScreen {
       _view = V_MENU; _sel = 0; _scroll = 0;
       return true;
     }
-    if (c == KEY_UP)   { _sel = (_sel > 0) ? _sel - 1 : 2; return true; }
-    if (c == KEY_DOWN) { _sel = (_sel < 2) ? _sel + 1 : 0; return true; }
+    if (c == KEY_UP)   { _sel = (_sel > 0) ? _sel - 1 : 3; return true; }
+    if (c == KEY_DOWN) { _sel = (_sel < 3) ? _sel + 1 : 0; return true; }
     if (c == KEY_ENTER) {
       if (_sel == 0)      editField(EK_A_HOUR, _prefs->alarm_hour, 23);
       else if (_sel == 1) editField(EK_A_MIN,  _prefs->alarm_min,  59);
-      else { _prefs->alarm_on ^= 1; _alarm_dirty = true; _task->onAlarmChanged(); }
+      else if (_sel == 2) {   // Repeat: cycle Off -> Daily -> Weekdays -> Weekends -> Off
+        uint8_t idx = (NodePrefs::alarmRepeatIdxForMask(_prefs->alarm_repeat_mask) + 1) % NodePrefs::ALARM_REPEAT_COUNT;
+        _prefs->alarm_repeat_mask = NodePrefs::alarmRepeatMaskForIdx(idx);
+        _alarm_dirty = true; _task->onAlarmChanged();
+      } else { _prefs->alarm_on ^= 1; _alarm_dirty = true; _task->onAlarmChanged(); }
       return true;
     }
     return true;

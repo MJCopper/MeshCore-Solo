@@ -272,28 +272,88 @@ struct NodePrefs {  // persisted to file
   // Index into gpsAvgSecs(). [Tools › Trail › Settings › Mark avg]
   uint8_t  gps_avg_idx;
 
-  // Alarm clock — a single one-shot wake alarm, configured from the Clock page
-  // (Enter › Alarm). Stored as a local time-of-day; the actual fire instant is
-  // (re)computed as an absolute time in tickBackground(), which is what makes it
-  // robust to RTC re-syncs: the mesh (every inbound packet), the companion app,
-  // GPS and the CLI can all jump getCurrentTime() at any moment, but an absolute
-  // target instant stays correct across small corrections and still fires (late)
-  // if the clock jumps over it. Fires once, then alarm_on clears. The minutnik
-  // (countdown) and stoper (stopwatch) are runtime-only and not persisted.
-  uint8_t  alarm_on;    // 0=off (default), 1=armed (one-shot)
+  // Alarm clock — a wake alarm, configured from the Clock page (Enter › Alarm).
+  // Stored as a local time-of-day; the actual fire instant is (re)computed as an
+  // absolute time in tickBackground(), which is what makes it robust to RTC
+  // re-syncs: the mesh (every inbound packet), the companion app, GPS and the
+  // CLI can all jump getCurrentTime() at any moment, but an absolute target
+  // instant stays correct across small corrections and still fires (late) if
+  // the clock jumps over it. With alarm_repeat_mask == 0 it's one-shot: fires
+  // once, then alarm_on clears. A non-zero mask instead re-arms it for the next
+  // matching weekday (see UITask::computeAlarmNextFire/evaluateAlarm) and
+  // alarm_on stays set. The minutnik (countdown) and stoper (stopwatch) are
+  // runtime-only and not persisted.
+  uint8_t  alarm_on;    // 0=off (default), 1=armed
   uint8_t  alarm_hour;  // 0-23, local time
   uint8_t  alarm_min;   // 0-59
+  // Repeat days as a bitmask, bit i = 1<<tm_wday (Sunday=0 .. Saturday=6, per
+  // struct tm — matches what computeAlarmNextFire() already reads from
+  // gmtime()). 0 = no repeat (one-shot, the original/default behaviour).
+  // Cycled through the presets below via the alarm's Repeat row.
+  static const uint8_t ALARM_REPEAT_NONE     = 0x00;  // one-shot (default)
+  static const uint8_t ALARM_REPEAT_DAILY    = 0x7F;  // every day
+  static const uint8_t ALARM_REPEAT_WEEKDAYS = 0x3E;  // Mon-Fri
+  static const uint8_t ALARM_REPEAT_WEEKENDS = 0x41;  // Sat+Sun
+  static const uint8_t ALARM_REPEAT_COUNT    = 4;
+  static uint8_t alarmRepeatMaskForIdx(uint8_t idx) {
+    static const uint8_t M[ALARM_REPEAT_COUNT] =
+      { ALARM_REPEAT_NONE, ALARM_REPEAT_DAILY, ALARM_REPEAT_WEEKDAYS, ALARM_REPEAT_WEEKENDS };
+    return M[idx < ALARM_REPEAT_COUNT ? idx : 0];
+  }
+  // Reverse lookup for display: an arbitrary mask (e.g. loaded from a future
+  // custom-day picker) that doesn't match a preset just reads as "Off" here —
+  // it still fires correctly, computeAlarmNextFire() reads the raw mask.
+  static uint8_t alarmRepeatIdxForMask(uint8_t mask) {
+    switch (mask) {
+      case ALARM_REPEAT_DAILY:    return 1;
+      case ALARM_REPEAT_WEEKDAYS: return 2;
+      case ALARM_REPEAT_WEEKENDS: return 3;
+      default:                    return 0;
+    }
+  }
+  static const char* alarmRepeatLabel(uint8_t idx) {
+    static const char* L[ALARM_REPEAT_COUNT] = { "Off", "Daily", "Weekdays", "Weekends" };
+    return L[idx < ALARM_REPEAT_COUNT ? idx : 0];
+  }
 
   // On-screen keyboard layout, shared across every text-entry screen (Settings >
   // Keyboard). 0=ABC grid, alphabetical order (default), 1=T9 multi-tap
   // (phone-keypad groups, cycled with repeated Enter presses — see KeyboardWidget.h).
   uint8_t  keyboard_type;
 
+  // Additional (non-Latin) keyboard alphabet, orthogonal to keyboard_type above
+  // — either layout style (ABC grid or T9) can show any alphabet's characters.
+  // 0 = Latin only (default): the keyboard's existing #@/abc page-cycle key
+  // toggles between just the Latin letters page and the symbols page, as
+  // today. A non-zero value adds that alphabet's own page to the same cycle
+  // key (Latin → alphabet → symbols → Latin), so composing in it needs no new
+  // key, just Settings › Keyboard › Alphabet to pick which one is available.
+  // See KeyboardWidget.h for the per-alphabet grids (KB_CYRILLIC_CHARS etc.)
+  // and Lemon font (src/helpers/ui/LemonFont.h) for on-screen rendering —
+  // every alphabet here must be in Lemon's U+0020-04FF range.
+  static const uint8_t KB_ALPHABET_LATIN_ONLY = 0;
+  static const uint8_t KB_ALPHABET_CYRILLIC   = 1;
+  static const uint8_t KB_ALPHABET_GREEK      = 2;
+  static const uint8_t KB_ALPHABET_EXT_LATIN  = 3;  // Polish/Czech/Slovak/German/French/etc. diacritics
+  static const uint8_t KB_ALPHABET_COUNT      = 4;
+  static const char* keyboardAlphabetLabel(uint8_t idx) {
+    static const char* L[KB_ALPHABET_COUNT] = { "Latin", "Cyrillic", "Greek", "Ext.Latin" };
+    return L[idx < KB_ALPHABET_COUNT ? idx : 0];
+  }
+
   // Auto-save the live GPS trail to /trail on shutdown (covers the low-battery
   // auto-shutdown, which otherwise loses the whole route). Only writes when the
   // trail has points and the toggle is on. 0 = off (default), 1 = on.
   // [Tools › Trail › Settings › Auto-save]
   uint8_t  trail_autosave_lowbatt;
+
+  // Appended at the tail (see the alarm doc comment above for the field itself
+  // and the serialization tripwire below for why new fields land here, not
+  // inline with alarm_on/hour/min).
+  uint8_t  alarm_repeat_mask;
+
+  // Appended at the tail (see the keyboard_alt_alphabet doc comment above).
+  uint8_t  keyboard_alt_alphabet;
 
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
@@ -357,7 +417,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE001B;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE001D;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -454,7 +514,7 @@ struct NodePrefs {  // persisted to file
 //   3. clamp it on load (an upgrader's file lacks it → stray bytes)
 //   4. bump SCHEMA_SENTINEL's low byte
 // (Padding can also shift sizeof; a "false" trip just means re-check + rebump.)
-static_assert(sizeof(NodePrefs) == 2496,
+static_assert(sizeof(NodePrefs) == 2504,
               "NodePrefs layout changed — sync DataStore save/load + clamp, bump "
               "SCHEMA_SENTINEL, then update this size (see steps above).");
 
