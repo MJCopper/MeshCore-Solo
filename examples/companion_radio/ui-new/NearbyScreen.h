@@ -415,7 +415,7 @@ class NearbyScreen : public UIScreen {
   void startDeleteConfirm() {
     const Entry* e = selected();
     if (!e || !e->has_key || !entryIsContact(e)) return;
-    _confirm.begin("Delete contact?", 2, true);
+    _confirm.begin("Delete contact?", 2);
     _confirm.addItem("Delete");
     _confirm.addItem("Cancel");
     _confirm.setSelected(1);
@@ -451,7 +451,7 @@ class NearbyScreen : public UIScreen {
 
   void rebuildPingMenu() {
     int keep = _ping_menu.selectedIndex();  // preserve selection across a rebuild
-    _ping_menu.begin("Ping", 4, true);
+    _ping_menu.begin("Ping", 4);
     _ping_menu.addItem("Send");
     if (_ping_time_str[0])      _ping_menu.addItem(_ping_time_str);
     if (_ping_snr_out_str[0])   _ping_menu.addItem(_ping_snr_out_str);
@@ -543,7 +543,7 @@ class NearbyScreen : public UIScreen {
 
     buildSortLabel();
     _menu_action_count = 0;
-    _menu.begin("Options", 10, true);
+    _menu.begin("Options", 10);
     auto add = [&](const char* label, Action a) {
       _menu.addItem(label);
       _menu_actions[_menu_action_count++] = a;

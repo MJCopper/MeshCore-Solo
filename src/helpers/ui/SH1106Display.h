@@ -59,6 +59,10 @@ public:
   }
   int getCharWidth() const override { return (_use_lemon ? 5 : 6) * _text_sz; }
   int getLineHeight() const override { return (_use_lemon ? 9 : 8) * _text_sz; }
+  // Only the built-in classic font pads every measured string by one trailing
+  // advance column (see DisplayDriver::textWidthTrailingGap()); the lemon
+  // font's width comes from its own glyph table (ink-tight, no padding).
+  int textWidthTrailingGap() const override { return _use_lemon ? 0 : 1; }
   void setLemonFont(bool enabled) override { _use_lemon = enabled; _vw_dirty = true; }
   bool isLemonFont() const override { return _use_lemon; }
   void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) override;

@@ -230,6 +230,16 @@ public:
     return true;
   }
 
+  // On-device UI logout: drops the local keep-alive tracking (mirrors the app's
+  // CMD_LOGOUT) and forgets the saved password, so the next room open prompts
+  // for credentials again instead of silently re-using them. No packet is sent
+  // to the server -- the room ACL has no session state to tear down, this is
+  // purely local "forget this login" bookkeeping.
+  void logoutRoom(const uint8_t* pub_key) {
+    stopConnection(pub_key);
+    forgetRoomPassword(pub_key);
+  }
+
   // On-device-saved room/repeater login passwords, persisted to flash (own
   // small file, independent of /contacts3) so a room that's already been
   // logged into doesn't need its password retyped after reboot.

@@ -172,11 +172,21 @@ public:
     else if (count >= 10) { buf[0]=(char)('0'+count/10); buf[1]=(char)('0'+count%10); buf[2]=0; }
     else                  { buf[0]=(char)('0'+count); buf[1]=0; }
   }
+  // Trailing blank column baked into a backend's own advance-based
+  // getTextWidth() (0 if it's already ink-tight). Adafruit_GFX's classic
+  // built-in font measures every character as a fixed 6px advance cell (5px
+  // glyph + 1px inter-character gap) regardless of the glyph actually drawn —
+  // so getTextWidth() always reports 1px more than the real ink, all of it
+  // trailing the last character. Centring on the raw width then leaves 1px
+  // more slack on the right than the left. Overridden by backends that use
+  // that font.
+  virtual int textWidthTrailingGap() const { return 0; }
   // Pixel width the pill from drawUnreadBadge(count) occupies — for reserving
   // the name column before it. Mirrors the pill's horizontal padding.
   int unreadBadgeWidth(int count) {
     char buf[5]; fmtBadgeCount(buf, count);
-    return getTextWidth(buf) + (sepH() + 1) * 2;
+    int pad = sepH() + 1;
+    return getTextWidth(buf) - textWidthTrailingGap() + pad * 2;
   }
   // Right-aligned unread-count "pill": a filled capsule ending at right_x,
   // aligned to a text row of height getLineHeight() at y, with the count
@@ -186,7 +196,8 @@ public:
   // Restores ink to LIGHT. Returns the pill width.
   int drawUnreadBadge(int right_x, int y, int count, bool sel) {
     char buf[5]; fmtBadgeCount(buf, count);
-    int pw = getTextWidth(buf) + (sepH() + 1) * 2;
+    int pad = sepH() + 1;
+    int pw = getTextWidth(buf) - textWidthTrailingGap() + pad * 2;
     int ph = getLineHeight();
     int px = right_x - pw;
     Color body = sel ? DARK : LIGHT;
@@ -198,7 +209,7 @@ public:
     fillRect(px + pw - 1, y, 1, 1);
     fillRect(px, y + ph - 1, 1, 1);
     fillRect(px + pw - 1, y + ph - 1, 1, 1);
-    setCursor(px + sepH() + 1, y);
+    setCursor(px + pad, y);
     print(buf);
     setColor(LIGHT);
     return pw;
@@ -250,7 +261,20 @@ public:
   // menu_open highlights it while the context menu is on screen.
   void drawCenteredHeader(const char* title, bool menu_hint = false, bool menu_open = false) {
     setColor(LIGHT);
-    drawTextCentered(width() / 2, 0, title);
+    int reserve = menu_hint ? menuHintWidth() : 0;
+    char buf[96];
+    translateUTF8ToBlocks(buf, (title && title[0]) ? title : "", sizeof(buf));
+    int avail = width() - reserve - 4;
+    if (avail < 0) avail = 0;
+    if (getTextWidth(buf) <= avail) {
+      int w = getTextWidth(buf);
+      setCursor((width() - reserve) / 2 - w / 2, 0);   // centred, clear of the ≡ hint
+      print(buf);
+    } else {
+      // Too wide to centre without print() wrapping onto a second line → left-align
+      // and ellipsize, like a list row. (Long DM / room-server / channel names.)
+      drawTextEllipsized(2, 0, avail, buf);
+    }
     fillRect(0, headerH() - sepH(), width(), sepH());
     if (menu_hint) drawContextMenuHint(LIGHT, menu_open);
   }

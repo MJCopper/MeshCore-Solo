@@ -255,7 +255,7 @@ class QuickMsgScreen : public UIScreen {
     int n = (reply_allowed ? 1 : 0) + (has_loc ? 2 : 0);
     if (n == 0) return;
     _fs_act_n = 0;
-    _ctx_menu.begin("Options", n, true);
+    _ctx_menu.begin("Options", n);
     if (reply_allowed) { _ctx_menu.addItem("Reply");         _fs_act[_fs_act_n++] = FS_REPLY; }
     if (has_loc)       { _ctx_menu.addItem("Navigate");      _fs_act[_fs_act_n++] = FS_NAV;
                          _ctx_menu.addItem("Save waypoint"); _fs_act[_fs_act_n++] = FS_SAVE; }
@@ -600,6 +600,24 @@ public:
       _room_login_head = (_room_login_head + 1) % ROOM_LOGIN_TABLE_SIZE;
     }
     memcpy(_room_login_prefix[pos], pub_key, 4);
+  }
+
+  // Reverses markRoomLoggedIn() on explicit Logout -- shifts the ring buffer
+  // closed over the removed slot so isRoomLoggedIn() goes back to false and
+  // the next room open prompts for a password instead of skipping it.
+  void forgetRoomLoggedIn(const uint8_t* pub_key) {
+    for (int i = 0; i < _room_login_count; i++) {
+      int pos = (_room_login_head + i) % ROOM_LOGIN_TABLE_SIZE;
+      if (memcmp(_room_login_prefix[pos], pub_key, 4) == 0) {
+        for (int j = i; j < _room_login_count - 1; j++) {
+          int from = (_room_login_head + j + 1) % ROOM_LOGIN_TABLE_SIZE;
+          int to   = (_room_login_head + j) % ROOM_LOGIN_TABLE_SIZE;
+          memcpy(_room_login_prefix[to], _room_login_prefix[from], 4);
+        }
+        _room_login_count--;
+        return;
+      }
+    }
   }
 
   // Password of the room-login attempt currently in flight -- set right
@@ -1200,7 +1218,7 @@ public:
       if (c == KEY_CONTEXT_MENU) {
         // PopupMenu stores the title pointer verbatim — use static strings.
         static const char* MODE_TITLES[] = { "DM options", "Channel options", "Room options" };
-        _ctx_menu.begin(MODE_TITLES[_mode_sel < 3 ? _mode_sel : 0], 1, true);
+        _ctx_menu.begin(MODE_TITLES[_mode_sel < 3 ? _mode_sel : 0], 1);
         _ctx_menu.addItem("Mark all read");
         return true;
       }
@@ -1224,10 +1242,18 @@ public:
           auto res = _ctx_menu.handleInput(c);
           if (res == PopupMenu::SELECTED && _num_contacts > 0) {
             if (the_mesh.getContactByIdx(_sorted[_contact_sel], _sel_contact)) {
-              _login_mode = true;
-              _kb->begin("", 15); // room/repeater password: max 15 chars
-              _kb->clearPlaceholders();   // {loc}/{time} are for messages, not a password
-              _phase = KEYBOARD;
+              int sel = _ctx_menu.selectedIndex();
+              if (sel == 0) {
+                _login_mode = true;
+                _kb->begin("", 15); // room/repeater password: max 15 chars
+                _kb->clearPlaceholders();   // {loc}/{time} are for messages, not a password
+                _phase = KEYBOARD;
+              } else {
+                // Logout: only reachable when isRoomLoggedIn() added this item.
+                the_mesh.logoutRoom(_sel_contact.id.pub_key);
+                forgetRoomLoggedIn(_sel_contact.id.pub_key);
+                _task->showAlert("Logged out", 1000);
+              }
             }
           }
           return true;
@@ -1314,7 +1340,7 @@ public:
                     snprintf(_pin_slot_labels[s], sizeof(_pin_slot_labels[s]), "Slot %d: %s", s + 1, nm);
                   }
                 }
-                _ctx_menu.begin("Pick slot", 3, true);
+                _ctx_menu.begin("Pick slot", 3);
                 for (int s = 0; s < NodePrefs::FAVOURITES_COUNT; s++) _ctx_menu.addItem(_pin_slot_labels[s]);
                 _pin_picker_active = true;
               }
@@ -1355,8 +1381,11 @@ public:
         return true;
       }
       if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && _room_mode) {
-        _ctx_menu.begin("Room options", 1, true);
+        ContactInfo ci;
+        bool logged_in = the_mesh.getContactByIdx(_sorted[_contact_sel], ci) && isRoomLoggedIn(ci.id.pub_key);
+        _ctx_menu.begin("Room options", logged_in ? 2 : 1);
         _ctx_menu.addItem("Login...");
+        if (logged_in) _ctx_menu.addItem("Logout");
         return true;
       }
       if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && !_room_mode) {
@@ -1371,7 +1400,7 @@ public:
         int pinned_slot = _task->findFavouriteSlot(ci.id.pub_key);
         if (pinned_slot >= 0) snprintf(_ctx_pin_item, sizeof(_ctx_pin_item), "Unpin (slot %d)", pinned_slot + 1);
         else                  snprintf(_ctx_pin_item, sizeof(_ctx_pin_item), "Pin to dial");
-        _ctx_menu.begin("Contact options", 3, true);
+        _ctx_menu.begin("Contact options", 3);
         _ctx_menu.addItem("Mark as read");
         _ctx_menu.addItem(_ctx_notif_item);
         _ctx_menu.addItem(_ctx_melody_item);
@@ -1471,7 +1500,7 @@ public:
         { NodePrefs* p2 = _task->getNodePrefs();
           bool is_fav = p2 && (p2->ch_fav_bitmask & (1ULL << ch_idx));
           snprintf(_ctx_ch_fav_item, sizeof(_ctx_ch_fav_item), is_fav ? "Fav: yes" : "Fav: no"); }
-        _ctx_menu.begin("Channel options", 4, true);
+        _ctx_menu.begin("Channel options", 4);
         _ctx_menu.addItem("Mark all read");
         _ctx_menu.addItem(_ctx_notif_item);
         _ctx_menu.addItem(_ctx_melody_item);

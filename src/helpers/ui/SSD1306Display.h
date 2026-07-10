@@ -34,6 +34,9 @@ public:
 
   int getCharWidth()  const override { return 6 * _text_sz; }
   int getLineHeight() const override { return 8 * _text_sz; }
+  // Classic Adafruit_GFX built-in font pads every measured string by one
+  // trailing advance column (see DisplayDriver::textWidthTrailingGap()).
+  int textWidthTrailingGap() const override { return 1; }
 
   bool isOn() override { return _isOn; }
   void turnOn() override;
