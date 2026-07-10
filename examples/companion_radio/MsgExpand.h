@@ -17,11 +17,15 @@
 //   {lux}   — luminosity lux           (requires sm)
 //   {dist}  — distance m               (requires sm)
 //   {co2}   — CO2 concentration ppm    (requires sm)
+//   {name}  — sender's name (bot replies only; requires sender_name, else left literal)
+//   {hops}  — hop count: "direct" or "N hops" (bot replies only; requires hops>=0, else left literal)
 inline void expandMsg(const char* tmpl, char* out, int out_len,
                       double lat, double lon, bool gps_valid,
                       uint32_t utc_ts, int8_t tz_hours,
                       SensorManager* sm = nullptr,
-                      float batt_volts  = -1.0f) {
+                      float batt_volts  = -1.0f,
+                      const char* sender_name = nullptr,
+                      int hops = -1) {
   // sv indices: 0=temp 1=hum 2=pres 3=batt 4=alt 5=lux 6=dist 7=co2
   float sv[8]    = {};
   bool  sv_ok[8] = {};
@@ -122,6 +126,18 @@ inline void expandMsg(const char* tmpl, char* out, int out_len,
       if (sv_ok[7]) { char b[12]; snprintf(b,sizeof(b),"%.0fppm",sv[7]); APPEND(b,strlen(b)); }
       else           { APPEND("{co2}", 5); }
       p += 5;
+    } else if (strncmp(p, "{name}", 6) == 0) {
+      if (sender_name && sender_name[0]) { APPEND(sender_name, strlen(sender_name)); }
+      else                                { APPEND("{name}", 6); }
+      p += 6;
+    } else if (strncmp(p, "{hops}", 6) == 0) {
+      if (hops >= 0) {
+        char b[10];
+        if (hops == 0) strcpy(b, "direct");
+        else           snprintf(b, sizeof(b), "%u hops", (unsigned)hops);
+        APPEND(b, strlen(b));
+      } else { APPEND("{hops}", 6); }
+      p += 6;
     } else {
       out[oi++] = *p++;
     }

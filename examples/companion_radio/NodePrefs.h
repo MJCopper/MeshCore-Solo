@@ -85,14 +85,14 @@ struct NodePrefs {  // persisted to file
   uint8_t  ringtone_len;        // number of notes in custom ringtone (0 = use default)
   uint8_t  ringtone_notes[32]; // packed: bits0-2=pitch, bits3-4=octave-4, bits5-6=dur_idx
   uint16_t home_pages_mask;    // bitmask of visible home pages (bit0=Clock..bit8=Shutdown); 0=all visible
-  uint8_t  bot_enabled;         // 0=disabled, 1=DM bot active (responds to all DMs)
+  uint8_t  bot_enabled;         // 0=disabled, 1=DM trigger-reply active — DM only; channel/room have their own bot_channel_enabled/bot_room_enabled and don't depend on this
   uint8_t  bot_channel_enabled; // 0=disabled, 1=channel bot active for bot_channel_idx
   uint8_t  bot_channel_idx;     // channel index for channel bot [del→onChannelRemoved]
   char     bot_trigger[64];     // DM trigger phrase (case-insensitive contains; "*" = any DM)
   char     bot_reply_dm[140];   // auto-reply text for DM
   char     bot_reply_ch[140];   // auto-reply text for channel
   char     bot_trigger_ch[64];  // channel trigger phrase (independent of DM; "*" = any channel msg)
-  uint8_t  bot_commands_enabled; // 0=off, 1=answer !ping/!batt/!loc/!time/!help DM commands
+  uint8_t  bot_commands_enabled; // 0=off, 1=answer !ping/!batt/!loc/!time/!help DM commands — DM only, see bot_commands_ch/bot_commands_room below for the other two targets
   uint8_t  bot_quiet_start;     // quiet-hours start hour, local 0-23 (start==end → disabled)
   uint8_t  bot_quiet_end;       // quiet-hours end hour, local 0-23
   uint8_t  clock_hide_seconds; // 0=show HH:MM:SS/refresh 1s (default), 1=hide/refresh 60s
@@ -355,6 +355,34 @@ struct NodePrefs {  // persisted to file
   // Appended at the tail (see the keyboard_alt_alphabet doc comment above).
   uint8_t  keyboard_alt_alphabet;
 
+  // Bot DM allow-list: who is allowed to trigger a DM auto-reply or run a
+  // command. 0 = all (default, matches the original bot_enabled behaviour).
+  // 1 = favourites only — gate on ContactInfo::flags bit 0, the same
+  // "favourite"/starred bit the Messages screen's DM list filter (dm_show_all)
+  // already reads, so no separate allow-list storage is needed.
+  uint8_t  bot_dm_scope;
+
+  // Room-server auto-reply bot — same trigger/reply/command shape as the DM
+  // and channel bots above, but targets a single room server (like the
+  // channel bot targets a single channel) since posting requires that room's
+  // own login session (see MyMesh::sendRoomLogin/logoutRoom). If the device
+  // has never logged into this room, replies silently fail to send — same
+  // as a manual post would — so log in at least once from Messages > Rooms
+  // before relying on the bot there.
+  uint8_t  bot_room_enabled;                          // 0=disabled, 1=room bot active for bot_room_prefix
+  uint8_t  bot_room_prefix[6];                        // target room's pubkey prefix [del→onContactRemoved]
+  char     bot_trigger_room[64];                      // room trigger phrase (independent of DM/channel; "*" = any post)
+  char     bot_reply_room[140];                       // auto-reply text for the room
+
+  // Per-target Commands toggle for channel/room, splitting what used to be
+  // one bot_commands_enabled shared across all three (see that field's doc
+  // comment) — e.g. answer !ping in DM but stay quiet on a public channel.
+  // Upgraders: DataStore seeds both from the old shared bot_commands_enabled
+  // on first load past the schema bump, so existing behaviour is preserved
+  // until the user deliberately splits them apart.
+  uint8_t  bot_commands_ch;
+  uint8_t  bot_commands_room;
+
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
   static const uint8_t LOC_SHARE_MOVE_COUNT = 4;
@@ -417,7 +445,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE001D;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE001F;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -514,7 +542,7 @@ struct NodePrefs {  // persisted to file
 //   3. clamp it on load (an upgrader's file lacks it → stray bytes)
 //   4. bump SCHEMA_SENTINEL's low byte
 // (Padding can also shift sizeof; a "false" trip just means re-check + rebump.)
-static_assert(sizeof(NodePrefs) == 2504,
+static_assert(sizeof(NodePrefs) == 2712,
               "NodePrefs layout changed — sync DataStore save/load + clamp, bump "
               "SCHEMA_SENTINEL, then update this size (see steps above).");
 

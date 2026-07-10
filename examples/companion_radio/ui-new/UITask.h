@@ -223,6 +223,8 @@ public:
   void shareToMessage(const char* text);   // open Messages pre-loaded to share `text`
   void quickShareMyLocation();             // Home Map Hold-Enter: one-shot position share
   void pickLocShareTarget();               // open Messages to choose the live-share target
+  void pickBotChannelTarget();             // open Messages to choose the auto-reply bot's channel
+  void pickBotRoomTarget();                // open Messages to choose the auto-reply bot's room
   int  getRecentDMContacts(uint8_t out[][NodePrefs::FAVOURITE_PREFIX_LEN], int max) const;
   void gotoToolsScreen();
   void gotoRingtoneEditor(int slot = 0);

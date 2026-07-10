@@ -364,32 +364,68 @@ Melodies can be assigned in **Settings › Sound** (global default) or overridde
 | :-----------------------: | :-----------------------: |
 | ![](./autoreply_oled.png) | ![](./autoreply_eink.png) |
 
-Automatically replies to incoming messages that contain a configured trigger word (case-insensitive, contains match).
+<!-- screenshots pending: these predate the tab-carousel layout below (still show the old flat grouped list) -->
 
-When the bot is enabled it listens to DMs by default. Channel monitoring is an optional addition — select a channel separately to activate it alongside DM mode.
+Automatically replies to incoming messages that contain a configured trigger word (case-insensitive, contains match). The bot has three independent targets — **DM**, a monitored **Channel**, and a monitored **Room** — each with its own trigger/reply pair.
+
+The screen is a **circular tab carousel**, the same style as Tools › Nearby Nodes' filter tabs: **LEFT/RIGHT** switches between the **Direct** / **Channel** / **Room** / **Other** tabs, **UP/DOWN** moves between the rows within the active tab, and **Enter** acts on the selected row (LEFT/RIGHT is reserved entirely for tab-switching, so every row's value is changed via Enter, not by cycling it in place).
+
+Each target has its own **Enable** toggle on its own tab, and they're fully independent — you can run only a channel bot, only a room bot, only DM, or any combination, with no need to also switch on the others.
+
+Each target also has its own **Commands** toggle (see below) — DM, channel and room can each independently answer `!` queries or stay quiet, same as Enable.
+
+#### Direct tab
+
+| Setting    | Description                                                                      |
+| ---------- | -------------------------------------------------------------------------------- |
+| Enable     | ON / OFF — **Enter** toggles. Enables DM listening.                              |
+| DM allow   | **All** / **Fav** — **Enter** toggles. Who the DM bot (trigger-reply and commands) responds to. All (default): any DM sender. Fav: only contacts you've starred (the same star Settings › Contacts filters on) — use this to keep a public bot from being spammed by strangers while it still answers people you trust. |
+| Commands   | ON / OFF — **Enter** toggles. Answer `!` query commands (see below) in DMs.      |
+| Trigger    | Word or phrase that activates the DM reply (case-insensitive). A lone `*` means **reply to every DM** (away mode) and is shown as `(any msg)`. **Enter** opens the keyboard. |
+| Reply      | Reply text for DMs; supports `{time}`, `{loc}`, `{name}`, `{hops}` and sensor placeholders. **Enter** opens the keyboard. |
+
+#### Channel tab
+
+| Setting | Description                                                                      |
+| ------- | --------------------------------------------------------------------------------- |
+| Enable  | ON / OFF — **Enter** toggles. Independent of which channel is picked below, so switching it off and back on remembers the last channel. |
+| Channel | Which channel the bot monitors — always shows the last-picked channel (or `(none)` if none exist yet), regardless of Enable. **Enter** opens the full channel picker (the same one Live Share's **To** row uses). |
+| Commands | ON / OFF — **Enter** toggles. Answer `!` query commands on the monitored channel, independent of the DM tab's Commands setting. |
+| Trigger | Independent trigger for the monitored channel. `*` means **reply to every channel message** — bounded by the per-channel cooldown, but use sparingly on a busy channel. |
+| Reply   | Reply text for channel messages; supports the same placeholders as Direct's Reply. |
+
+#### Room tab
+
+| Setting | Description                                                                      |
+| ------- | --------------------------------------------------------------------------------- |
+| Enable  | ON / OFF — **Enter** toggles. Independent of which room is picked below.          |
+| Room    | Which room server the bot posts to — always shows the last-picked room (or `(none)` if you have none yet), regardless of Enable. **Enter** opens the full room picker. Picking a room you've never logged into prompts for its password right there — the bot can't post to a room it has no working login for, so this is the moment to set one up. |
+| Commands | ON / OFF — **Enter** toggles. Answer `!` query commands on the monitored room, independent of the other two tabs' Commands settings. |
+| Trigger | Independent trigger for the monitored room. `*` means **reply to every post in the room**. |
+| Reply   | Reply text for room posts; supports the same placeholders as Direct's Reply.      |
+
+#### Other tab
 
 | Setting       | Description                                                                      |
-| ------------- | -------------------------------------------------------------------------------- |
-| Enable        | ON / OFF — enables DM listening                                                  |
-| Channel       | OFF, or which channel to additionally monitor (cycles through your channels)     |
-| Trigger DM    | Word or phrase that activates the DM reply (case-insensitive). A lone `*` means **reply to every DM** (away mode) and is shown as `(any msg)`. |
-| Reply DM      | Reply text for DMs; supports `{time}`, `{loc}` and sensor placeholders           |
-| Trigger Ch    | Independent trigger for the monitored channel. `*` means **reply to every channel message** — bounded by the per-channel cooldown, but use sparingly on a busy channel. |
-| Reply Ch      | Reply text for channel messages; supports the same placeholders                  |
-| Commands      | ON / OFF — answer `!` query commands (see below)                                 |
-| Quiet from/to | Local-time window during which auto-replies stay silent; set both equal (`OFF`) to disable |
+| ------------- | --------------------------------------------------------------------------------- |
+| Quiet from    | **Enter** opens a stepper (value shown bracketed, e.g. `[14:00]`) — **UP/DOWN** steps the hour, **Enter**/**Cancel** confirms. Local-time window start; set from = to (`OFF`) to disable quiet hours entirely. Applies to all three targets' trigger-replies. |
+| Quiet to      | Same stepper; window end.                                                        |
 
-The DM and channel triggers are independent, so you can run e.g. an away-message (`*`) in DMs while the channel reacts only to a specific keyword (or vice-versa).
+The DM, channel and room triggers are independent, so you can run e.g. an away-message (`*`) in DMs while the channel or room reacts only to a specific keyword (or vice-versa).
 
-The header shows a running count of auto-replies sent since boot.
+`{name}` (the triggering sender's name) and `{hops}` (`direct` or `N hops`) are only meaningful when replying to an actual incoming message, so — unlike `{time}`/`{loc}`/the sensor placeholders — they're offered only while editing a **Reply** field here, not on the general message-compose keyboard.
 
-**Throttle.** Auto-replies are rate-limited **per contact** (10 s), so a second sender is never starved while one contact is on cooldown. The channel bot keeps a single 10 s cooldown and won't echo a message identical to its own reply (so two bots running the same reply text on one channel can't ping-pong); the cooldown caps any residual back-and-forth.
+The header shows a running count of auto-replies sent since boot, alongside the tab bar.
+
+**Room posting requires a login.** The room bot reuses whatever session the device already has with that room server (Messages › Rooms › **Login…**, or a password saved from an earlier login/the phone app) — it has no way to prompt for a password itself in the background. If the saved password stops working, the room bot just silently stops posting there, the same as a manual post would; log back in from Messages to fix it.
+
+**Throttle.** DM auto-replies are rate-limited **per contact** (10 s), so a second sender is never starved while one contact is on cooldown. The channel and room bots each keep their own single 10 s cooldown and won't echo a message identical to their own reply (so two bots running the same reply text on one channel/room can't ping-pong); the cooldown caps any residual back-and-forth.
 
 **Quiet hours** suppress the push (trigger) replies between the configured local hours; a window where *from* is later than *to* wraps past midnight. Commands are a pull (explicitly requested), so they answer even during quiet hours.
 
 ### Commands
 
-With **Commands** ON, a DM beginning with `!` is answered with live node data, independent of the trigger:
+With a tab's **Commands** ON, a message beginning with `!` on that target is answered with live node data, independent of the trigger:
 
 | Command   | Reply                                   |
 | --------- | --------------------------------------- |
@@ -404,7 +440,7 @@ With **Commands** ON, a DM beginning with `!` is answered with live node data, i
 
 Several commands can be combined in one message — `!batt !time !hops` is answered with a single `4.10V | 14:30 | 3 hops` reply (one transmission). A message with no recognised command falls through to the trigger bot.
 
-Commands also work on the **monitored channel** (the one selected for channel mode) — anyone there can query the node. Channel replies are broadcast to everyone, so unlike DM commands they respect quiet hours and use the shared per-channel cooldown. DM commands use the per-contact throttle.
+Each target's Commands toggle is independent — e.g. answer `!ping` in DMs but stay quiet on a busy public channel. Channel and room replies are broadcast/posted to everyone there, so unlike DM commands they respect quiet hours and use their own shared cooldown. DM commands use the per-contact throttle and the **DM allow** scope above.
 
 ---
 

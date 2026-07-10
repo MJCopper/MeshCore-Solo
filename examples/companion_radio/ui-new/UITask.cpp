@@ -1688,6 +1688,16 @@ void UITask::pickLocShareTarget() {
   setCurrScreen(quick_msg);
 }
 
+void UITask::pickBotChannelTarget() {
+  ((QuickMsgScreen*)quick_msg)->startPickBotChannel();
+  setCurrScreen(quick_msg);
+}
+
+void UITask::pickBotRoomTarget() {
+  ((QuickMsgScreen*)quick_msg)->startPickBotRoom();
+  setCurrScreen(quick_msg);
+}
+
 int UITask::getRecentDMContacts(uint8_t out[][NodePrefs::FAVOURITE_PREFIX_LEN], int max) const {
   return ((QuickMsgScreen*)quick_msg)->getRecentDMContacts(out, max);
 }
@@ -2555,6 +2565,14 @@ void UITask::onContactRemoved(const uint8_t* pub_key) {
   if (_node_prefs->loc_share_target_type == 1
       && memcmp(_node_prefs->loc_share_dm_prefix, pub_key, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
     _node_prefs->loc_share_enabled = 0;
+    changed = true;
+  }
+  // Same fail-closed rule for the room bot's target: the room contact is
+  // gone, disable it rather than risk a re-added contact silently inheriting
+  // the old bot config.
+  if (_node_prefs->bot_room_enabled
+      && memcmp(_node_prefs->bot_room_prefix, pub_key, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
+    _node_prefs->bot_room_enabled = 0;
     changed = true;
   }
   // Per-contact mute/melody overrides — only 16 slots shared across every

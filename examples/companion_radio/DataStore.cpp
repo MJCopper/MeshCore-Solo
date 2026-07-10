@@ -495,6 +495,31 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.keyboard_alt_alphabet, sizeof(_prefs.keyboard_alt_alphabet));
   if (_prefs.keyboard_alt_alphabet >= NodePrefs::KB_ALPHABET_COUNT) _prefs.keyboard_alt_alphabet = 0;
 
+  // → 0xC0DE001E: append bot_dm_scope + the room-server bot fields at the
+  // tail. A pre-0x1E file has the old sentinel bytes / EOF here; rd() zero-
+  // inits when absent, so upgraders default to bot_dm_scope=0 (all DMs,
+  // matching the original bot_enabled behaviour) and the room bot fully
+  // disabled (bot_room_enabled clamps to 0; an empty trigger never matches
+  // even if somehow set).
+  rd(&_prefs.bot_dm_scope, sizeof(_prefs.bot_dm_scope));
+  if (_prefs.bot_dm_scope > 1) _prefs.bot_dm_scope = 0;
+
+  rd(&_prefs.bot_room_enabled, sizeof(_prefs.bot_room_enabled));
+  if (_prefs.bot_room_enabled > 1) _prefs.bot_room_enabled = 0;
+  rd(_prefs.bot_room_prefix,  sizeof(_prefs.bot_room_prefix));
+  rd(_prefs.bot_trigger_room, sizeof(_prefs.bot_trigger_room));
+  rd(_prefs.bot_reply_room,   sizeof(_prefs.bot_reply_room));
+
+  // → 0xC0DE001F: split the shared bot_commands_enabled into a per-target
+  // toggle for channel/room too (DM keeps the original field). A pre-0x1F
+  // file has neither new byte; both clamp to 0 here and are seeded from the
+  // old shared value in the sentinel-mismatch migration below, so upgraders
+  // don't silently lose channel/room commands they already had answering.
+  rd(&_prefs.bot_commands_ch, sizeof(_prefs.bot_commands_ch));
+  if (_prefs.bot_commands_ch > 1) _prefs.bot_commands_ch = 0;
+  rd(&_prefs.bot_commands_room, sizeof(_prefs.bot_commands_room));
+  if (_prefs.bot_commands_room > 1) _prefs.bot_commands_room = 0;
+
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
   // so we just log it — next savePrefs writes the current sentinel.
@@ -517,6 +542,14 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     // transition so a user who later hides it isn't overridden on the next update.
     if (sentinel < 0xC0DE0018 && _prefs.home_pages_mask != 0) {
       _prefs.home_pages_mask |= NodePrefs::HP_MAP;
+    }
+    // 0xC0DE001E → 0xC0DE001F: bot_commands_enabled split per target (see the
+    // rd() above). Seed the two new fields from the old shared one so a
+    // pre-0x1F upgrader's channel/room commands keep answering exactly as
+    // before; gated to this transition so a user who later splits them apart
+    // isn't overridden on a later update.
+    if (sentinel < 0xC0DE001F) {
+      _prefs.bot_commands_ch = _prefs.bot_commands_room = _prefs.bot_commands_enabled;
     }
     // 0xC0DE0003 → 0xC0DE0004: trail_units_idx added after trail_min_delta_idx.
     // On a 0xC0DE0003 file the sentinel bytes sit where trail_units_idx is now,
@@ -683,6 +716,13 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.trail_autosave_lowbatt, sizeof(_prefs.trail_autosave_lowbatt));
     file.write((uint8_t *)&_prefs.alarm_repeat_mask,      sizeof(_prefs.alarm_repeat_mask));
     file.write((uint8_t *)&_prefs.keyboard_alt_alphabet,  sizeof(_prefs.keyboard_alt_alphabet));
+    file.write((uint8_t *)&_prefs.bot_dm_scope,      sizeof(_prefs.bot_dm_scope));
+    file.write((uint8_t *)&_prefs.bot_room_enabled,  sizeof(_prefs.bot_room_enabled));
+    file.write((uint8_t *)_prefs.bot_room_prefix,    sizeof(_prefs.bot_room_prefix));
+    file.write((uint8_t *)_prefs.bot_trigger_room,   sizeof(_prefs.bot_trigger_room));
+    file.write((uint8_t *)_prefs.bot_reply_room,     sizeof(_prefs.bot_reply_room));
+    file.write((uint8_t *)&_prefs.bot_commands_ch,   sizeof(_prefs.bot_commands_ch));
+    file.write((uint8_t *)&_prefs.bot_commands_room, sizeof(_prefs.bot_commands_room));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good

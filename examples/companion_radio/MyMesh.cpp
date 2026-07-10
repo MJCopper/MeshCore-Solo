@@ -683,7 +683,7 @@ void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t 
   // bitfield for transport packets, so it must not be used directly.)
   uint8_t hops = pkt ? pkt->getPathHashCount() : 0;
   if (!tryBotCommand(from, text, hops))  // commands take priority; fall through to trigger reply
-    tryBotReplyDM(from, text);
+    tryBotReplyDM(from, text, hops);
 }
 
 void MyMesh::onCommandDataRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
@@ -708,6 +708,15 @@ void MyMesh::onSignedMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uin
     ContactInfo* sc = sender_prefix ? lookupContactByPubKey(sender_prefix, 4) : nullptr;
     const char* who = (sc && sc->name[0]) ? sc->name : from.name;
     _ui->onSharedLocation(nullptr, who, loc_lat, loc_lon, sender_timestamp, false);
+  }
+
+  // Room-server auto-reply bot — only ever fires for the room server contact
+  // itself (signed posts are how a room relays its members' messages back to
+  // us); a defensive type check lives in tryBotReplyRoom/tryBotRoomCommand too.
+  if (from.type == ADV_TYPE_ROOM) {
+    uint8_t hops = pkt ? pkt->getPathHashCount() : 0;
+    if (!tryBotRoomCommand(from, sender_prefix, text, hops))  // commands take priority
+      tryBotReplyRoom(from, sender_prefix, text, hops);
   }
 }
 
@@ -782,8 +791,9 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
 #endif
 
   // hop count for !hops (see onMessageRecv); not the wire path_len above.
-  if (!tryBotChannelCommand(channel_idx, text, pkt->getPathHashCount()))  // commands take priority
-    tryBotReplyChannel(channel_idx, text);
+  uint8_t ch_hops = pkt->getPathHashCount();
+  if (!tryBotChannelCommand(channel_idx, text, ch_hops))  // commands take priority
+    tryBotReplyChannel(channel_idx, text, ch_hops);
 }
 
 void MyMesh::onChannelDataRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint16_t data_type,
@@ -1528,6 +1538,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   offline_queue_len = 0;
   app_target_ver = 0;
   _bot_last_ch_reply_ms = 0;
+  _bot_last_room_reply_ms = 0;
   memset(_bot_dm_log, 0, sizeof(_bot_dm_log));
   _bot_reply_count = 0;
   _next_auto_advert_ms = 0;

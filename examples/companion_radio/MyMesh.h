@@ -294,16 +294,24 @@ public:
   uint16_t botReplyCount() const { return _bot_reply_count; }
 
 private:
-  void tryBotReplyDM(const ContactInfo& from, const char* text);
-  void tryBotReplyChannel(uint8_t channel_idx, const char* text);
+  void tryBotReplyDM(const ContactInfo& from, const char* text, uint8_t hops);
+  void tryBotReplyChannel(uint8_t channel_idx, const char* text, uint8_t hops);
+  void tryBotReplyRoom(const ContactInfo& from, const uint8_t* sender_prefix, const char* text, uint8_t hops);
   bool tryBotCommand(const ContactInfo& from, const char* text, uint8_t hops);          // DM commands
   bool tryBotChannelCommand(uint8_t channel_idx, const char* text, uint8_t hops);       // channel commands
-  bool botCommandReply(const char* cmd, uint8_t hops, uint32_t ts, char* out, int out_len);  // one command → reply text
-  int  botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* out, int out_len); // scan "!word"s → combined reply, returns count
+  bool tryBotRoomCommand(const ContactInfo& from, const uint8_t* sender_prefix, const char* text, uint8_t hops); // room commands
+  bool botCommandReply(const char* cmd, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name);  // one command → reply text
+  int  botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name); // scan "!word"s → combined reply, returns count
   bool botTriggerMatches(const char* trigger, const char* body, bool allow_wildcard) const;
   bool botInQuietHours() const;               // true when auto-replies should stay silent
   bool botDmAllowed(const uint8_t* pubkey);   // per-contact DM throttle: ok to reply?
   void botDmRecord(const uint8_t* pubkey);    // remember we just replied to this contact
+  // DM allow-list gate (bot_dm_scope): true unless scope is favourites-only
+  // and `from` isn't starred. Shared by the DM trigger-reply and command paths.
+  bool botDmSenderAllowed(const ContactInfo& from) const;
+  // Resolves a room post's signed author prefix to a display name for {name};
+  // falls back to a generic label when the poster isn't a known contact.
+  void botRoomSenderName(const uint8_t* sender_prefix, char* out, int out_len);
 
   void writeOKFrame();
   void writeErrFrame(uint8_t err_code);
@@ -379,6 +387,7 @@ private:
   uint32_t sign_data_len;
   unsigned long dirty_contacts_expiry;
   unsigned long _bot_last_ch_reply_ms;
+  unsigned long _bot_last_room_reply_ms;
   unsigned long _next_auto_advert_ms;
 
   // Per-contact DM reply throttle: a small ring of the most recent recipients so

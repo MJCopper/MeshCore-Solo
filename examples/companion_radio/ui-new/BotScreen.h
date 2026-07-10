@@ -6,112 +6,285 @@ class BotScreen : public UIScreen {
   UITask*    _task;
   NodePrefs* _prefs;
 
-  // Items: 0=Enable(DM), 1=Channel, 2=Trigger DM, 3=Reply DM, 4=Trigger Ch,
-  //        5=Reply Ch, 6=Commands, 7=Quiet from, 8=Quiet to
-  static const int ITEM_COUNT = 9;
+  // Categories are a circular tab bar in the header (mirrors NearbyScreen's
+  // filter tabs — duplicated locally rather than shared, since this is the
+  // only other screen using the pattern so far). LEFT/RIGHT switches tabs;
+  // UP/DOWN moves within the active tab's rows. Because LEFT/RIGHT is fully
+  // owned by tab-switching, every row's value is edited via Enter only — no
+  // more inline LEFT/RIGHT cycling.
+  enum Tab : uint8_t { TAB_DIRECT, TAB_CHANNEL, TAB_ROOM, TAB_OTHER, TAB_COUNT };
+  static const char* TAB_LABELS[TAB_COUNT];
 
-  int  _sel;
-  int  _scroll;    // index of first visible item (managed by drawList in render)
+  enum Kind : uint8_t { ENABLE_DM, DM_SCOPE, COMMANDS_DM, TRIGGER_DM, REPLY_DM,
+                        ENABLE_CH, CHANNEL, COMMANDS_CH, TRIGGER_CH, REPLY_CH,
+                        ENABLE_ROOM, ROOM, COMMANDS_ROOM, TRIGGER_ROOM, REPLY_ROOM,
+                        QUIET_FROM, QUIET_TO };
+  struct Row { Kind kind; const char* label; };
+
+  static const int ROWS_PER_TAB[TAB_COUNT];
+
+  // Row labels drop the "DM"/"Ch"/"Room" suffix the old flat list needed —
+  // the active tab already gives that context, freeing up value-column width.
+  // Commands lives on each tab (not a shared "Other" toggle) so DM/channel/
+  // room can each independently answer !ping etc. or stay quiet.
+  static Row tabRow(int tab, int idx) {
+    static const Row DIRECT[] = {
+      { ENABLE_DM,   "Enable" },
+      { DM_SCOPE,    "DM allow" },
+      { COMMANDS_DM, "Commands" },
+      { TRIGGER_DM,  "Trigger" },
+      { REPLY_DM,    "Reply" },
+    };
+    static const Row CHANNEL_ROWS[] = {
+      { ENABLE_CH,   "Enable" },
+      { CHANNEL,     "Channel" },
+      { COMMANDS_CH, "Commands" },
+      { TRIGGER_CH,  "Trigger" },
+      { REPLY_CH,    "Reply" },
+    };
+    static const Row ROOM_ROWS[] = {
+      { ENABLE_ROOM,   "Enable" },
+      { ROOM,          "Room" },
+      { COMMANDS_ROOM, "Commands" },
+      { TRIGGER_ROOM,  "Trigger" },
+      { REPLY_ROOM,    "Reply" },
+    };
+    static const Row OTHER[] = {
+      { QUIET_FROM, "Quiet from" },
+      { QUIET_TO,   "Quiet to" },
+    };
+    switch (tab) {
+      case TAB_DIRECT:  return DIRECT[idx];
+      case TAB_CHANNEL: return CHANNEL_ROWS[idx];
+      case TAB_ROOM:    return ROOM_ROWS[idx];
+      default:          return OTHER[idx];
+    }
+  }
+
+  uint8_t _tab;    // persists across visits, like NearbyScreen's _filter
+  int  _sel;       // selected row index within the active tab
+  int  _scroll;    // index of first visible row (managed by drawList in render)
   bool _dirty;
 
   // keyboard state (reused for trigger and reply fields)
-  int             _kb_field;   // -1=off, else the item index being edited (2..5)
+  int             _kb_row;   // -1=off, else the row index (within the active tab) being edited
   KeyboardWidget* _kb;
 
-  // channel cache (refreshed on enter)
-  int     _num_channels;
-  uint8_t _channel_indices[MAX_GROUP_CHANNELS];
+  // Quiet-hours stepper: Enter on Quiet from/to enters this sub-mode (LEFT/
+  // RIGHT is unavailable for +/- now that it switches tabs), where UP/DOWN
+  // steps the hour and Enter/Cancel exits back to normal row browsing.
+  int _stepper_row;  // -1=off, else the row index being stepped
+
+  // channel/room counts (refreshed on enter) — just gate whether Enter opens
+  // the (possibly empty) picker; the picker itself browses the real list, so
+  // no local index cache is needed now that there's no LEFT/RIGHT quick-cycle.
+  int _num_channels;
+  int _num_rooms;
 
   void refreshChannels() {
     _num_channels = 0;
     ChannelDetails ch;
-    for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
-      if (the_mesh.getChannel(i, ch) && ch.name[0] != '\0')
-        _channel_indices[_num_channels++] = (uint8_t)i;
-    }
+    for (int i = 0; i < MAX_GROUP_CHANNELS; i++)
+      if (the_mesh.getChannel(i, ch) && ch.name[0] != '\0') _num_channels++;
   }
 
-  // Returns index into _channel_indices[] for current bot_channel_idx, or -1 if not found/disabled.
-  int currentChannelListIdx() const {
-    if (!_prefs->bot_channel_enabled) return -1;
-    for (int i = 0; i < _num_channels; i++)
-      if (_channel_indices[i] == _prefs->bot_channel_idx) return i;
-    return -1;
+  void refreshRooms() {
+    _num_rooms = 0;
+    ContactInfo ci;
+    int total = the_mesh.getNumContacts();
+    for (int i = 0; i < total; i++)
+      if (the_mesh.getContactByIdx(i, ci) && ci.type == ADV_TYPE_ROOM) _num_rooms++;
+  }
+
+  // One tab: short label; the active one is an inverted pill (same look as a
+  // selected row) so it reads as "you are here" in the tab strip.
+  void drawTab(DisplayDriver& display, int x, int w, const char* label, bool active) {
+    int lh = display.getLineHeight();
+    if (active) {
+      display.setColor(DisplayDriver::LIGHT);
+      display.fillRect(x, 0, w, lh + 1);
+      display.setColor(DisplayDriver::DARK);
+    } else {
+      display.setColor(DisplayDriver::LIGHT);
+    }
+    display.drawTextCentered(x + w / 2, 0, label);
+    display.setColor(DisplayDriver::LIGHT);
+  }
+
+  // Header as a circular tab bar: the active tab sits centred as a filled
+  // pill, neighbours fan out either side and wrap around. Only whole tabs are
+  // drawn — one that would spill past a screen edge is skipped rather than
+  // clipped. `right_reserve` keeps the reply counter (drawn after this call)
+  // clear of the rightmost tab.
+  void drawTabBar(DisplayDriver& display, int right_reserve) {
+    const int pad = 3, gap = 2;
+    int w[TAB_COUNT];
+    for (int i = 0; i < TAB_COUNT; i++)
+      w[i] = display.getTextWidth(TAB_LABELS[i]) + pad * 2;
+
+    int ax = display.width() / 2 - w[_tab] / 2;
+    drawTab(display, ax, w[_tab], TAB_LABELS[_tab], true);
+
+    int lx = ax - gap;
+    int rx = ax + w[_tab] + gap;
+    int rx_limit = display.width() - right_reserve;
+    bool lfit = true, rfit = true;
+    for (int k = 1; k <= TAB_COUNT / 2 && (lfit || rfit); k++) {
+      int li = (_tab - k + TAB_COUNT) % TAB_COUNT;
+      int ri = (_tab + k) % TAB_COUNT;
+      if (lfit) {
+        int x = lx - w[li];
+        if (x >= 0) { drawTab(display, x, w[li], TAB_LABELS[li], false); lx = x - gap; }
+        else lfit = false;
+      }
+      // Skip the right side when it lands on the same tab as the left (the
+      // single opposite tab on an even count) so it isn't drawn twice.
+      if (rfit && ri != li) {
+        if (rx + w[ri] <= rx_limit) { drawTab(display, rx, w[ri], TAB_LABELS[ri], false); rx += w[ri] + gap; }
+        else rfit = false;
+      }
+    }
+    display.setColor(DisplayDriver::LIGHT);
+    display.fillRect(0, display.headerH() - display.sepH(), display.width(), display.sepH());
   }
 
 public:
-  BotScreen(UITask* task, NodePrefs* prefs, KeyboardWidget* kb) : _task(task), _prefs(prefs), _kb(kb) {}
+  BotScreen(UITask* task, NodePrefs* prefs, KeyboardWidget* kb)
+    : _task(task), _prefs(prefs), _tab(TAB_DIRECT), _kb(kb) {}
 
   void onShow() override {
-    _sel      = 0;
-    _scroll   = 0;
-    _kb_field = -1;
-    _dirty    = false;
+    // _tab persists across visits (like NearbyScreen's _filter) — only reset
+    // the in-tab cursor and any open sub-mode.
+    _sel        = 0;
+    _scroll     = 0;
+    _kb_row     = -1;
+    _stepper_row = -1;
+    _dirty      = false;
     refreshChannels();
+    refreshRooms();
   }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
 
-    if (_kb_field >= 0) {
+    if (_kb_row >= 0) {
       return _kb->render(display);
     }
 
     int val_x = display.valCol();
 
-    display.drawCenteredHeader("AUTO-REPLY BOT");
-    // reply counter, right-aligned in the header
+    // Reply counter, right-aligned in the header — reserve its width from the
+    // tab bar before drawing so a right-side tab can't run under it.
     uint16_t sent = the_mesh.botReplyCount();
+    char cbuf[12];
+    int  cw = 0;
     if (sent > 0) {
-      char cbuf[12];
       snprintf(cbuf, sizeof(cbuf), "%u", (unsigned)sent);
-      int cw = display.getTextWidth(cbuf);
+      cw = display.getTextWidth(cbuf);
+    }
+    drawTabBar(display, sent > 0 ? cw + 2 : 0);
+    if (sent > 0) {
       display.setCursor(display.width() - cw - 1, 0);
       display.print(cbuf);
+      display.setColor(DisplayDriver::LIGHT);
     }
 
-    static const char* labels[] = { "Enable", "Channel", "Trigger DM", "Reply DM",
-                                    "Trigger Ch", "Reply Ch", "Commands",
-                                    "Quiet from", "Quiet to" };
-    drawList(display, ITEM_COUNT, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
+    int n = ROWS_PER_TAB[_tab];
+    drawList(display, n, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
+      Row r = tabRow(_tab, i);
       drawRowSelection(display, y, sel, reserve);
       display.setCursor(2, y);
-      display.print(labels[i]);
+      display.print(r.label);
       display.setCursor(val_x, y);
 
-      if (i == 0) {
-        display.print(_prefs->bot_enabled ? "ON" : "OFF");
-      } else if (i == 1) {
-        if (!_prefs->bot_channel_enabled || _num_channels == 0) {
-          display.print("OFF");
-        } else {
+      switch (r.kind) {
+        case ENABLE_DM:
+          display.print(_prefs->bot_enabled ? "ON" : "OFF");
+          break;
+        case ENABLE_CH:
+          display.print(_prefs->bot_channel_enabled ? "ON" : "OFF");
+          break;
+        case ENABLE_ROOM:
+          display.print(_prefs->bot_room_enabled ? "ON" : "OFF");
+          break;
+        case DM_SCOPE:
+          display.print(_prefs->bot_dm_scope ? "Fav" : "All");
+          break;
+        case CHANNEL: {
           ChannelDetails ch;
-          if (the_mesh.getChannel(_prefs->bot_channel_idx, ch) && ch.name[0])
-            display.drawTextEllipsized(val_x, y, display.width() - val_x - 1 - reserve,ch.name);
+          if (_num_channels == 0)
+            display.print("(none)");
+          else if (the_mesh.getChannel(_prefs->bot_channel_idx, ch) && ch.name[0])
+            display.drawTextEllipsized(val_x, y, display.width() - val_x - 1 - reserve, ch.name);
           else
             display.print("?");
+          break;
         }
-      } else if (i == 2 || i == 4) {
-        const char* tr = (i == 2) ? _prefs->bot_trigger : _prefs->bot_trigger_ch;
-        const char* shown = !tr[0] ? "(none)"
-                          : (tr[0] == '*' && !tr[1]) ? "(any msg)"   // wildcard / away mode
-                                                     : tr;
-        display.drawTextEllipsized(val_x, y, display.width() - val_x - 1 - reserve,shown);
-      } else if (i == 3 || i == 5) {
-        const char* rp = (i == 3) ? _prefs->bot_reply_dm : _prefs->bot_reply_ch;
-        display.drawTextEllipsized(val_x, y, display.width() - val_x - 1 - reserve,rp[0] ? rp : "(none)");
-      } else if (i == 6) {
-        display.print(_prefs->bot_commands_enabled ? "ON" : "OFF");
-      } else {  // i == 7 (quiet from) or i == 8 (quiet to)
-        bool off = (_prefs->bot_quiet_start == _prefs->bot_quiet_end);
-        if (off) {
-          display.print("OFF");
-        } else {
-          char hb[8];
-          snprintf(hb, sizeof(hb), "%02d:00", i == 7 ? _prefs->bot_quiet_start : _prefs->bot_quiet_end);
-          display.print(hb);
+        case ROOM: {
+          if (_num_rooms == 0) {
+            display.print("(none)");
+          } else {
+            ContactInfo* c = the_mesh.lookupContactByPubKey(_prefs->bot_room_prefix, NodePrefs::FAVOURITE_PREFIX_LEN);
+            if (c && c->name[0])
+              display.drawTextEllipsized(val_x, y, display.width() - val_x - 1 - reserve, c->name);
+            else
+              display.print("?");
+          }
+          break;
         }
+        case TRIGGER_DM:
+        case TRIGGER_CH:
+        case TRIGGER_ROOM: {
+          const char* tr = (r.kind == TRIGGER_DM) ? _prefs->bot_trigger
+                          : (r.kind == TRIGGER_CH) ? _prefs->bot_trigger_ch
+                                                   : _prefs->bot_trigger_room;
+          const char* shown = !tr[0] ? "(none)"
+                            : (tr[0] == '*' && !tr[1]) ? "(any msg)"   // wildcard / away mode
+                                                       : tr;
+          display.drawTextEllipsized(val_x, y, display.width() - val_x - 1 - reserve, shown);
+          break;
+        }
+        case REPLY_DM:
+        case REPLY_CH:
+        case REPLY_ROOM: {
+          const char* rp = (r.kind == REPLY_DM) ? _prefs->bot_reply_dm
+                          : (r.kind == REPLY_CH) ? _prefs->bot_reply_ch
+                                                 : _prefs->bot_reply_room;
+          display.drawTextEllipsized(val_x, y, display.width() - val_x - 1 - reserve, rp[0] ? rp : "(none)");
+          break;
+        }
+        case COMMANDS_DM:
+          display.print(_prefs->bot_commands_enabled ? "ON" : "OFF");
+          break;
+        case COMMANDS_CH:
+          display.print(_prefs->bot_commands_ch ? "ON" : "OFF");
+          break;
+        case COMMANDS_ROOM:
+          display.print(_prefs->bot_commands_room ? "ON" : "OFF");
+          break;
+        case QUIET_FROM:
+        case QUIET_TO: {
+          bool off = (_prefs->bot_quiet_start == _prefs->bot_quiet_end);
+          char hb[10];
+          if (off) {
+            strcpy(hb, "OFF");
+          } else {
+            uint8_t h = (r.kind == QUIET_FROM) ? _prefs->bot_quiet_start : _prefs->bot_quiet_end;
+            snprintf(hb, sizeof(hb), "%02d:00", h);
+          }
+          // Bracket the value while the stepper sub-mode is open on this row,
+          // as a visual cue that UP/DOWN now steps it instead of moving rows.
+          if (_stepper_row == i) {
+            char bracketed[14];
+            snprintf(bracketed, sizeof(bracketed), "[%s]", hb);
+            display.print(bracketed);
+          } else {
+            display.print(hb);
+          }
+          break;
+        }
+        default: break;
       }
       display.setColor(DisplayDriver::LIGHT);
     });
@@ -121,23 +294,31 @@ public:
   bool handleInput(char c) override {
     bool up    = (c == KEY_UP);
     bool down  = (c == KEY_DOWN);
-    bool left  = keyIsPrev(c);
-    bool right = keyIsNext(c);
     bool enter = (c == KEY_ENTER);
     bool cancel = (c == KEY_CANCEL || c == KEY_CONTEXT_MENU);
 
-    if (_kb_field >= 0) {
+    if (_kb_row >= 0) {
       auto res = _kb->handleInput(c);
       if (res == KeyboardWidget::DONE) {
-        char* dst = fieldBuf(_kb_field);
-        int   cap = fieldCap(_kb_field);
+        Kind  k   = tabRow(_tab, _kb_row).kind;
+        char* dst = fieldBuf(k);
+        int   cap = fieldCap(k);
         if (dst) { strncpy(dst, _kb->buf, cap - 1); dst[cap - 1] = '\0'; }
-        _dirty    = true;
-        _kb_field = -1;
+        _dirty  = true;
+        _kb_row = -1;
       } else if (res == KeyboardWidget::CANCELLED) {
-        _kb_field = -1;
+        _kb_row = -1;
       }
       return true;
+    }
+
+    if (_stepper_row >= 0) {
+      Kind k = tabRow(_tab, _stepper_row).kind;
+      uint8_t& h = (k == QUIET_FROM) ? _prefs->bot_quiet_start : _prefs->bot_quiet_end;
+      if (up)   { h = (h + 1) % 24;  _dirty = true; return true; }
+      if (down) { h = (h + 23) % 24; _dirty = true; return true; }
+      if (enter || cancel) { _stepper_row = -1; return true; }
+      return true;  // swallow LEFT/RIGHT etc. while stepping
     }
 
     if (cancel) {
@@ -145,78 +326,91 @@ public:
       _task->gotoToolsScreen();
       return true;
     }
-    // drawList() reclamps _scroll from _sel every render.
-    if (up)   { _sel = (_sel > 0) ? _sel - 1 : ITEM_COUNT - 1; return true; }
-    if (down) { _sel = (_sel < ITEM_COUNT - 1) ? _sel + 1 : 0; return true; }
+    if (keyIsPrev(c)) { _tab = (_tab + TAB_COUNT - 1) % TAB_COUNT; _sel = _scroll = 0; return true; }
+    if (keyIsNext(c)) { _tab = (_tab + 1) % TAB_COUNT;             _sel = _scroll = 0; return true; }
 
-    if (_sel == 0 && (enter || left || right)) {
-      _prefs->bot_enabled ^= 1;
-      _dirty = true;
-      return true;
-    }
-    if (_sel == 1) {
-      if (_num_channels == 0) return false;
-      // Cycle: OFF → ch[0] → ch[1] → ... → OFF
-      int idx = currentChannelListIdx();  // -1 = OFF
-      if (right || enter) {
-        idx++;
-        if (idx >= _num_channels) idx = -1;  // wrap to OFF
-      }
-      if (left) {
-        idx--;
-        if (idx < -1) idx = _num_channels - 1;
-      }
-      if (left || right || enter) {
-        if (idx < 0) {
-          _prefs->bot_channel_enabled = 0;
+    int n = ROWS_PER_TAB[_tab];
+    // drawList() reclamps _scroll from _sel every render.
+    if (up)   { _sel = (_sel > 0) ? _sel - 1 : n - 1; return true; }
+    if (down) { _sel = (_sel < n - 1) ? _sel + 1 : 0; return true; }
+
+    if (!enter) return false;
+    Kind k = tabRow(_tab, _sel).kind;
+
+    switch (k) {
+      case ENABLE_DM:   _prefs->bot_enabled ^= 1;         _dirty = true; return true;
+      case ENABLE_CH:   _prefs->bot_channel_enabled ^= 1; _dirty = true; return true;
+      case ENABLE_ROOM: _prefs->bot_room_enabled ^= 1;    _dirty = true; return true;
+      case DM_SCOPE:      _prefs->bot_dm_scope ^= 1;         _dirty = true; return true;
+      case COMMANDS_DM:   _prefs->bot_commands_enabled ^= 1; _dirty = true; return true;
+      case COMMANDS_CH:   _prefs->bot_commands_ch ^= 1;      _dirty = true; return true;
+      case COMMANDS_ROOM: _prefs->bot_commands_room ^= 1;    _dirty = true; return true;
+      case CHANNEL:
+        // Full browsable channel picker (same experience as Live Share's "To"
+        // row); which channel is *active* is now the separate Enable row.
+        if (_num_channels == 0) return false;
+        _task->savePrefsIfDirty(_dirty);
+        _task->pickBotChannelTarget();
+        return true;
+      case ROOM:
+        if (_num_rooms == 0) return false;
+        _task->savePrefsIfDirty(_dirty);
+        _task->pickBotRoomTarget();
+        return true;
+      case QUIET_FROM:
+      case QUIET_TO:
+        _stepper_row = _sel;
+        return true;
+      case TRIGGER_DM:
+      case TRIGGER_CH:
+      case TRIGGER_ROOM:
+      case REPLY_DM:
+      case REPLY_CH:
+      case REPLY_ROOM: {
+        _kb_row = _sel;
+        _kb->begin(fieldBuf(k), fieldCap(k) - 1);
+        bool is_trigger = (k == TRIGGER_DM || k == TRIGGER_CH || k == TRIGGER_ROOM);
+        if (is_trigger) {
+          _kb->clearPlaceholders();  // trigger is literal — placeholders never match
         } else {
-          _prefs->bot_channel_enabled = 1;
-          _prefs->bot_channel_idx = _channel_indices[idx];
+          kbAddSensorPlaceholders(*_kb, &sensors);
+          // Only meaningful in a bot reply (there's an actual triggering
+          // sender/hop-count to fill them with) — not offered on the general
+          // compose keyboard's own placeholder list.
+          _kb->addPlaceholder("{name}");
+          _kb->addPlaceholder("{hops}");
         }
-        _dirty = true;
         return true;
       }
+      default: return false;
     }
-    if (_sel == 6 && (enter || left || right)) {
-      _prefs->bot_commands_enabled ^= 1;
-      _dirty = true;
-      return true;
-    }
-    if ((_sel == 7 || _sel == 8) && (left || right)) {
-      uint8_t& h = (_sel == 7) ? _prefs->bot_quiet_start : _prefs->bot_quiet_end;
-      h = right ? (h + 1) % 24 : (h + 23) % 24;
-      _dirty = true;
-      return true;
-    }
-    if ((_sel == 2 || _sel == 3 || _sel == 4 || _sel == 5) && enter) {
-      _kb_field = _sel;
-      _kb->begin(fieldBuf(_sel), fieldCap(_sel) - 1);
-      bool is_trigger = (_sel == 2 || _sel == 4);
-      if (is_trigger) _kb->clearPlaceholders();  // trigger is literal — placeholders never match
-      else            kbAddSensorPlaceholders(*_kb, &sensors);
-      return true;
-    }
-    return false;
   }
 
 private:
-  // Maps a keyboard-editable item index to its backing string + capacity.
-  char* fieldBuf(int item) {
-    switch (item) {
-      case 2: return _prefs->bot_trigger;
-      case 3: return _prefs->bot_reply_dm;
-      case 4: return _prefs->bot_trigger_ch;
-      case 5: return _prefs->bot_reply_ch;
+  // Maps a keyboard-editable row kind to its backing string + capacity.
+  char* fieldBuf(Kind k) {
+    switch (k) {
+      case TRIGGER_DM:   return _prefs->bot_trigger;
+      case REPLY_DM:     return _prefs->bot_reply_dm;
+      case TRIGGER_CH:   return _prefs->bot_trigger_ch;
+      case REPLY_CH:     return _prefs->bot_reply_ch;
+      case TRIGGER_ROOM: return _prefs->bot_trigger_room;
+      case REPLY_ROOM:   return _prefs->bot_reply_room;
       default: return nullptr;
     }
   }
-  int fieldCap(int item) {
-    switch (item) {
-      case 2: return sizeof(_prefs->bot_trigger);
-      case 3: return sizeof(_prefs->bot_reply_dm);
-      case 4: return sizeof(_prefs->bot_trigger_ch);
-      case 5: return sizeof(_prefs->bot_reply_ch);
+  int fieldCap(Kind k) {
+    switch (k) {
+      case TRIGGER_DM:   return sizeof(_prefs->bot_trigger);
+      case REPLY_DM:     return sizeof(_prefs->bot_reply_dm);
+      case TRIGGER_CH:   return sizeof(_prefs->bot_trigger_ch);
+      case REPLY_CH:     return sizeof(_prefs->bot_reply_ch);
+      case TRIGGER_ROOM: return sizeof(_prefs->bot_trigger_room);
+      case REPLY_ROOM:   return sizeof(_prefs->bot_reply_room);
       default: return 0;
     }
   }
 };
+
+const char* BotScreen::TAB_LABELS[BotScreen::TAB_COUNT] = { "Direct", "Channel", "Room", "Other" };
+const int   BotScreen::ROWS_PER_TAB[BotScreen::TAB_COUNT] = { 5, 5, 5, 2 };

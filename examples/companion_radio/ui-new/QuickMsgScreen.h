@@ -88,6 +88,12 @@ class QuickMsgScreen : public UIScreen {
   // Live-share target picker: reuse the recipient chooser to set the persistent
   // auto-share target (channel / DM) instead of composing a message.
   bool      _pick_target = false;
+  // Bot channel picker: same idea, but jumps straight to CHANNEL_PICK (the
+  // bot only ever targets a channel, never a DM) to set bot_channel_idx.
+  bool      _pick_bot_channel = false;
+  // Bot room picker: jumps straight to CONTACT_PICK with room_mode on (the
+  // bot's room target is always a room server) to set bot_room_prefix.
+  bool      _pick_bot_room = false;
 
   // The message-history rings (channel + DM), their per-entry delivery state and
   // per-channel unread counters live in this store (see MessageHistory.h). The
@@ -644,7 +650,7 @@ public:
       // so only do it if they're still sitting on this same room in the picker
       // (didn't navigate away, open a menu, or enter a share/pick sub-flow).
       if (_phase == CONTACT_PICK && _room_mode && !_ctx_menu.active
-          && !_share_mode && !_pick_target
+          && !_share_mode && !_pick_target && !_pick_bot_room
           && memcmp(_sel_contact.id.pub_key, pub_key, 4) == 0) {
         openDmHistory();
       }
@@ -721,6 +727,8 @@ public:
     _nav_active = false;
     _share_mode = false;
     _pick_target = false;
+    _pick_bot_channel = false;
+    _pick_bot_room = false;
     _pin_picker_active = false;
     _dm_direct_entry = false;
     _unread_at_entry = 0;
@@ -765,6 +773,53 @@ public:
     _pick_target = false;
     _task->showAlert("Share target set", 1200);
     _task->gotoLiveShareScreen();
+  }
+
+  // Open the channel chooser to set the auto-reply bot's channel. Skips
+  // MODE_SELECT (the bot only ever targets a channel) and lands straight on
+  // CHANNEL_PICK, browsing real channel names instead of a bare index cycle.
+  void startPickBotChannel() {
+    reset();
+    _pick_bot_channel = true;
+    _phase = CHANNEL_PICK;
+  }
+
+  void commitPickBotChannel(int ch_idx) {
+    NodePrefs* p = _task->getNodePrefs();
+    if (p) {
+      p->bot_channel_enabled = 1;
+      p->bot_channel_idx = (uint8_t)ch_idx;
+      the_mesh.savePrefs();
+    }
+    _pick_bot_channel = false;
+    _task->showAlert("Bot channel set", 1200);
+    _task->gotoBotScreen();
+  }
+
+  // Open the room chooser to set the auto-reply bot's room. Enter routes
+  // through the same login handling the normal room-open flow uses (see the
+  // CONTACT_PICK/room_mode Enter handler below) — the bot can't ever post to
+  // a room it has no password for, so picking one is a good moment to prompt.
+  void startPickBotRoom() {
+    reset();
+    _pick_bot_room = true;
+    _room_mode = true;
+    buildContactList();   // rebuild now that _room_mode is on (reset() built the DM list)
+    _contact_sel = _contact_scroll = 0;
+    _phase = CONTACT_PICK;
+  }
+
+  void commitPickBotRoom(const ContactInfo& ci) {
+    NodePrefs* p = _task->getNodePrefs();
+    if (p) {
+      p->bot_room_enabled = 1;
+      memcpy(p->bot_room_prefix, ci.id.pub_key, NodePrefs::FAVOURITE_PREFIX_LEN);
+      the_mesh.savePrefs();
+    }
+    _pick_bot_room = false;
+    _room_mode = false;
+    _task->showAlert("Bot room set", 1200);
+    _task->gotoBotScreen();
   }
 
   void commitPickTargetDM(const ContactInfo& ci) {
@@ -1351,13 +1406,42 @@ public:
         if (res != PopupMenu::NONE) _task->savePrefsIfDirty(_ctx_dirty);
         return true;
       }
-      if (c == KEY_CANCEL) { _room_mode = false; _phase = MODE_SELECT; return true; }
+      if (c == KEY_CANCEL) {
+        if (_pick_bot_room) { _pick_bot_room = false; _room_mode = false; _task->gotoBotScreen(); return true; }
+        _room_mode = false;
+        _phase = MODE_SELECT;
+        return true;
+      }
       // drawList() reclamps _contact_scroll from _contact_sel every render.
       if (c == KEY_UP   && _num_contacts > 0) { _contact_sel = (_contact_sel > 0) ? _contact_sel - 1 : _num_contacts - 1; return true; }
       if (c == KEY_DOWN && _num_contacts > 0) { _contact_sel = (_contact_sel < _num_contacts - 1) ? _contact_sel + 1 : 0; return true; }
       if (c == KEY_ENTER && _num_contacts > 0) {
         if (the_mesh.getContactByIdx(_sorted[_contact_sel], _sel_contact)) {
           if (_pick_target) { commitPickTargetDM(_sel_contact); return true; }
+          if (_pick_bot_room) {
+            if (!isRoomLoggedIn(_sel_contact.id.pub_key)) {
+              char saved_pw[sizeof(_login_pw)];
+              if (the_mesh.getRoomPassword(_sel_contact.id.pub_key, saved_pw, sizeof(saved_pw))) {
+                // Known password, just not re-established this boot — retry
+                // silently in the background; the bot target is set below
+                // regardless of this attempt's outcome (self-heals like any
+                // other saved room password would on the next real open).
+                startRoomLogin(saved_pw);
+              } else {
+                // Never logged in — the bot could never post here without a
+                // password, so prompt for one now instead of picking an
+                // unusable target. Commits once submitted (see the KEYBOARD/
+                // _login_mode handler), whether or not login itself succeeds.
+                _login_mode = true;
+                _kb->begin("", 15); // room/repeater password: max 15 chars
+                _kb->clearPlaceholders();
+                _phase = KEYBOARD;
+                return true;
+              }
+            }
+            commitPickBotRoom(_sel_contact);
+            return true;
+          }
           if (_room_mode && !isRoomLoggedIn(_sel_contact.id.pub_key)) {
             // Posting to a room requires a login handshake first (even with a
             // blank password) — go straight to the password prompt instead of
@@ -1468,13 +1552,18 @@ public:
         }
         return true;
       }
-      if (c == KEY_CANCEL) { _phase = MODE_SELECT; return true; }
+      if (c == KEY_CANCEL) {
+        if (_pick_bot_channel) { _pick_bot_channel = false; _task->gotoBotScreen(); return true; }
+        _phase = MODE_SELECT;
+        return true;
+      }
       // drawList() reclamps _channel_scroll from _channel_sel every render.
       if (c == KEY_UP   && _num_channels > 0) { _channel_sel = (_channel_sel > 0) ? _channel_sel - 1 : _num_channels - 1; return true; }
       if (c == KEY_DOWN && _num_channels > 0) { _channel_sel = (_channel_sel < _num_channels - 1) ? _channel_sel + 1 : 0; return true; }
       if (c == KEY_ENTER && _num_channels > 0) {
         _sel_channel_idx = _channel_indices[_channel_sel];
         if (_pick_target) { commitPickTargetChannel(_sel_channel_idx); return true; }
+        if (_pick_bot_channel) { commitPickBotChannel(_sel_channel_idx); return true; }
         int hc = _history.histCountForChannel(_sel_channel_idx);
         _unread_at_entry = (int)_history.chUnread(_sel_channel_idx);
         _hist_scroll = 0;
@@ -1675,6 +1764,7 @@ public:
           // password" attempt, so it isn't suppressed like an empty message is.
           _login_mode = false;
           startRoomLogin(_kb->buf);
+          if (_pick_bot_room) { commitPickBotRoom(_sel_contact); return true; }
           _phase = CONTACT_PICK;
         }
         return true;
