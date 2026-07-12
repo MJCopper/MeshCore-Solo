@@ -297,9 +297,20 @@ static int kbUtf8LastCharBytes(const char* buf, int len) {
   return n;
 }
 
-static const int KB_PH_MAX     = 12;  // max placeholders in list
-static const int KB_PH_LEN     = 9;   // max placeholder string length incl. null
+static const int KB_PH_MAX     = 20;  // max placeholders in list (PopupMenu::PM_MAX_ITEMS=24 is the hard ceiling)
+static const int KB_PH_LEN     = 30;  // max placeholder string length incl. null -- sized for the longest
+                                       // CLI-command candidate (AdminScreen), not just the short {x} tokens
 static const int KB_PH_VISIBLE = 3;   // items shown at once in overlay
+
+struct KeyboardWidget;
+// Optional hook: if set, called right before the placeholder picker opens so
+// the caller can repopulate the list contextually (e.g. AdminScreen's CLI
+// command autocomplete, filtered by what's already typed). When set, picking
+// an entry also replaces the in-progress word (the text since the last
+// space) instead of appending it -- true completion, not insertion. Fields
+// that don't set this (the common case -- {loc}/{time} etc.) keep the
+// original static-list, append-only behaviour untouched.
+typedef void (*PlaceholderRefreshFn)(KeyboardWidget& kb, void* ctx);
 
 struct KeyboardWidget {
   char buf[KB_MAX_LEN + 1];
@@ -311,6 +322,12 @@ struct KeyboardWidget {
   char _ph_buf[KB_PH_MAX][KB_PH_LEN];
   int  _ph_count;
   PopupMenu _ph_menu;
+  PlaceholderRefreshFn _ph_refresh = nullptr;
+  void* _ph_refresh_ctx = nullptr;
+  const char* _ph_title = "Placeholder:";   // popup title -- overridable so e.g. AdminScreen can say "Commands:"
+  void setPlaceholderRefresh(PlaceholderRefreshFn fn, void* ctx, const char* title = "Placeholder:") {
+    _ph_refresh = fn; _ph_refresh_ctx = ctx; _ph_title = title;
+  }
 
   // Live setting lookup — set once by UITask::begin(). NULL only in tests/tools
   // that construct a KeyboardWidget standalone, in which case isT9() defaults
@@ -419,6 +436,9 @@ struct KeyboardWidget {
     t9_cell = -1;
     t9_cycle = 0;
     _ph_menu.active = false;
+    _ph_refresh = nullptr;      // opt-in per session -- the owning screen re-sets it if it wants
+    _ph_refresh_ctx = nullptr;  // contextual autocomplete right after this begin()
+    _ph_title = "Placeholder:";
     // default placeholders — always available
     _ph_count = 0;
     addPlaceholder("{loc}");
@@ -601,9 +621,16 @@ struct KeyboardWidget {
         int idx = _ph_menu.selectedIndex();
         const char* ph = _ph_buf[idx];
         int ph_len = strlen(ph);
-        if (len + ph_len <= max_len) {
-          memcpy(buf + len, ph, ph_len);
-          len += ph_len;
+        // Contextual (refresh-hook) fields complete the in-progress word --
+        // the text since the last space -- instead of appending after it, so
+        // picking a match doesn't duplicate what's already been typed.
+        int base_len = len;
+        if (_ph_refresh) {
+          while (base_len > 0 && buf[base_len - 1] != ' ') base_len--;
+        }
+        if (base_len + ph_len <= max_len) {
+          memcpy(buf + base_len, ph, ph_len);
+          len = base_len + ph_len;
           buf[len] = '\0';
         }
       }
@@ -708,7 +735,8 @@ struct KeyboardWidget {
             if (len > 0) { len -= kbUtf8LastCharBytes(buf, len); buf[len] = '\0'; }
             break;
           case 3:
-            _ph_menu.begin("Placeholder:", KB_PH_VISIBLE);
+            if (_ph_refresh) _ph_refresh(*this, _ph_refresh_ctx);   // contextual repopulate, if wired up
+            _ph_menu.begin(_ph_title, KB_PH_VISIBLE);
             for (int i = 0; i < _ph_count; i++) _ph_menu.addItem(_ph_buf[i]);
             break;
           case 4:

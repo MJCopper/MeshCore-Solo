@@ -41,6 +41,7 @@ Select a node to see its coordinates, distance, bearing with cardinal direction,
 | Ping                   | a public key is known for the node                                                     |
 | Save waypoint          | selected node has GPS                                                                   |
 | Set as target          | selected node has GPS **and** a public key — pins it as the active **Locator/Nav target** right away (see **Locator**) |
+| Admin                  | selected node is a saved **repeater or room server** contact — opens **Tools › Admin** for it directly (see **Admin**) |
 | Sort: Dist/Recent      | browsing stored nodes — **LEFT/RIGHT** on the row flips distance ↔ last-heard in place |
 | Discover scan / Rescan | always (live `NODE_DISCOVER_REQ` scan)                                                  |
 
@@ -516,27 +517,42 @@ Live forwarding stats — **Forwarded**, **Pool free**, **Queue** — are shown 
 
 <!-- screenshot pending: Admin — target picker, command entry, reply view -->
 
-Send CLI commands to a **repeater or room server you have admin permission on** and see the text reply — the on-device equivalent of the companion app's repeater-admin feature. See [CLI Commands](../../cli_commands.md) for the full command grammar.
+Send commands to **this device**, or to a **repeater/room server you have admin permission on** — the on-device equivalent of the companion app's repeater-admin feature for remote nodes, plus a local shim over settings this device already has. See [CLI Commands](../../cli_commands.md) for the full remote command grammar.
 
-1. **Select a node** — the list shows every repeater/room-server contact. Press **Enter** to pick one.
-2. **Log in** — type the node's **admin password** (this is the same login handshake Messages uses for room servers; a repeater's admin password is set with the `password` CLI command). If a password was already saved for this node from an earlier successful login, it retries silently instead of prompting. Only a login that comes back with **admin**-level permission unlocks the next step — anything less shows "Not admin on this node" and returns to the list.
+Opening **Tools › Admin** shows a two-row chooser: **This device** or **Remote node...**.
+
+### Remote node
+
+1. **Select a node** — "Remote node..." opens **Tools › Nodes** (the same screen, filters, sort and live scan as browsing it normally) so picking a node for Admin looks exactly like using Nodes for anything else; **Enter** on a repeater/room row hands it to Admin. Admin is also reachable directly from a node's own **Hold Enter** menu in Nodes, without going through the chooser at all.
+2. **Log in** — type the node's **admin password** (the same login handshake Messages uses for room servers; a repeater's admin password is set with the `password` CLI command). If a password was already saved for this node from an earlier successful login, it retries silently instead of prompting. Only a login that comes back with **admin**-level permission unlocks the next step — anything less shows "Not admin on this node".
 3. **Pick a category and a field** — a tab carousel (**LEFT/RIGHT** to switch category, **UP/DOWN** to move within it, same as Auto-Reply Bot's tabs), so common settings don't need the CLI grammar memorised:
 
-| Tab | Rows |
-| --- | ---- |
-| **System** | Name, Owner info, Admin password |
-| **Radio** | Radio (freq, bandwidth, spreading factor, coding rate), TX power |
-| **Routing** | Repeat, Advert interval, Flood advert interval, Max hops |
-| **Actions** | Reboot, Send advert, Send zero-hop advert, Sync clock, **Custom command...** |
+   | Tab | Rows |
+   | --- | ---- |
+   | **System** | Name, Owner info, Admin password |
+   | **Radio** | Radio (freq, bandwidth, spreading factor, coding rate), TX power |
+   | **Routing** | Repeat, Advert interval, Flood advert interval, Max hops |
+   | **Actions** | Send advert, Send zero-hop advert, Sync clock, Reboot, **Custom command...** |
 
-**Enter** on a row does one of three things, depending on the field:
+   **Enter** on a row does one of three things, depending on the field:
    - Most **System/Radio/Routing** rows first **fetch** the node's current value, then open the keyboard **pre-filled** with it to edit — submitting sends the change. If the fetch fails or times out, the keyboard still opens (blank), so the value can be set blind.
    - **Admin password** has no fetch (there's no way to read a password back) — it opens straight to a blank keyboard.
    - **Actions** (Reboot, Send advert, …) send immediately, no editing step.
-   - **Custom command...** (last row of Actions) opens the same free-text entry for anything not covered above — up to 160 characters, see the linked reference for the full grammar.
+   - **Custom command...** (last row of Actions) opens the same free-text entry for anything not covered above — up to 160 characters, see the linked reference for the full grammar. The keyboard's **{}** key doubles as command completion here: it lists commands matching whatever's typed since the last space (narrowing as you type), and picking one completes that word instead of just inserting after it.
 4. **Read the reply** — the text reply opens in a scrollable view (**UP/DOWN** to scroll, **Cancel/Enter** to go back to the category tabs).
 
 > [!WARNING]
 > This screen can run **destructive** commands on the *remote* node — `reboot`, `erase`, a new admin password, and others. That's the same capability the phone app's repeater-admin feature already exposes, not a new risk, but double-check the value and the target before sending.
 
 **Passwords are remembered across reboots**, the same self-healing behaviour as room logins in Messages: after a successful admin login the password is saved on the device, so picking that node again — even after a power cycle — logs back in silently. If a saved password stops working (e.g. it was changed on the node), the failed login forgets it, so the next pick prompts for a new one. A correct password that just lacks admin permission is left alone — retyping the same one wouldn't change the outcome. Some commands are marked **Serial Only** in the CLI reference — those reject a remote CLI request and only work over that node's own USB serial connection.
+
+### This device
+
+A lighter, login-free version of the same tab carousel, for settings this device already has:
+
+| Tab | Rows |
+| --- | ---- |
+| **System** | Name, Radio (freq, bandwidth, spreading factor, coding rate), TX power, Lat, Lon |
+| **Actions** | Send advert, Reboot |
+
+There's no fetch step here — the current value is already known, so **Enter** opens the keyboard pre-filled with it immediately, and submitting applies the change at once (the same apply logic Settings' own Radio/TX power rows use) and saves it. Reboot and Send advert fire immediately, same as their remote counterparts. This is a fast, lightly-validated shortcut alongside Settings' own fuller editors (radio presets, chip-bounds frequency entry, etc.) — for careful bounds-checked editing, prefer Settings.

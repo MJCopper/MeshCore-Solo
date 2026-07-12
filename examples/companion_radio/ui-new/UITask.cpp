@@ -1471,6 +1471,16 @@ void UITask::gotoToolsScreen()     { setCurrScreen(tools_screen); }
 void UITask::gotoBotScreen()       { setCurrScreen(bot_screen); }
 void UITask::gotoAdminScreen()     { setCurrScreen(admin_screen); }  // AdminScreen::onShow() resets it
 void UITask::gotoNearbyScreen()    { setCurrScreen(nearby_screen); }
+
+void UITask::pickAdminTarget() {
+  setCurrScreen(nearby_screen);   // runs NearbyScreen::onShow()'s reset first
+  ((NearbyScreen*)nearby_screen)->startPickAdminTarget();
+}
+
+void UITask::openAdminFor(const ContactInfo& ci) {
+  setCurrScreen(admin_screen);   // runs AdminScreen::onShow()'s reset first
+  ((AdminScreen*)admin_screen)->startFor(ci);
+}
 void UITask::gotoDashboardConfig() { setCurrScreen(dashboard_config); }
 void UITask::gotoTrailScreen()     { setCurrScreen(trail_screen); }
 void UITask::gotoCompassScreen()   { setCurrScreen(compass_screen); }

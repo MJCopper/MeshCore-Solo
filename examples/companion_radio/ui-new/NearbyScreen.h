@@ -25,7 +25,16 @@ class NearbyScreen : public UIScreen {
 
   // ── action-menu actions (matched by id, not by row index) ────────────────────
   enum Action : uint8_t { ACT_NAV, ACT_PING, ACT_WAYPOINT, ACT_LOCATOR,
-                          ACT_ADD, ACT_DELETE, ACT_FAV, ACT_SORT, ACT_SCAN };
+                          ACT_ADD, ACT_DELETE, ACT_FAV, ACT_ADMIN, ACT_SORT, ACT_SCAN };
+
+  // Set by UITask::pickAdminTarget() (Tools > Admin's "Remote node..." choice):
+  // while true, ENTER on an eligible row (a stored repeater/room contact) hands
+  // the node straight to Admin instead of opening the detail view -- everything
+  // else (filters, scan, ping, sort, the Hold-Enter menu) behaves identically to
+  // normal Nodes browsing, so picking a node for Admin looks exactly like using
+  // this screen for anything else. Mirrors MessagesScreen's
+  // startPickBotChannel()/startPickBotRoom() pick-mode idiom.
+  bool _pick_admin_target = false;
 
   // ── unified list entry ───────────────────────────────────────────────────────
   struct Entry {
@@ -541,6 +550,10 @@ class NearbyScreen : public UIScreen {
     bool is_contact = entryIsContact(e);
     bool can_add = e && has_key && !is_contact;   // a new node we can save
     bool is_fav  = e && has_key && _task->findFavouriteSlot(e->pub_key) >= 0;
+    // Admin needs a real saved contact (repeater/room), not a scan result or a
+    // name-only live-share row -- same gating as startPickAdminTarget()'s ENTER.
+    bool is_admin_target = e && stored && e->contact_idx >= 0
+                           && (e->type == ADV_TYPE_REPEATER || e->type == ADV_TYPE_ROOM);
 
     buildSortLabel();
     _menu_action_count = 0;
@@ -558,6 +571,7 @@ class NearbyScreen : public UIScreen {
     if (has_gps && has_key) add("Set as target", ACT_LOCATOR);
     if (can_add)            add("Add contact", ACT_ADD);
     if (is_contact && has_key) add(is_fav ? "Unfavourite" : "Favourite", ACT_FAV);
+    if (is_admin_target)       add("Admin", ACT_ADMIN);
     if (is_contact && has_key) add("Delete contact", ACT_DELETE);
     if (stored) add(_sort_label, ACT_SORT);   // sort is meaningless for live-scan rows
     add(stored ? "Discover scan" : "Rescan", ACT_SCAN);
@@ -603,6 +617,13 @@ class NearbyScreen : public UIScreen {
         break;
       }
       case ACT_DELETE:   startDeleteConfirm(); break;
+      case ACT_ADMIN: {
+        const Entry* e = selected();
+        ContactInfo ci;
+        if (e && e->contact_idx >= 0 && the_mesh.getContactByIdx(e->contact_idx, ci))
+          _task->openAdminFor(ci);
+        break;
+      }
       case ACT_SORT:     break;  // adjusted in-place via LEFT/RIGHT, not ENTER
       case ACT_SCAN:     enterScan();            break;
     }
@@ -724,10 +745,15 @@ public:
     _ping_menu.active = false;
     _confirm.active = false;
     _pinging = false;
+    _pick_admin_target = false;   // stale pick-mode from a previous visit shouldn't linger
     resetPingLines();
     _task->clearPing();
     refreshStored();
   }
+
+  // Entered via UITask::pickAdminTarget() right after setCurrScreen(this) has
+  // already run onShow()'s reset above -- just arms the pick-mode flag.
+  void startPickAdminTarget() { _pick_admin_target = true; }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
@@ -908,6 +934,7 @@ public:
 
     // ── list view ───────────────────────────────────────────────────────────
     if (c == KEY_CANCEL) {
+      if (_pick_admin_target) { _pick_admin_target = false; _task->gotoAdminScreen(); return true; }
       if (_source == SRC_SCAN) leaveScan();
       else                     _task->gotoToolsScreen();
       return true;
@@ -917,6 +944,17 @@ public:
     if (c == KEY_UP   && _count > 0) { _sel = (_sel > 0) ? _sel - 1 : _count - 1; return true; }
     if (c == KEY_DOWN && _count > 0) { _sel = (_sel < _count - 1) ? _sel + 1 : 0; return true; }
     if (c == KEY_ENTER) {
+      if (_pick_admin_target) {
+        const Entry* e = selected();
+        ContactInfo ci;
+        if (e && e->contact_idx >= 0 && (e->type == ADV_TYPE_REPEATER || e->type == ADV_TYPE_ROOM)
+            && the_mesh.getContactByIdx(e->contact_idx, ci)) {
+          _pick_admin_target = false;
+          _task->openAdminFor(ci);
+        }
+        // else: row isn't an eligible admin target -- ignore, stay on the picker.
+        return true;
+      }
       if (_count == 0) { if (_source == SRC_STORED) enterScan(); return true; }
       _detail = true;
       _detail_refresh_ms = millis();

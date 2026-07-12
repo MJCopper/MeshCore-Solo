@@ -27,24 +27,41 @@ inline void drawPill(DisplayDriver& display, int x, int w, const char* label, bo
   display.setColor(DisplayDriver::LIGHT);
 }
 
-// Truncate `label` to fit within `max_w` pixels of text (no padding), the same
-// shrink-and-append-"..." approach as DisplayDriver::drawTextEllipsized (which
-// can't be reused directly here: it draws immediately at a fixed x, but a tab
-// pill needs the truncated width known *before* drawing, to size/centre the
-// pill). Returns the resulting text's pixel width; writes the (possibly
-// truncated) text into `out`.
+// Truncate `label` to fit within `max_w` pixels of text (no padding). Similar
+// intent to DisplayDriver::drawTextEllipsized (which can't be reused directly
+// here: it draws immediately at a fixed x, but a tab pill needs the truncated
+// width known *before* drawing, to size/centre the pill), but verifies the
+// fit by re-measuring the actual "text..." candidate at each step, rather
+// than estimating via a separately-measured ellipsis width -- font kerning
+// between the last real glyph and the first dot can make a single-pass
+// estimate overshoot by a px or two, which was enough to visibly spill the
+// dots into whatever sits just past this tab (a neighbour, a reserved icon
+// like the context-menu hint). Returns the resulting text's pixel width
+// (always <= max_w, unless even a bare "..." doesn't fit); writes the
+// (possibly truncated) text into `out`.
 inline int ellipsize(DisplayDriver& display, const char* label, int max_w, char* out, size_t out_sz) {
   strncpy(out, label, out_sz - 1);
   out[out_sz - 1] = '\0';
   int w = display.getTextWidth(out);
   if (w <= max_w) return w;
 
-  const int ellipsis_w = display.getTextWidth("...");
   int len = (int)strlen(out);
-  while (len > 0 && display.getTextWidth(out) > max_w - ellipsis_w) out[--len] = '\0';
-  // Strip an orphaned UTF-8 lead byte left by the byte-at-a-time trim above.
-  while (len > 0 && ((uint8_t)out[len - 1] & 0xC0) == 0xC0) out[--len] = '\0';
-  strcat(out, "...");
+  char trial[40];
+  while (len > 0) {
+    // Strip an orphaned UTF-8 lead byte before trying this length.
+    while (len > 0 && ((uint8_t)out[len - 1] & 0xC0) == 0xC0) len--;
+    if (len == 0) break;
+    memcpy(trial, out, len);
+    strcpy(trial + len, "...");
+    if (display.getTextWidth(trial) <= max_w) {
+      strncpy(out, trial, out_sz - 1);
+      out[out_sz - 1] = '\0';
+      return display.getTextWidth(out);
+    }
+    len--;
+  }
+  strncpy(out, "...", out_sz - 1);
+  out[out_sz - 1] = '\0';
   return display.getTextWidth(out);
 }
 
@@ -78,6 +95,12 @@ inline void draw(DisplayDriver& display, const char* const* labels, int count, i
       if (avail >= min_w) {
         int tw = ellipsize(display, labels[li], avail - pad * 2, buf, sizeof(buf));
         int w = tw + pad * 2;
+        // ellipsize() targets max_w but can overshoot it by a px or two (the
+        // ellipsis is re-measured as a whole, so kerning against the last real
+        // character isn't accounted for) -- clamp so the pill can never spill
+        // past its allotted space (into the screen edge, or a reserved icon
+        // on the other side).
+        if (w > avail) w = avail;
         drawPill(display, lx - w, w, buf, false);
         lx = lx - w - gap;
       } else lfit = false;
@@ -89,6 +112,7 @@ inline void draw(DisplayDriver& display, const char* const* labels, int count, i
       if (avail >= min_w) {
         int tw = ellipsize(display, labels[ri], avail - pad * 2, buf, sizeof(buf));
         int w = tw + pad * 2;
+        if (w > avail) w = avail;   // never spill past rx_limit (e.g. into a context-menu icon)
         drawPill(display, rx, w, buf, false);
         rx += w + gap;
       } else rfit = false;
