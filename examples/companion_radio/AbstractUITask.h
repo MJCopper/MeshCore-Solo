@@ -51,6 +51,9 @@ public:
   // pub_key is the contact's key prefix (>=4 bytes valid); permissions is the
   // room/repeater ACL byte (only meaningful when success is true).
   virtual void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) { (void)pub_key; (void)success; (void)permissions; }
+  // Text reply to an on-device-UI-triggered MyMesh::sendAdminCommand() arrived
+  // (see AdminScreen). pub_key is the contact's key prefix (>=4 bytes valid).
+  virtual void onAdminReply(const uint8_t* pub_key, const char* text) { (void)pub_key; (void)text; }
   // True only when a BLE central is actually bonded/connected. On a dual
   // (BLE+USB) interface hasConnection() is always true (USB counts), so use
   // this for BLE-specific UI like the pairing-PIN prompt.

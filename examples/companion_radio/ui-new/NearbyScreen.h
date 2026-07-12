@@ -1,6 +1,7 @@
 #pragma once
 #include "../GeoUtils.h"
 #include "NavView.h"
+#include "TabBar.h"
 
 // ── Nearby Nodes ──────────────────────────────────────────────────────────────
 // One list / detail / action-menu interaction path over two sources:
@@ -692,56 +693,12 @@ class NearbyScreen : public UIScreen {
     return false;
   }
 
-  // One filter tab: short label; the active one is an inverted pill (same look as
-  // a selected row) so it reads as "you are here" in the tab strip.
-  void drawTab(DisplayDriver& display, int x, int w, const char* label, bool active) {
-    int lh = display.getLineHeight();
-    if (active) {
-      display.setColor(DisplayDriver::LIGHT);
-      display.fillRect(x, 0, w, lh + 1);
-      display.setColor(DisplayDriver::DARK);
-    } else {
-      display.setColor(DisplayDriver::LIGHT);
-    }
-    display.drawTextCentered(x + w / 2, 0, label);
-    display.setColor(DisplayDriver::LIGHT);
-  }
-
-  // Header as a circular filter tab bar: the active filter sits centred as a
-  // filled pill, neighbours fan out either side and wrap around (the tab before
-  // "All" is "Snsr", and vice-versa), matching the wrap-around LEFT/RIGHT cycle.
-  // Only whole tabs are drawn — a tab that would spill past a screen edge is
-  // skipped rather than clipped, so labels never wrap onto a second line.
+  // Header as a circular filter tab bar (shared geometry — see TabBar.h): the
+  // active filter sits centred as a filled pill, neighbours fan out either
+  // side and wrap around (the tab before "All" is "Snsr", and vice-versa),
+  // matching the wrap-around LEFT/RIGHT cycle.
   void drawFilterTabs(DisplayDriver& display) {
-    const int pad = 3, gap = 2;
-    int w[F_COUNT];
-    for (int i = 0; i < F_COUNT; i++)
-      w[i] = display.getTextWidth(FILTER_LABELS[i]) + pad * 2;
-
-    int ax = display.width() / 2 - w[_filter] / 2;   // active tab centred
-    drawTab(display, ax, w[_filter], FILTER_LABELS[_filter], true);
-
-    int lx = ax - gap;                                // next left tab's right edge
-    int rx = ax + w[_filter] + gap;                   // next right tab's left edge
-    int rx_limit = display.width() - display.menuHintWidth();  // leave room for the ≡ hint
-    bool lfit = true, rfit = true;
-    for (int k = 1; k <= F_COUNT / 2 && (lfit || rfit); k++) {
-      int li = (_filter - k + F_COUNT) % F_COUNT;
-      int ri = (_filter + k) % F_COUNT;
-      if (lfit) {
-        int x = lx - w[li];
-        if (x >= 0) { drawTab(display, x, w[li], FILTER_LABELS[li], false); lx = x - gap; }
-        else lfit = false;
-      }
-      // Skip the right side when it lands on the same tab as the left (the single
-      // opposite tab on an even count) so it isn't drawn twice.
-      if (rfit && ri != li) {
-        if (rx + w[ri] <= rx_limit) { drawTab(display, rx, w[ri], FILTER_LABELS[ri], false); rx += w[ri] + gap; }
-        else rfit = false;
-      }
-    }
-    display.setColor(DisplayDriver::LIGHT);
-    display.fillRect(0, display.headerH() - display.sepH(), display.width(), display.sepH());
+    tabbar::draw(display, FILTER_LABELS, F_COUNT, _filter, display.menuHintWidth());
     display.drawContextMenuHint(DisplayDriver::LIGHT, ctxMenuOpen());   // Nodes list has a Hold-Enter menu
   }
 

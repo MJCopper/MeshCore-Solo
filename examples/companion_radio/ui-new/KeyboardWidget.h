@@ -73,7 +73,8 @@ static const char* const KB_T9_GROUPS_CYRILLIC[9] = {
 // Greek ABC grid: the 24-letter modern alphabet plus final sigma (ς, used
 // only at the end of a word — σ is the regular form) = 25 letters, fitting
 // rows 0-2 with 5 basic punctuation marks to spare; row 3 keeps the digit row
-// (unlike Cyrillic/Ext.Latin, Greek has room left over).
+// (unlike Cyrillic or most of the Latin-diacritic alphabets below, Greek has
+// room left over in its own letter rows).
 // NOTE: monotonic Modern Greek normally marks stress with a tonos accent
 // (ά έ ή ί ό ύ ώ) — omitted here to keep this a single, simple page. Fine for
 // informal/transliteration-style typing; flag if proper accented Greek
@@ -91,21 +92,106 @@ static const char* const KB_T9_GROUPS_GREEK[9] = {
   ".,!?'-", "αβγ", "δεζ", "ηθι", "κλμ", "νξο", "πρσς", "τυφ", "χψω"
 };
 
-// Extended Latin ABC grid: diacritics for Polish, Czech/Slovak, German,
-// French, Spanish/Portuguese and Nordic — the common non-ASCII Latin letters,
-// not full Unicode coverage. 34 letters + 6 basic punctuation marks fill all
-// 40 cells; no digit row on this page (digits are reachable via the Symbols
-// page, same as Cyrillic).
-static const char* const KB_EXTLATIN_CHARS[4][10] = {
-  { "ą","ć","ę","ł","ń","ó","ś","ź","ż","ö" },   // Polish (9) + German ö
-  { "ü","ä","ß","č","ď","ě","ň","ř","š","ť" },   // German (3) + Czech/Slovak (7)
-  { "ů","ž","é","è","ê","ë","à","ç","ù","ñ" },   // Czech/Slovak (2) + French (6) + Spanish ñ
-  { "å","ø","æ","õ",".",",","!","?","-","'" },   // Nordic (3) + Portuguese õ + punctuation
+// Per-language Latin-diacritic ABC grids. Each is that language's own full
+// set of non-ASCII letters (not a shared curated subset — see NodePrefs.h's
+// KB_ALPHABET_POLISH..KB_ALPHABET_NORDIC doc comment for why these replaced a
+// single combined "Ext.Latin" page). Every grid is filled to all 40 cells the
+// same way: letters first, then punctuation to round out the last letter
+// row, then a full digit row, then any further rows filled with more
+// punctuation/symbols — consistent shape regardless of how few letters a
+// given language actually needs (German's 4, at the small end, still gets a
+// full page rather than mostly-blank cells).
+static const char* const KB_POLISH_CHARS[4][10] = {
+  { "ą", "ć", "ę", "ł", "ń", "ó", "ś", "ź", "ż", "." },
+  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
+  { ",", "!", "?", "'", "-", "\"", ":", ";", "(", ")" },
+  { "@", "#", "&", "*", "_", "+", "=", "/", "\\", "~" },
 };
-// Extended Latin T9 groups: cell 0 (digit '1') is punctuation; cells 1-8
-// (digits '2'-'9') cluster by language for memorability.
-static const char* const KB_T9_GROUPS_EXTLATIN[9] = {
-  ".,!?'-", "ąćęł", "ńóśźż", "äöüß", "čďěň", "řšťůž", "éèêë", "àçùñ", "åøæõ"
+static const char* const KB_T9_GROUPS_POLISH[9] = {
+  ".,!?'-", "ąć", "ęł", "ńó", "śź", "ż", ";()", "@#&*", "_+=/"
+};
+
+static const char* const KB_CZECH_CHARS[4][10] = {
+  { "á", "č", "ď", "é", "ě", "í", "ň", "ó", "ř", "š" },
+  { "ť", "ú", "ů", "ý", "ž", ".", ",", "!", "?", "'" },
+  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
+  { "-", "\"", ":", ";", "(", ")", "@", "#", "&", "*" },
+};
+static const char* const KB_T9_GROUPS_CZECH[9] = {
+  ".,!?'-", "áč", "ďé", "ěí", "ňó", "řš", "ťú", "ůý", "ž"
+};
+
+// Slovak overlaps Czech heavily (both descend from a shared diacritic
+// tradition) but adds ä/ĺ/ľ/ô/ŕ and drops none — kept as its own page rather
+// than merged, per the "each language separate" request.
+static const char* const KB_SLOVAK_CHARS[4][10] = {
+  { "á", "ä", "č", "ď", "é", "í", "ĺ", "ľ", "ň", "ó" },
+  { "ô", "ŕ", "š", "ť", "ú", "ý", "ž", ".", ",", "!" },
+  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
+  { "?", "'", "-", "\"", ":", ";", "(", ")", "@", "#" },
+};
+static const char* const KB_T9_GROUPS_SLOVAK[9] = {
+  ".,!?'-", "áäč", "ďé", "íĺ", "ľň", "óô", "ŕš", "ťú", "ýž"
+};
+
+// German: only 4 non-ASCII letters (ä ö ü ß) — the smallest of these
+// keyboards, still filled to a full page rather than left sparse.
+static const char* const KB_GERMAN_CHARS[4][10] = {
+  { "ä", "ö", "ü", "ß", ".", ",", "!", "?", "'", "-" },
+  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
+  { "\"", ":", ";", "(", ")", "@", "#", "&", "*", "_" },
+  { "+", "=", "/", "\\", "~", "<", ">", "[", "]", "{" },
+};
+static const char* const KB_T9_GROUPS_GERMAN[9] = {
+  ".,!?'-", "äö", "üß", ";()", "@#&*", "_+=/", "\\~<>", "[]{}", "|^$%"
+};
+
+// French: à â ç é è ê ë î ï ô ù û ü ÿ œ. ÿ's uppercase (Ÿ, U+0178) is the one
+// case-shift exception outside the Latin-1 flat -0x20 rule — see
+// kbApplyCapsUtf8. œ is Latin Extended-A (adjacent-pair rule, verified).
+static const char* const KB_FRENCH_CHARS[4][10] = {
+  { "à", "â", "ç", "é", "è", "ê", "ë", "î", "ï", "ô" },
+  { "ù", "û", "ü", "ÿ", "œ", ".", ",", "!", "?", "'" },
+  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
+  { "-", "\"", ":", ";", "(", ")", "@", "#", "&", "*" },
+};
+static const char* const KB_T9_GROUPS_FRENCH[9] = {
+  ".,!?'-", "àâ", "çé", "èê", "ëî", "ïô", "ùû", "üÿ", "œ"
+};
+
+// Spanish: the 5 accented vowels, ñ, and ü (only appears in güe/güi).
+static const char* const KB_SPANISH_CHARS[4][10] = {
+  { "á", "é", "í", "ñ", "ó", "ú", "ü", ".", ",", "!" },
+  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
+  { "?", "'", "-", "\"", ":", ";", "(", ")", "@", "#" },
+  { "&", "*", "_", "+", "=", "/", "\\", "~", "<", ">" },
+};
+static const char* const KB_T9_GROUPS_SPANISH[9] = {
+  ".,!?'-", "áé", "íñ", "óú", "ü", ";()", "@#&*", "_+=/", "\\~<>"
+};
+
+// Portuguese: á à â ã ç é ê í ó ô õ ú (ü dropped from modern orthography).
+static const char* const KB_PORTUGUESE_CHARS[4][10] = {
+  { "á", "à", "â", "ã", "ç", "é", "ê", "í", "ó", "ô" },
+  { "õ", "ú", ".", ",", "!", "?", "'", "-", "\"", ":" },
+  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
+  { ";", "(", ")", "@", "#", "&", "*", "_", "+", "=" },
+};
+static const char* const KB_T9_GROUPS_PORTUGUESE[9] = {
+  ".,!?'-", "áà", "âã", "çé", "êí", "óô", "õú", ";()", "@#&*"
+};
+
+// Nordic: å ä æ ö ø — shared across Danish/Norwegian/Swedish (their
+// alphabets differ only in which of these 5 each uses), so kept as one page
+// rather than three near-identical ones.
+static const char* const KB_NORDIC_CHARS[4][10] = {
+  { "å", "ä", "æ", "ö", "ø", ".", ",", "!", "?", "'" },
+  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
+  { "-", "\"", ":", ";", "(", ")", "@", "#", "&", "*" },
+  { "_", "+", "=", "/", "\\", "~", "<", ">", "[", "]" },
+};
+static const char* const KB_T9_GROUPS_NORDIC[9] = {
+  ".,!?'-", "åä", "æö", "ø", ";()", "@#&*", "_+=/", "\\~<>", "[]{}"
 };
 // Buffer cap for typed text, in bytes. Matches MeshCore's MAX_TEXT_LEN
 // (10*CIPHER_BLOCK_SIZE = 160) so a full-length message can be composed; each
@@ -127,17 +213,21 @@ static const int KB_PREVIEW_CAP = 46;
 // here pairs lower/uppercase differently, so each gets its own rule:
 //  - ASCII a-z and Cyrillic а-я: flat -0x20 codepoint offset. ё/Ё (U+0451/
 //    U+0401) break the Cyrillic pattern by 0x50 and are special-cased.
-//  - Latin-1 Supplement à-þ (U+00E0-00FE, Ext.Latin's ö/ü/é/etc.): also a flat
-//    -0x20 offset, same as ASCII — the block was designed as parallel case
-//    pairs. U+00F7 (÷, division sign) sits in that numeric range but isn't a
-//    letter; excluded. ß (U+00DF) has no simple uppercase in this range
-//    (its uppercase ẞ is U+1E9E, outside Lemon's U+0020-04FF) — left as-is.
-//  - Latin Extended-A (Ext.Latin's ą/č/etc., U+0100-017F): NOT a flat offset
-//    like Latin-1 — this block alternates even=uppercase/odd=lowercase in
-//    adjacent pairs, so lowercase - 1 = uppercase. Verified true for every
-//    character actually in KB_EXTLATIN_CHARS/KB_T9_GROUPS_EXTLATIN; NOT a
-//    universal rule for the whole block (it has a handful of unpaired/
-//    irregular codepoints elsewhere) — recheck before adding more from it.
+//  - Latin-1 Supplement à-þ (U+00E0-00FE, used by every Latin-diacritic
+//    alphabet below — ö/ü/é/á/etc.): also a flat -0x20 offset, same as ASCII —
+//    the block was designed as parallel case pairs. U+00F7 (÷, division sign)
+//    sits in that numeric range but isn't a letter; excluded. ß (U+00DF) has
+//    no simple uppercase in this range (its uppercase ẞ is U+1E9E, outside
+//    Lemon's U+0020-04FF) — left as-is. ÿ (U+00FF, French) is the one letter
+//    in this block whose uppercase Ÿ (U+0178) falls outside it entirely —
+//    special-cased before the range rule.
+//  - Latin Extended-A (ą/č/ĺ/œ/etc., U+0100-017F): NOT a flat offset like
+//    Latin-1 — this block alternates even=uppercase/odd=lowercase in adjacent
+//    pairs, so lowercase - 1 = uppercase. Verified true (against Python's own
+//    str.upper()) for every character actually used across the Polish/Czech/
+//    Slovak/French keyboards below; NOT a universal rule for the whole block
+//    (it has a handful of unpaired/irregular codepoints elsewhere) — recheck
+//    before adding more from it.
 //  - Greek α-ω (U+03B1-03C9): flat -0x20 offset, same shape as Cyrillic/ASCII.
 //    Final sigma ς (U+03C2) is the one exception — it has no uppercase of its
 //    own; -0x20 would land on U+03A2, which is unassigned. It capitalizes to
@@ -152,6 +242,7 @@ static void kbApplyCapsUtf8(const char* in, bool caps, char* out, size_t out_siz
     if (caps) {
       if (cp == 0x0451)                                    cp = 0x0401;  // ё -> Ё
       else if (cp == 0x03C2)                               cp = 0x03A3;  // ς -> Σ
+      else if (cp == 0x00FF)                               cp = 0x0178;  // ÿ -> Ÿ (French; breaks the à-þ flat -0x20 rule below — Ÿ sits outside Latin-1 Supplement entirely)
       else if (cp >= 0x0430 && cp <= 0x044F)                cp -= 0x20;   // а-я -> А-Я
       else if (cp >= 0x03B1 && cp <= 0x03C9)                cp -= 0x20;   // α-ω -> Α-Ω
       else if (cp >= 0x00E0 && cp <= 0x00FE && cp != 0x00F7) cp -= 0x20;  // à-þ -> À-Þ
@@ -255,9 +346,16 @@ struct KeyboardWidget {
   const char* cellStr(int r, int c) const {
     if (pageIsAltAlphabet(page)) {
       switch (prefs->keyboard_alt_alphabet) {
-        case NodePrefs::KB_ALPHABET_CYRILLIC:  return KB_CYRILLIC_CHARS[r][c];
-        case NodePrefs::KB_ALPHABET_GREEK:     return KB_GREEK_CHARS[r][c];
-        case NodePrefs::KB_ALPHABET_EXT_LATIN: return KB_EXTLATIN_CHARS[r][c];
+        case NodePrefs::KB_ALPHABET_CYRILLIC:   return KB_CYRILLIC_CHARS[r][c];
+        case NodePrefs::KB_ALPHABET_GREEK:      return KB_GREEK_CHARS[r][c];
+        case NodePrefs::KB_ALPHABET_POLISH:     return KB_POLISH_CHARS[r][c];
+        case NodePrefs::KB_ALPHABET_CZECH:      return KB_CZECH_CHARS[r][c];
+        case NodePrefs::KB_ALPHABET_SLOVAK:     return KB_SLOVAK_CHARS[r][c];
+        case NodePrefs::KB_ALPHABET_GERMAN:     return KB_GERMAN_CHARS[r][c];
+        case NodePrefs::KB_ALPHABET_FRENCH:     return KB_FRENCH_CHARS[r][c];
+        case NodePrefs::KB_ALPHABET_SPANISH:    return KB_SPANISH_CHARS[r][c];
+        case NodePrefs::KB_ALPHABET_PORTUGUESE: return KB_PORTUGUESE_CHARS[r][c];
+        case NodePrefs::KB_ALPHABET_NORDIC:     return KB_NORDIC_CHARS[r][c];
         default: return "?";
       }
     }
@@ -271,9 +369,16 @@ struct KeyboardWidget {
   const char* t9GroupStr(int cell) const {
     if (pageIsAltAlphabet(page)) {
       switch (prefs->keyboard_alt_alphabet) {
-        case NodePrefs::KB_ALPHABET_CYRILLIC:  return KB_T9_GROUPS_CYRILLIC[cell];
-        case NodePrefs::KB_ALPHABET_GREEK:     return KB_T9_GROUPS_GREEK[cell];
-        case NodePrefs::KB_ALPHABET_EXT_LATIN: return KB_T9_GROUPS_EXTLATIN[cell];
+        case NodePrefs::KB_ALPHABET_CYRILLIC:   return KB_T9_GROUPS_CYRILLIC[cell];
+        case NodePrefs::KB_ALPHABET_GREEK:      return KB_T9_GROUPS_GREEK[cell];
+        case NodePrefs::KB_ALPHABET_POLISH:     return KB_T9_GROUPS_POLISH[cell];
+        case NodePrefs::KB_ALPHABET_CZECH:      return KB_T9_GROUPS_CZECH[cell];
+        case NodePrefs::KB_ALPHABET_SLOVAK:     return KB_T9_GROUPS_SLOVAK[cell];
+        case NodePrefs::KB_ALPHABET_GERMAN:     return KB_T9_GROUPS_GERMAN[cell];
+        case NodePrefs::KB_ALPHABET_FRENCH:     return KB_T9_GROUPS_FRENCH[cell];
+        case NodePrefs::KB_ALPHABET_SPANISH:    return KB_T9_GROUPS_SPANISH[cell];
+        case NodePrefs::KB_ALPHABET_PORTUGUESE: return KB_T9_GROUPS_PORTUGUESE[cell];
+        case NodePrefs::KB_ALPHABET_NORDIC:     return KB_T9_GROUPS_NORDIC[cell];
         default: return "?";
       }
     }
@@ -287,9 +392,16 @@ struct KeyboardWidget {
   // symbols pages too, where render() doesn't force Lemon on (see render()).
   static const char* altAlphabetHint(uint8_t alt) {
     switch (alt) {
-      case NodePrefs::KB_ALPHABET_CYRILLIC:  return "CY";
-      case NodePrefs::KB_ALPHABET_GREEK:     return "GR";
-      case NodePrefs::KB_ALPHABET_EXT_LATIN: return "EL";
+      case NodePrefs::KB_ALPHABET_CYRILLIC:   return "CY";
+      case NodePrefs::KB_ALPHABET_GREEK:      return "GR";
+      case NodePrefs::KB_ALPHABET_POLISH:     return "PL";
+      case NodePrefs::KB_ALPHABET_CZECH:      return "CZ";
+      case NodePrefs::KB_ALPHABET_SLOVAK:     return "SK";
+      case NodePrefs::KB_ALPHABET_GERMAN:     return "DE";
+      case NodePrefs::KB_ALPHABET_FRENCH:     return "FR";
+      case NodePrefs::KB_ALPHABET_SPANISH:    return "ES";
+      case NodePrefs::KB_ALPHABET_PORTUGUESE: return "PT";
+      case NodePrefs::KB_ALPHABET_NORDIC:     return "ND";
       default: return "?";
     }
   }
@@ -353,7 +465,16 @@ struct KeyboardWidget {
     const int preview_h = display.height() - kb_h - display.sepH();
     const int prev_lines = (preview_h / lh) > 1 ? (preview_h / lh) : 1;
     const int sep_y   = prev_lines * lh;
-    const int chars_y = sep_y + display.sepH();
+    // Lemon's tallest glyphs (accented capitals like Ć/Š/Ž, needed once caps
+    // is on) draw up to 3px above the nominal cursor y on SH1106 — its Lemon
+    // baseline offset is tuned for the shorter plain-ASCII/Cyrillic/Greek
+    // glyphs this keyboard used before the per-language Latin alphabets, and
+    // wasn't tall enough for these. Padding the first char row down by 3px
+    // (only while Lemon is actually in use) gives every accented glyph enough
+    // headroom that it can't bleed into the separator bar above; harmless on
+    // e-ink, which already has more headroom than it needs here.
+    const int lemon_pad = want_lemon ? 3 : 0;
+    const int chars_y = sep_y + display.sepH() + lemon_pad;
     const int cell_h  = (display.height() - chars_y) / (rows + 1);
     const int spec_y  = chars_y + rows * cell_h;
     const int spec_w  = display.width() / KB_SPECIAL;

@@ -76,10 +76,11 @@ class UITask : public AbstractUITask {
   UIScreen* splash = nullptr;
   UIScreen* home = nullptr;
   UIScreen* settings = nullptr;
-  UIScreen* quick_msg = nullptr;
+  UIScreen* messages_screen = nullptr;
   UIScreen* tools_screen = nullptr;
   UIScreen* ringtone_edit = nullptr;
   UIScreen* bot_screen = nullptr;
+  UIScreen* admin_screen = nullptr;
   UIScreen* nearby_screen = nullptr;
   UIScreen* dashboard_config = nullptr;
   UIScreen* auto_advert_screen = nullptr;
@@ -218,7 +219,7 @@ public:
   uint16_t getBattMilliVolts() const { return _batt_mv > 0 ? _batt_mv : AbstractUITask::getBattMilliVolts(); }
   void gotoHomeScreen() { setCurrScreen(home); }
   void gotoSettingsScreen();
-  void gotoQuickMsgScreen();
+  void gotoMessagesScreen();
   void openContactDM(const ContactInfo& ci);
   void shareToMessage(const char* text);   // open Messages pre-loaded to share `text`
   void quickShareMyLocation();             // Home Map Hold-Enter: one-shot position share
@@ -229,6 +230,7 @@ public:
   void gotoToolsScreen();
   void gotoRingtoneEditor(int slot = 0);
   void gotoBotScreen();
+  void gotoAdminScreen();
   void gotoNearbyScreen();
   void gotoDashboardConfig();
   void gotoAutoAdvertScreen();
@@ -331,6 +333,7 @@ public:
   void onMsgAck(uint32_t ack_crc) override;
   void onChannelRelayed(uint32_t seq) override;
   void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) override;
+  void onAdminReply(const uint8_t* pub_key, const char* text) override;
   int  getDMUnreadTotal() const;
   int  getMsgCount() const { return _msgcount; }
   int  getChannelUnreadCount() const;

@@ -130,12 +130,13 @@ static const int QUICK_MSGS_MAX = 10;
 #include "FullscreenMsgView.h"
 #include "SensorPlaceholders.h"
 #include "SettingsScreen.h"
-#include "MessageHistory.h"   // RAM history rings (DM + channel) used by QuickMsgScreen
-#include "QuickMsgScreen.h"
+#include "MessageHistory.h"   // RAM history rings (DM + channel) used by MessagesScreen
+#include "MessagesScreen.h"
 
 // ── Custom screens (separate files to ease upstream merges) ───────────────────
 #include "RingtoneEditorScreen.h"
 #include "BotScreen.h"
+#include "AdminScreen.h"
 #include "NearbyScreen.h"
 #include "DashboardConfigScreen.h"
 #include "AutoAdvertScreen.h"
@@ -1345,7 +1346,7 @@ public:
       return true;
     }
     if (c == KEY_ENTER && _page == HomePage::QUICK_MSG) {
-      _task->gotoQuickMsgScreen();
+      _task->gotoMessagesScreen();
       return true;
     }
     if (c == KEY_ENTER && _page == HomePage::SHUTDOWN) {
@@ -1442,10 +1443,11 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   splash = new SplashScreen(this);
   home = new HomeScreen(this, &rtc_clock, sensors, node_prefs);
   settings = new SettingsScreen(this, &_kb);
-  quick_msg = new QuickMsgScreen(this, &_kb);
+  messages_screen = new MessagesScreen(this, &_kb);
   tools_screen  = new ToolsScreen(this);
   ringtone_edit = new RingtoneEditorScreen(this, node_prefs);
   bot_screen    = new BotScreen(this, node_prefs, &_kb);
+  admin_screen  = new AdminScreen(this);
   nearby_screen = new NearbyScreen(this);
   dashboard_config = new DashboardConfigScreen(this, node_prefs);
   auto_advert_screen = new AutoAdvertScreen(this, node_prefs);
@@ -1467,6 +1469,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 void UITask::gotoSettingsScreen()  { setCurrScreen(settings); }
 void UITask::gotoToolsScreen()     { setCurrScreen(tools_screen); }
 void UITask::gotoBotScreen()       { setCurrScreen(bot_screen); }
+void UITask::gotoAdminScreen()     { setCurrScreen(admin_screen); }  // AdminScreen::onShow() resets it
 void UITask::gotoNearbyScreen()    { setCurrScreen(nearby_screen); }
 void UITask::gotoDashboardConfig() { setCurrScreen(dashboard_config); }
 void UITask::gotoTrailScreen()     { setCurrScreen(trail_screen); }
@@ -1667,60 +1670,64 @@ bool UITask::isMelodyPlaying() {
 #endif
 }
 
-void UITask::gotoQuickMsgScreen() {
-  ((QuickMsgScreen*)quick_msg)->reset();
-  setCurrScreen(quick_msg);
+void UITask::gotoMessagesScreen() {
+  ((MessagesScreen*)messages_screen)->reset();
+  setCurrScreen(messages_screen);
 }
 
 void UITask::openContactDM(const ContactInfo& ci) {
-  ((QuickMsgScreen*)quick_msg)->reset();
-  ((QuickMsgScreen*)quick_msg)->enterDM(ci);
-  setCurrScreen(quick_msg);
+  ((MessagesScreen*)messages_screen)->reset();
+  ((MessagesScreen*)messages_screen)->enterDM(ci);
+  setCurrScreen(messages_screen);
 }
 
 void UITask::shareToMessage(const char* text) {
-  ((QuickMsgScreen*)quick_msg)->startShare(text);
-  setCurrScreen(quick_msg);
+  ((MessagesScreen*)messages_screen)->startShare(text);
+  setCurrScreen(messages_screen);
 }
 
 void UITask::pickLocShareTarget() {
-  ((QuickMsgScreen*)quick_msg)->startPickTarget();
-  setCurrScreen(quick_msg);
+  ((MessagesScreen*)messages_screen)->startPickTarget();
+  setCurrScreen(messages_screen);
 }
 
 void UITask::pickBotChannelTarget() {
-  ((QuickMsgScreen*)quick_msg)->startPickBotChannel();
-  setCurrScreen(quick_msg);
+  ((MessagesScreen*)messages_screen)->startPickBotChannel();
+  setCurrScreen(messages_screen);
 }
 
 void UITask::pickBotRoomTarget() {
-  ((QuickMsgScreen*)quick_msg)->startPickBotRoom();
-  setCurrScreen(quick_msg);
+  ((MessagesScreen*)messages_screen)->startPickBotRoom();
+  setCurrScreen(messages_screen);
 }
 
 int UITask::getRecentDMContacts(uint8_t out[][NodePrefs::FAVOURITE_PREFIX_LEN], int max) const {
-  return ((QuickMsgScreen*)quick_msg)->getRecentDMContacts(out, max);
+  return ((MessagesScreen*)messages_screen)->getRecentDMContacts(out, max);
 }
 
 void UITask::addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp) {
   _last_notif_ch_idx = (int)channel_idx;
-  ((QuickMsgScreen*)quick_msg)->addChannelMsg(channel_idx, text, timestamp);
+  ((MessagesScreen*)messages_screen)->addChannelMsg(channel_idx, text, timestamp);
 }
 
 int UITask::getChannelUnreadCount() const {
-  return ((QuickMsgScreen*)quick_msg)->getTotalChannelUnread();
+  return ((MessagesScreen*)messages_screen)->getTotalChannelUnread();
 }
 
 void UITask::onMsgAck(uint32_t ack_crc) {
-  ((QuickMsgScreen*)quick_msg)->markDmDelivered(ack_crc);
+  ((MessagesScreen*)messages_screen)->markDmDelivered(ack_crc);
 }
 
 void UITask::onChannelRelayed(uint32_t seq) {
-  ((QuickMsgScreen*)quick_msg)->markChannelRelayed(seq);
+  ((MessagesScreen*)messages_screen)->markChannelRelayed(seq);
 }
 
 void UITask::onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
-  ((QuickMsgScreen*)quick_msg)->onRoomLoginResult(pub_key, success, permissions);
+  // Only one on-device login can be in flight at a time (MyMesh::ui_pending_login
+  // is a single slot) -- route the result to whichever of the two screens that
+  // can trigger a login is currently active, rather than always MessagesScreen.
+  if (curr == admin_screen) ((AdminScreen*)admin_screen)->onRoomLoginResult(pub_key, success, permissions);
+  else                      ((MessagesScreen*)messages_screen)->onRoomLoginResult(pub_key, success, permissions);
   // Unlike the keypress-driven showAlert() calls elsewhere, this fires from a
   // background mesh response with no keypress to schedule a redraw — without
   // forcing one, the alert's short expiry can lapse before the next scheduled
@@ -1728,8 +1735,13 @@ void UITask::onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t per
   _next_refresh = 0;
 }
 
+void UITask::onAdminReply(const uint8_t* pub_key, const char* text) {
+  ((AdminScreen*)admin_screen)->onAdminReply(pub_key, text);
+  _next_refresh = 0;   // same reasoning as onRoomLoginResult above
+}
+
 void UITask::addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp) {
-  ((QuickMsgScreen*)quick_msg)->addDMMsg(pub_key, outgoing, text, sender_timestamp);
+  ((MessagesScreen*)messages_screen)->addDMMsg(pub_key, outgoing, text, sender_timestamp);
 }
 
 int UITask::getDMUnreadTotal() const {
@@ -1790,7 +1802,7 @@ void UITask::msgRead(int msgcount) {
   if (msgcount == 0) {
     _room_unread = 0;
     memset(_dm_unread_table, 0, sizeof(_dm_unread_table));
-    ((QuickMsgScreen*)quick_msg)->clearAllChannelUnread();
+    ((MessagesScreen*)messages_screen)->clearAllChannelUnread();
   }
 }
 
@@ -2028,7 +2040,7 @@ bool UITask::dequeueKey(char& c) {
 void UITask::loop() {
   // Background delivery: resend pending on-device DMs whose ACK timed out, and
   // finalise the ✗ marker — runs regardless of which screen is active.
-  ((QuickMsgScreen*)quick_msg)->tickDmResends();
+  ((MessagesScreen*)messages_screen)->tickDmResends();
 #if UI_HAS_JOYSTICK
   uint8_t joy_rot = _node_prefs ? _node_prefs->joystick_rotation : JOYSTICK_ROTATION;
   int ev = user_btn.check();

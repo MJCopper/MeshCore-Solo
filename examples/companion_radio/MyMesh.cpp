@@ -690,6 +690,14 @@ void MyMesh::onCommandDataRecv(const ContactInfo &from, mesh::Packet *pkt, uint3
                                const char *text) {
   markConnectionActive(from); // in case this is from a server, and we have a connection
   queueMessage(from, TXT_TYPE_CLI_DATA, pkt, sender_timestamp, NULL, 0, text);
+  // If the on-device Admin screen sent this command (not the BLE/USB app's CLI
+  // terminal), also hand the reply straight to the UI -- queueMessage() above
+  // never displays TXT_TYPE_CLI_DATA on-device (see should_display), since that
+  // path also serves the app's terminal, which must keep working unaffected.
+  if (_ui && ui_pending_admin_reply && memcmp(&ui_pending_admin_reply, from.id.pub_key, 4) == 0) {
+    ui_pending_admin_reply = 0;
+    _ui->onAdminReply(from.id.pub_key, text);
+  }
 }
 
 void MyMesh::onSignedMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
@@ -1749,6 +1757,20 @@ static bool isAllZero(const uint8_t* buf, size_t n) {
   return true;
 }
 
+// Shared by the BLE/USB CMD_SET_CHANNEL handler below and the on-device
+// Channels add/edit/delete UI (ChannelsView) -- one place computing "was this
+// a delete" so the two callers can't drift on the cleanup step.
+bool MyMesh::setChannelLocal(uint8_t idx, const ChannelDetails& ch) {
+  if (!setChannel(idx, ch)) return false;
+  saveChannels();
+  // An all-zero secret is this codebase's "empty slot" sentinel (same check
+  // loadChannels()/saveChannels() use) -- drop anything that referenced it by
+  // index, the same way onContactRemoved() does for contacts.
+  if (_ui && isAllZero(ch.channel.secret, sizeof(ch.channel.secret)))
+    _ui->onChannelRemoved(idx);
+  return true;
+}
+
 void MyMesh::handleCmdFrame(size_t len) {
   if (cmd_frame[0] == CMD_DEVICE_QUERY && len >= 2) { // sent when app establishes connection
     app_target_ver = cmd_frame[1];                    // which version of protocol does app understand
@@ -2451,14 +2473,7 @@ void MyMesh::handleCmdFrame(size_t len) {
     ChannelDetails channel;
     StrHelper::strncpy(channel.name, (char *)&cmd_frame[2], 32);
     memcpy(channel.channel.secret, &cmd_frame[2 + 32], 32); // 256-bit key
-    if (setChannel(channel_idx, channel)) {
-      saveChannels();
-      // An all-zero secret is this codebase's "empty slot" sentinel (same
-      // check loadChannels()/saveChannels() use) -- the app just cleared this
-      // channel, so drop anything that referenced it by index, the same way
-      // onContactRemoved() does for contacts.
-      if (_ui && isAllZero(channel.channel.secret, sizeof(channel.channel.secret)))
-        _ui->onChannelRemoved(channel_idx);
+    if (setChannelLocal(channel_idx, channel)) {
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx
@@ -2469,10 +2484,7 @@ void MyMesh::handleCmdFrame(size_t len) {
     StrHelper::strncpy(channel.name, (char *)&cmd_frame[2], 32);
     memset(channel.channel.secret, 0, sizeof(channel.channel.secret));
     memcpy(channel.channel.secret, &cmd_frame[2 + 32], 16); // 128-bit key
-    if (setChannel(channel_idx, channel)) {
-      saveChannels();
-      if (_ui && isAllZero(channel.channel.secret, sizeof(channel.channel.secret)))
-        _ui->onChannelRemoved(channel_idx);
+    if (setChannelLocal(channel_idx, channel)) {
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx

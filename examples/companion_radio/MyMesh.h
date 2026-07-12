@@ -247,6 +247,22 @@ public:
   bool getRoomPassword(const uint8_t* pub_key, char* out_password, uint8_t max_len);
   void forgetRoomPassword(const uint8_t* pub_key);
 
+  // On-device channel add/edit/delete (Messages > Channels). Shares the exact
+  // setChannel + saveChannels + onChannelRemoved-cleanup sequence the
+  // CMD_SET_CHANNEL BLE handler already performs, so both paths stay in sync.
+  bool setChannelLocal(uint8_t idx, const ChannelDetails& ch);
+
+  // On-device "remote admin" (Tools > Admin): send a CLI command to a node
+  // you're logged into with admin permission (see ClientACL::isAdmin()). The
+  // reply is a text frame (TXT_TYPE_CLI_DATA) delivered via onCommandDataRecv();
+  // this just tracks which contact's reply AdminScreen is currently waiting on.
+  bool sendAdminCommand(const ContactInfo& contact, const char* cmd_text, uint32_t& est_timeout) {
+    if (sendCommandData(contact, rtc_clock.getCurrentTime(), 0, cmd_text, est_timeout) == MSG_SEND_FAILED)
+      return false;
+    memcpy(&ui_pending_admin_reply, contact.id.pub_key, 4);
+    return true;
+  }
+
   void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
   void saveRTCTime() { _store->saveRTCTime(); }
   DataStore* getDataStore() const { return _store; }
@@ -344,6 +360,7 @@ private:
   uint32_t pending_login;
   uint32_t ui_pending_login;  // like pending_login, but triggered by on-device UI instead of BLE/USB app
   char pending_login_pw[16];  // password of the in-flight app/USB login, persisted on success for ADV_TYPE_ROOM (see saveRoomPassword)
+  uint32_t ui_pending_admin_reply;  // pub_key prefix of the contact AdminScreen's sendAdminCommand() is awaiting a CLI reply from
   uint32_t pending_status;
   uint32_t pending_telemetry, pending_discovery;   // pending _TELEMETRY_REQ
   uint32_t pending_req;   // pending _BINARY_REQ

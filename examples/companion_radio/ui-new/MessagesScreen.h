@@ -4,8 +4,9 @@
 
 #include "NavView.h"   // navigate to a location shared inside a message
 #include "icons.h"     // scalable mini-icons (delivery markers)
+#include "ChannelsView.h"  // on-device channel add/edit form (Channels tab)
 
-class QuickMsgScreen : public UIScreen {
+class MessagesScreen : public UIScreen {
   UITask* _task;
 
   enum Phase { MODE_SELECT, CONTACT_PICK, DM_HIST, MSG_PICK, CHANNEL_PICK, CHANNEL_HIST, KEYBOARD };
@@ -551,8 +552,13 @@ class QuickMsgScreen : public UIScreen {
                         &NodePrefs::DmMelodyEntry::slot, slot);
   }
 
+  // On-device channel Add/Edit form (Channels tab) — owned by this screen and
+  // delegated to while active(), the same relationship WaypointsView has with
+  // TrailScreen.
+  ChannelsView _ch_view;
+
 public:
-  QuickMsgScreen(UITask* task, KeyboardWidget* kb)
+  MessagesScreen(UITask* task, KeyboardWidget* kb)
     : _task(task), _kb(kb), _phase(MODE_SELECT), _mode_sel(0),
       _contact_sel(0), _contact_scroll(0), _num_contacts(0), _room_mode(false), _login_mode(false),
       _channel_sel(0), _channel_scroll(0), _num_channels(0),
@@ -561,9 +567,23 @@ public:
       _hist_sel(0), _hist_scroll(0),
       _unread_at_entry(0), _viewing_max_seen(0),
       _dm_hist_sel(-1), _dm_hist_scroll(0),
-      _ctx_dirty(false), _pin_picker_active(false), _dm_direct_entry(false), _reply_mode(false) {
+      _ctx_dirty(false), _pin_picker_active(false), _dm_direct_entry(false), _reply_mode(false),
+      _ch_view(task) {
     // The history rings + per-channel unread counters init in MessageHistory.
   }
+
+  // First free channel slot (existing config or blank name), or -1 if full.
+  int findFreeChannelSlot() const {
+    for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
+      ChannelDetails ch;
+      if (!the_mesh.getChannel(i, ch) || ch.name[0] == '\0') return i;
+    }
+    return -1;
+  }
+
+  // CHANNEL_PICK row count including the synthetic "+ Add channel" row
+  // (suppressed while picking a channel for the bot).
+  int channelPickTotal() const { return _num_channels + (_pick_bot_channel ? 0 : 1); }
 
   // Public entry points (routed from MyMesh / the bot via UITask) — thin
   // forwarders to the history store. addChannelMsg computes the "viewing" flag
@@ -733,6 +753,7 @@ public:
     _dm_direct_entry = false;
     _unread_at_entry = 0;
     _viewing_max_seen = 0;
+    _ch_view.reset();
   }
 
   // Recent DM contacts, newest first, deduped (forwarded to the history store).
@@ -855,6 +876,9 @@ public:
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
 
+    // Channel Add/Edit form owns the screen while active.
+    if (_ch_view.active()) return _ch_view.render(display);
+
     // Navigate-to-location view sits over everything else while active.
     if (_nav_active) { renderNav(display); return 1000; }
 
@@ -914,13 +938,23 @@ public:
     } else if (_phase == CHANNEL_PICK) {
       display.drawCenteredHeader("SELECT CHANNEL", true, _ctx_menu.active);
 
-      if (_num_channels == 0) {
+      // "+ Add channel" is a synthetic trailing row — suppressed while picking
+      // a channel for the bot, so that picker's list stays unchanged.
+      bool show_add = !_pick_bot_channel;
+      int total = _num_channels + (show_add ? 1 : 0);
+
+      if (total == 0) {
         display.drawTextCentered(display.width()/2, display.height()/2, "No channels");
         return 5000;
       }
 
-      drawList(display, _num_channels, _channel_sel, _channel_scroll, [&](int list_idx, int y, bool sel, int reserve) {
+      drawList(display, total, _channel_sel, _channel_scroll, [&](int list_idx, int y, bool sel, int reserve) {
         drawRowSelection(display, y, sel, reserve);
+        if (list_idx == _num_channels) {                 // the synthetic "Add" row
+          display.setCursor(2, y); display.print("+ Add channel");
+          display.setColor(DisplayDriver::LIGHT);
+          return;
+        }
         ChannelDetails ch;
         if (the_mesh.getChannel(_channel_indices[list_idx], ch)) {
           uint8_t unread = _history.chUnread(_channel_indices[list_idx]);
@@ -1242,6 +1276,9 @@ public:
   }
 
   bool handleInput(char c) override {
+    // Channel Add/Edit form consumes all input while active.
+    if (_ch_view.active()) return _ch_view.handleInput(c);
+
     // Navigate view: any back key returns to the message it was opened from.
     if (_nav_active) {
       if (c == KEY_CANCEL || c == KEY_ENTER || c == KEY_CONTEXT_MENU) _nav_active = false;
@@ -1541,12 +1578,20 @@ public:
             int cleared = (int)_history.chUnread(ch_idx);
             _history.setChUnread(ch_idx, 0);
             markReadAlert(cleared);
+          } else if (sel == 4) {              // Edit
+            ChannelDetails ch;
+            if (the_mesh.getChannel(ch_idx, ch)) _ch_view.openEdit(ch_idx, ch.name);
+          } else if (sel == 5) {              // Delete
+            ChannelDetails ch;
+            memset(&ch, 0, sizeof(ch));
+            the_mesh.setChannelLocal(ch_idx, ch);
+            _task->showAlert("Channel deleted", 1000);
           }
           // sel 1/2/3 already handled by LEFT/RIGHT; ENTER just closes.
         }
         if (res != PopupMenu::NONE) {
           _task->savePrefsIfDirty(_ctx_dirty);
-          // Apply any Fav change to the visible list now that the menu is done.
+          // Apply any Fav/Edit/Delete change to the visible list now that the menu is done.
           buildChannelList();
           if (_channel_sel >= _num_channels) _channel_sel = _num_channels > 0 ? _num_channels - 1 : 0;
         }
@@ -1558,9 +1603,17 @@ public:
         return true;
       }
       // drawList() reclamps _channel_scroll from _channel_sel every render.
-      if (c == KEY_UP   && _num_channels > 0) { _channel_sel = (_channel_sel > 0) ? _channel_sel - 1 : _num_channels - 1; return true; }
-      if (c == KEY_DOWN && _num_channels > 0) { _channel_sel = (_channel_sel < _num_channels - 1) ? _channel_sel + 1 : 0; return true; }
-      if (c == KEY_ENTER && _num_channels > 0) {
+      { int total = channelPickTotal();
+        if (c == KEY_UP   && total > 0) { _channel_sel = (_channel_sel > 0) ? _channel_sel - 1 : total - 1; return true; }
+        if (c == KEY_DOWN && total > 0) { _channel_sel = (_channel_sel < total - 1) ? _channel_sel + 1 : 0; return true; }
+      }
+      if (c == KEY_ENTER && _channel_sel == _num_channels && !_pick_bot_channel) {
+        int idx = findFreeChannelSlot();
+        if (idx < 0) _task->showAlert("Channels full", 1200);
+        else         _ch_view.openAdd(idx);
+        return true;
+      }
+      if (c == KEY_ENTER && _num_channels > 0 && _channel_sel < _num_channels) {
         _sel_channel_idx = _channel_indices[_channel_sel];
         if (_pick_target) { commitPickTargetChannel(_sel_channel_idx); return true; }
         if (_pick_bot_channel) { commitPickBotChannel(_sel_channel_idx); return true; }
@@ -1577,7 +1630,7 @@ public:
         if (_share_mode) beginShareCompose(true);
         return true;
       }
-      if (c == KEY_CONTEXT_MENU && _num_channels > 0) {
+      if (c == KEY_CONTEXT_MENU && _num_channels > 0 && _channel_sel < _num_channels) {
         uint8_t ch_idx = _channel_indices[_channel_sel];
         _ctx_ch_idx = ch_idx;   // freeze the menu's target channel
         static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
@@ -1589,11 +1642,13 @@ public:
         { NodePrefs* p2 = _task->getNodePrefs();
           bool is_fav = p2 && (p2->ch_fav_bitmask & (1ULL << ch_idx));
           snprintf(_ctx_ch_fav_item, sizeof(_ctx_ch_fav_item), is_fav ? "Fav: yes" : "Fav: no"); }
-        _ctx_menu.begin("Channel options", 4);
+        _ctx_menu.begin("Channel options", 6);
         _ctx_menu.addItem("Mark all read");
         _ctx_menu.addItem(_ctx_notif_item);
         _ctx_menu.addItem(_ctx_melody_item);
         _ctx_menu.addItem(_ctx_ch_fav_item);
+        _ctx_menu.addItem("Edit");
+        _ctx_menu.addItem("Delete");
         _ctx_dirty = false;
         return true;
       }

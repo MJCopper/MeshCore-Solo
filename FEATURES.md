@@ -14,7 +14,7 @@ Hold Enter on the MESSAGE mode-select screen (DM / Channels / Rooms) opens a 1-i
 
 Implementation:
 - New `UITask::clearAllDMUnread()` — `memset` over `_dm_unread_table`
-- `QuickMsgScreen::clearAllChannelUnread()` already existed
+- `MessagesScreen::clearAllChannelUnread()` already existed
 - `UITask::clearRoomUnread()` already existed
 - Title is a `static const char*` table (PopupMenu stores the title pointer verbatim — locals would dangle)
 - Zero schema impact, all counters live in RAM
@@ -762,7 +762,7 @@ Unknown-secret packets no longer pollute the offline queue, UI history or trigge
 
 ### ✅ `addChannelMsg` guards against bogus index
 
-[`QuickMsgScreen.h:414-433`](examples/companion_radio/ui-new/QuickMsgScreen.h#L414-L433)
+[`MessagesScreen.h:414-433`](examples/companion_radio/ui-new/MessagesScreen.h#L414-L433)
 
 Defensive `if (ch_idx >= MAX_GROUP_CHANNELS) return;` at function entry — prevents ring-buffer pollution in case any future caller forgets the upstream guard. With C1 fixed this should never trigger, but the cost is zero.
 
@@ -787,7 +787,7 @@ Fixed: the save loop now skips unused slots (all-zero secret) instead of writing
 ```cpp
 if (msgcount == 0) {
     memset(_dm_unread_table, 0, sizeof(_dm_unread_table));
-    ((QuickMsgScreen*)quick_msg)->clearAllChannelUnread();
+    ((MessagesScreen*)messages_screen)->clearAllChannelUnread();
 }
 ```
 
@@ -795,7 +795,7 @@ When the companion app reads the last message from the offline queue, all on-dev
 
 ### ✅ Message buffers sized below the protocol maximum (clipped long messages)
 
-[`QuickMsgScreen.h`](examples/companion_radio/ui-new/QuickMsgScreen.h), [`KeyboardWidget.h`](examples/companion_radio/ui-new/KeyboardWidget.h)
+[`MessagesScreen.h`](examples/companion_radio/ui-new/MessagesScreen.h), [`KeyboardWidget.h`](examples/companion_radio/ui-new/KeyboardWidget.h)
 
 `ChHistEntry::text` was 140 B and `DmHistEntry::text` only 80 B, while the
 keyboard capped input at 139 B — all below MeshCore's `MAX_TEXT_LEN` (160 B).
@@ -870,13 +870,13 @@ Re-checked: `BOT_SCRATCH` is 200 and `MAX_TEXT_LEN` is 160, so an incoming messa
 
 ### ✅ `strncpy("?", buf, sizeof(buf))` replaced with `strcpy`
 
-[`QuickMsgScreen.h:785, 858`](examples/companion_radio/ui-new/QuickMsgScreen.h#L785)
+[`MessagesScreen.h:785, 858`](examples/companion_radio/ui-new/MessagesScreen.h#L785)
 
 Two fallback "?" sender names now use a plain `strcpy` so we don't memset 21 unused bytes for a one-character string.
 
 ### ❌ Title truncation in MSG_PICK reply mode — not an overflow
 
-[`QuickMsgScreen.h:1279-1287`](examples/companion_radio/ui-new/QuickMsgScreen.h#L1279)
+[`MessagesScreen.h:1279-1287`](examples/companion_radio/ui-new/MessagesScreen.h#L1279)
 
 Re-checked: `rlen` is clamped to 20 before building `"RE:" + nick`, so the title is ≤23 chars and fits `title[24]` with no overflow. A nick longer than 20 chars is shown truncated, but that's an intentional fit-to-header limit (the OLED header only fits ~21 chars anyway), not a bug.
 

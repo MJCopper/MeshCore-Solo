@@ -50,7 +50,7 @@ Posting to a **room server** requires a login handshake first, so the device can
 - **Log out** with **Hold Enter** on a room you're currently logged into → **Logout** (only offered once logged in). Forgets the saved password on the device, so the next time you open that room it prompts for one again instead of silently reusing the old one.
 - Passwords set from the **phone app** are saved on the device too, so it can post to that room standalone after a reboot.
 
-> The on-screen keyboard's default (Latin) page is ASCII only. Typing accented or non-Latin characters — Polish/Czech/German/French diacritics, Cyrillic, or Greek — needs Settings › Keyboard › Alphabet set to the matching alphabet first; the keyboard's **#@/abc** key then cycles Latin → that alphabet → Symbols → Latin. A password containing characters outside whatever's currently enabled can still be set from the phone app — the device stores and replays it byte-for-byte.
+> The on-screen keyboard's default (Latin) page is ASCII only. Typing accented or non-Latin characters — Polish, Czech, Slovak, German, French, Spanish, Portuguese or Nordic diacritics, Cyrillic, or Greek — needs Settings › Keyboard › Alphabet set to the matching language first; the keyboard's **#@/abc** key then cycles Latin → that alphabet → Symbols → Latin. A password containing characters outside whatever's currently enabled can still be set from the phone app — the device stores and replays it byte-for-byte.
 
 ---
 
@@ -129,6 +129,24 @@ In the **Rooms** list the context menu instead offers:
 | Notif: default / OFF / ON | Per-channel notification override — **LEFT/RIGHT** to cycle           |
 | Melody: global / M1 / M2  | Per-channel melody override — **LEFT/RIGHT** to cycle                 |
 | Fav: yes / no             | Add or remove this channel from favourites — **LEFT/RIGHT** to toggle |
+| Edit                      | Opens the Add/Edit form below, pre-filled with the channel's name    |
+| Delete                    | Removes the channel immediately (no confirm prompt)                   |
+
+---
+
+### Adding / editing a channel
+
+Joining a new community channel, or creating one to share with others, no longer needs the phone app. The **Channels** list ends with a **"+ Add channel"** row — press **Enter** on it to open the form, or use **Edit** from the context menu above to change an existing channel's name or secret.
+
+| Field  | Notes                                                                                        |
+| ------ | ---------------------------------------------------------------------------------------------- |
+| Name   | Up to 31 characters                                                                            |
+| Secret | **LEFT/RIGHT** toggles between two entry modes; **Enter** opens the keyboard for whichever is selected |
+
+- **Passphrase** (default) — type any text; the device hashes it down to the channel's 16-byte secret. Easiest to agree on verbally, the same idea as a room password — two people who type the same passphrase end up on the same channel.
+- **Hex key** — type the exact 32-hex-character secret (the format used by channel QR codes, see [QR Codes](../../qr_codes.md)), for joining a channel whose precise secret you were given rather than agreeing on a new passphrase.
+
+Select **[Save]** to commit. The secret can't be redisplayed once saved (only the derived key is kept) — editing it later means typing a new passphrase or hex key, the same as re-logging into a room with a new password.
 
 ---
 

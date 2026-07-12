@@ -18,7 +18,7 @@ static char s_wrap_lines[12][FS_CHARS_MAX];
 // Parse a leading "@[nick] " reply prefix. Returns the message body that
 // follows it (and any leading whitespace); when nick/nick_n are supplied,
 // fills nick with the addressee, or "" when there's no prefix. One parser for
-// both the history list (body only — see QuickMsgScreen::skipReplyPrefix) and
+// both the history list (body only — see MessagesScreen::skipReplyPrefix) and
 // the fullscreen view (which also shows the "To:" nick).
 static inline const char* msgReplyBody(const char* text, char* nick = nullptr, int nick_n = 0) {
   if (nick && nick_n > 0) nick[0] = '\0';

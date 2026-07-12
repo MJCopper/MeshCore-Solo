@@ -14,7 +14,7 @@ class ToolsScreen : public UIScreen {
 
   enum Action {
     ACT_NEARBY, ACT_LIVESHARE, ACT_TRAIL, ACT_LOCATOR, ACT_COMPASS,
-    ACT_BOT, ACT_AUTOADVERT, ACT_REPEATER,
+    ACT_BOT, ACT_AUTOADVERT, ACT_REPEATER, ACT_ADMIN,
     ACT_CLOCK, ACT_RINGTONE, ACT_DIAGNOSTICS
   };
   struct Tool { const char* label; const MiniIcon* icon; Action action; };
@@ -49,6 +49,7 @@ class ToolsScreen : public UIScreen {
       case ACT_BOT:         _task->gotoBotScreen();         break;
       case ACT_AUTOADVERT:  _task->gotoAutoAdvertScreen();  break;
       case ACT_REPEATER:    _task->gotoRepeaterScreen();    break;
+      case ACT_ADMIN:       _task->gotoAdminScreen();       break;
       case ACT_CLOCK:       _task->gotoClockTools();        break;
       case ACT_RINGTONE:    _task->gotoRingtoneEditor();    break;
       case ACT_DIAGNOSTICS: _task->gotoDiagnosticsScreen(); break;
@@ -121,6 +122,7 @@ const ToolsScreen::Tool ToolsScreen::COMMS_TOOLS[] = {
   { "Auto-Reply Bot", &ICON_BOT,      ACT_BOT },
   { "Auto-Advert",    &ICON_ADVERT,   ACT_AUTOADVERT },
   { "Repeater",       &ICON_REPEATER, ACT_REPEATER },
+  { "Admin",          &ICON_GEAR,     ACT_ADMIN },
 };
 const ToolsScreen::Tool ToolsScreen::SYSTEM_TOOLS[] = {
   { "Clock Tools",     &ICON_ALARM, ACT_CLOCK },
@@ -129,6 +131,6 @@ const ToolsScreen::Tool ToolsScreen::SYSTEM_TOOLS[] = {
 };
 const ToolsScreen::Section ToolsScreen::SECTIONS[] = {
   { "Location", &ICON_MAP_CONTACT, LOCATION_TOOLS, 5 },
-  { "Comms",    &ICON_ADVERT,      COMMS_TOOLS,    3 },
+  { "Comms",    &ICON_ADVERT,      COMMS_TOOLS,    4 },
   { "System",   &ICON_GEAR,        SYSTEM_TOOLS,   3 },
 };

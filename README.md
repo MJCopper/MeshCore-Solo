@@ -26,7 +26,7 @@ All firmware files are published on the [releases page](https://github.com/Marek
 
 ## Feature highlights
 
-- Extended language support with native Unicode rendering and input ([Lemon font](https://github.com/cmvnd/fonts)) alongside the original ASCII mode (Default font with transliteration)
+- Extended language support with native Unicode rendering and input ([Lemon font](https://github.com/cmvnd/fonts)) alongside the original ASCII mode (Default font with transliteration) — on-screen keyboard alphabets for Cyrillic, Greek, Polish, Czech, Slovak, German, French, Spanish, Portuguese and Nordic (Danish/Norwegian/Swedish), selectable in Settings › Keyboard › Alphabet
 
 - Enabled sensor screens with support for onboard sensors (temperature, humidity, pressure, luminosity, CO₂) and GPS data
 
@@ -41,7 +41,7 @@ All firmware files are published on the [releases page](https://github.com/Marek
   - **GPS trail** — background route recording with an auto-fit map (waypoints + live position), summary stats, auto-pause on stops, and [GPX export](#solo-tools)
   - **Metric or imperial** — one global Units setting drives every distance and speed across the UI
 
-- [Messages Screen](./docs/solo_features/message_screen/message_screen.md) — view and send messages, open message details, reply with quick messages or custom text, navigate to / save locations shared in a message, per-channel notification and melody overrides
+- [Messages Screen](./docs/solo_features/message_screen/message_screen.md) — view and send messages, open message details, reply with quick messages or custom text, navigate to / save locations shared in a message, per-channel notification and melody overrides, add/edit/delete channels on-device
 
 - [Favourites Dial](./docs/solo_features/favourites_dial/favourites_dial.md) — pin up to six contacts for quick access from the home screen
 
@@ -51,7 +51,7 @@ All firmware files are published on the [releases page](https://github.com/Marek
 
 - [Screen Lock](./docs/solo_features/screen_lock/screen_lock.md) — lock the device to prevent accidental keypresses, with a lock screen showing time and sensor data
 
-- [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) — GPS trail & waypoints, compass, nearby nodes (with ping & navigate), ringtone editor, auto-reply bot, auto-advert, live location sharing, locator, diagnostics, repeater
+- [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) — GPS trail & waypoints, compass, nearby nodes (with ping & navigate), ringtone editor, auto-reply bot, auto-advert, live location sharing, locator, diagnostics, repeater, remote admin
 
 - **Battery saving (radio)** — two optional, independent toggles under Settings › Radio:
   - **Pwr save** — hardware duty-cycle receive (SX126x `SetRxDutyCycle`): the radio cycles RX↔sleep on its own and wakes on a preamble, cutting average RX current with only a little added receive latency
@@ -99,7 +99,7 @@ Updating to a newer version usually does not require erasing flash unless the re
 | [Clock Screen](./docs/solo_features/clock_screen/clock_screen.md)          | Clock page, date, configurable data fields, alarm / timer / stopwatch  |
 | [Settings Screen](./docs/solo_features/settings_screen/settings_screen.md) | All settings sections with values and interactions                    |
 | [Screen Lock](./docs/solo_features/screen_lock/screen_lock.md)             | Lock/unlock sequence, lock screen, auto-lock                          |
-| [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md)          | GPS trail & waypoints, compass, navigation, nearby nodes, ringtone editor, auto-reply bot, auto-advert, live location sharing, locator, diagnostics, repeater |
+| [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md)          | GPS trail & waypoints, compass, navigation, nearby nodes, ringtone editor, auto-reply bot, auto-advert, live location sharing, locator, diagnostics, repeater, remote admin |
 | [Solo UI framework](./docs/design/solo_ui_framework.md)                    | **Developer guide** — the reusable building blocks (screens, lists, popups, mini-icons, geo/persistence helpers) and how to add a new feature |
 
 ### Upstream MeshCore

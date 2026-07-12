@@ -8,7 +8,7 @@
 | :-----------------------: | :-----------------------: |
 | ![](./overview_oled.png) | ![](./overview_eink.png) |
 
-The Tools screen is a hub for GPS trail recording, nearby node browsing, ringtone editing, auto-reply bot, auto-advert, live location sharing, locator, compass, clock tools (alarm / timer / stopwatch), device diagnostics, and repeater mode. Tools are grouped into collapsible **Location** / **Comms** / **System** sections — the same fold-in-place model as Settings; Tools always opens folded back to the section list. Navigate with **UP/DOWN**, press **Enter** on a section header to expand or collapse it, or on a tool to open it.
+The Tools screen is a hub for GPS trail recording, nearby node browsing, ringtone editing, auto-reply bot, auto-advert, live location sharing, locator, compass, clock tools (alarm / timer / stopwatch), device diagnostics, repeater mode, and remote admin. Tools are grouped into collapsible **Location** / **Comms** / **System** sections — the same fold-in-place model as Settings; Tools always opens folded back to the section list. Navigate with **UP/DOWN**, press **Enter** on a section header to expand or collapse it, or on a tool to open it.
 
 ---
 
@@ -509,3 +509,34 @@ The five flood filters are **opt-in** (default OFF, so a plain repeater is unaff
 While the repeater is on, a **»** indicator appears in the status bar (same blink convention as the auto-advert and trail markers) so you can tell it's relaying at a glance. Two radio settings are also overridden while relaying and restored afterwards: **Settings › Radio › Pwr save** is forced off (a repeater must listen continuously) and **Auto pwr** is forced off (a repeater holds full TX power for consistent relay reach). Both show `--` in Settings while the repeater is on.
 
 Live forwarding stats — **Forwarded**, **Pool free**, **Queue** — are shown on **Tools › Diagnostics** (this screen is config-only).
+
+---
+
+## Admin
+
+<!-- screenshot pending: Admin — target picker, command entry, reply view -->
+
+Send CLI commands to a **repeater or room server you have admin permission on** and see the text reply — the on-device equivalent of the companion app's repeater-admin feature. See [CLI Commands](../../cli_commands.md) for the full command grammar.
+
+1. **Select a node** — the list shows every repeater/room-server contact. Press **Enter** to pick one.
+2. **Log in** — type the node's **admin password** (this is the same login handshake Messages uses for room servers; a repeater's admin password is set with the `password` CLI command). If a password was already saved for this node from an earlier successful login, it retries silently instead of prompting. Only a login that comes back with **admin**-level permission unlocks the next step — anything less shows "Not admin on this node" and returns to the list.
+3. **Pick a category and a field** — a tab carousel (**LEFT/RIGHT** to switch category, **UP/DOWN** to move within it, same as Auto-Reply Bot's tabs), so common settings don't need the CLI grammar memorised:
+
+| Tab | Rows |
+| --- | ---- |
+| **System** | Name, Owner info, Admin password |
+| **Radio** | Radio (freq, bandwidth, spreading factor, coding rate), TX power |
+| **Routing** | Repeat, Advert interval, Flood advert interval, Max hops |
+| **Actions** | Reboot, Send advert, Send zero-hop advert, Sync clock, **Custom command...** |
+
+**Enter** on a row does one of three things, depending on the field:
+   - Most **System/Radio/Routing** rows first **fetch** the node's current value, then open the keyboard **pre-filled** with it to edit — submitting sends the change. If the fetch fails or times out, the keyboard still opens (blank), so the value can be set blind.
+   - **Admin password** has no fetch (there's no way to read a password back) — it opens straight to a blank keyboard.
+   - **Actions** (Reboot, Send advert, …) send immediately, no editing step.
+   - **Custom command...** (last row of Actions) opens the same free-text entry for anything not covered above — up to 160 characters, see the linked reference for the full grammar.
+4. **Read the reply** — the text reply opens in a scrollable view (**UP/DOWN** to scroll, **Cancel/Enter** to go back to the category tabs).
+
+> [!WARNING]
+> This screen can run **destructive** commands on the *remote* node — `reboot`, `erase`, a new admin password, and others. That's the same capability the phone app's repeater-admin feature already exposes, not a new risk, but double-check the value and the target before sending.
+
+**Passwords are remembered across reboots**, the same self-healing behaviour as room logins in Messages: after a successful admin login the password is saved on the device, so picking that node again — even after a power cycle — logs back in silently. If a saved password stops working (e.g. it was changed on the node), the failed login forgets it, so the next pick prompts for a new one. A correct password that just lacks admin permission is left alone — retyping the same one wouldn't change the outcome. Some commands are marked **Serial Only** in the CLI reference — those reject a remote CLI request and only work over that node's own USB serial connection.

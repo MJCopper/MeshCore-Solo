@@ -331,13 +331,29 @@ struct NodePrefs {  // persisted to file
   // See KeyboardWidget.h for the per-alphabet grids (KB_CYRILLIC_CHARS etc.)
   // and Lemon font (src/helpers/ui/LemonFont.h) for on-screen rendering —
   // every alphabet here must be in Lemon's U+0020-04FF range.
+  //
+  // The Latin-diacritic entries (Polish..Nordic) replace what used to be a
+  // single combined "Ext.Latin" curated subset — each is now its own full,
+  // linguistically-correct set of that language's non-ASCII letters instead
+  // of a shared partial one. Not a schema change: keyboard_alt_alphabet is
+  // still just an index into keyboardAlphabetLabel()/KeyboardWidget's tables,
+  // so widening KB_ALPHABET_COUNT needs no persisted-data migration — only
+  // note that an index of 3 now means Polish, not the old combined Ext.Latin.
   static const uint8_t KB_ALPHABET_LATIN_ONLY = 0;
   static const uint8_t KB_ALPHABET_CYRILLIC   = 1;
   static const uint8_t KB_ALPHABET_GREEK      = 2;
-  static const uint8_t KB_ALPHABET_EXT_LATIN  = 3;  // Polish/Czech/Slovak/German/French/etc. diacritics
-  static const uint8_t KB_ALPHABET_COUNT      = 4;
+  static const uint8_t KB_ALPHABET_POLISH     = 3;   // ą ć ę ł ń ó ś ź ż
+  static const uint8_t KB_ALPHABET_CZECH      = 4;   // á č ď é ě í ň ó ř š ť ú ů ý ž
+  static const uint8_t KB_ALPHABET_SLOVAK     = 5;   // á ä č ď é í ĺ ľ ň ó ô ŕ š ť ú ý ž
+  static const uint8_t KB_ALPHABET_GERMAN     = 6;   // ä ö ü ß
+  static const uint8_t KB_ALPHABET_FRENCH     = 7;   // à â ç é è ê ë î ï ô ù û ü ÿ œ
+  static const uint8_t KB_ALPHABET_SPANISH    = 8;   // á é í ñ ó ú ü
+  static const uint8_t KB_ALPHABET_PORTUGUESE = 9;   // á à â ã ç é ê í ó ô õ ú
+  static const uint8_t KB_ALPHABET_NORDIC     = 10;  // å ä æ ö ø (Danish/Norwegian/Swedish share this set)
+  static const uint8_t KB_ALPHABET_COUNT      = 11;
   static const char* keyboardAlphabetLabel(uint8_t idx) {
-    static const char* L[KB_ALPHABET_COUNT] = { "Latin", "Cyrillic", "Greek", "Ext.Latin" };
+    static const char* L[KB_ALPHABET_COUNT] = { "Latin", "Cyrillic", "Greek", "Polish", "Czech",
+                                                 "Slovak", "German", "French", "Spanish", "Portuguese", "Nordic" };
     return L[idx < KB_ALPHABET_COUNT ? idx : 0];
   }
 

@@ -2,16 +2,17 @@
 // Custom screen — not part of upstream UITask.cpp
 // Included by UITask.cpp after KeyboardWidget.h is defined.
 
+#include "TabBar.h"
+
 class BotScreen : public UIScreen {
   UITask*    _task;
   NodePrefs* _prefs;
 
-  // Categories are a circular tab bar in the header (mirrors NearbyScreen's
-  // filter tabs — duplicated locally rather than shared, since this is the
-  // only other screen using the pattern so far). LEFT/RIGHT switches tabs;
-  // UP/DOWN moves within the active tab's rows. Because LEFT/RIGHT is fully
-  // owned by tab-switching, every row's value is edited via Enter only — no
-  // more inline LEFT/RIGHT cycling.
+  // Categories are a circular tab bar in the header (shared geometry with
+  // NearbyScreen's filter tabs and AdminScreen's category tabs — see
+  // TabBar.h). LEFT/RIGHT switches tabs; UP/DOWN moves within the active
+  // tab's rows. Because LEFT/RIGHT is fully owned by tab-switching, every
+  // row's value is edited via Enter only — no more inline LEFT/RIGHT cycling.
   enum Tab : uint8_t { TAB_CHANNEL, TAB_ROOM, TAB_DIRECT, TAB_OTHER, TAB_COUNT };
   static const char* TAB_LABELS[TAB_COUNT];
 
@@ -96,56 +97,10 @@ class BotScreen : public UIScreen {
       if (the_mesh.getContactByIdx(i, ci) && ci.type == ADV_TYPE_ROOM) _num_rooms++;
   }
 
-  // One tab: short label; the active one is an inverted pill (same look as a
-  // selected row) so it reads as "you are here" in the tab strip.
-  void drawTab(DisplayDriver& display, int x, int w, const char* label, bool active) {
-    int lh = display.getLineHeight();
-    if (active) {
-      display.setColor(DisplayDriver::LIGHT);
-      display.fillRect(x, 0, w, lh + 1);
-      display.setColor(DisplayDriver::DARK);
-    } else {
-      display.setColor(DisplayDriver::LIGHT);
-    }
-    display.drawTextCentered(x + w / 2, 0, label);
-    display.setColor(DisplayDriver::LIGHT);
-  }
-
-  // Header as a circular tab bar: the active tab sits centred as a filled
-  // pill, neighbours fan out either side and wrap around. Only whole tabs are
-  // drawn — one that would spill past a screen edge is skipped rather than
-  // clipped. `right_reserve` keeps the reply counter (drawn after this call)
-  // clear of the rightmost tab.
+  // Header as a circular tab bar (shared geometry — see TabBar.h). `right_reserve`
+  // keeps the reply counter (drawn after this call) clear of the rightmost tab.
   void drawTabBar(DisplayDriver& display, int right_reserve) {
-    const int pad = 3, gap = 2;
-    int w[TAB_COUNT];
-    for (int i = 0; i < TAB_COUNT; i++)
-      w[i] = display.getTextWidth(TAB_LABELS[i]) + pad * 2;
-
-    int ax = display.width() / 2 - w[_tab] / 2;
-    drawTab(display, ax, w[_tab], TAB_LABELS[_tab], true);
-
-    int lx = ax - gap;
-    int rx = ax + w[_tab] + gap;
-    int rx_limit = display.width() - right_reserve;
-    bool lfit = true, rfit = true;
-    for (int k = 1; k <= TAB_COUNT / 2 && (lfit || rfit); k++) {
-      int li = (_tab - k + TAB_COUNT) % TAB_COUNT;
-      int ri = (_tab + k) % TAB_COUNT;
-      if (lfit) {
-        int x = lx - w[li];
-        if (x >= 0) { drawTab(display, x, w[li], TAB_LABELS[li], false); lx = x - gap; }
-        else lfit = false;
-      }
-      // Skip the right side when it lands on the same tab as the left (the
-      // single opposite tab on an even count) so it isn't drawn twice.
-      if (rfit && ri != li) {
-        if (rx + w[ri] <= rx_limit) { drawTab(display, rx, w[ri], TAB_LABELS[ri], false); rx += w[ri] + gap; }
-        else rfit = false;
-      }
-    }
-    display.setColor(DisplayDriver::LIGHT);
-    display.fillRect(0, display.headerH() - display.sepH(), display.width(), display.sepH());
+    tabbar::draw(display, TAB_LABELS, TAB_COUNT, _tab, right_reserve);
   }
 
 public:

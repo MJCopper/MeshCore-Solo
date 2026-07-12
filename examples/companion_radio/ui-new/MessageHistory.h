@@ -1,14 +1,14 @@
 #pragma once
-// Message history store for QuickMsgScreen: two RAM ring buffers (channel + DM)
+// Message history store for MessagesScreen: two RAM ring buffers (channel + DM)
 // with their per-entry delivery state (channel "relayed into mesh" echo, DM
 // end-to-end ACK + auto-resend) and the per-channel unread counters. Pure
 // storage + queries — no UI/phase state lives here. The screen keeps selection,
 // scroll, the unread "viewing session" bookkeeping, the room-login table, and
 // all rendering, and reaches entries through the accessors below.
 //
-// Single-TU fragment: included by UITask.cpp before QuickMsgScreen.h. AckState,
+// Single-TU fragment: included by UITask.cpp before MessagesScreen.h. AckState,
 // MSG_TEXT_BUF and the two entry structs are file-scope (not nested) so the
-// phase machine in QuickMsgScreen keeps referring to them unqualified.
+// phase machine in MessagesScreen keeps referring to them unqualified.
 
 // Outgoing-message delivery state. DM: a real end-to-end ACK (✓ delivered to
 // the recipient). Channel: only a "relayed into mesh" echo from a repeater (no
