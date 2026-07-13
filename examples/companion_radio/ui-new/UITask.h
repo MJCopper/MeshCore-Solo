@@ -230,8 +230,7 @@ public:
   void gotoToolsScreen();
   void gotoRingtoneEditor(int slot = 0);
   void gotoBotScreen();
-  void gotoAdminScreen();
-  void pickAdminTarget();                  // open Nodes to choose a remote repeater/room for Admin
+  void pickAdminTarget();                  // Admin is remote-only: open Nodes to pick a repeater/room
   void openAdminFor(const ContactInfo& ci); // canonical Admin entry for a specific target (Nodes' Hold-Enter menu or the picker above)
   void gotoNearbyScreen();
   void gotoDashboardConfig();

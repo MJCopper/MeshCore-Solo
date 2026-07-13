@@ -517,13 +517,9 @@ Live forwarding stats — **Forwarded**, **Pool free**, **Queue** — are shown 
 
 <!-- screenshot pending: Admin — target picker, command entry, reply view -->
 
-Send commands to **this device**, or to a **repeater/room server you have admin permission on** — the on-device equivalent of the companion app's repeater-admin feature for remote nodes, plus a local shim over settings this device already has. See [CLI Commands](../../cli_commands.md) for the full remote command grammar.
+Send commands to a **repeater/room server you have admin permission on** — the on-device equivalent of the companion app's repeater-admin feature. See [CLI Commands](../../cli_commands.md) for the full command grammar. (Admin only manages *remote* nodes; this device's own name, radio, TX power and reboot live in **Settings** — see below.)
 
-Opening **Tools › Admin** shows a two-row chooser: **This device** or **Remote node...**.
-
-### Remote node
-
-1. **Select a node** — "Remote node..." opens **Tools › Nodes** (the same screen, filters, sort and live scan as browsing it normally) so picking a node for Admin looks exactly like using Nodes for anything else; **Enter** on a repeater/room row hands it to Admin. Admin is also reachable directly from a node's own **Hold Enter** menu in Nodes, without going through the chooser at all.
+1. **Select a node** — opening **Tools › Admin** goes straight to **Tools › Nodes** (the same screen, filters, sort and live scan as browsing it normally) so picking a node for Admin looks exactly like using Nodes for anything else; **Enter** on a repeater/room row hands it to Admin, **Cancel** returns to Tools. Admin is also reachable directly from a node's own **Hold Enter** menu in Nodes.
 2. **Log in** — type the node's **admin password** (the same login handshake Messages uses for room servers; a repeater's admin password is set with the `password` CLI command). If a password was already saved for this node from an earlier successful login, it retries silently instead of prompting. Only a login that comes back with **admin**-level permission unlocks the next step — anything less shows "Not admin on this node".
 3. **Pick a category and a field** — a tab carousel (**LEFT/RIGHT** to switch category, **UP/DOWN** to move within it, same as Auto-Reply Bot's tabs), so common settings don't need the CLI grammar memorised:
 
@@ -548,11 +544,4 @@ Opening **Tools › Admin** shows a two-row chooser: **This device** or **Remote
 
 ### This device
 
-A lighter, login-free version of the same tab carousel, for settings this device already has:
-
-| Tab | Rows |
-| --- | ---- |
-| **System** | Name, Radio (freq, bandwidth, spreading factor, coding rate), TX power, Lat, Lon |
-| **Actions** | Send advert, Reboot |
-
-There's no fetch step here — the current value is already known, so **Enter** opens the keyboard pre-filled with it immediately, and submitting applies the change at once (the same apply logic Settings' own Radio/TX power rows use) and saves it. Reboot and Send advert fire immediately, same as their remote counterparts. This is a fast, lightly-validated shortcut alongside Settings' own fuller editors (radio presets, chip-bounds frequency entry, etc.) — for careful bounds-checked editing, prefer Settings.
+Admin doesn't manage the companion itself — its own settings live in **Settings**: **Radio** (preset / freq / SF / BW / CR) and **TX power** in the Radio section, and **Name** and **Reboot** in the System section. **Send advert** is the home **ADVERT** page.

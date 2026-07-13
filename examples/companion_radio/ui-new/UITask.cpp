@@ -1469,7 +1469,6 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 void UITask::gotoSettingsScreen()  { setCurrScreen(settings); }
 void UITask::gotoToolsScreen()     { setCurrScreen(tools_screen); }
 void UITask::gotoBotScreen()       { setCurrScreen(bot_screen); }
-void UITask::gotoAdminScreen()     { setCurrScreen(admin_screen); }  // AdminScreen::onShow() resets it
 void UITask::gotoNearbyScreen()    { setCurrScreen(nearby_screen); }
 
 void UITask::pickAdminTarget() {

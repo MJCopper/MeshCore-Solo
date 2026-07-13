@@ -1,28 +1,24 @@
 #pragma once
 // Tools > Admin: administer a remote repeater/room you have admin rights on
 // (over the mesh -- the on-device equivalent of the app's "repeater admin",
-// see docs/cli_commands.md) or this device itself. Also reachable from Tools >
-// Nodes' Hold-Enter menu (NearbyScreen::ACT_ADMIN).
+// see docs/cli_commands.md). This device's own settings live in Settings /
+// Tools, not here -- Admin is purely for remote nodes.
 //
-// CHOOSER -> "This device" (LOCAL mode) or "Remote node..." (opens Tools > Nodes
-// in pick-mode -- NearbyScreen::startPickAdminTarget(), the same borrow-another-
-// screen's-list idiom the channel/bot pickers use, so it looks exactly like
-// normal Nodes browsing). Both the picker and the Nodes context-menu converge
-// on the single canonical UITask::openAdminFor(ContactInfo) -> startFor().
+// Entry is always a target-then-act flow: Tools > Admin (or a repeater/room's
+// Hold-Enter "Admin" action in Nodes) opens Tools > Nodes in a pick-mode
+// (NearbyScreen::startPickAdminTarget(), the same borrow-another-screen's-list
+// idiom the channel/bot pickers use), and picking a node calls the single
+// canonical UITask::openAdminFor(ContactInfo) -> startFor(). Backing out of a
+// command screen returns to that picker; backing out of the picker returns to
+// Tools.
 //
-// REMOTE mode: login (session password, self-heals like room logins) unlocks a
-// category tab carousel of AdminField{label, get_cmd, set_prefix} rows:
+// After login (session password, self-heals like room logins) a category tab
+// carousel of AdminField{label, get_cmd, set_prefix} rows unlocks:
 //   set_prefix==null -> action: send get_cmd literally (e.g. "reboot")
 //   get_cmd==null    -> set-only: blank keyboard, send "<set_prefix> <value>"
 //   both set         -> get, pre-fill keyboard with the reply, then set
 // The trailing "Custom command..." row (both null) is a free-text escape hatch
 // with {}-key CLI command-name completion (CLI_COMMANDS).
-//
-// LOCAL mode: no login, no network -- a 2-tab carousel of LocalField{label, kind}
-// rows mapped straight onto NodePrefs/sensors, reusing Settings' own apply chains
-// (UITask::applyRadioParams()/applyTxPower(), MyMesh::savePrefs()) rather than a
-// CLI-grammar port (this firmware has no CommonCLI -- see CODE_REVIEW.md). Fields
-// pre-fill with the current value read synchronously and write+apply on submit.
 
 #include "FullscreenMsgView.h"
 #include "TabBar.h"
@@ -31,31 +27,26 @@
 class AdminScreen : public UIScreen {
   UITask* _task;
 
-  enum Phase : uint8_t { CHOOSER, LOGIN, COMMAND, REPLY };
-  Phase _phase = CHOOSER;
+  enum Phase : uint8_t { LOGIN, COMMAND, REPLY };
+  Phase _phase = LOGIN;
 
-  // CHOOSER -- "This device" (row 0) / "Remote node..." (row 1). Reuses _sel.
-  int _sel = 0;
+  ContactInfo _target;
 
-  bool _local_mode = false;   // COMMAND is administering this device, not _target
-  ContactInfo _target;        // valid only when !_local_mode
-
-  // LOGIN (remote only)
+  // LOGIN
   char _login_pw[16] = "";
-  // True while waiting for the result of a login attempt with no keyboard on
-  // screen -- either a silent retry with a remembered password, or right after
-  // the keyboard-typed password was submitted. Distinct from the keyboard
-  // itself being open (kb().render()/handleInput() only run while this is false).
+  // True while waiting for a login result with no keyboard on screen -- either a
+  // silent retry with a remembered password, or right after the typed password
+  // was submitted. Distinct from the keyboard being open (kb().render()/
+  // handleInput() only run while this is false).
   bool _login_waiting = false;
 
-  // One-slot memo: the last contact this screen successfully admin-logged
-  // into this visit, so re-entering COMMAND for the same target right after
-  // doesn't require retyping the password. Cleared in onShow() -- see the
-  // session-only design note in the file header.
+  // One-slot memo: the last contact successfully admin-logged-into this visit,
+  // so re-entering COMMAND for the same target right after doesn't require
+  // retyping the password. Cleared in onShow().
   uint8_t _admin_ok_prefix[4] = { 0, 0, 0, 0 };
   bool    _admin_ok = false;
 
-  // ── COMMAND: remote (CLI-grammar) tabs/rows ─────────────────────────────────
+  // ── COMMAND: category tabs / rows ───────────────────────────────────────────
   enum AdminTab : uint8_t { ATAB_SYSTEM, ATAB_RADIO, ATAB_ROUTING, ATAB_ACTIONS, ATAB_COUNT };
   static const char* TAB_LABELS[ATAB_COUNT];
 
@@ -75,38 +66,17 @@ class AdminScreen : public UIScreen {
     }
   }
 
-  // ── COMMAND: local (this-device) tabs/rows ──────────────────────────────────
-  static const int LOCAL_TAB_COUNT = 2;
-  static const char* LOCAL_TAB_LABELS[LOCAL_TAB_COUNT];
-
-  enum LocalKind : uint8_t { LK_NONE, LK_NAME, LK_RADIO, LK_TXPOWER, LK_LAT, LK_LON, LK_REBOOT, LK_ADVERT };
-  struct LocalField { const char* label; LocalKind kind; };
-  static const LocalField LOCAL_SYSTEM_FIELDS[];
-  static const LocalField LOCAL_ACTION_FIELDS[];
-  static const int LOCAL_ROWS_PER_TAB[LOCAL_TAB_COUNT];
-
-  static const LocalField& localFieldAt(int tab, int row) {
-    return (tab == 0) ? LOCAL_SYSTEM_FIELDS[row] : LOCAL_ACTION_FIELDS[row];
-  }
-
-  int tabCount() const { return _local_mode ? LOCAL_TAB_COUNT : (int)ATAB_COUNT; }
-  int rowsInTab(int tab) const { return _local_mode ? LOCAL_ROWS_PER_TAB[tab] : ROWS_PER_TAB[tab]; }
-  const char* rowLabel(int tab, int row) const {
-    return _local_mode ? localFieldAt(tab, row).label : fieldAt(tab, row).label;
-  }
-
   uint8_t _tab = 0;
   int     _row_sel = 0, _row_scroll = 0;
 
   bool        _kb_active = false;
-  char        _cmd_text[161] = "";           // remote: the command being built/sent
-  bool        _waiting = false;              // remote: awaiting sendAdminCommand()'s reply
+  char        _cmd_text[161] = "";           // the command being built/sent
+  bool        _waiting = false;              // awaiting sendAdminCommand()'s reply
   uint32_t    _cmd_deadline_ms = 0;
-  bool        _fetch_for_edit = false;       // remote: true while waiting on a "get" whose reply opens an editor
-  const char* _pending_set_prefix = nullptr; // remote: non-null => edited keyboard text gets this prefix on submit
-  LocalKind   _pending_local_kind = LK_NONE; // local: which field the open keyboard is editing
+  bool        _fetch_for_edit = false;       // true while waiting on a "get" whose reply opens an editor
+  const char* _pending_set_prefix = nullptr; // non-null => edited keyboard text gets this prefix on submit
 
-  // REPLY (remote only)
+  // REPLY
   FullscreenMsgView _reply_view;
   char _reply_text[200] = "";
 
@@ -152,9 +122,8 @@ class AdminScreen : public UIScreen {
   }
 
   // Open the free-text keyboard, pre-filled with `initial`. Shared by the
-  // Custom-command row, remote set-only/get-then-edit fields, and every local
-  // field. `cli_autocomplete` wires up the {} picker to complete CLI command
-  // names contextually -- only meaningful for the remote Custom-command row.
+  // Custom-command row and remote set-only/get-then-edit fields. `cli_autocomplete`
+  // wires the {} picker to CLI command-name completion (Custom-command row only).
   void openValueKb(const char* initial, bool cli_autocomplete = false) {
     kb().begin(initial, (int)sizeof(_cmd_text) - 1);   // begin() resets any previous placeholder hook
     kb().clearPlaceholders();   // a CLI command/value is literal, not a message
@@ -162,17 +131,16 @@ class AdminScreen : public UIScreen {
     _kb_active = true;
   }
 
-  // Candidate completions for the remote Custom-command row's {} picker: every
-  // remotely-usable command from docs/cli_commands.md (Serial-Only ones and
-  // the region sub-grammar's many variants excluded -- typing those out stays
-  // manual). Entries needing a value end in a trailing space, ready to type it.
+  // Candidate completions for the Custom-command row's {} picker: every remotely-
+  // usable command from docs/cli_commands.md (Serial-Only ones and the region
+  // sub-grammar's many variants excluded). Entries needing a value end in a
+  // trailing space, ready to type it.
   static const char* const CLI_COMMANDS[];
   static const int CLI_COMMAND_COUNT;
 
-  // KeyboardWidget::PlaceholderRefreshFn -- repopulates the {} list with only
-  // the CLI_COMMANDS entries matching the word currently being typed (the
-  // text since the last space), so the list narrows as you type. An empty
-  // word (nothing typed yet, or just after a space) matches everything.
+  // KeyboardWidget::PlaceholderRefreshFn -- repopulates the {} list with only the
+  // CLI_COMMANDS entries matching the word currently being typed (text since the
+  // last space), so it narrows as you type. An empty word matches everything.
   static void refreshCmdPlaceholders(KeyboardWidget& kbw, void* /*ctx*/) {
     kbw.clearPlaceholders();
     int word_start = kbw.len;
@@ -184,9 +152,8 @@ class AdminScreen : public UIScreen {
         kbw.addPlaceholder(CLI_COMMANDS[i]);
   }
 
-  // Dispatch Enter on a remote COMMAND row per the three field shapes (see
-  // file header). The trailing "Custom command..." row (both null) is
-  // handled first.
+  // Dispatch Enter on a COMMAND row per the three field shapes (see file header).
+  // The trailing "Custom command..." row (both null) is handled first.
   void activateField(const AdminField& f) {
     _fetch_for_edit = false;
     _pending_set_prefix = nullptr;
@@ -209,148 +176,36 @@ class AdminScreen : public UIScreen {
   }
 
   // A fetch-for-edit didn't get a reply (timeout or the user cancelled the
-  // wait) -- fall back to a blank editor rather than dead-ending, so the
-  // field can still be set blind.
+  // wait) -- fall back to a blank editor rather than dead-ending, so the field
+  // can still be set blind.
   void fallBackToBlankEdit() {
     _fetch_for_edit = false;
     openValueKb("");
   }
 
-  // Dispatch Enter on a local COMMAND row: actions fire immediately; value
-  // fields open the keyboard pre-filled with the current reading.
-  void activateLocalField(const LocalField& f) {
-    NodePrefs* p = _task->getNodePrefs();
-    char buf[32];
-    switch (f.kind) {
-      case LK_NAME:
-        _pending_local_kind = LK_NAME;
-        openValueKb(the_mesh.getNodeName());
-        break;
-      case LK_RADIO:
-        if (p) snprintf(buf, sizeof(buf), "%.3f,%.0f,%d,%d", p->freq, p->bw, (int)p->sf, (int)p->cr);
-        else   buf[0] = '\0';
-        _pending_local_kind = LK_RADIO;
-        openValueKb(buf);
-        break;
-      case LK_TXPOWER:
-        snprintf(buf, sizeof(buf), "%d", p ? (int)p->tx_power_dbm : 0);
-        _pending_local_kind = LK_TXPOWER;
-        openValueKb(buf);
-        break;
-      case LK_LAT:
-        snprintf(buf, sizeof(buf), "%.6f", sensors.node_lat);
-        _pending_local_kind = LK_LAT;
-        openValueKb(buf);
-        break;
-      case LK_LON:
-        snprintf(buf, sizeof(buf), "%.6f", sensors.node_lon);
-        _pending_local_kind = LK_LON;
-        openValueKb(buf);
-        break;
-      case LK_REBOOT:
-        _task->showAlert("Rebooting...", 800);
-        board.reboot();
-        break;
-      case LK_ADVERT:
-        _task->showAlert(the_mesh.advert() ? "Advert sent!" : "Advert failed", 1200);
-        break;
-      default: break;
-    }
-  }
-
-  // Parse+apply a submitted local field value. Deliberately light validation
-  // (parse-success only, no chip/physical-range checks like Settings' radio
-  // editor does) -- this panel is a fast power-user shim over the same
-  // settings, not a replacement for Settings' fuller, bounds-checked editors.
-  void commitLocalField(LocalKind kind, const char* text) {
-    NodePrefs* p = _task->getNodePrefs();
-    if (!p) return;
-    switch (kind) {
-      case LK_NAME: {
-        strncpy(p->node_name, text, sizeof(p->node_name) - 1);
-        p->node_name[sizeof(p->node_name) - 1] = '\0';
-        the_mesh.savePrefs();
-        _task->showAlert("Saved", 800);
-        break;
-      }
-      case LK_RADIO: {
-        float freq, bw; int sf, cr;
-        if (sscanf(text, "%f,%f,%d,%d", &freq, &bw, &sf, &cr) == 4) {
-          p->freq = freq; p->bw = bw; p->sf = (uint8_t)sf; p->cr = (uint8_t)cr;
-          _task->applyRadioParams();
-          the_mesh.savePrefs();
-          _task->showAlert("Saved", 800);
-        } else {
-          _task->showAlert("Expected freq,bw,sf,cr", 1600);
-        }
-        break;
-      }
-      case LK_TXPOWER: {
-        int dbm;
-        if (sscanf(text, "%d", &dbm) == 1) {
-          p->tx_power_dbm = (int8_t)dbm;
-          _task->applyTxPower();
-          the_mesh.savePrefs();
-          _task->showAlert("Saved", 800);
-        } else {
-          _task->showAlert("Invalid number", 1400);
-        }
-        break;
-      }
-      case LK_LAT: {
-        double v;
-        if (sscanf(text, "%lf", &v) == 1 && v >= -90.0 && v <= 90.0) {
-          sensors.node_lat = v;
-          the_mesh.savePrefs();
-          _task->showAlert("Saved", 800);
-        } else {
-          _task->showAlert("Lat must be -90..90", 1600);
-        }
-        break;
-      }
-      case LK_LON: {
-        double v;
-        if (sscanf(text, "%lf", &v) == 1 && v >= -180.0 && v <= 180.0) {
-          sensors.node_lon = v;
-          the_mesh.savePrefs();
-          _task->showAlert("Saved", 800);
-        } else {
-          _task->showAlert("Lon must be -180..180", 1600);
-        }
-        break;
-      }
-      default: break;
-    }
-  }
-
 public:
   explicit AdminScreen(UITask* task) : _task(task) {}
 
-  // Central per-visit reset (see UIScreen::onShow) -- always starts back at
-  // the This-device/Remote-node chooser and forgets the admin-login memo, so
-  // remote credentials really are re-typed each time the tool is (re-)entered.
+  // Per-visit reset (see UIScreen::onShow). startFor() runs immediately after
+  // and sets the real phase/target; these are just safe defaults.
   void onShow() override {
-    _phase = CHOOSER;
-    _sel = 0;
-    _local_mode = false;
+    _phase = LOGIN;
     _tab = 0;
     _row_sel = _row_scroll = 0;
     _kb_active = false;
     _waiting = false;
     _fetch_for_edit = false;
     _pending_set_prefix = nullptr;
-    _pending_local_kind = LK_NONE;
     _login_waiting = false;
     _admin_ok = false;
   }
 
-  // Canonical entry for a specific remote target -- called by
-  // UITask::openAdminFor(), itself reached from NearbyScreen's "Admin"
-  // context-menu action or its Admin-target pick-mode. Skips straight past
-  // login if this contact is already admin-ok this visit.
+  // Canonical entry for a specific target -- called by UITask::openAdminFor(),
+  // itself reached from NearbyScreen's "Admin" context-menu action or its
+  // Admin-target pick-mode. Skips straight past login if this contact is already
+  // admin-ok this visit.
   void startFor(const ContactInfo& ci) {
     _target = ci;
-    _local_mode = false;
     if (isAdminOk(ci.id.pub_key)) {
       _tab = ATAB_SYSTEM; _row_sel = _row_scroll = 0;
       _phase = COMMAND;
@@ -379,14 +234,14 @@ public:
     } else if (success) {
       // Correct password, just insufficient permission -- leave any saved
       // password alone, retyping the same one won't change the outcome.
-      _phase = CHOOSER; _sel = 0;
       _task->showAlert("Not admin on this node", 1600);
+      _task->pickAdminTarget();
     } else {
       // Wrong/stale password -- forget it so the next attempt prompts fresh,
       // same self-healing behaviour as a room login.
       the_mesh.forgetRoomPassword(pub_key);
-      _phase = CHOOSER; _sel = 0;
       _task->showAlert("Login failed", 1400);
+      _task->pickAdminTarget();
     }
   }
 
@@ -422,17 +277,6 @@ public:
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
 
-    if (_phase == CHOOSER) {
-      display.drawCenteredHeader("ADMIN");
-      static const char* const ROWS[2] = { "This device", "Remote node..." };
-      int scroll = 0;
-      drawList(display, 2, _sel, scroll, [&](int i, int y, bool sel, int reserve) {
-        drawRowSelection(display, y, sel, reserve);
-        display.drawTextEllipsized(2, y, display.width() - 4 - reserve, ROWS[i]);
-      });
-      return 2000;
-    }
-
     if (_phase == LOGIN) {
       if (_login_waiting) {
         display.drawCenteredHeader("ADMIN LOGIN");
@@ -453,11 +297,11 @@ public:
         display.print(_fetch_for_edit ? "Fetching..." : "Waiting for reply...");
         return 500;
       }
-      tabbar::draw(display, _local_mode ? LOCAL_TAB_LABELS : TAB_LABELS, tabCount(), _tab);
-      int n = rowsInTab(_tab);
+      tabbar::draw(display, TAB_LABELS, ATAB_COUNT, _tab);
+      int n = ROWS_PER_TAB[_tab];
       drawList(display, n, _row_sel, _row_scroll, [&](int i, int y, bool sel, int reserve) {
         drawRowSelection(display, y, sel, reserve);
-        display.drawTextEllipsized(2, y, display.width() - 4 - reserve, rowLabel(_tab, i));
+        display.drawTextEllipsized(2, y, display.width() - 4 - reserve, fieldAt(_tab, i).label);
       });
       return 2000;
     }
@@ -467,37 +311,20 @@ public:
   }
 
   bool handleInput(char c) override {
-    if (_phase == CHOOSER) {
-      if (c == KEY_CANCEL) { _task->gotoToolsScreen(); return true; }
-      if (c == KEY_UP)   { _sel = (_sel > 0) ? _sel - 1 : 1; return true; }
-      if (c == KEY_DOWN) { _sel = (_sel < 1) ? _sel + 1 : 0; return true; }
-      if (c == KEY_ENTER) {
-        if (_sel == 0) {
-          _local_mode = true;
-          _tab = 0; _row_sel = _row_scroll = 0;
-          _phase = COMMAND;
-        } else {
-          _task->pickAdminTarget();   // -> Tools > Nodes pick-mode -> startFor()
-        }
-        return true;
-      }
-      return true;
-    }
-
     if (_phase == LOGIN) {
       if (_login_waiting) {
-        if (c == KEY_CANCEL) { _login_waiting = false; _phase = CHOOSER; _sel = 0; }
+        if (c == KEY_CANCEL) { _login_waiting = false; _task->pickAdminTarget(); }
         return true;
       }
       auto r = kb().handleInput(c);
       if (r == KeyboardWidget::CANCELLED) {
-        _phase = CHOOSER; _sel = 0;
+        _task->pickAdminTarget();
       } else if (r == KeyboardWidget::DONE) {
         strncpy(_login_pw, kb().buf, sizeof(_login_pw) - 1);
         _login_pw[sizeof(_login_pw) - 1] = '\0';
         bool sent = the_mesh.sendRoomLogin(_target, _login_pw);
         _task->showAlert(sent ? "Logging in..." : "Login failed", sent ? 1000 : 1500);
-        if (sent) _login_waiting = true; else { _phase = CHOOSER; _sel = 0; }
+        if (sent) _login_waiting = true; else _task->pickAdminTarget();
         // else: stay in LOGIN until onRoomLoginResult() fires above.
       }
       return true;
@@ -511,11 +338,7 @@ public:
           char edited[sizeof(_cmd_text)];
           strncpy(edited, kb().buf, sizeof(edited) - 1);
           edited[sizeof(edited) - 1] = '\0';
-          if (_local_mode) {
-            LocalKind k = _pending_local_kind;
-            _pending_local_kind = LK_NONE;
-            commitLocalField(k, edited);
-          } else if (_pending_set_prefix) {
+          if (_pending_set_prefix) {
             snprintf(_cmd_text, sizeof(_cmd_text), "%s %s", _pending_set_prefix, edited);
             _pending_set_prefix = nullptr;
             sendCommand();
@@ -527,7 +350,6 @@ public:
         } else if (r == KeyboardWidget::CANCELLED) {
           _kb_active = false;
           _pending_set_prefix = nullptr;
-          _pending_local_kind = LK_NONE;
         }
         return true;
       }
@@ -538,18 +360,13 @@ public:
         }
         return true;
       }
-      if (c == KEY_CANCEL) { _phase = CHOOSER; _sel = 0; return true; }
-      int count = tabCount();
-      if (keyIsPrev(c)) { _tab = (_tab + count - 1) % count; _row_sel = _row_scroll = 0; return true; }
-      if (keyIsNext(c)) { _tab = (_tab + 1) % count;         _row_sel = _row_scroll = 0; return true; }
-      int n = rowsInTab(_tab);
+      if (c == KEY_CANCEL) { _task->pickAdminTarget(); return true; }
+      if (keyIsPrev(c)) { _tab = (_tab + ATAB_COUNT - 1) % ATAB_COUNT; _row_sel = _row_scroll = 0; return true; }
+      if (keyIsNext(c)) { _tab = (_tab + 1) % ATAB_COUNT;             _row_sel = _row_scroll = 0; return true; }
+      int n = ROWS_PER_TAB[_tab];
       if (c == KEY_UP)   { _row_sel = (_row_sel > 0) ? _row_sel - 1 : n - 1; return true; }
       if (c == KEY_DOWN) { _row_sel = (_row_sel < n - 1) ? _row_sel + 1 : 0; return true; }
-      if (c == KEY_ENTER) {
-        if (_local_mode) activateLocalField(localFieldAt(_tab, _row_sel));
-        else             activateField(fieldAt(_tab, _row_sel));
-        return true;
-      }
+      if (c == KEY_ENTER) { activateField(fieldAt(_tab, _row_sel)); return true; }
       return true;
     }
 
@@ -561,7 +378,6 @@ public:
 };
 
 const char* AdminScreen::TAB_LABELS[AdminScreen::ATAB_COUNT] = { "System", "Radio", "Routing", "Actions" };
-const char* AdminScreen::LOCAL_TAB_LABELS[AdminScreen::LOCAL_TAB_COUNT] = { "System", "Actions" };
 
 const AdminScreen::AdminField AdminScreen::SYSTEM_FIELDS[] = {
   { "Name",           "get name",       "set name" },
@@ -591,22 +407,6 @@ const int AdminScreen::ROWS_PER_TAB[AdminScreen::ATAB_COUNT] = {
   sizeof(AdminScreen::RADIO_FIELDS)   / sizeof(AdminScreen::AdminField),
   sizeof(AdminScreen::ROUTING_FIELDS) / sizeof(AdminScreen::AdminField),
   sizeof(AdminScreen::ACTION_FIELDS)  / sizeof(AdminScreen::AdminField),
-};
-
-const AdminScreen::LocalField AdminScreen::LOCAL_SYSTEM_FIELDS[] = {
-  { "Name",               AdminScreen::LK_NAME },
-  { "Radio (f,bw,sf,cr)", AdminScreen::LK_RADIO },
-  { "TX power",           AdminScreen::LK_TXPOWER },
-  { "Lat",                AdminScreen::LK_LAT },
-  { "Lon",                AdminScreen::LK_LON },
-};
-const AdminScreen::LocalField AdminScreen::LOCAL_ACTION_FIELDS[] = {
-  { "Send advert", AdminScreen::LK_ADVERT },
-  { "Reboot",      AdminScreen::LK_REBOOT },  // disruptive + no confirm: keep off the default row
-};
-const int AdminScreen::LOCAL_ROWS_PER_TAB[AdminScreen::LOCAL_TAB_COUNT] = {
-  sizeof(AdminScreen::LOCAL_SYSTEM_FIELDS) / sizeof(AdminScreen::LocalField),
-  sizeof(AdminScreen::LOCAL_ACTION_FIELDS) / sizeof(AdminScreen::LocalField),
 };
 
 const char* const AdminScreen::CLI_COMMANDS[] = {

@@ -49,7 +49,7 @@ class ToolsScreen : public UIScreen {
       case ACT_BOT:         _task->gotoBotScreen();         break;
       case ACT_AUTOADVERT:  _task->gotoAutoAdvertScreen();  break;
       case ACT_REPEATER:    _task->gotoRepeaterScreen();    break;
-      case ACT_ADMIN:       _task->gotoAdminScreen();       break;
+      case ACT_ADMIN:       _task->pickAdminTarget();       break;  // Admin is remote-only: pick a node first
       case ACT_CLOCK:       _task->gotoClockTools();        break;
       case ACT_RINGTONE:    _task->gotoRingtoneEditor();    break;
       case ACT_DIAGNOSTICS: _task->gotoDiagnosticsScreen(); break;

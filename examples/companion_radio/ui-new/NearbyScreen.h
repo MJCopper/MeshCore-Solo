@@ -27,7 +27,7 @@ class NearbyScreen : public UIScreen {
   enum Action : uint8_t { ACT_NAV, ACT_PING, ACT_WAYPOINT, ACT_LOCATOR,
                           ACT_ADD, ACT_DELETE, ACT_FAV, ACT_ADMIN, ACT_SORT, ACT_SCAN };
 
-  // Set by UITask::pickAdminTarget() (Tools > Admin's "Remote node..." choice):
+  // Set by UITask::pickAdminTarget() (Tools > Admin, which is remote-only):
   // while true, ENTER on an eligible row (a stored repeater/room contact) hands
   // the node straight to Admin instead of opening the detail view -- everything
   // else (filters, scan, ping, sort, the Hold-Enter menu) behaves identically to
@@ -934,7 +934,7 @@ public:
 
     // ── list view ───────────────────────────────────────────────────────────
     if (c == KEY_CANCEL) {
-      if (_pick_admin_target) { _pick_admin_target = false; _task->gotoAdminScreen(); return true; }
+      if (_pick_admin_target) { _pick_admin_target = false; _task->gotoToolsScreen(); return true; }
       if (_source == SRC_SCAN) leaveScan();
       else                     _task->gotoToolsScreen();
       return true;

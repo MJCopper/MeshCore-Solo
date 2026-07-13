@@ -64,9 +64,11 @@ class SettingsScreen : public UIScreen {
     TX_APC,
     // System section
     SECTION_SYSTEM,
+    DEVICE_NAME,
     TIMEZONE,
     LOW_BAT,
     UNITS,
+    REBOOT,
     // Keyboard section
     SECTION_KEYBOARD,
     KEYBOARD_TYPE,
@@ -554,6 +556,12 @@ class SettingsScreen : public UIScreen {
       display.print("Units");
       display.setCursor(valCol(display), y);
       display.print((p && p->units_imperial) ? "Imperial" : "Metric");
+    } else if (item == DEVICE_NAME) {
+      display.print("Name");
+      int vx = valCol(display);
+      display.drawTextEllipsized(vx, y, display.width() - vx - _reserve, the_mesh.getNodeName());
+    } else if (item == REBOOT) {
+      display.print("Reboot");   // action row: Enter reboots this device
     } else if (item == KEYBOARD_TYPE) {
       display.print("Type");
       display.setCursor(valCol(display), y);
@@ -632,6 +640,7 @@ class SettingsScreen : public UIScreen {
 
   // Keyboard state for editing message slots
   int            _edit_slot = -1;  // -1 = not editing, 0..9 = slot being edited
+  bool           _edit_name = false;  // editing DEVICE_NAME via the keyboard
   KeyboardWidget* _kb;
 
   // Radio preset picker — names are too long for the value column, so Enter on
@@ -654,6 +663,7 @@ public:
 
   void onShow() override {
     _dirty = false;
+    _edit_name = false;
     resetList();
     _editor.freq.active = false;
   }
@@ -661,7 +671,7 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
 
-    if (_edit_slot >= 0 || _picker.saving) {
+    if (_edit_slot >= 0 || _edit_name || _picker.saving) {
       return _kb->render(display);
     }
 
@@ -704,6 +714,22 @@ public:
         _edit_slot = -1;
       } else if (res == KeyboardWidget::CANCELLED) {
         _edit_slot = -1;
+      }
+      return true;
+    }
+
+    // Keyboard editing mode for the device name
+    if (_edit_name) {
+      auto res = _kb->handleInput(c);
+      if (res == KeyboardWidget::DONE) {
+        if (p) {
+          strncpy(p->node_name, _kb->buf, sizeof(p->node_name) - 1);
+          p->node_name[sizeof(p->node_name) - 1] = '\0';
+          _dirty = true;   // savePrefsIfDirty on exit; getNodeName()/self-advert read node_name live
+        }
+        _edit_name = false;
+      } else if (res == KeyboardWidget::CANCELLED) {
+        _edit_name = false;
       }
       return true;
     }
@@ -884,6 +910,18 @@ public:
     if (_selected == UNITS && p && (left || right || enter)) {
       p->units_imperial ^= 1;
       _dirty = true;
+      return true;
+    }
+    if (_selected == DEVICE_NAME && p && enter) {
+      _edit_name = true;
+      _kb->begin(the_mesh.getNodeName(), (int)sizeof(p->node_name) - 1);
+      _kb->clearPlaceholders();   // a device name is literal, not a message
+      return true;
+    }
+    if (_selected == REBOOT && enter) {
+      _task->savePrefsIfDirty(_dirty);   // don't lose pending edits across the restart
+      _task->showAlert("Rebooting...", 800);
+      board.reboot();
       return true;
     }
     if (_selected == KEYBOARD_TYPE && p && (left || right || enter)) {
