@@ -13,10 +13,14 @@
 //   • Stopwatch — purely a display utility with no background action, so its
 //     millis() state lives here; it keeps counting while you're elsewhere.
 //
-// Numeric fields (alarm hour/minute, timer h/m/s) are edited with the shared
-// framework DigitEditor (digit-by-digit: LEFT/RIGHT cursor, UP/DOWN +/- the
-// place, min/max enforced) — the same widget Settings/Repeater use for Freq,
-// rather than a hand-rolled wrap.
+// Alarm hour/minute and the Timer's HH:MM:SS are both edited with the same
+// hand-rolled digit cursor (LEFT/RIGHT moves between digits, UP/DOWN steps
+// the digit under it, wrapping within its place and keeping the whole field
+// a valid time) rather than the shared DigitEditor framework Settings/
+// Repeater use for Freq — DigitEditor edits one flat decimal value, and a
+// combined HH:MM/HH:MM:SS field needs each place capped independently (hour
+// tens <= 2, minute/second tens <= 5), which a single flat step size can't
+// express without landing on invalid times at the boundaries.
 //
 // E-INK: the running timer/stopwatch readouts would thrash a slow e-paper panel
 // if redrawn every second, so on e-ink the live readout refreshes only coarsely
@@ -25,7 +29,6 @@
 
 #include "../NodePrefs.h"
 #include "icons.h"        // drawList / drawRowSelection
-#include "DigitEditor.h"  // shared digit-by-digit numeric editor
 
 class ClockToolsScreen : public UIScreen {
   UITask*    _task;
@@ -45,12 +48,10 @@ class ClockToolsScreen : public UIScreen {
   uint32_t _sw_start_ms = 0;
   uint32_t _sw_accum_ms = 0;
 
-  // Shared numeric editor (alarm hour/minute) + which field it targets. The
-  // timer uses its own continuous digit cursor (per-place caps a single
-  // DigitEditor can't express), so it isn't listed here.
-  enum EditKind : uint8_t { EK_NONE, EK_A_HOUR, EK_A_MIN };
-  DigitEditor _editor;
-  EditKind    _edit_kind = EK_NONE;
+  // Alarm time's own digit cursor (same shape as the timer's, just HH:MM —
+  // no seconds field).
+  bool    _alarm_editing = false;
+  uint8_t _alarm_cur = 0;     // digit cursor over HH:MM, 0..3 (skips the colon)
 
   // E-ink: coarse refresh for the live readouts (millis underneath is exact).
   static int liveTickMs(DisplayDriver& d, int oled_ms) { return d.isEink() ? 30000 : oled_ms; }
@@ -96,32 +97,49 @@ class ClockToolsScreen : public UIScreen {
     *f = (uint8_t)(t * 10 + u);
   }
 
-  // Open the DigitEditor on a numeric field (2 integer digits, no decimals).
-  void editField(EditKind kind, uint8_t value, uint8_t vmax) {
-    _edit_kind = kind;
-    _editor.begin((float)value, 0.0f, (float)vmax, 2, 0);
-  }
-
-  // Feed a key to the open editor, write the (live) value back to its field, and
-  // close the editor when DigitEditor reports DONE/CANCELLED.
-  bool feedEditor(char c) {
-    DigitEditor::Result r = _editor.handleInput(c);
-    uint8_t v = (uint8_t)(_editor.value + 0.5f);
-    switch (_edit_kind) {
-      case EK_A_HOUR: _prefs->alarm_hour = v; _alarm_dirty = true; _task->onAlarmChanged(); break;
-      case EK_A_MIN:  _prefs->alarm_min  = v; _alarm_dirty = true; _task->onAlarmChanged(); break;
-      default: break;
+  // Step the digit under the alarm-time cursor by dir (+1/-1) — same shape as
+  // stepTimerDigit, just two fields (hour/minute) instead of three.
+  void stepAlarmDigit(int dir) {
+    uint8_t* f; int tens_max; bool is_hours;
+    if (_alarm_cur < 2) { f = &_prefs->alarm_hour; tens_max = 2; is_hours = true; }
+    else                { f = &_prefs->alarm_min;  tens_max = 5; is_hours = false; }
+    int t = *f / 10, u = *f % 10;
+    if (_alarm_cur % 2 == 0) {                       // tens place
+      t = (t + dir + (tens_max + 1)) % (tens_max + 1);
+      if (is_hours && t == 2 && u > 3) u = 3;        // 2X hours can't exceed 23
+    } else {                                         // units place
+      int umax = (is_hours && t == 2) ? 3 : 9;
+      u = (u + dir + (umax + 1)) % (umax + 1);
     }
-    if (r != DigitEditor::NONE) _edit_kind = EK_NONE;   // editor closed
-    return true;
+    *f = (uint8_t)(t * 10 + u);
+    _alarm_dirty = true;
+    _task->onAlarmChanged();
   }
 
-  // Draw a row's value column: the live editor when this row is the one being
-  // edited, otherwise the static text.
-  void drawValue(DisplayDriver& d, int y, int valx, int reserve, bool sel,
-                 EditKind mykind, const char* text) {
-    if (sel && _editor.active && _edit_kind == mykind) _editor.render(d, valx, y);
-    else d.drawTextEllipsized(valx, y, d.width() - valx - reserve, text);
+  // Draw the alarm's "HH:MM" value: while this row is in its digit-cursor
+  // sub-mode, the digit under the cursor is shown inverted (same convention as
+  // DigitEditor::render — assumes the caller is already inside a selected row,
+  // ink DARK on a LIGHT selection bar); otherwise just the plain text.
+  void drawAlarmTime(DisplayDriver& d, int y, int valx, bool editing) {
+    char buf[6];
+    fmtClock(buf, sizeof(buf), _prefs->alarm_hour, _prefs->alarm_min);
+    if (!editing) { d.setCursor(valx, y); d.print(buf); return; }
+    const int cw = d.getCharWidth();
+    const int char_idx = _alarm_cur + (_alarm_cur / 2);   // skip the colon
+    for (int k = 0; buf[k]; k++) {
+      int cx = valx + k * cw;
+      if (k == char_idx) {
+        d.setColor(DisplayDriver::DARK);
+        d.fillRect(cx, y - 1, cw, d.getLineHeight() + 1);
+        d.setColor(DisplayDriver::LIGHT);
+      } else {
+        d.setColor(DisplayDriver::DARK);
+      }
+      char one[2] = { buf[k], '\0' };
+      d.setCursor(cx, y);
+      d.print(one);
+    }
+    d.setColor(DisplayDriver::LIGHT);
   }
 
   // ── Sub-renders ───────────────────────────────────────────────────────────
@@ -145,21 +163,22 @@ class ClockToolsScreen : public UIScreen {
   int renderAlarm(DisplayDriver& d) {
     d.drawCenteredHeader("ALARM");
     if (!_prefs) return 60000;
-    const char* rows[4] = { "Hour", "Minute", "Repeat", "Armed" };
-    if (_sel > 3) _sel = 3;
+    const char* rows[3] = { "Time", "Repeat", "Armed" };
+    if (_sel > 2) _sel = 2;
     const int valx = d.width() / 2 + 6;
-    drawList(d, 4, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
+    drawList(d, 3, _sel, _scroll, [&](int i, int y, bool sel, int reserve) {
       drawRowSelection(d, y, sel, reserve);
       d.setCursor(4, y); d.print(rows[i]);
-      char b[10];
-      if (i == 0)      snprintf(b, sizeof(b), "%02u", _prefs->alarm_hour);
-      else if (i == 1) snprintf(b, sizeof(b), "%02u", _prefs->alarm_min);
-      else if (i == 2) snprintf(b, sizeof(b), "%s", NodePrefs::alarmRepeatLabel(NodePrefs::alarmRepeatIdxForMask(_prefs->alarm_repeat_mask)));
-      else             snprintf(b, sizeof(b), "%s", _prefs->alarm_on ? "ON" : "OFF");
-      EditKind k = (i == 0) ? EK_A_HOUR : (i == 1) ? EK_A_MIN : EK_NONE;
-      drawValue(d, y, valx, reserve, sel, k, b);
+      if (i == 0) {
+        drawAlarmTime(d, y, valx, sel && _alarm_editing);
+      } else if (i == 1) {
+        d.drawTextEllipsized(valx, y, d.width() - valx - reserve,
+                             NodePrefs::alarmRepeatLabel(NodePrefs::alarmRepeatIdxForMask(_prefs->alarm_repeat_mask)));
+      } else {
+        d.drawTextEllipsized(valx, y, d.width() - valx - reserve, _prefs->alarm_on ? "ON" : "OFF");
+      }
     });
-    return _editor.active ? 50 : 60000;
+    return _alarm_editing ? 50 : 60000;
   }
 
   int renderTimer(DisplayDriver& d) {
@@ -220,25 +239,50 @@ class ClockToolsScreen : public UIScreen {
 
   bool inputAlarm(char c) {
     if (!_prefs) { if (c == KEY_CANCEL) { _view = V_MENU; _sel = 0; } return true; }
-    if (_editor.active) return feedEditor(c);
+
+    // Time row's digit-cursor sub-mode (same shape as the Timer's HH:MM:SS
+    // cursor): LEFT/RIGHT moves across HH:MM's 4 digits, UP/DOWN steps the
+    // digit under the cursor, Enter/Cancel commits and leaves (there's no
+    // rollback — every step already writes straight to alarm_hour/min and
+    // reschedules, same as the old per-field editor did).
+    if (_alarm_editing) {
+      if (keyIsPrev(c)) { _alarm_cur = (_alarm_cur + 3) % 4; return true; }
+      if (keyIsNext(c)) { _alarm_cur = (_alarm_cur + 1) % 4; return true; }
+      if (c == KEY_UP)   { stepAlarmDigit(+1); return true; }
+      if (c == KEY_DOWN) { stepAlarmDigit(-1); return true; }
+      if (c == KEY_ENTER || c == KEY_CANCEL) { _alarm_editing = false; return true; }
+      return true;
+    }
+
     if (c == KEY_CANCEL) {
       _task->savePrefsIfDirty(_alarm_dirty);  // persist alarm fields only if edited
       _task->onAlarmChanged();                 // re-schedule from the new time
       _view = V_MENU; _sel = 0; _scroll = 0;
       return true;
     }
-    if (c == KEY_UP)   { _sel = (_sel > 0) ? _sel - 1 : 3; return true; }
-    if (c == KEY_DOWN) { _sel = (_sel < 3) ? _sel + 1 : 0; return true; }
-    if (c == KEY_ENTER) {
-      if (_sel == 0)      editField(EK_A_HOUR, _prefs->alarm_hour, 23);
-      else if (_sel == 1) editField(EK_A_MIN,  _prefs->alarm_min,  59);
-      else if (_sel == 2) {   // Repeat: cycle Off -> Daily -> Weekdays -> Weekends -> Off
-        uint8_t idx = (NodePrefs::alarmRepeatIdxForMask(_prefs->alarm_repeat_mask) + 1) % NodePrefs::ALARM_REPEAT_COUNT;
-        _prefs->alarm_repeat_mask = NodePrefs::alarmRepeatMaskForIdx(idx);
-        _alarm_dirty = true; _task->onAlarmChanged();
-      } else { _prefs->alarm_on ^= 1; _alarm_dirty = true; _task->onAlarmChanged(); }
+    if (c == KEY_UP)   { _sel = (_sel > 0) ? _sel - 1 : 2; return true; }
+    if (c == KEY_DOWN) { _sel = (_sel < 2) ? _sel + 1 : 0; return true; }
+    // Repeat: LEFT/RIGHT steps Off -> Daily -> Weekdays -> Weekends (wrapping),
+    // matching the rest of the UI's convention for multi-value fields (e.g.
+    // Settings' Keyboard Alphabet / Battery display); Enter still advances one
+    // step too, for parity with those same fields.
+    if (_sel == 1 && (keyIsPrev(c) || keyIsNext(c) || c == KEY_ENTER)) {
+      int idx = NodePrefs::alarmRepeatIdxForMask(_prefs->alarm_repeat_mask);
+      idx = keyIsPrev(c) ? (idx + NodePrefs::ALARM_REPEAT_COUNT - 1) % NodePrefs::ALARM_REPEAT_COUNT
+                         : (idx + 1) % NodePrefs::ALARM_REPEAT_COUNT;
+      _prefs->alarm_repeat_mask = NodePrefs::alarmRepeatMaskForIdx(idx);
+      _alarm_dirty = true; _task->onAlarmChanged();
       return true;
     }
+    // Armed: a plain on/off toggle, but still answers LEFT/RIGHT as well as
+    // Enter (same as every boolean field in Settings — e.g. Auto-lock, Units,
+    // Power save — flips either way rather than reserving direction for
+    // "increase/decrease").
+    if (_sel == 2 && (keyIsPrev(c) || keyIsNext(c) || c == KEY_ENTER)) {
+      _prefs->alarm_on ^= 1; _alarm_dirty = true; _task->onAlarmChanged();
+      return true;
+    }
+    if (c == KEY_ENTER && _sel == 0) { _alarm_editing = true; _alarm_cur = 0; return true; }
     return true;
   }
 
@@ -278,7 +322,7 @@ public:
   void onShow() override {
     _view = V_MENU; _sel = 0; _scroll = 0;
     _timer_cur = 0;
-    _editor.active = false; _edit_kind = EK_NONE;
+    _alarm_editing = false;
   }
 
   int render(DisplayDriver& display) override {

@@ -266,7 +266,7 @@ MINI_ICON(ICON_PG_SENSORS, 5,    // thermometer/gauge — sensors
 MINI_ICON(ICON_PG_SETTINGS, 5,   // small cog — settings
   packRow(".#.#."),
   packRow("#####"),
-  packRow("##.##"),
+  packRow(".#.#."),
   packRow("#####"),
   packRow(".#.#."));
 MINI_ICON(ICON_PG_MAP, 5,        // folded map — map page

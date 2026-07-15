@@ -459,13 +459,18 @@ class HomeScreen : public UIScreen {
       battLeftX = display.width() - display.getTextWidth(buf) - 1;
       display.setCursor(battLeftX, 0);
       display.print(buf);
-    } else {  // icon — scales with lh
-      const int iconH = lh;
+    } else {  // icon — scales with lh, same box height as the status icons beside it (ind_h)
+      const int iconH = ind_h;
       const int iconW = lh * 2;
       const int bm = display.isLandscape() ? 3 : 2;  // inner margin: 3px on landscape e-ink, 2px on OLED/portrait
       battLeftX = display.width() - iconW - 3;
       display.drawRect(battLeftX, 0, iconW, iconH);
-      display.fillRect(battLeftX + iconW, iconH / 4, 2, iconH / 2);
+      // Nub height/2, vertically centred by remaining-space/2 rather than a flat
+      // iconH/4 margin — the flat form only centres when iconH is a multiple of
+      // 4 (true for the old built-in font's lh=8, false for misc-fixed's 7/9),
+      // so it visibly drifted off-centre once the box height changed.
+      const int nub_h = iconH / 2;
+      display.fillRect(battLeftX + iconW, (iconH - nub_h) / 2, 2, nub_h);
       int fillW = (pct * (iconW - 2 * bm)) / 100;
       display.fillRect(battLeftX + bm, bm, fillW, iconH - 2 * bm);
     }

@@ -312,7 +312,7 @@ struct NodePrefs {  // persisted to file
     }
   }
   static const char* alarmRepeatLabel(uint8_t idx) {
-    static const char* L[ALARM_REPEAT_COUNT] = { "Off", "Daily", "Weekdays", "Weekends" };
+    static const char* L[ALARM_REPEAT_COUNT] = { "OFF", "Daily", "Weekdays", "Weekends" };
     return L[idx < ALARM_REPEAT_COUNT ? idx : 0];
   }
 

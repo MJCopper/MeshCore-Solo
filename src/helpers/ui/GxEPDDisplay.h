@@ -23,7 +23,7 @@
 #include <CRC32.h>
 
 #include "DisplayDriver.h"
-#include "LemonFont.h"
+#include "MiscFixedFont.h"
 
 #ifndef DISPLAY_ROTATION
   #define DISPLAY_ROTATION 0
@@ -57,7 +57,7 @@ class GxEPDDisplay : public DisplayDriver {
 #endif
   bool _init = false;
   bool _isOn = false;
-  bool _use_lemon = false;
+  bool _use_lemon = true;   // e-ink is single-font too now (misc-fixed 6x9), matching the OLED driver
   uint16_t _curr_color;
   CRC32 display_crc;
   int last_display_crc_value = 0;
@@ -103,16 +103,16 @@ public:
     if (_text_sz == 4) return 6 * BIG_TEXT_SCALE;
     if (_text_sz == 3) return 17;
     if (_text_sz == 2) return 12 * sc;
-    return (_use_lemon ? 5 : 6) * sc;
+    return (_use_lemon ? 6 : 6) * sc;   // misc-fixed 6x9 is 6px wide
   }
   int getLineHeight() const override {
     int sc = scale();
     if (_text_sz == 4) return 8 * BIG_TEXT_SCALE;
     if (_text_sz == 3) return 28;
     if (_text_sz == 2) return 16 * sc;
-    return (_use_lemon ? 10 : 8) * sc;
+    return (_use_lemon ? 9 : 8) * sc;   // misc-fixed 6x9 box height
   }
-  void setLemonFont(bool enabled) override { _use_lemon = enabled; _vw_dirty = true; }
+  void setLemonFont(bool) override { }   // single-font: ignore toggles, stay misc-fixed 6x9
   bool isLemonFont() const override { return _use_lemon; }
   void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) override {
     if (_use_lemon) {

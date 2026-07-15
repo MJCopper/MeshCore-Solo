@@ -19,7 +19,7 @@
 // the two conventions match.
 static int fontAscender(int sz, bool use_lemon, int scale) {
   if (sz == 3) return 26;                       // FreeSans18pt7b: proportional, baseline origin
-  if (sz == 1 && use_lemon) return 8 * scale;   // Lemon GFX font: baseline origin, ascender 8px×scale
+  if (sz == 1 && use_lemon) return 7 * scale;   // misc-fixed 6x9 GFX font: baseline origin, ascent 7px×scale
   return 0;                                     // GFX built-in font: cursor is top-left of cell
 }
 
@@ -47,11 +47,11 @@ int16_t GxEPDDisplay::drawLemonChar(int16_t x, int16_t y, uint32_t cp, int sc) {
       return x + xa * sc;
     }
   }
-  if (cp < Lemon.first || cp > Lemon.last) {
-    if (cp >= 0x20) display.fillRect(x + sc, y - 8*sc, 4*sc, 6*sc, _curr_color);
+  if (cp < MiscFixed.first || cp > MiscFixed.last) {
+    if (cp >= 0x20) display.fillRect(x + sc, y - 7*sc, 4*sc, 6*sc, _curr_color);
     return x + 6 * sc;
   }
-  const GFXglyph* g = &lemonGlyphs[cp - Lemon.first];
+  const GFXglyph* g = &MiscFixedGlyphs[cp - MiscFixed.first];
   uint8_t w = pgm_read_byte(&g->width), h = pgm_read_byte(&g->height);
   int8_t  xo = (int8_t)pgm_read_byte(&g->xOffset), yo = (int8_t)pgm_read_byte(&g->yOffset);
   uint8_t xa = pgm_read_byte(&g->xAdvance);
@@ -59,7 +59,7 @@ int16_t GxEPDDisplay::drawLemonChar(int16_t x, int16_t y, uint32_t cp, int sc) {
   uint8_t bits = 0, bit = 0;
   for (uint8_t row = 0; row < h; row++)
     for (uint8_t col = 0; col < w; col++) {
-      if (!bit) { bits = pgm_read_byte(&lemonBitmaps[bo++]); bit = 0x80; }
+      if (!bit) { bits = pgm_read_byte(&MiscFixedBitmaps[bo++]); bit = 0x80; }
       if (bits & bit) {
         if (sc == 1) display.drawPixel(x + xo + col, y + yo + row, _curr_color);
         else display.fillRect(x + xo*sc + col*sc, y + yo*sc + row*sc, sc, sc, _curr_color);
@@ -71,8 +71,8 @@ int16_t GxEPDDisplay::drawLemonChar(int16_t x, int16_t y, uint32_t cp, int sc) {
 
 uint8_t GxEPDDisplay::lemonXAdvance(uint32_t cp, int sc) {
   uint8_t xa;
-  if (cp < Lemon.first || cp > Lemon.last) xa = 6;
-  else xa = pgm_read_byte(&lemonGlyphs[cp - Lemon.first].xAdvance);
+  if (cp < MiscFixed.first || cp > MiscFixed.last) xa = 6;
+  else xa = pgm_read_byte(&MiscFixedGlyphs[cp - MiscFixed.first].xAdvance);
   return xa * sc;
 }
 
@@ -127,7 +127,7 @@ void GxEPDDisplay::startFrame(Color bkg) {
   display.setTextColor(_curr_color = GxEPD_BLACK);
   _text_sz = 1;
   int sc = scale();
-  display.setFont(_use_lemon ? &Lemon : NULL);
+  display.setFont(_use_lemon ? &MiscFixed : NULL);
   display.setTextSize(sc);
   display_crc.reset();
 }
@@ -156,7 +156,7 @@ void GxEPDDisplay::setTextSize(int sz) {
       display.setTextSize(scale() * 2);
       break;
     default:
-      display.setFont(_use_lemon ? &Lemon : NULL);
+      display.setFont(_use_lemon ? &MiscFixed : NULL);
       display.setTextSize(sc);
       break;
   }
@@ -183,7 +183,7 @@ void GxEPDDisplay::setCursor(int x, int y) {
 
 void GxEPDDisplay::print(const char* str) {
   display_crc.update<char>(str, strlen(str));
-  // Lemon path only for sz=1 — setTextSize(2/3) switches GFX to non-Lemon fonts.
+  // misc-fixed path only for sz=1 — setTextSize(2/3) switches GFX to other fonts.
   if (_use_lemon && _text_sz == 1) {
     int16_t cx = display.getCursorX();
     int16_t cy = display.getCursorY();
@@ -191,7 +191,7 @@ void GxEPDDisplay::print(const char* str) {
     const uint8_t* p = (const uint8_t*)str;
     while (*p) {
       uint32_t cp = decodeCodepoint(p);
-      if (cp == '\n') { cy += Lemon.yAdvance * sc; cx = 0; }
+      if (cp == '\n') { cy += MiscFixed.yAdvance * sc; cx = 0; }
       else            { cx = drawLemonChar(cx, cy, cp, sc); }
     }
     display.setCursor(cx, cy);
