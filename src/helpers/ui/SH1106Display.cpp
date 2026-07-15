@@ -1,7 +1,7 @@
 #include "SH1106Display.h"
 #include <Adafruit_GrayOLED.h>
 #include "Adafruit_SH110X.h"
-#include "LemonFont.h"
+#include "MiscFixedFont.h"
 #include "LemonIcons.h"
 
 bool SH1106Display::i2c_probe(TwoWire &wire, uint8_t addr)
@@ -90,11 +90,13 @@ int16_t SH1106Display::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
     }
   }
 
-  if (cp < Lemon.first || cp > Lemon.last) {
+  // Font glyphs come from misc-fixed 6x9 (full Latin/Greek/Cyrillic, ascent 7) —
+  // baseline +7. The custom UI icons above keep +6, so they sit 1px higher.
+  if (cp < MiscFixed.first || cp > MiscFixed.last) {
     if (cp >= 0x20) display.fillRect(x + sz, y - sz, 4*sz, 6*sz, _color);
     return x + 6 * sz;
   }
-  const GFXglyph* g = &lemonGlyphs[cp - Lemon.first];
+  const GFXglyph* g = &MiscFixedGlyphs[cp - MiscFixed.first];
   uint8_t w = pgm_read_byte(&g->width), h = pgm_read_byte(&g->height);
   int8_t  xo = (int8_t)pgm_read_byte(&g->xOffset), yo = (int8_t)pgm_read_byte(&g->yOffset);
   uint8_t xa = pgm_read_byte(&g->xAdvance);
@@ -102,10 +104,10 @@ int16_t SH1106Display::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
   uint8_t bits = 0, bit = 0;
   for (uint8_t row = 0; row < h; row++)
     for (uint8_t col = 0; col < w; col++) {
-      if (!bit) { bits = pgm_read_byte(&lemonBitmaps[bo++]); bit = 0x80; }
+      if (!bit) { bits = pgm_read_byte(&MiscFixedBitmaps[bo++]); bit = 0x80; }
       if (bits & bit) {
-        if (sz == 1) display.drawPixel(x + xo + col, y + 6 + yo + row, _color);
-        else display.fillRect(x + xo*sz + col*sz, y + 6*sz + yo*sz + row*sz, sz, sz, _color);
+        if (sz == 1) display.drawPixel(x + xo + col, y + 7 + yo + row, _color);
+        else display.fillRect(x + xo*sz + col*sz, y + 7*sz + yo*sz + row*sz, sz, sz, _color);
       }
       bit >>= 1;
     }
@@ -114,8 +116,8 @@ int16_t SH1106Display::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
 
 uint8_t SH1106Display::lemonXAdvance(uint32_t cp) {
   uint8_t xa;
-  if (cp < Lemon.first || cp > Lemon.last) xa = 6;
-  else xa = pgm_read_byte(&lemonGlyphs[cp - Lemon.first].xAdvance);
+  if (cp < MiscFixed.first || cp > MiscFixed.last) xa = 6;
+  else xa = pgm_read_byte(&MiscFixedGlyphs[cp - MiscFixed.first].xAdvance);
   return xa * _text_sz;
 }
 
@@ -139,7 +141,7 @@ void SH1106Display::print(const char *str)
   const uint8_t* p = (const uint8_t*)str;
   while (*p) {
     uint32_t cp = decodeCodepoint(p);
-    if (cp == '\n') { cy += Lemon.yAdvance; cx = 0; }
+    if (cp == '\n') { cy += MiscFixed.yAdvance; cx = 0; }
     else            { cx = drawLemonChar(cx, cy, cp); }
   }
   display.setCursor(cx, cy);

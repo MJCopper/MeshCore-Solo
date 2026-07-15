@@ -3,29 +3,49 @@
 #include <helpers/ui/UIScreen.h>
 #include <helpers/DeviceDiag.h>
 #include <Arduino.h>
+#include <stdarg.h>
 #include "icons.h"
 #include "PopupMenu.h"
+#include "TabBar.h"
 #include "../MyMesh.h"
 
 extern MyMesh the_mesh;
 
-// Single-screen device diagnostics: uptime, packet counts by category (RX/TX),
-// forwarded-packet count, heap and stack headroom, radio signal (noise floor,
-// RSSI/SNR), packet-pool/outbound-queue depth, and radio error flags. The packet
-// counts are built from Dispatcher's per-type counters (Mesh.h/Dispatcher.cpp) —
-// grouped into a handful of categories rather than all 16 raw PAYLOAD_TYPE_*
-// values, so they stay readable on a 128x64 OLED without the full type list.
-// Falls back to scrolling (same drawList-style indicator as every other screen)
-// on screens too small to show every row at once. Hold Enter resets the counters.
+// Device diagnostics, organised as a circular tab carousel (shared TabBar.h,
+// same idiom as BotScreen/NearbyScreen). LEFT/RIGHT switches tabs; UP/DOWN
+// scrolls within the active tab:
+//   Live   — live counters: uptime, packet counts by category (RX/TX),
+//            forwarded count, heap/stack headroom, radio signal, pool/queue
+//            depth, error flags. Hold Enter resets the counters.
+//   System — static device identity: firmware version + build date, device
+//            model, node name, and the active radio parameters.
+//   Font   — a rendering test card: one sample line per script the UI font
+//            claims to cover (Latin, diacritics, Greek, Cyrillic, digits,
+//            symbols), so the on-device font can be eyeballed for coverage.
+// The packet counts are built from Dispatcher's per-type counters — grouped
+// into a handful of categories rather than all 16 raw PAYLOAD_TYPE_* values,
+// so they stay readable on a 128x64 OLED. Every tab falls back to scrolling on
+// screens too small to show its rows at once.
 class DiagnosticsScreen : public UIScreen {
   UITask* _task;
   int _scroll = 0;
-  PopupMenu _reset_menu;   // Hold Enter → 1-item "Reset counters" action menu (Back dismisses)
+  uint8_t _tab = 0;        // persists across visits (like BotScreen's _tab)
+  PopupMenu _reset_menu;   // Live tab, Hold Enter → 1-item "Reset counters" action menu (Back dismisses)
+
+  enum Tab : uint8_t { TAB_LIVE, TAB_SYSTEM, TAB_FONT, TAB_COUNT };
+  static const char* const TAB_LABELS[TAB_COUNT];
 
   struct Row { const char* label; char value[20]; };
   static const int MAX_ROWS = 14;
   Row _rows[MAX_ROWS];
   int _row_count = 0;
+
+  // Full-width text lines (System / Font tabs) — long values (device model,
+  // node name) don't fit the Live tab's narrow right-aligned value column, so
+  // these tabs draw one ellipsized line each instead of a label/value pair.
+  static const int MAX_LINES = 15;
+  char _lines[MAX_LINES][40];
+  int _line_count = 0;
 
   void addRow(const char* label, const char* value) {
     if (_row_count >= MAX_ROWS) return;
@@ -44,6 +64,14 @@ class DiagnosticsScreen : public UIScreen {
     addRow(label, buf);
   }
 
+  void addLine(const char* fmt, ...) {
+    if (_line_count >= MAX_LINES) return;
+    va_list ap; va_start(ap, fmt);
+    vsnprintf(_lines[_line_count], sizeof(_lines[_line_count]), fmt, ap);
+    va_end(ap);
+    _line_count++;
+  }
+
   static uint32_t sumByTypes(bool recv, const uint8_t* types, int n) {
     uint32_t total = 0;
     for (int i = 0; i < n; i++)
@@ -51,7 +79,7 @@ class DiagnosticsScreen : public UIScreen {
     return total;
   }
 
-  void buildRows() {
+  void buildLiveRows() {
     _row_count = 0;
 
     uint32_t up_secs = millis() / 1000;
@@ -117,23 +145,63 @@ class DiagnosticsScreen : public UIScreen {
     addRow("Errors", buf);
   }
 
-public:
-  DiagnosticsScreen(UITask* task) : _task(task) {}
+  void buildSystemLines() {
+    _line_count = 0;
 
-  int render(DisplayDriver& display) override {
-    buildRows();
-    display.setTextSize(1);
-    display.setColor(DisplayDriver::LIGHT);
-    display.drawCenteredHeader("DIAGNOSTICS");
+    // Firmware version, minus the commit-hash suffix build.sh appends as the
+    // LAST dash-segment (v1.16-solo.0-abcdef -> v1.16-solo.0) — same strip the
+    // boot screen does; the last dash, not the first, since a tag like
+    // v1.21-rc1 has a dash of its own before the hash.
+    const char* ver = FIRMWARE_VERSION;
+    const char* dash = strrchr(ver, '-');
+    int plen = dash ? (int)(dash - ver) : (int)strlen(ver);
+    char sv[24];
+    if (plen >= (int)sizeof(sv)) plen = sizeof(sv) - 1;
+    memcpy(sv, ver, plen); sv[plen] = '\0';
 
+    addLine("FW %s", sv);
+    addLine("Built %s", FIRMWARE_BUILD_DATE);
+    addLine("Dev %s", board.getManufacturerName());
+    addLine("Node %s", the_mesh.getNodeName());
+
+    NodePrefs* p = the_mesh.getNodePrefs();
+    if (p) {
+      addLine("Freq %.3f MHz", p->freq);
+      addLine("SF%u BW%.0f CR%u", (unsigned)p->sf, p->bw, (unsigned)p->cr);
+      addLine("TX %d dBm", (int)p->tx_power_dbm);
+    }
+  }
+
+  // One sample line per script/keyboard alphabet the UI font claims to cover
+  // (all inside the U+0020-04FF glyph range the OLED misc-fixed / e-ink Lemon
+  // fonts carry), so the font's coverage can be checked by eye on real
+  // hardware. Per-language lines use the same 2-letter codes as
+  // KeyboardWidget::altAlphabetHint and each shows that language's own
+  // non-ASCII letters (see KeyboardWidget.h's KB_*_CHARS tables).
+  void buildFontLines() {
+    _line_count = 0;
+    addLine("Latin ABCabc xyz");
+    addLine("PL ąćęłńóśźż");
+    addLine("CZ áčďéěíňóřš");
+    addLine("SK áäčďíĺľňôŕ");
+    addLine("DE äöüß");
+    addLine("FR àâçéèêëîïœ");
+    addLine("ES áéíñóúü");
+    addLine("PT áàâãçéêíóôõú");
+    addLine("ND åäæöø");
+    addLine("Grk ΑΒΓ αβγξω");          // ΑΒΓ αβγξω
+    addLine("Cyr АБВ абвжя");          // АБВ абвжя
+    addLine("Num 0123456789");
+    addLine("Sym @#&*()[]{}/\\+=");
+  }
+
+  // Shared scrollable renderer for the label/value Live tab.
+  void renderRows(DisplayDriver& display) {
     const int item_h  = display.lineStep();
     const int start_y = display.listStart();
     int visible = display.listVisible(item_h);
     if (visible < 1) visible = 1;
-    int max_scroll = _row_count - visible;
-    if (max_scroll < 0) max_scroll = 0;
-    if (_scroll > max_scroll) _scroll = max_scroll;
-    if (_scroll < 0) _scroll = 0;
+    clampScroll(_row_count, visible);
 
     const int reserve = scrollIndicatorReserve(display, _row_count, visible);
     for (int i = 0; i < visible && (_scroll + i) < _row_count; i++) {
@@ -144,9 +212,51 @@ public:
       display.drawTextRightAlign(display.width() - reserve - 2, y, r.value);
     }
     drawScrollIndicator(display, start_y, visible * item_h, _row_count, visible, _scroll);
+  }
+
+  // Shared scrollable renderer for the full-width System / Font tabs.
+  void renderLines(DisplayDriver& display) {
+    const int item_h  = display.lineStep();
+    const int start_y = display.listStart();
+    int visible = display.listVisible(item_h);
+    if (visible < 1) visible = 1;
+    clampScroll(_line_count, visible);
+
+    const int reserve = scrollIndicatorReserve(display, _line_count, visible);
+    for (int i = 0; i < visible && (_scroll + i) < _line_count; i++) {
+      int y = start_y + i * item_h;
+      display.drawTextEllipsized(2, y, display.width() - reserve - 4, _lines[_scroll + i]);
+    }
+    drawScrollIndicator(display, start_y, visible * item_h, _line_count, visible, _scroll);
+  }
+
+  void clampScroll(int total, int visible) {
+    int max_scroll = total - visible;
+    if (max_scroll < 0) max_scroll = 0;
+    if (_scroll > max_scroll) _scroll = max_scroll;
+    if (_scroll < 0) _scroll = 0;
+  }
+
+public:
+  DiagnosticsScreen(UITask* task) : _task(task) {}
+
+  int render(DisplayDriver& display) override {
+    display.setTextSize(1);
+    display.setColor(DisplayDriver::LIGHT);
+    tabbar::draw(display, TAB_LABELS, TAB_COUNT, _tab);
+
+    switch (_tab) {
+      case TAB_SYSTEM: buildSystemLines(); renderLines(display); break;
+      case TAB_FONT:   buildFontLines();   renderLines(display); break;
+      default:         buildLiveRows();    renderRows(display);  break;
+    }
+
     display.setColor(DisplayDriver::LIGHT);
     if (_reset_menu.active) _reset_menu.render(display);
-    return _reset_menu.active ? 50 : 1000;   // popup wants snappier redraw; stats otherwise refresh once a second
+    // Live counters refresh once a second; the static System/Font cards don't
+    // change, so they can idle. The reset popup wants a snappier redraw.
+    if (_reset_menu.active) return 50;
+    return _tab == TAB_LIVE ? 1000 : 2000;
   }
 
   bool handleInput(char c) override {
@@ -158,9 +268,11 @@ public:
       }
       return true;
     }
+    if (keyIsPrev(c)) { _tab = (_tab + TAB_COUNT - 1) % TAB_COUNT; _scroll = 0; return true; }
+    if (keyIsNext(c)) { _tab = (_tab + 1) % TAB_COUNT;            _scroll = 0; return true; }
     if (c == KEY_UP)   { if (_scroll > 0) _scroll--; return true; }
-    if (c == KEY_DOWN) { _scroll++; return true; }   // clamped to max_scroll in render()
-    if (c == KEY_CONTEXT_MENU) {   // Hold Enter — same action-menu gesture as the rest of the UI
+    if (c == KEY_DOWN) { _scroll++; return true; }   // clamped in render()
+    if (c == KEY_CONTEXT_MENU && _tab == TAB_LIVE) {   // Hold Enter — reset the live counters
       _reset_menu.begin("Diagnostics", 1);
       _reset_menu.addItem("Reset counters");
       return true;
@@ -169,3 +281,5 @@ public:
     return false;
   }
 };
+
+const char* const DiagnosticsScreen::TAB_LABELS[DiagnosticsScreen::TAB_COUNT] = { "Live", "System", "Font" };

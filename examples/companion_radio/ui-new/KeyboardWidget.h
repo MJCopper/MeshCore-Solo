@@ -461,17 +461,8 @@ struct KeyboardWidget {
     // on the same cell from being treated as a continued cycle.
     if (t9_cell >= 0 && millis() - t9_last_ms > KB_T9_TIMEOUT_MS) t9_cell = -1;
 
-    // Lemon is the only font that can draw the alt-alphabet page (or any
-    // already-typed non-ASCII bytes sitting in buf, e.g. Cyrillic composed
-    // earlier, now viewed from the Latin/symbols page) — force it on for just
-    // this render() call if the user's own font choice wouldn't otherwise show
-    // it, then restore exactly the state found on entry. Self-contained: never
-    // leaks a forced font into whatever renders next frame.
-    bool want_lemon = pageIsAltAlphabet(page);
-    if (!want_lemon) for (int i = 0; i < len; i++) if ((uint8_t)buf[i] >= 0x80) { want_lemon = true; break; }
-    bool had_lemon = display.isLemonFont();
-    if (want_lemon && !had_lemon) display.setLemonFont(true);
-
+    // Single UI font (misc-fixed 5x7) covers Latin/Greek/Cyrillic — the keyboard
+    // renders in it directly, no per-render font switching or headroom padding.
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
 
@@ -485,16 +476,7 @@ struct KeyboardWidget {
     const int preview_h = display.height() - kb_h - display.sepH();
     const int prev_lines = (preview_h / lh) > 1 ? (preview_h / lh) : 1;
     const int sep_y   = prev_lines * lh;
-    // Lemon's tallest glyphs (accented capitals like Ć/Š/Ž, needed once caps
-    // is on) draw up to 3px above the nominal cursor y on SH1106 — its Lemon
-    // baseline offset is tuned for the shorter plain-ASCII/Cyrillic/Greek
-    // glyphs this keyboard used before the per-language Latin alphabets, and
-    // wasn't tall enough for these. Padding the first char row down by 3px
-    // (only while Lemon is actually in use) gives every accented glyph enough
-    // headroom that it can't bleed into the separator bar above; harmless on
-    // e-ink, which already has more headroom than it needs here.
-    const int lemon_pad = want_lemon ? 3 : 0;
-    const int chars_y = sep_y + display.sepH() + lemon_pad;
+    const int chars_y = sep_y + display.sepH();
     const int cell_h  = (display.height() - chars_y) / (rows + 1);
     const int spec_y  = chars_y + rows * cell_h;
     const int spec_w  = display.width() / KB_SPECIAL;
@@ -608,8 +590,6 @@ struct KeyboardWidget {
 
     // placeholder picker overlay (drawn on top of keyboard)
     if (_ph_menu.active) _ph_menu.render(display);
-
-    if (want_lemon && !had_lemon) display.setLemonFont(false);   // restore exactly what we found
     return 50;
   }
 
