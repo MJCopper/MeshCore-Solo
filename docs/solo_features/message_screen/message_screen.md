@@ -138,17 +138,23 @@ In the **Rooms** list the context menu instead offers:
 
 ### Adding / editing a channel
 
-Joining a new community channel, or creating one to share with others, no longer needs the phone app. The **Channels** list ends with a **"+ Add channel"** row — press **Enter** on it to open the form, or use **Edit** from the context menu above to change an existing channel's name or secret.
+Joining a new community channel, or creating one to share with others, no longer needs the phone app. The **Channels** list ends with a **"+ Add channel"** row — press **Enter** on it to pick a channel type, or use **Edit** from the context menu above to change an existing channel's name or secret (Edit skips the type picker and opens the Name/Secret form directly).
 
-| Field  | Notes                                                                                        |
-| ------ | ---------------------------------------------------------------------------------------------- |
-| Name   | Up to 31 characters                                                                            |
-| Secret | **LEFT/RIGHT** toggles between two entry modes; **Enter** opens the keyboard for whichever is selected |
+**+ Add channel** first asks which type of channel to create — the same three types the phone app offers:
 
-- **Passphrase** (default) — type any text; the device hashes it down to the channel's 16-byte secret. Easiest to agree on verbally, the same idea as a room password — two people who type the same passphrase end up on the same channel.
-- **Hex key** — type the exact 32-hex-character secret (the format used by channel QR codes, see [QR Codes](../../qr_codes.md)), for joining a channel whose precise secret you were given rather than agreeing on a new passphrase. An all-zero secret (`00…0`) is rejected ("Invalid secret") — that value is reserved internally to mark an empty channel slot.
+- **Public** — instantly re-adds the well-known default public channel (no fields to fill in). Useful if it was deleted and you want it back without remembering its key.
+- **Hashtag** — type a topic name (e.g. `test`); the channel's name and secret are both derived from it (name becomes `#test`, secret is the first 16 bytes of `sha256("#test")`). A topic-based public group chat — anyone who types the same topic elsewhere ends up on the same channel — separate from the default Public channel.
+- **Private** — the manual Name + Secret form:
 
-Select **[Save]** to commit. The secret can't be redisplayed once saved (only the derived key is kept) — editing it later means typing a new passphrase or hex key, the same as re-logging into a room with a new password.
+  | Field  | Notes                                                                                        |
+  | ------ | ---------------------------------------------------------------------------------------------- |
+  | Name   | Up to 31 characters                                                                            |
+  | Secret | **LEFT/RIGHT** toggles between two entry modes; **Enter** opens the keyboard for whichever is selected |
+
+  - **Passphrase** (default) — type any text; the device hashes it down to the channel's 16-byte secret. Easiest to agree on verbally, the same idea as a room password — two people who type the same passphrase end up on the same channel.
+  - **Hex key** — type the exact 32-hex-character secret (the format used by channel QR codes, see [QR Codes](../../qr_codes.md)), for joining a channel whose precise secret you were given rather than agreeing on a new passphrase. An all-zero secret (`00…0`) is rejected ("Invalid secret") — that value is reserved internally to mark an empty channel slot.
+
+  Select **[Save]** to commit. The secret can't be redisplayed once saved (only the derived key is kept) — editing it later means typing a new passphrase or hex key, the same as re-logging into a room with a new password.
 
 ---
 
