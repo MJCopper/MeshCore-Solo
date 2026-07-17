@@ -2284,8 +2284,15 @@ void UITask::loop() {
       _next_refresh = millis() + Features::LOCKSCREEN_REFRESH_MS;
     } else if (!_locked && millis() >= _next_refresh && curr) {
       _display->startFrame();
+      _kb.beginFrame();
       int delay_millis = curr->render(*_display);
-      if (millis() < _alert_expiry) {  // alert overlay on top of any screen
+      // Skip the alert overlay (new-message toast) while the keyboard is the
+      // thing actually on screen this frame -- it's shared across Messages/
+      // Bot/Settings/Admin/etc., so this covers every screen that uses it for
+      // full-screen text entry, not just message compose. Otherwise a message
+      // arriving mid-typing blanks out the letter grid for 3s with no way to
+      // see what's being typed.
+      if (millis() < _alert_expiry && !_kb.isVisible()) {  // alert overlay on top of any (non-keyboard) screen
         renderAlertOverlay();
         // Keep refreshing the underlying screen at its own cadence (capped at the
         // alert's expiry) so layouts that settle over a frame — e.g. the message-

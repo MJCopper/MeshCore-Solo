@@ -280,6 +280,15 @@ struct KeyboardWidget {
   // next letter, then reverts) — Hold-Enter on Shift toggles caps_lock, which
   // keeps it on for a whole run of capitals instead.
   bool caps_lock = false;
+  // Set by render() every time it's actually called; UITask clears it before
+  // curr->render() each frame (beginFrame()) so it reflects only "was the
+  // keyboard the thing on screen this frame" -- lets the alert overlay (new
+  // message toast) skip drawing over a full-screen keyboard, regardless of
+  // which screen (Messages/Bot/Settings/Admin/...) currently owns it.
+  bool _visible = false;
+  void beginFrame() { _visible = false; }
+  bool isVisible() const { return _visible; }
+
   char _ph_buf[KB_PH_MAX][KB_PH_LEN];
   int  _ph_count;
   PopupMenu _ph_menu;
@@ -438,6 +447,7 @@ struct KeyboardWidget {
   }
 
   int render(DisplayDriver& display) {
+    _visible = true;
     // A stale mid-cycle T9 press (no further input since) finalizes on its own —
     // the character is already committed to buf, this just stops a later Enter
     // on the same cell from being treated as a continued cycle.
