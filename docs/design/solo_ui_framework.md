@@ -175,13 +175,18 @@ the board's sensors actually provide. Expand them with `expandMsg()` at send tim
 
 Two layouts share every grid: **ABC** (one key per letter) and **T9**
 (phone-keypad multi-tap — repeated Enter within `KB_T9_TIMEOUT_MS` cycles a
-cell's letter group, then its digit). `NodePrefs::keyboard_alt_alphabet` adds a
-non-Latin script's own page to the cycle (Latin → alphabet → Symbols → Latin);
-Cyrillic/Greek each define both an ABC grid (`KB_CYRILLIC_CHARS`/
-`KB_GREEK_CHARS`) and a T9 group table (`KB_T9_GROUPS_CYRILLIC`/`_GREEK`) so
-the two layouts always offer the same letters. Latin-diacritic letters (Polish,
-Czech, German, etc.) aren't alt-alphabet pages — they're reached by Hold-Enter
-on a plain Latin cell instead (see `KB_ACCENT_VARIANTS` below).
+cell's letter group, then its digit). Page 0 is no longer hardcoded to Latin:
+`NodePrefs::keyboard_main_alphabet`/`keyboard_alt_alphabet` (Settings >
+Keyboard's Main/Additional rows) each pick a script — Latin, Cyrillic, or
+Greek — for page 0 and page 1 respectively (`KeyboardWidget::mainScript()`/
+`altScript()`); equal values collapse to a single script + Symbols (2 pages
+instead of 3, see `hasAltAlphabet()`). `scriptCellStr()`/`scriptT9GroupStr()`
+dispatch each script to its own ABC grid (`KB_CHARS`/`KB_CYRILLIC_CHARS`/
+`KB_GREEK_CHARS`) and T9 group table (`KB_T9_GROUPS`/`KB_T9_GROUPS_CYRILLIC`/
+`_GREEK`) so the two layouts always offer the same letters regardless of which
+page they're on. Latin-diacritic letters (Polish, Czech, German, etc.) aren't
+alt-alphabet pages — they're reached by Hold-Enter on whichever page currently
+shows Latin instead (see `KB_ACCENT_VARIANTS` below).
 Shift is one-shot by default (capitalises the next letter, including whichever
 candidate a T9 multi-tap cycle settles on) or Hold-Enter to toggle caps-lock;
 Hold-Clear erases the whole field. **UP from the top letter row** enters

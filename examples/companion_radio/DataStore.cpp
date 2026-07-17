@@ -520,6 +520,12 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.bot_commands_room, sizeof(_prefs.bot_commands_room));
   if (_prefs.bot_commands_room > 1) _prefs.bot_commands_room = 0;
 
+  // → 0xC0DE0020: append keyboard_main_alphabet at the tail. A pre-0x20 file
+  // has the old sentinel bytes / EOF here; clamp anything out of range to 0
+  // (Latin), matching the keyboard's original always-Latin-main behaviour.
+  rd(&_prefs.keyboard_main_alphabet, sizeof(_prefs.keyboard_main_alphabet));
+  if (_prefs.keyboard_main_alphabet >= NodePrefs::KB_ALPHABET_COUNT) _prefs.keyboard_main_alphabet = 0;
+
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
   // so we just log it — next savePrefs writes the current sentinel.
@@ -723,6 +729,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)_prefs.bot_reply_room,     sizeof(_prefs.bot_reply_room));
     file.write((uint8_t *)&_prefs.bot_commands_ch,   sizeof(_prefs.bot_commands_ch));
     file.write((uint8_t *)&_prefs.bot_commands_room, sizeof(_prefs.bot_commands_room));
+    file.write((uint8_t *)&_prefs.keyboard_main_alphabet, sizeof(_prefs.keyboard_main_alphabet));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good

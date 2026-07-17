@@ -43,11 +43,14 @@ static const char* const KB_T9_GROUPS[KB_PAGES][9] = {
   { "@#&", "*()", "-_+", "=/\\", ":;'\"", "<>[]", "{}|~", "^$%`", ",." },  // page 1 — symbols
 };
 
-// Additional (non-Latin) keyboard alphabets — NodePrefs::keyboard_alt_alphabet
-// picks which one (if any) joins the Latin/symbols page cycle. Every alphabet
-// here must fall inside the misc-fixed font's U+0020-04FF range
-// (src/helpers/ui/MiscFixedFont.h) since that's what actually draws these
-// glyphs on-screen.
+// Non-Latin keyboard scripts. NodePrefs::keyboard_main_alphabet/
+// keyboard_alt_alphabet (Settings > Keyboard's Main/Additional rows) pick
+// which script occupies page 0 (the keyboard's default/opening page) and
+// which joins it as page 1 -- either can be Latin, Cyrillic, or Greek; the
+// same value in both collapses to a single-script + Symbols cycle (see
+// hasAltAlphabet()). Every alphabet here must fall inside the misc-fixed
+// font's U+0020-04FF range (src/helpers/ui/MiscFixedFont.h) since that's what
+// actually draws these glyphs on-screen.
 //
 // Unlike KB_CHARS (single ASCII byte per cell), these hold UTF-8 strings —
 // Cyrillic is 2 bytes/codepoint — so cells are `const char*`, not `char`.
@@ -271,7 +274,7 @@ struct KeyboardWidget {
   int  accent_group  = -1;      // index into KB_ACCENT_VARIANTS for the held cell's base letter
   int  accent_sel    = 0;       // selected variant within that group
   int  row, col;
-  int  page;        // see totalPages()/pageIsAltAlphabet()/pageIsSymbols() below
+  int  page;        // see totalPages()/scriptAt()/pageIsSymbols() below
   bool caps;
   // Shift is one-shot by default (like a phone keyboard: capitalises just the
   // next letter, then reverts) — Hold-Enter on Shift toggles caps_lock, which
@@ -289,12 +292,17 @@ struct KeyboardWidget {
 
   // Live setting lookup — set once by UITask::begin(). NULL only in tests/tools
   // that construct a KeyboardWidget standalone, in which case isT9() defaults
-  // to ABC and hasAltAlphabet() defaults to Latin-only.
+  // to ABC and mainScript()/altScript() default to Latin-only.
   NodePrefs* prefs = nullptr;
   bool isT9() const { return prefs && prefs->keyboard_type == 1; }
-  bool hasAltAlphabet() const {
-    return prefs && prefs->keyboard_alt_alphabet != NodePrefs::KB_ALPHABET_LATIN_ONLY;
-  }
+  // Which script occupies page 0 (the keyboard's default/opening page) and
+  // which occupies page 1 (reached by the #@/abc cycle key) -- Settings >
+  // Keyboard's Main/Additional rows. Additional equal to Main collapses to no
+  // second page at all (see hasAltAlphabet), same as the old Latin-hardcoded
+  // design's "alt == Latin means no alt".
+  uint8_t mainScript() const { return prefs ? prefs->keyboard_main_alphabet : NodePrefs::KB_ALPHABET_LATIN_ONLY; }
+  uint8_t altScript()  const { return prefs ? prefs->keyboard_alt_alphabet  : NodePrefs::KB_ALPHABET_LATIN_ONLY; }
+  bool hasAltAlphabet() const { return altScript() != mainScript(); }
 
   // T9 multi-tap state: which grid cell is mid-cycle (-1 = none), its cycle
   // position, and when the last Enter landed on it (for the timeout).
@@ -312,54 +320,64 @@ struct KeyboardWidget {
   int gridCols() const { return isT9() ? KB_T9_COLS : KB_COLS_CHAR; }
 
   // ── Page model ────────────────────────────────────────────────────────────
-  // Logical page order: 0 = Latin letters, [1 = the enabled alt alphabet],
-  // last = symbols. Without an alt alphabet this is exactly the original
-  // 2-page Latin/symbols cycle; enabling one inserts its page in the middle,
-  // so the #@/abc key's existing cycle (case 4 below) reaches it for free.
+  // Logical page order: 0 = mainScript(), [1 = altScript(), if it differs],
+  // last = symbols. Without a distinct additional script this is exactly the
+  // original 2-page cycle; a distinct one inserts its page in the middle, so
+  // the #@/abc key's existing cycle (case 4 below) reaches it for free.
   int totalPages() const { return hasAltAlphabet() ? 3 : 2; }
-  bool pageIsAltAlphabet(int pg) const { return hasAltAlphabet() && pg == 1; }
   bool pageIsSymbols(int pg) const { return pg == totalPages() - 1; }
+  // Which script (Latin/Cyrillic/Greek) the given non-symbols page shows.
+  uint8_t scriptAt(int pg) const { return pg == 0 ? mainScript() : altScript(); }
 
-  // ABC-grid cell content as a NUL-terminated UTF-8 string (1 codepoint).
-  // Latin/symbols cells come back through a small scratch buffer since
-  // KB_CHARS stores single ASCII bytes, not strings; alt-alphabet cells are
+  // One script's ABC-grid cell content as a NUL-terminated UTF-8 string (1
+  // codepoint). Latin comes back through a small scratch buffer since
+  // KB_CHARS stores single ASCII bytes, not strings; Cyrillic/Greek cells are
   // literal string-table entries, returned directly.
+  const char* scriptCellStr(uint8_t script, int r, int c) const {
+    switch (script) {
+      case NodePrefs::KB_ALPHABET_CYRILLIC: return KB_CYRILLIC_CHARS[r][c];
+      case NodePrefs::KB_ALPHABET_GREEK:    return KB_GREEK_CHARS[r][c];
+      default: {
+        static char single[2];
+        single[0] = KB_CHARS[0][r][c];
+        single[1] = '\0';
+        return single;
+      }
+    }
+  }
   const char* cellStr(int r, int c) const {
-    if (pageIsAltAlphabet(page)) {
-      switch (prefs->keyboard_alt_alphabet) {
-        case NodePrefs::KB_ALPHABET_CYRILLIC:   return KB_CYRILLIC_CHARS[r][c];
-        case NodePrefs::KB_ALPHABET_GREEK:      return KB_GREEK_CHARS[r][c];
-        default: return "?";
-      }
+    if (pageIsSymbols(page)) {
+      static char single[2];
+      single[0] = KB_CHARS[1][r][c];
+      single[1] = '\0';
+      return single;
     }
-    static char single[2];
-    single[0] = KB_CHARS[pageIsSymbols(page) ? 1 : 0][r][c];
-    single[1] = '\0';
-    return single;
+    return scriptCellStr(scriptAt(page), r, c);
   }
 
-  // T9 group string (UTF-8) for the given cell (0-8), page-aware like cellStr.
+  // One script's T9 group string (UTF-8) for the given cell (0-8).
+  const char* scriptT9GroupStr(uint8_t script, int cell) const {
+    switch (script) {
+      case NodePrefs::KB_ALPHABET_CYRILLIC: return KB_T9_GROUPS_CYRILLIC[cell];
+      case NodePrefs::KB_ALPHABET_GREEK:    return KB_T9_GROUPS_GREEK[cell];
+      default:                              return KB_T9_GROUPS[0][cell];
+    }
+  }
   const char* t9GroupStr(int cell) const {
-    if (pageIsAltAlphabet(page)) {
-      switch (prefs->keyboard_alt_alphabet) {
-        case NodePrefs::KB_ALPHABET_CYRILLIC:   return KB_T9_GROUPS_CYRILLIC[cell];
-        case NodePrefs::KB_ALPHABET_GREEK:      return KB_T9_GROUPS_GREEK[cell];
-        default: return "?";
-      }
-    }
-    return KB_T9_GROUPS[pageIsSymbols(page) ? 1 : 0][cell];
+    if (pageIsSymbols(page)) return KB_T9_GROUPS[1][cell];
+    return scriptT9GroupStr(scriptAt(page), cell);
   }
 
-  // Compact ASCII hint for the #@/abc key when it's about to switch to the
-  // alt-alphabet page. Deliberately ASCII (not the alphabet's own script) so
-  // it renders correctly even when Lemon isn't the user's current font choice
-  // — unlike the alphabet's own grid, this hint is visible from the Latin/
-  // symbols pages too, where render() doesn't force Lemon on (see render()).
-  static const char* altAlphabetHint(uint8_t alt) {
-    switch (alt) {
-      case NodePrefs::KB_ALPHABET_CYRILLIC:   return "CY";
-      case NodePrefs::KB_ALPHABET_GREEK:      return "GR";
-      default: return "?";
+  // Compact ASCII hint for the #@/abc key when it's about to switch to
+  // `script`'s page. Deliberately ASCII (not the script's own glyphs) so it
+  // renders correctly even when Lemon isn't the user's current font choice —
+  // unlike a script's own grid, this hint is visible from every page,
+  // where render() doesn't force Lemon on (see render()).
+  static const char* scriptHint(uint8_t script) {
+    switch (script) {
+      case NodePrefs::KB_ALPHABET_CYRILLIC: return "CY";
+      case NodePrefs::KB_ALPHABET_GREEK:    return "GR";
+      default:                              return "abc";
     }
   }
 
@@ -555,9 +573,7 @@ struct KeyboardWidget {
           lbl = "{}";
         } else {
           int next = (page + 1) % totalPages();
-          lbl = pageIsSymbols(next)     ? "#@"
-              : pageIsAltAlphabet(next) ? altAlphabetHint(prefs->keyboard_alt_alphabet)
-                                        : "abc";
+          lbl = pageIsSymbols(next) ? "#@" : scriptHint(scriptAt(next));
         }
         int tw = display.getTextWidth(lbl);
         display.setCursor(sx + (spec_w - tw) / 2, spec_y);
@@ -722,11 +738,11 @@ struct KeyboardWidget {
         return NONE;
       }
       if (row < rows) {
-        if (!isT9() && page == 0) {
+        if (!isT9() && !pageIsSymbols(page) && scriptAt(page) == NodePrefs::KB_ALPHABET_LATIN_ONLY) {
           int gi = findAccentGroup(cellStr(row, col)[0]);
           if (gi >= 0) { accent_active = true; accent_group = gi; accent_sel = 0; t9_cell = -1; return NONE; }
         }
-        return NONE;   // no variants for this cell, or T9/alt-alphabet/symbols page
+        return NONE;   // no variants for this cell, or T9/non-Latin/symbols page
       }
       return CANCELLED;
     }

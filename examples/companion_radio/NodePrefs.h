@@ -390,6 +390,15 @@ struct NodePrefs {  // persisted to file
   uint8_t  bot_commands_ch;
   uint8_t  bot_commands_room;
 
+  // Which script (KB_ALPHABET_LATIN_ONLY/CYRILLIC/GREEK) occupies the on-screen
+  // keyboard's page 0 -- its default/opening page -- vs. keyboard_alt_alphabet
+  // above, which occupies page 1. Settings > Keyboard's Main/Additional rows.
+  // Equal to keyboard_alt_alphabet means no second page (see KeyboardWidget's
+  // hasAltAlphabet()). Appended at the tail (see the serialization tripwire
+  // below); default 0 (Latin) matches the keyboard's original always-Latin-
+  // main behaviour for upgraders.
+  uint8_t  keyboard_main_alphabet;
+
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
   static const uint8_t LOC_SHARE_MOVE_COUNT = 4;
@@ -452,7 +461,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE001F;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0020;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -549,6 +558,9 @@ struct NodePrefs {  // persisted to file
 //   3. clamp it on load (an upgrader's file lacks it → stray bytes)
 //   4. bump SCHEMA_SENTINEL's low byte
 // (Padding can also shift sizeof; a "false" trip just means re-check + rebump.)
+// keyboard_main_alphabet (added alongside this bump) landed in existing tail
+// padding -- confirmed via a real build's sizeof() -- so the size is
+// unchanged from before that field existed.
 static_assert(sizeof(NodePrefs) == 2712,
               "NodePrefs layout changed — sync DataStore save/load + clamp, bump "
               "SCHEMA_SENTINEL, then update this size (see steps above).");
