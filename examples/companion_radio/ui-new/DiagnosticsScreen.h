@@ -175,20 +175,14 @@ class DiagnosticsScreen : public UIScreen {
   // One sample line per script/keyboard alphabet the UI font claims to cover
   // (all inside the U+0020-04FF glyph range the OLED misc-fixed / e-ink Lemon
   // fonts carry), so the font's coverage can be checked by eye on real
-  // hardware. Per-language lines use the same 2-letter codes as
-  // KeyboardWidget::altAlphabetHint and each shows that language's own
-  // non-ASCII letters (see KeyboardWidget.h's KB_*_CHARS tables).
+  // hardware. "Acc" samples one variant from each KeyboardWidget.h
+  // KB_ACCENT_VARIANTS group (the Hold-Enter accent popup that replaced the
+  // old per-language alt-alphabet pages) so every accented letter actually
+  // reachable in the UI still gets an eyeball check.
   void buildFontLines() {
     _line_count = 0;
     addLine("Latin ABCabc xyz");
-    addLine("PL ąćęłńóśźż");
-    addLine("CZ áčďéěíňóřš");
-    addLine("SK áäčďíĺľňôŕ");
-    addLine("DE äöüß");
-    addLine("FR àâçéèêëîïœ");
-    addLine("ES áéíñóúü");
-    addLine("PT áàâãçéêíóôõú");
-    addLine("ND åäæöø");
+    addLine("Acc áçďéíłñóřśťúýź");
     addLine("Grk ΑΒΓ αβγξω");          // ΑΒΓ αβγξω
     addLine("Cyr АБВ абвжя");          // АБВ абвжя
     addLine("Num 0123456789");

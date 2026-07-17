@@ -93,107 +93,6 @@ static const char* const KB_T9_GROUPS_GREEK[9] = {
   ".,!?'-", "αβγ", "δεζ", "ηθι", "κλμ", "νξο", "πρσς", "τυφ", "χψω"
 };
 
-// Per-language Latin-diacritic ABC grids. Each is that language's own full
-// set of non-ASCII letters (not a shared curated subset — see NodePrefs.h's
-// KB_ALPHABET_POLISH..KB_ALPHABET_NORDIC doc comment for why these replaced a
-// single combined "Ext.Latin" page). Every grid is filled to all 40 cells the
-// same way: letters first, then punctuation to round out the last letter
-// row, then a full digit row, then any further rows filled with more
-// punctuation/symbols — consistent shape regardless of how few letters a
-// given language actually needs (German's 4, at the small end, still gets a
-// full page rather than mostly-blank cells).
-static const char* const KB_POLISH_CHARS[4][10] = {
-  { "ą", "ć", "ę", "ł", "ń", "ó", "ś", "ź", "ż", "." },
-  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
-  { ",", "!", "?", "'", "-", "\"", ":", ";", "(", ")" },
-  { "@", "#", "&", "*", "_", "+", "=", "/", "\\", "~" },
-};
-static const char* const KB_T9_GROUPS_POLISH[9] = {
-  ".,!?'-", "ąć", "ęł", "ńó", "śź", "ż", ";()", "@#&*", "_+=/"
-};
-
-static const char* const KB_CZECH_CHARS[4][10] = {
-  { "á", "č", "ď", "é", "ě", "í", "ň", "ó", "ř", "š" },
-  { "ť", "ú", "ů", "ý", "ž", ".", ",", "!", "?", "'" },
-  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
-  { "-", "\"", ":", ";", "(", ")", "@", "#", "&", "*" },
-};
-static const char* const KB_T9_GROUPS_CZECH[9] = {
-  ".,!?'-", "áč", "ďé", "ěí", "ňó", "řš", "ťú", "ůý", "ž"
-};
-
-// Slovak overlaps Czech heavily (both descend from a shared diacritic
-// tradition) but adds ä/ĺ/ľ/ô/ŕ and drops none — kept as its own page rather
-// than merged, per the "each language separate" request.
-static const char* const KB_SLOVAK_CHARS[4][10] = {
-  { "á", "ä", "č", "ď", "é", "í", "ĺ", "ľ", "ň", "ó" },
-  { "ô", "ŕ", "š", "ť", "ú", "ý", "ž", ".", ",", "!" },
-  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
-  { "?", "'", "-", "\"", ":", ";", "(", ")", "@", "#" },
-};
-static const char* const KB_T9_GROUPS_SLOVAK[9] = {
-  ".,!?'-", "áäč", "ďé", "íĺ", "ľň", "óô", "ŕš", "ťú", "ýž"
-};
-
-// German: only 4 non-ASCII letters (ä ö ü ß) — the smallest of these
-// keyboards, still filled to a full page rather than left sparse.
-static const char* const KB_GERMAN_CHARS[4][10] = {
-  { "ä", "ö", "ü", "ß", ".", ",", "!", "?", "'", "-" },
-  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
-  { "\"", ":", ";", "(", ")", "@", "#", "&", "*", "_" },
-  { "+", "=", "/", "\\", "~", "<", ">", "[", "]", "{" },
-};
-static const char* const KB_T9_GROUPS_GERMAN[9] = {
-  ".,!?'-", "äö", "üß", ";()", "@#&*", "_+=/", "\\~<>", "[]{}", "|^$%"
-};
-
-// French: à â ç é è ê ë î ï ô ù û ü ÿ œ. ÿ's uppercase (Ÿ, U+0178) is the one
-// case-shift exception outside the Latin-1 flat -0x20 rule — see
-// kbApplyCapsUtf8. œ is Latin Extended-A (adjacent-pair rule, verified).
-static const char* const KB_FRENCH_CHARS[4][10] = {
-  { "à", "â", "ç", "é", "è", "ê", "ë", "î", "ï", "ô" },
-  { "ù", "û", "ü", "ÿ", "œ", ".", ",", "!", "?", "'" },
-  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
-  { "-", "\"", ":", ";", "(", ")", "@", "#", "&", "*" },
-};
-static const char* const KB_T9_GROUPS_FRENCH[9] = {
-  ".,!?'-", "àâ", "çé", "èê", "ëî", "ïô", "ùû", "üÿ", "œ"
-};
-
-// Spanish: the 5 accented vowels, ñ, and ü (only appears in güe/güi).
-static const char* const KB_SPANISH_CHARS[4][10] = {
-  { "á", "é", "í", "ñ", "ó", "ú", "ü", ".", ",", "!" },
-  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
-  { "?", "'", "-", "\"", ":", ";", "(", ")", "@", "#" },
-  { "&", "*", "_", "+", "=", "/", "\\", "~", "<", ">" },
-};
-static const char* const KB_T9_GROUPS_SPANISH[9] = {
-  ".,!?'-", "áé", "íñ", "óú", "ü", ";()", "@#&*", "_+=/", "\\~<>"
-};
-
-// Portuguese: á à â ã ç é ê í ó ô õ ú (ü dropped from modern orthography).
-static const char* const KB_PORTUGUESE_CHARS[4][10] = {
-  { "á", "à", "â", "ã", "ç", "é", "ê", "í", "ó", "ô" },
-  { "õ", "ú", ".", ",", "!", "?", "'", "-", "\"", ":" },
-  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
-  { ";", "(", ")", "@", "#", "&", "*", "_", "+", "=" },
-};
-static const char* const KB_T9_GROUPS_PORTUGUESE[9] = {
-  ".,!?'-", "áà", "âã", "çé", "êí", "óô", "õú", ";()", "@#&*"
-};
-
-// Nordic: å ä æ ö ø — shared across Danish/Norwegian/Swedish (their
-// alphabets differ only in which of these 5 each uses), so kept as one page
-// rather than three near-identical ones.
-static const char* const KB_NORDIC_CHARS[4][10] = {
-  { "å", "ä", "æ", "ö", "ø", ".", ",", "!", "?", "'" },
-  { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
-  { "-", "\"", ":", ";", "(", ")", "@", "#", "&", "*" },
-  { "_", "+", "=", "/", "\\", "~", "<", ">", "[", "]" },
-};
-static const char* const KB_T9_GROUPS_NORDIC[9] = {
-  ".,!?'-", "åä", "æö", "ø", ";()", "@#&*", "_+=/", "\\~<>", "[]{}"
-};
 // Buffer cap for typed text, in bytes. Matches MeshCore's MAX_TEXT_LEN
 // (10*CIPHER_BLOCK_SIZE = 160) so a full-length message can be composed; each
 // field passes its own smaller max to begin() where its store is smaller.
@@ -312,6 +211,41 @@ static int kbUtf8CharBytesAt(const char* buf, int pos, int len) {
   return n;
 }
 
+// Accented variants of a Latin base letter, reachable by Hold-Enter on that
+// letter's cell on the plain Latin ABC page (see handleInput's KEY_CONTEXT_MENU
+// block and the accent_active state machine). Replaces the old per-language
+// full alt-alphabet pages (Polish/Czech/Slovak/German/French/Spanish/
+// Portuguese/Nordic) with one popup covering the union of all their accented
+// letters -- closer to a phone keyboard's long-press accent picker than a
+// second full page per language. Each entry is one UTF-8 string of
+// concatenated variants (like KB_T9_GROUPS_* group strings), read with the
+// same kbUtf8Len()/kbUtf8CharAt() helpers used there.
+// Ligature/non-diacritic letters are filed under their conventional key, same
+// as a phone keyboard's long-press: ß (German) -> s, œ (French) -> o. ĺ/ŕ
+// (Slovak) are l/r with an acute, not i/e variants, so they're filed there.
+static const char KB_ACCENT_BASES[] = "acdeilnorstuyz";
+static const char* const KB_ACCENT_VARIANTS[] = {
+  "áàâãäåą",  // a
+  "çćč",      // c
+  "ď",        // d
+  "éèêëěę",   // e
+  "íîï",      // i
+  "łĺľ",      // l
+  "ñńň",      // n
+  "óòôõöøœ",  // o
+  "řŕ",       // r
+  "śšß",      // s
+  "ť",        // t
+  "úùûüů",    // u
+  "ýÿ",       // y
+  "źżž",      // z
+};
+static const int KB_ACCENT_COUNT = sizeof(KB_ACCENT_BASES) - 1;   // exclude the trailing NUL
+static int findAccentGroup(char base) {
+  for (int i = 0; i < KB_ACCENT_COUNT; i++) if (KB_ACCENT_BASES[i] == base) return i;
+  return -1;
+}
+
 static const int KB_PH_MAX     = 20;  // max placeholders in list (PopupMenu::PM_MAX_ITEMS=24 is the hard ceiling)
 static const int KB_PH_LEN     = 30;  // max placeholder string length incl. null -- sized for the longest
                                        // CLI-command candidate (AdminScreen), not just the short {x} tokens
@@ -332,7 +266,10 @@ struct KeyboardWidget {
   int  len;
   int  max_len;
   int  cursor_pos;    // insertion point into buf, in bytes; defaults to len (append)
-  bool cursor_mode;   // true while Hold-Enter has parked the grid to reposition cursor_pos
+  bool cursor_mode;   // true while UP-from-row-0 has parked the grid to reposition cursor_pos
+  bool accent_active = false;   // true while the Hold-Enter accent popup is open
+  int  accent_group  = -1;      // index into KB_ACCENT_VARIANTS for the held cell's base letter
+  int  accent_sel    = 0;       // selected variant within that group
   int  row, col;
   int  page;        // see totalPages()/pageIsAltAlphabet()/pageIsSymbols() below
   bool caps;
@@ -392,14 +329,6 @@ struct KeyboardWidget {
       switch (prefs->keyboard_alt_alphabet) {
         case NodePrefs::KB_ALPHABET_CYRILLIC:   return KB_CYRILLIC_CHARS[r][c];
         case NodePrefs::KB_ALPHABET_GREEK:      return KB_GREEK_CHARS[r][c];
-        case NodePrefs::KB_ALPHABET_POLISH:     return KB_POLISH_CHARS[r][c];
-        case NodePrefs::KB_ALPHABET_CZECH:      return KB_CZECH_CHARS[r][c];
-        case NodePrefs::KB_ALPHABET_SLOVAK:     return KB_SLOVAK_CHARS[r][c];
-        case NodePrefs::KB_ALPHABET_GERMAN:     return KB_GERMAN_CHARS[r][c];
-        case NodePrefs::KB_ALPHABET_FRENCH:     return KB_FRENCH_CHARS[r][c];
-        case NodePrefs::KB_ALPHABET_SPANISH:    return KB_SPANISH_CHARS[r][c];
-        case NodePrefs::KB_ALPHABET_PORTUGUESE: return KB_PORTUGUESE_CHARS[r][c];
-        case NodePrefs::KB_ALPHABET_NORDIC:     return KB_NORDIC_CHARS[r][c];
         default: return "?";
       }
     }
@@ -415,14 +344,6 @@ struct KeyboardWidget {
       switch (prefs->keyboard_alt_alphabet) {
         case NodePrefs::KB_ALPHABET_CYRILLIC:   return KB_T9_GROUPS_CYRILLIC[cell];
         case NodePrefs::KB_ALPHABET_GREEK:      return KB_T9_GROUPS_GREEK[cell];
-        case NodePrefs::KB_ALPHABET_POLISH:     return KB_T9_GROUPS_POLISH[cell];
-        case NodePrefs::KB_ALPHABET_CZECH:      return KB_T9_GROUPS_CZECH[cell];
-        case NodePrefs::KB_ALPHABET_SLOVAK:     return KB_T9_GROUPS_SLOVAK[cell];
-        case NodePrefs::KB_ALPHABET_GERMAN:     return KB_T9_GROUPS_GERMAN[cell];
-        case NodePrefs::KB_ALPHABET_FRENCH:     return KB_T9_GROUPS_FRENCH[cell];
-        case NodePrefs::KB_ALPHABET_SPANISH:    return KB_T9_GROUPS_SPANISH[cell];
-        case NodePrefs::KB_ALPHABET_PORTUGUESE: return KB_T9_GROUPS_PORTUGUESE[cell];
-        case NodePrefs::KB_ALPHABET_NORDIC:     return KB_T9_GROUPS_NORDIC[cell];
         default: return "?";
       }
     }
@@ -438,14 +359,6 @@ struct KeyboardWidget {
     switch (alt) {
       case NodePrefs::KB_ALPHABET_CYRILLIC:   return "CY";
       case NodePrefs::KB_ALPHABET_GREEK:      return "GR";
-      case NodePrefs::KB_ALPHABET_POLISH:     return "PL";
-      case NodePrefs::KB_ALPHABET_CZECH:      return "CZ";
-      case NodePrefs::KB_ALPHABET_SLOVAK:     return "SK";
-      case NodePrefs::KB_ALPHABET_GERMAN:     return "DE";
-      case NodePrefs::KB_ALPHABET_FRENCH:     return "FR";
-      case NodePrefs::KB_ALPHABET_SPANISH:    return "ES";
-      case NodePrefs::KB_ALPHABET_PORTUGUESE: return "PT";
-      case NodePrefs::KB_ALPHABET_NORDIC:     return "ND";
       default: return "?";
     }
   }
@@ -459,6 +372,9 @@ struct KeyboardWidget {
     len = strlen(buf);
     cursor_pos = len;
     cursor_mode = false;
+    accent_active = false;
+    accent_group = -1;
+    accent_sel = 0;
     row = col = 0;
     page = 0;
     caps = false;
@@ -473,6 +389,24 @@ struct KeyboardWidget {
     _ph_count = 0;
     addPlaceholder("{loc}");
     addPlaceholder("{time}");
+  }
+
+  // Insert one UTF-8 codepoint (a grid cell's own glyph, or a picked accent
+  // variant) at cursor_pos, applying Shift/caps-lock the same way every cell
+  // commit does. Shared by the plain-Latin-cell commit below and the accent
+  // popup's Enter commit, so the two paths can't drift apart.
+  void insertGlyph(const char* one, bool use_caps) {
+    char shown[5];
+    kbApplyCapsUtf8(one, use_caps, shown, sizeof(shown));
+    int n = (int)strlen(shown);
+    int tail_len = len - cursor_pos;
+    if (len + n <= max_len) {
+      memmove(buf + cursor_pos + n, buf + cursor_pos, tail_len);
+      memcpy(buf + cursor_pos, shown, n);
+      len += n;
+      cursor_pos += n;
+      buf[len] = '\0';
+    }
   }
 
   void clearPlaceholders() { _ph_count = 0; }
@@ -643,6 +577,43 @@ struct KeyboardWidget {
       display.setColor(DisplayDriver::LIGHT);
     }
 
+    // Accent popup: floats over the still-visible grid (same idea as the
+    // placeholder overlay just below), anchored on the held letter's own row
+    // so it reads as "popping out of" that key instead of taking over the
+    // whole keyboard. LEFT/RIGHT picks, Enter commits, Cancel dismisses.
+    if (accent_active) {
+      const char* group = KB_ACCENT_VARIANTS[accent_group];
+      int n = kbUtf8Len(group);
+      const int pad = 3;
+      int seg_w = cw * 2 + pad;
+      int bw = n * seg_w;
+      int max_bw = display.width() - 4;
+      if (bw > max_bw) { bw = max_bw; seg_w = bw / n; }
+      int bx = (display.width() - bw) / 2;
+      int by = chars_y + row * cell_h - 1;
+      int bh = cell_h + 1;
+      display.setColor(DisplayDriver::DARK);
+      display.fillRect(bx, by, bw, bh);
+      display.setColor(DisplayDriver::LIGHT);
+      display.drawRect(bx, by, bw, bh);
+      for (int i = 0; i < n; i++) {
+        char one[5]; kbUtf8CharAt(group, i, one);
+        char shown[5]; kbApplyCapsUtf8(one, caps, shown, sizeof(shown));
+        int x = bx + i * seg_w;
+        if (i == accent_sel) {
+          display.setColor(DisplayDriver::LIGHT);
+          display.fillRect(x + 1, by + 1, seg_w - 1, bh - 2);
+          display.setColor(DisplayDriver::DARK);
+        } else {
+          display.setColor(DisplayDriver::LIGHT);
+        }
+        int tw = display.getTextWidth(shown);
+        display.setCursor(x + (seg_w - tw) / 2, by + 1);
+        display.print(shown);
+      }
+      display.setColor(DisplayDriver::LIGHT);
+    }
+
     // placeholder picker overlay (drawn on top of keyboard)
     if (_ph_menu.active) _ph_menu.render(display);
     return 50;
@@ -677,17 +648,48 @@ struct KeyboardWidget {
       return NONE;
     }
 
-    // Cursor-positioning sub-mode (see the Hold-Enter block below): the grid
+    // Cursor-positioning sub-mode (see the KEY_UP block below): the grid
     // selection is parked while LEFT/RIGHT walk cursor_pos one codepoint at a
-    // time and UP/DOWN jump to the very start/end -- Home/End, in effect.
-    // Enter/Cancel just leave the mode; the actual edit (insert/backspace)
-    // happens back in normal typing, now targeting the repositioned cursor.
+    // time. UP/DOWN jump to the very start/end -- Home/End, in effect -- and,
+    // once already at that boundary, continue the wrap the entry trigger
+    // interrupted: UP again lands on the special row, DOWN again back on the
+    // letter grid's row 0, same destinations the plain grid wrap used to reach
+    // directly (see the entry/exit comment below). Enter/Cancel just leave the
+    // mode from anywhere; the actual edit (insert/backspace) happens back in
+    // normal typing, now targeting the repositioned cursor.
     if (cursor_mode) {
       if (c == KEY_LEFT)  { if (cursor_pos > 0)   cursor_pos -= kbUtf8LastCharBytes(buf, cursor_pos); return NONE; }
       if (c == KEY_RIGHT) { if (cursor_pos < len) cursor_pos += kbUtf8CharBytesAt(buf, cursor_pos, len); return NONE; }
-      if (c == KEY_UP)    { cursor_pos = 0; return NONE; }
-      if (c == KEY_DOWN)  { cursor_pos = len; return NONE; }
+      if (c == KEY_UP) {
+        if (cursor_pos > 0) { cursor_pos = 0; return NONE; }
+        cursor_mode = false;
+        row = gridRows();
+        col = col * KB_SPECIAL / gridCols();
+        return NONE;
+      }
+      if (c == KEY_DOWN) {
+        if (cursor_pos < len) { cursor_pos = len; return NONE; }
+        cursor_mode = false;
+        row = 0;
+        return NONE;
+      }
       if (c == KEY_ENTER || c == KEY_CANCEL) { cursor_mode = false; return NONE; }
+      return NONE;
+    }
+
+    if (accent_active) {
+      const char* group = KB_ACCENT_VARIANTS[accent_group];
+      int n = kbUtf8Len(group);
+      if (keyIsPrev(c)) { accent_sel = (accent_sel > 0) ? accent_sel - 1 : n - 1; return NONE; }
+      if (keyIsNext(c)) { accent_sel = (accent_sel < n - 1) ? accent_sel + 1 : 0; return NONE; }
+      if (c == KEY_ENTER) {
+        char one[5]; kbUtf8CharAt(group, accent_sel, one);
+        insertGlyph(one, caps);
+        if (caps && !caps_lock) caps = false;
+        accent_active = false;
+        return NONE;
+      }
+      if (c == KEY_CANCEL) { accent_active = false; return NONE; }
       return NONE;
     }
 
@@ -699,9 +701,14 @@ struct KeyboardWidget {
     // Hold-Enter is normally "cancel", but three places give it a more useful
     // meaning instead: Shift -> toggle a persistent caps-lock (a plain tap is
     // one-shot -- see the commit sites below); Backspace -> clear the whole
-    // field in one action instead of holding it down; anywhere on the letter/
-    // symbol grid -> enter cursor-positioning mode (see above). Every other
-    // special-row cell keeps hold-to-cancel.
+    // field in one action instead of holding it down; a Latin-page letter cell
+    // with accented variants -> open the accent popup (see accent_active
+    // above). Every other special-row cell keeps hold-to-cancel; any other
+    // letter/symbol cell (a plain letter with no accents, or any T9/alt-
+    // alphabet/symbols cell) is a silent no-op instead, so it can't
+    // accidentally close the keyboard. Cursor mode itself moved off Hold-Enter
+    // entirely -- see the KEY_UP block below, where UP from row 0 now enters
+    // it instead.
     if (c == KEY_CONTEXT_MENU) {
       if (row == rows && col == 0) {          // Shift
         caps_lock = !caps_lock;
@@ -714,10 +721,12 @@ struct KeyboardWidget {
         t9_cell = -1;
         return NONE;
       }
-      if (row < rows) {                       // any letter/symbol cell
-        cursor_mode = true;
-        t9_cell = -1;
-        return NONE;
+      if (row < rows) {
+        if (!isT9() && page == 0) {
+          int gi = findAccentGroup(cellStr(row, col)[0]);
+          if (gi >= 0) { accent_active = true; accent_group = gi; accent_sel = 0; t9_cell = -1; return NONE; }
+        }
+        return NONE;   // no variants for this cell, or T9/alt-alphabet/symbols page
       }
       return CANCELLED;
     }
@@ -728,8 +737,12 @@ struct KeyboardWidget {
         if (row == rows - 1)  // leaving special row upward
           col = col * cols / KB_SPECIAL;
       } else {
-        row = rows;             // wrap up onto the special row
-        col = col * KB_SPECIAL / cols;
+        // row 0: enter cursor mode instead of wrapping to the special row --
+        // row/col are deliberately left as-is so the cursor-mode UP/DOWN
+        // continuation above can still reach the special row proportionally.
+        cursor_mode = true;
+        t9_cell = -1;
+        return NONE;
       }
       t9_cell = -1;   // navigating away finalizes any pending multi-tap cycle
       return NONE;
@@ -806,18 +819,8 @@ struct KeyboardWidget {
         }
         t9_last_ms = millis();
       } else if (row < rows) {
-        char shown[3];
-        kbApplyCapsUtf8(cellStr(row, col), caps, shown, sizeof(shown));
-        int n = (int)strlen(shown);
-        int tail_len = len - cursor_pos;
-        if (len + n <= max_len) {
-          memmove(buf + cursor_pos + n, buf + cursor_pos, tail_len);
-          memcpy(buf + cursor_pos, shown, n);
-          len += n;
-          cursor_pos += n;
-          buf[len] = '\0';
-          if (caps && !caps_lock) caps = false;   // one-shot: revert after the letter it capitalised
-        }
+        insertGlyph(cellStr(row, col), caps);
+        if (caps && !caps_lock) caps = false;   // one-shot: revert after the letter it capitalised
       } else {
         t9_cell = -1;   // any special-row action finalizes a pending multi-tap cycle
         switch (col) {
