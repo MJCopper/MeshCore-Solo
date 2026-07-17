@@ -21,7 +21,7 @@ class SH1106Display : public DisplayDriver
   uint8_t _color;
   uint8_t _contrast;
   uint8_t _precharge;
-  bool _use_lemon = true;   // OLED is single-font (misc-fixed 6x9); the Lemon/default switch is retired here
+  bool _single_font = true;   // OLED is single-font (misc-fixed 6x9); the Lemon/default switch is retired here
   int  _text_sz;
   // Frame-skip: endFrame() hashes the GFX buffer (FNV-1a, no external dep — the
   // CRC32 lib is only wired into e-ink builds) and skips the I²C flush when it's
@@ -31,8 +31,8 @@ class SH1106Display : public DisplayDriver
   bool     _force_redraw = true;
 
   bool i2c_probe(TwoWire &wire, uint8_t addr);
-  int16_t drawLemonChar(int16_t x, int16_t y, uint32_t cp);
-  uint8_t lemonXAdvance(uint32_t cp);
+  int16_t drawGlyph(int16_t x, int16_t y, uint32_t cp);
+  uint8_t glyphXAdvance(uint32_t cp);
 
 public:
   SH1106Display() : DisplayDriver(128, 64), display(128, 64, &Wire, PIN_OLED_RESET) {
@@ -54,17 +54,17 @@ public:
   void drawXbm(int x, int y, const uint8_t *bits, int w, int h) override;
   uint16_t getTextWidth(const char *str) override;
   uint16_t getCodepointWidth(uint32_t cp) override {
-    if (_use_lemon) return lemonXAdvance(cp);
+    if (_single_font) return glyphXAdvance(cp);
     return 6 * _text_sz;  // built-in 5x7 font: 6 px advance per glyph
   }
   int getCharWidth() const override { return 6 * _text_sz; }   // misc-fixed 6x9 is 6px wide
-  int getLineHeight() const override { return (_use_lemon ? 9 : 8) * _text_sz; }  // misc-fixed 6x9 box height
+  int getLineHeight() const override { return (_single_font ? 9 : 8) * _text_sz; }  // misc-fixed 6x9 box height
   // Only the built-in classic font pads every measured string by one trailing
   // advance column (see DisplayDriver::textWidthTrailingGap()); the lemon
   // font's width comes from its own glyph table (ink-tight, no padding).
-  int textWidthTrailingGap() const override { return _use_lemon ? 0 : 1; }
-  void setLemonFont(bool) override { }   // single-font: ignore toggles, stay misc-fixed 6x9
-  bool isLemonFont() const override { return _use_lemon; }
+  int textWidthTrailingGap() const override { return _single_font ? 0 : 1; }
+  void setSingleFont(bool) override { }   // single-font: ignore toggles, stay misc-fixed 6x9
+  bool isSingleFont() const override { return _single_font; }
   void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) override;
   void setBrightness(uint8_t level) override;
   void endFrame() override;

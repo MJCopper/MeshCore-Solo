@@ -33,8 +33,8 @@ public:
   virtual uint16_t getTextWidth(const char* str) = 0;
   virtual int getCharWidth() const { return 6; }   // typical character advance width (px)
   virtual int getLineHeight() const { return 8; }  // pixel rows per text line
-  virtual void setLemonFont(bool) { }              // no-op; overridden by displays that support Lemon
-  virtual bool isLemonFont() const { return false; }
+  virtual void setSingleFont(bool) { }              // no-op; both concrete drivers are permanently pinned to their one font
+  virtual bool isSingleFont() const { return false; }
   // Layout helpers — derived from font metrics and screen size.
   // Use these instead of hardcoded pixel values so layouts adapt to any display.
   int lineStep()             const { return getLineHeight() + 2; }         // row pitch: text + gap

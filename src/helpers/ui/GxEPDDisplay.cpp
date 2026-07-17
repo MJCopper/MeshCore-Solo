@@ -17,16 +17,16 @@
 // GFX fonts use the baseline as the cursor origin. UI code assumes top-of-cell
 // coordinates (same convention as the OLED driver). Add the font ascender so
 // the two conventions match.
-static int fontAscender(int sz, bool use_lemon, int scale) {
+static int fontAscender(int sz, bool single_font, int scale) {
   if (sz == 3) return 26;                       // FreeSans18pt7b: proportional, baseline origin
-  if (sz == 1 && use_lemon) return 7 * scale;   // misc-fixed 6x9 GFX font: baseline origin, ascent 7px×scale
+  if (sz == 1 && single_font) return 7 * scale;   // misc-fixed 6x9 GFX font: baseline origin, ascent 7px×scale
   return 0;                                     // GFX built-in font: cursor is top-left of cell
 }
 
 // y is the GFX baseline (display.getCursorY()), which equals original_y + 8*sc.
 // Pixels are placed at y + yo*sc + row*sc — identical to how GFX would render
 // a scaled GFX font, but bypassing GFX so multi-byte UTF-8 is decoded correctly.
-int16_t GxEPDDisplay::drawLemonChar(int16_t x, int16_t y, uint32_t cp, int sc) {
+int16_t GxEPDDisplay::drawGlyph(int16_t x, int16_t y, uint32_t cp, int sc) {
   for (uint8_t i = 0; i < lemonIconCount; i++) {
     if (pgm_read_dword(&lemonIconCPs[i]) == cp) {
       const GFXglyph* g = &lemonIconGlyphs[i];
@@ -69,7 +69,7 @@ int16_t GxEPDDisplay::drawLemonChar(int16_t x, int16_t y, uint32_t cp, int sc) {
   return x + xa * sc;
 }
 
-uint8_t GxEPDDisplay::lemonXAdvance(uint32_t cp, int sc) {
+uint8_t GxEPDDisplay::glyphXAdvance(uint32_t cp, int sc) {
   uint8_t xa;
   if (cp < MiscFixed.first || cp > MiscFixed.last) xa = 6;
   else xa = pgm_read_byte(&MiscFixedGlyphs[cp - MiscFixed.first].xAdvance);
@@ -127,7 +127,7 @@ void GxEPDDisplay::startFrame(Color bkg) {
   display.setTextColor(_curr_color = GxEPD_BLACK);
   _text_sz = 1;
   int sc = scale();
-  display.setFont(_use_lemon ? &MiscFixed : NULL);
+  display.setFont(_single_font ? &MiscFixed : NULL);
   display.setTextSize(sc);
   display_crc.reset();
 }
@@ -156,7 +156,7 @@ void GxEPDDisplay::setTextSize(int sz) {
       display.setTextSize(scale() * 2);
       break;
     default:
-      display.setFont(_use_lemon ? &MiscFixed : NULL);
+      display.setFont(_single_font ? &MiscFixed : NULL);
       display.setTextSize(sc);
       break;
   }
@@ -178,13 +178,13 @@ void GxEPDDisplay::setCursor(int x, int y) {
   // Offset y by the font ascender: callers pass top-of-cell y, GFX fonts
   // expect baseline y. Without this, text would be clipped at the top.
   int sc = scale();
-  display.setCursor(x, y + fontAscender(_text_sz, _use_lemon, sc));
+  display.setCursor(x, y + fontAscender(_text_sz, _single_font, sc));
 }
 
 void GxEPDDisplay::print(const char* str) {
   display_crc.update<char>(str, strlen(str));
   // misc-fixed path only for sz=1 — setTextSize(2/3) switches GFX to other fonts.
-  if (_use_lemon && _text_sz == 1) {
+  if (_single_font && _text_sz == 1) {
     int16_t cx = display.getCursorX();
     int16_t cy = display.getCursorY();
     const int sc = scale();
@@ -192,7 +192,7 @@ void GxEPDDisplay::print(const char* str) {
     while (*p) {
       uint32_t cp = decodeCodepoint(p);
       if (cp == '\n') { cy += MiscFixed.yAdvance * sc; cx = 0; }
-      else            { cx = drawLemonChar(cx, cy, cp, sc); }
+      else            { cx = drawGlyph(cx, cy, cp, sc); }
     }
     display.setCursor(cx, cy);
     return;
@@ -250,11 +250,11 @@ void GxEPDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
 }
 
 uint16_t GxEPDDisplay::getTextWidth(const char* str) {
-  if (_use_lemon && _text_sz == 1) {
+  if (_single_font && _text_sz == 1) {
     uint16_t total = 0;
     const int sc = scale();
     const uint8_t* p = (const uint8_t*)str;
-    while (*p) total += lemonXAdvance(decodeCodepoint(p), sc);
+    while (*p) total += glyphXAdvance(decodeCodepoint(p), sc);
     return total;
   }
   display.setTextWrap(false);

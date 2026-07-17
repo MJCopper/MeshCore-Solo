@@ -54,6 +54,17 @@ void MyMesh::botRoomSenderName(const uint8_t* sender_prefix, char* out, int out_
   else                   snprintf(out, out_len, "someone");
 }
 
+void MyMesh::botChannelSenderSplit(const char* text, char* sender_name, int sender_name_len, const char** msg_out) {
+  *msg_out = text;
+  snprintf(sender_name, sender_name_len, "someone");
+  const char* sep = strstr(text, ": ");
+  if (sep) {
+    *msg_out = sep + 2;
+    int n = (int)(sep - text);
+    if (n > 0 && n < sender_name_len) { memcpy(sender_name, text, n); sender_name[n] = '\0'; }
+  }
+}
+
 // Per-contact DM throttle: true if enough time has passed (or we've never
 // replied) to this contact. Only the first 4 key bytes are compared — ample to
 // tell local contacts apart.
@@ -142,14 +153,9 @@ void MyMesh::tryBotReplyChannel(uint8_t channel_idx, const char* text, uint8_t h
   // message body only, and so the name is available for the {name}
   // placeholder. Unsigned/unverified — channel messages carry no identity
   // beyond this text convention.
-  const char* msg = text;
-  char sender_name[32] = "someone";
-  const char* sep = strstr(text, ": ");
-  if (sep) {
-    msg = sep + 2;
-    int n = (int)(sep - text);
-    if (n > 0 && n < (int)sizeof(sender_name)) { memcpy(sender_name, text, n); sender_name[n] = '\0'; }
-  }
+  const char* msg;
+  char sender_name[32];
+  botChannelSenderSplit(text, sender_name, sizeof(sender_name), &msg);
 
   if (!botTriggerMatches(_prefs.bot_trigger_ch, msg, true)) return;  // own trigger; "*" = any msg
 
@@ -328,14 +334,9 @@ bool MyMesh::tryBotChannelCommand(uint8_t channel_idx, const char* text, uint8_t
     return false;
 
   // Skip "sender_name: " prefix so commands are read from the message body only.
-  const char* msg = text;
-  char sender_name[32] = "someone";
-  const char* sep = strstr(text, ": ");
-  if (sep) {
-    msg = sep + 2;
-    int n = (int)(sep - text);
-    if (n > 0 && n < (int)sizeof(sender_name)) { memcpy(sender_name, text, n); sender_name[n] = '\0'; }
-  }
+  const char* msg;
+  char sender_name[32];
+  botChannelSenderSplit(text, sender_name, sizeof(sender_name), &msg);
 
   uint32_t ts = getRTCClock()->getCurrentTime();
   char out[BOT_SCRATCH];

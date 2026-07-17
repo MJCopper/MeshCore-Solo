@@ -328,6 +328,11 @@ private:
   // Resolves a room post's signed author prefix to a display name for {name};
   // falls back to a generic label when the poster isn't a known contact.
   void botRoomSenderName(const uint8_t* sender_prefix, char* out, int out_len);
+  // Splits a channel message's leading "SenderName: " text convention off its
+  // body, for the {name} placeholder and to match triggers/commands against
+  // the body only. `*msg_out` points into `text` (no copy); `sender_name`
+  // defaults to "someone" if there's no ": " separator.
+  void botChannelSenderSplit(const char* text, char* sender_name, int sender_name_len, const char** msg_out);
 
   void writeOKFrame();
   void writeErrFrame(uint8_t err_code);

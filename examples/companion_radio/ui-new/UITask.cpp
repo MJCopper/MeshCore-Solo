@@ -443,7 +443,7 @@ class HomeScreen : public UIScreen {
     const int lh      = display.getLineHeight();
     const int cw      = display.getCharWidth();
     const int ind     = cw + 2;    // single-char indicator width
-    const int ind_h   = display.isLemonFont() ? lh - 2 : lh;
+    const int ind_h   = display.isSingleFont() ? lh - 2 : lh;
     const int ind_gap = display.isLandscape() ? 3 : 1;  // gap between indicator boxes
 
     int battLeftX;
@@ -2942,7 +2942,7 @@ void UITask::applyBrightness() {
 
 void UITask::applyFont() {
   if (_display != NULL && _node_prefs != NULL) {
-    _display->setLemonFont(_node_prefs->use_lemon_font != 0);
+    _display->setSingleFont(_node_prefs->use_lemon_font != 0);
     _next_refresh = 0;
   }
 }

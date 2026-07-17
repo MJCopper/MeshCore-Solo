@@ -57,7 +57,7 @@ class GxEPDDisplay : public DisplayDriver {
 #endif
   bool _init = false;
   bool _isOn = false;
-  bool _use_lemon = true;   // e-ink is single-font too now (misc-fixed 6x9), matching the OLED driver
+  bool _single_font = true;   // e-ink is single-font too now (misc-fixed 6x9), matching the OLED driver
   uint16_t _curr_color;
   CRC32 display_crc;
   int last_display_crc_value = 0;
@@ -65,8 +65,8 @@ class GxEPDDisplay : public DisplayDriver {
   uint8_t _full_refresh_interval = 0;
   uint8_t _partial_count = 0;
 
-  int16_t drawLemonChar(int16_t x, int16_t y, uint32_t cp, int sc);
-  uint8_t lemonXAdvance(uint32_t cp, int sc);
+  int16_t drawGlyph(int16_t x, int16_t y, uint32_t cp, int sc);
+  uint8_t glyphXAdvance(uint32_t cp, int sc);
   int scale() const { return (width() >= height()) ? 2 : 1; }
 
 public:
@@ -110,12 +110,12 @@ public:
     if (_text_sz == 4) return 8 * BIG_TEXT_SCALE;
     if (_text_sz == 3) return 28;
     if (_text_sz == 2) return 16 * sc;
-    return (_use_lemon ? 9 : 8) * sc;   // misc-fixed 6x9 box height
+    return (_single_font ? 9 : 8) * sc;   // misc-fixed 6x9 box height
   }
-  void setLemonFont(bool) override { }   // single-font: ignore toggles, stay misc-fixed 6x9
-  bool isLemonFont() const override { return _use_lemon; }
+  void setSingleFont(bool) override { }   // single-font: ignore toggles, stay misc-fixed 6x9
+  bool isSingleFont() const override { return _single_font; }
   void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) override {
-    if (_use_lemon) {
+    if (_single_font) {
       strncpy(dest, src, dest_size - 1);
       dest[dest_size - 1] = '\0';
     } else {
@@ -139,7 +139,7 @@ public:
   void drawXbm(int x, int y, const uint8_t* bits, int w, int h) override;
   uint16_t getTextWidth(const char* str) override;
   uint16_t getCodepointWidth(uint32_t cp) override {
-    if (_use_lemon && _text_sz == 1) return lemonXAdvance(cp, scale());
+    if (_single_font && _text_sz == 1) return glyphXAdvance(cp, scale());
     return DisplayDriver::getCodepointWidth(cp);
   }
   void setDisplayRotation(uint8_t rot) override;

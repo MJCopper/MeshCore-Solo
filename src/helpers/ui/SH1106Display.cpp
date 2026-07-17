@@ -67,7 +67,7 @@ void SH1106Display::setCursor(int x, int y)
   display.setCursor(x, y);
 }
 
-int16_t SH1106Display::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
+int16_t SH1106Display::drawGlyph(int16_t x, int16_t y, uint32_t cp) {
   int sz = _text_sz;
   for (uint8_t i = 0; i < lemonIconCount; i++) {
     if (pgm_read_dword(&lemonIconCPs[i]) == cp) {
@@ -95,7 +95,7 @@ int16_t SH1106Display::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
   if (cp < MiscFixed.first || cp > MiscFixed.last) {
     // y here is the top of the current text row, i.e. already baseline minus
     // the font's 7px ascent (see real-glyph rendering just below: y + 7 + yo +
-    // row) -- unlike GxEPDDisplay's drawLemonChar, where y IS the baseline and
+    // row) -- unlike GxEPDDisplay's drawGlyph, where y IS the baseline and
     // the box sits at y - 7*sc for the same reason. Drawing this box at plain
     // `y` (not y - 7*sz) lands it in the same ascent-top position, within its
     // own row instead of bleeding into the row above.
@@ -120,7 +120,7 @@ int16_t SH1106Display::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
   return x + xa * sz;
 }
 
-uint8_t SH1106Display::lemonXAdvance(uint32_t cp) {
+uint8_t SH1106Display::glyphXAdvance(uint32_t cp) {
   uint8_t xa;
   if (cp < MiscFixed.first || cp > MiscFixed.last) xa = 6;
   else xa = pgm_read_byte(&MiscFixedGlyphs[cp - MiscFixed.first].xAdvance);
@@ -128,7 +128,7 @@ uint8_t SH1106Display::lemonXAdvance(uint32_t cp) {
 }
 
 void SH1106Display::translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) {
-  if (_use_lemon) {
+  if (_single_font) {
     size_t n = strlen(src);
     if (n >= dest_size) n = dest_size - 1;
     memcpy(dest, src, n);
@@ -140,7 +140,7 @@ void SH1106Display::translateUTF8ToBlocks(char* dest, const char* src, size_t de
 
 void SH1106Display::print(const char *str)
 {
-  if (!_use_lemon) { display.print(str); return; }
+  if (!_single_font) { display.print(str); return; }
 
   int16_t cx = display.getCursorX();
   int16_t cy = display.getCursorY();
@@ -148,7 +148,7 @@ void SH1106Display::print(const char *str)
   while (*p) {
     uint32_t cp = decodeCodepoint(p);
     if (cp == '\n') { cy += MiscFixed.yAdvance; cx = 0; }
-    else            { cx = drawLemonChar(cx, cy, cp); }
+    else            { cx = drawGlyph(cx, cy, cp); }
   }
   display.setCursor(cx, cy);
 }
@@ -170,10 +170,10 @@ void SH1106Display::drawXbm(int x, int y, const uint8_t *bits, int w, int h)
 
 uint16_t SH1106Display::getTextWidth(const char *str)
 {
-  if (_use_lemon) {
+  if (_single_font) {
     uint16_t width = 0;
     const uint8_t* p = (const uint8_t*)str;
-    while (*p) width += lemonXAdvance(decodeCodepoint(p));
+    while (*p) width += glyphXAdvance(decodeCodepoint(p));
     return width;
   }
   int16_t x1, y1;
