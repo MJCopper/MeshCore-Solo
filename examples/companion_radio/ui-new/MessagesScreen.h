@@ -1024,8 +1024,14 @@ public:
           });
       int reserve = hs.reserve;
       {
+        // Stack boxes upward from just above the compose row, so item 0 (the
+        // newest message) lands at the bottom of the list and older messages
+        // sit progressively higher — same anchor convention as a typical
+        // messenger, instead of newest-at-top. box_ys[i] still corresponds
+        // to item (_dm_hist_scroll + i), same as before; only its y flips.
         const int fixed_bh = 2 * lh + 1;
-        int cur_y = hist_start_y;
+        const int box_gap = portrait_expand ? 2 : 1;
+        int cur_y = cby - box_gap;   // reserve the same gap against compose as between boxes
         for (int ii = 0; ii < MAX_VIS_BOXES && (_dm_hist_scroll + ii) < dm_count; ii++) {
           int bh = fixed_bh;
           if (portrait_expand) {
@@ -1038,9 +1044,10 @@ public:
               bh = (1 + (nl > 0 ? nl : 1)) * lh + 1;
             }
           }
-          if (cur_y + bh > cby) break;
-          box_ys[n_vis] = cur_y; box_hs[n_vis] = bh; n_vis++;
-          cur_y += bh + (portrait_expand ? 2 : 1);
+          int box_top = cur_y - bh;
+          if (box_top < hist_start_y) break;
+          box_ys[n_vis] = box_top; box_hs[n_vis] = bh; n_vis++;
+          cur_y = box_top - box_gap;
         }
       }
       _hist_visible = n_vis;
@@ -1085,9 +1092,16 @@ public:
 
       // Scrollbar: track pinned to the full list area; thumb sized/positioned
       // from hs's pixel metrics (stable while scrolling the same list).
-      if (hs.need)
+      // hs.scroll_px counts index-space distance from item 0 (newest); since
+      // item 0 now renders at the bottom, invert it here so the thumb sits at
+      // the bottom for the newest and rises as you scroll into older history.
+      if (hs.need) {
+        long span = hs.total_px - hs.view_px;
+        long inv_scroll_px = span - hs.scroll_px;
+        if (inv_scroll_px < 0) inv_scroll_px = 0;
         drawScrollIndicatorPx(display, hist_start_y + 1, hs.view_px,
-                              hs.total_px, hs.view_px, hs.scroll_px);
+                              hs.total_px, hs.view_px, inv_scroll_px);
+      }
 
       drawComposeButton(display, cby, lh, _dm_hist_sel == -1);
       if (_ctx_menu.active) _ctx_menu.render(display);
@@ -1153,8 +1167,12 @@ public:
           });
       int reserve = hs.reserve;
       {
+        // Stack boxes upward from just above the compose row — see the DM
+        // history block above for why (newest at the bottom, like a typical
+        // messenger). box_ys[i] still corresponds to item (_hist_scroll + i).
         const int fixed_bh = 2 * lh + 1;
-        int cur_y = hist_start_y;
+        const int box_gap = portrait_expand ? 2 : 1;
+        int cur_y = cby - box_gap;   // reserve the same gap against compose as between boxes
         for (int ii = 0; ii < MAX_VIS_BOXES && (_hist_scroll + ii) < ch_hist_count; ii++) {
           int bh = fixed_bh;
           if (portrait_expand) {
@@ -1168,9 +1186,10 @@ public:
               bh = (1 + (nl > 0 ? nl : 1)) * lh + 1;
             }
           }
-          if (cur_y + bh > cby) break;
-          box_ys[n_vis] = cur_y; box_hs[n_vis] = bh; n_vis++;
-          cur_y += bh + (portrait_expand ? 2 : 1);
+          int box_top = cur_y - bh;
+          if (box_top < hist_start_y) break;
+          box_ys[n_vis] = box_top; box_hs[n_vis] = bh; n_vis++;
+          cur_y = box_top - box_gap;
         }
       }
       _hist_visible = n_vis;
@@ -1228,9 +1247,16 @@ public:
       }
 
       // Scrollbar: track pinned to the full list area; thumb from hs metrics.
-      if (hs.need)
+      // Inverted for the same reason as the DM history block above — item 0
+      // (newest) renders at the bottom, so the thumb should start at the
+      // bottom too and rise as you scroll into older history.
+      if (hs.need) {
+        long span = hs.total_px - hs.view_px;
+        long inv_scroll_px = span - hs.scroll_px;
+        if (inv_scroll_px < 0) inv_scroll_px = 0;
         drawScrollIndicatorPx(display, hist_start_y + 1, hs.view_px,
-                              hs.total_px, hs.view_px, hs.scroll_px);
+                              hs.total_px, hs.view_px, inv_scroll_px);
+      }
 
       drawComposeButton(display, cby, lh, _hist_sel == -1);
       if (_ctx_menu.active) _ctx_menu.render(display);
@@ -1700,21 +1726,26 @@ public:
         }
         return true;
       }
+      // Newest (index 0) now renders at the bottom, oldest at the top (see the
+      // render block above), so UP/DOWN swap which direction walks the index:
+      // UP now climbs toward older (higher index, physically upward); DOWN
+      // now walks toward newer (lower index, physically downward) and off the
+      // bottom (index 0) reaches the compose row, which sits right below it.
       if (c == KEY_UP) {
-        if (_dm_hist_sel > 0) {
-          _dm_hist_sel--;
-          if (_dm_hist_sel < _dm_hist_scroll) _dm_hist_scroll = _dm_hist_sel;
-        } else if (_dm_hist_sel == 0) {
-          _dm_hist_sel = -1;
-        }
-        return true;
-      }
-      if (c == KEY_DOWN) {
         if (_dm_hist_sel == -1 && dm_count > 0) { _dm_hist_sel = 0; _dm_hist_scroll = 0; }
         else if (_dm_hist_sel >= 0 && _dm_hist_sel < dm_count - 1) {
           _dm_hist_sel++;
           if (_dm_hist_sel >= _dm_hist_scroll + _hist_visible)
             _dm_hist_scroll = _dm_hist_sel - _hist_visible + 1;
+        }
+        return true;
+      }
+      if (c == KEY_DOWN) {
+        if (_dm_hist_sel > 0) {
+          _dm_hist_sel--;
+          if (_dm_hist_sel < _dm_hist_scroll) _dm_hist_scroll = _dm_hist_sel;
+        } else if (_dm_hist_sel == 0) {
+          _dm_hist_sel = -1;
         }
         return true;
       }
@@ -1774,18 +1805,21 @@ public:
         return true;
       }
       if (c == KEY_CANCEL) { _phase = CHANNEL_PICK; return true; }
+      // Newest (index 0) now renders at the bottom, oldest at the top (see the
+      // render block above) — UP/DOWN swap direction accordingly, same as the
+      // DM history handler above.
       if (c == KEY_UP) {
-        if (_hist_sel > 0) { _hist_sel--; if (_hist_sel < _hist_scroll) _hist_scroll = _hist_sel; }
-        else if (_hist_sel == 0) _hist_sel = -1;
-        updateChannelUnread();
-        return true;
-      }
-      if (c == KEY_DOWN) {
         if (_hist_sel == -1 && ch_hist_count > 0) { _hist_sel = 0; _hist_scroll = 0; }
         else if (_hist_sel >= 0 && _hist_sel < ch_hist_count - 1) {
           _hist_sel++;
           if (_hist_sel >= _hist_scroll + _hist_visible) _hist_scroll = _hist_sel - _hist_visible + 1;
         }
+        updateChannelUnread();
+        return true;
+      }
+      if (c == KEY_DOWN) {
+        if (_hist_sel > 0) { _hist_sel--; if (_hist_sel < _hist_scroll) _hist_scroll = _hist_sel; }
+        else if (_hist_sel == 0) _hist_sel = -1;
         updateChannelUnread();
         return true;
       }

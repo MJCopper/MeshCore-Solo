@@ -319,6 +319,10 @@ struct KeyboardWidget {
   int  row, col;
   int  page;        // see totalPages()/pageIsAltAlphabet()/pageIsSymbols() below
   bool caps;
+  // Shift is one-shot by default (like a phone keyboard: capitalises just the
+  // next letter, then reverts) — Hold-Enter on Shift toggles caps_lock, which
+  // keeps it on for a whole run of capitals instead.
+  bool caps_lock = false;
   char _ph_buf[KB_PH_MAX][KB_PH_LEN];
   int  _ph_count;
   PopupMenu _ph_menu;
@@ -433,6 +437,7 @@ struct KeyboardWidget {
     row = col = 0;
     page = 0;
     caps = false;
+    caps_lock = false;
     t9_cell = -1;
     t9_cycle = 0;
     _ph_menu.active = false;
@@ -617,10 +622,29 @@ struct KeyboardWidget {
       return NONE;
     }
 
-    if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) return CANCELLED;
+    if (c == KEY_CANCEL) return CANCELLED;
 
     const int rows = gridRows();
     const int cols = gridCols();
+
+    // Hold-Enter is normally "cancel", but over the two keys where a long-press
+    // has its own well-known meaning on a phone keyboard, it does that instead:
+    // Shift -> toggle a persistent caps-lock (a plain tap is one-shot -- see the
+    // commit sites below); Backspace -> clear the whole field in one action
+    // instead of holding it down. Every other cell keeps hold-to-cancel.
+    if (c == KEY_CONTEXT_MENU) {
+      if (row == rows && col == 0) {          // Shift
+        caps_lock = !caps_lock;
+        caps = caps_lock;
+        return NONE;
+      }
+      if (row == rows && col == 2) {          // Backspace
+        len = 0; buf[0] = '\0';
+        t9_cell = -1;
+        return NONE;
+      }
+      return CANCELLED;
+    }
 
     if (c == KEY_UP) {
       if (row > 0) {
@@ -692,6 +716,7 @@ struct KeyboardWidget {
             buf[len] = '\0';
             t9_cell = cell;
             t9_cycle = 0;
+            if (caps && !caps_lock) caps = false;   // one-shot: only this first tap gets capitalised
           }
         }
         t9_last_ms = millis();
@@ -703,11 +728,14 @@ struct KeyboardWidget {
           memcpy(buf + len, shown, n);
           len += n;
           buf[len] = '\0';
+          if (caps && !caps_lock) caps = false;   // one-shot: revert after the letter it capitalised
         }
       } else {
         t9_cell = -1;   // any special-row action finalizes a pending multi-tap cycle
         switch (col) {
-          case 0: caps = !caps; break;
+          // Tap toggles one-shot caps on/off; while caps_lock is held (Hold-Enter
+          // on this key, see handleInput's top), a tap cancels the lock instead.
+          case 0: if (caps_lock) { caps = false; caps_lock = false; } else { caps = !caps; } break;
           case 1:
             if (len < max_len) { buf[len++] = ' '; buf[len] = '\0'; }
             break;
