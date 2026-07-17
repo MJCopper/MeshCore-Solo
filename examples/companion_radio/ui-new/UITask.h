@@ -231,7 +231,7 @@ public:
   void gotoRingtoneEditor(int slot = 0);
   void gotoBotScreen();
   void pickAdminTarget();                  // Admin is remote-only: open Nodes to pick a repeater/room
-  void openAdminFor(const ContactInfo& ci); // canonical Admin entry for a specific target (Nodes' Hold-Enter menu or the picker above)
+  void openAdminFor(const ContactInfo& ci, bool from_picker); // canonical Admin entry for a specific target (Nodes' Hold-Enter menu or the picker above)
   void gotoNearbyScreen();
   void gotoDashboardConfig();
   void gotoAutoAdvertScreen();

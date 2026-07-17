@@ -93,7 +93,7 @@ int16_t SH1106Display::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
   // Font glyphs come from misc-fixed 6x9 (full Latin/Greek/Cyrillic, ascent 7) —
   // baseline +7. The custom UI icons above keep +6, so they sit 1px higher.
   if (cp < MiscFixed.first || cp > MiscFixed.last) {
-    if (cp >= 0x20) display.fillRect(x + sz, y - sz, 4*sz, 6*sz, _color);
+    if (cp >= 0x20) display.fillRect(x + sz, y - 7*sz, 4*sz, 6*sz, _color);
     return x + 6 * sz;
   }
   const GFXglyph* g = &MiscFixedGlyphs[cp - MiscFixed.first];

@@ -48,7 +48,6 @@ def pack_glyph_bits(g):
     for row in range(h):
         rowval = g['bitmap'][row] if row < len(g['bitmap']) else 0
         # BDF rows are left-justified, padded to a multiple of 8 bits.
-        rowbits = ((len(bin(rowval)) - 2 + 7)//8*8) if rowval else 8
         rowbytes = max(1, (w + 7)//8)
         for col in range(w):
             byte_i = col // 8

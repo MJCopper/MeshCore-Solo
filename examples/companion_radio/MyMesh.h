@@ -306,7 +306,7 @@ public:
   // To check if there is pending work
   bool hasPendingWork() const;
 
-  // Number of auto-replies sent since boot (DM + channel). Shown on BotScreen.
+  // Number of auto-replies sent since boot (DM + channel + room). Shown on BotScreen.
   uint16_t botReplyCount() const { return _bot_reply_count; }
 
 private:

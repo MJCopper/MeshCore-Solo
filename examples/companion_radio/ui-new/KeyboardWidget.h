@@ -45,8 +45,9 @@ static const char* const KB_T9_GROUPS[KB_PAGES][9] = {
 
 // Additional (non-Latin) keyboard alphabets — NodePrefs::keyboard_alt_alphabet
 // picks which one (if any) joins the Latin/symbols page cycle. Every alphabet
-// here must fall inside Lemon's U+0020-04FF range (src/helpers/ui/LemonFont.h)
-// since that's what actually draws these glyphs on-screen.
+// here must fall inside the misc-fixed font's U+0020-04FF range
+// (src/helpers/ui/MiscFixedFont.h) since that's what actually draws these
+// glyphs on-screen.
 //
 // Unlike KB_CHARS (single ASCII byte per cell), these hold UTF-8 strings —
 // Cyrillic is 2 bytes/codepoint — so cells are `const char*`, not `char`.
@@ -363,6 +364,12 @@ struct KeyboardWidget {
   int      t9_cell = -1;
   int      t9_cycle = 0;
   uint32_t t9_last_ms = 0;
+  // Caps state the *first* tap of the current T9 cycle applied -- reused by every
+  // later cycling tap on the same cell, since one-shot Shift is consumed (see
+  // below) right after that first tap, before the user has settled on a letter.
+  // Without this, cycling to the 2nd/3rd/... candidate would always render
+  // lowercase regardless of Shift.
+  bool     t9_caps = false;
 
   int gridRows() const { return isT9() ? KB_T9_ROWS : KB_ROWS_CHAR; }
   int gridCols() const { return isT9() ? KB_T9_COLS : KB_COLS_CHAR; }
@@ -765,7 +772,7 @@ struct KeyboardWidget {
             if (t9_cycle < glen) kbUtf8CharAt(group, t9_cycle, one);
             else { one[0] = (char)('1' + cell); one[1] = '\0'; }
             char shown[5];
-            kbApplyCapsUtf8(one, caps, shown, sizeof(shown));
+            kbApplyCapsUtf8(one, t9_caps, shown, sizeof(shown));
             // Replace the codepoint just before the cursor (what the previous
             // tap inserted), preserving anything after the cursor too.
             int old_n = kbUtf8LastCharBytes(buf, cursor_pos);
@@ -793,6 +800,7 @@ struct KeyboardWidget {
             buf[len] = '\0';
             t9_cell = cell;
             t9_cycle = 0;
+            t9_caps = caps;   // remember it for every later cycling tap on this cell
             if (caps && !caps_lock) caps = false;   // one-shot: only this first tap gets capitalised
           }
         }

@@ -21,7 +21,7 @@ class SH1106Display : public DisplayDriver
   uint8_t _color;
   uint8_t _contrast;
   uint8_t _precharge;
-  bool _use_lemon = true;   // OLED is single-font (misc-fixed 5x7); the Lemon/default switch is retired here
+  bool _use_lemon = true;   // OLED is single-font (misc-fixed 6x9); the Lemon/default switch is retired here
   int  _text_sz;
   // Frame-skip: endFrame() hashes the GFX buffer (FNV-1a, no external dep — the
   // CRC32 lib is only wired into e-ink builds) and skips the I²C flush when it's
@@ -57,13 +57,13 @@ public:
     if (_use_lemon) return lemonXAdvance(cp);
     return 6 * _text_sz;  // built-in 5x7 font: 6 px advance per glyph
   }
-  int getCharWidth() const override { return (_use_lemon ? 6 : 6) * _text_sz; }   // misc-fixed 6x9 is 6px wide
+  int getCharWidth() const override { return 6 * _text_sz; }   // misc-fixed 6x9 is 6px wide
   int getLineHeight() const override { return (_use_lemon ? 9 : 8) * _text_sz; }  // misc-fixed 6x9 box height
   // Only the built-in classic font pads every measured string by one trailing
   // advance column (see DisplayDriver::textWidthTrailingGap()); the lemon
   // font's width comes from its own glyph table (ink-tight, no padding).
   int textWidthTrailingGap() const override { return _use_lemon ? 0 : 1; }
-  void setLemonFont(bool) override { }   // single-font: ignore toggles, stay misc-fixed 5x7
+  void setLemonFont(bool) override { }   // single-font: ignore toggles, stay misc-fixed 6x9
   bool isLemonFont() const override { return _use_lemon; }
   void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) override;
   void setBrightness(uint8_t level) override;

@@ -4,13 +4,16 @@
 // see docs/cli_commands.md). This device's own settings live in Settings /
 // Tools, not here -- Admin is purely for remote nodes.
 //
-// Entry is always a target-then-act flow: Tools > Admin (or a repeater/room's
-// Hold-Enter "Admin" action in Nodes) opens Tools > Nodes in a pick-mode
-// (NearbyScreen::startPickAdminTarget(), the same borrow-another-screen's-list
-// idiom the channel/bot pickers use), and picking a node calls the single
-// canonical UITask::openAdminFor(ContactInfo) -> startFor(). Backing out of a
-// command screen returns to that picker; backing out of the picker returns to
-// Tools.
+// Entry is a target-then-act flow, reached two ways: Tools > Admin opens
+// Tools > Nodes in a pick-mode (NearbyScreen::startPickAdminTarget(), the same
+// borrow-another-screen's-list idiom the channel/bot pickers use) and picking
+// a node from it enters Admin; or a repeater/room's own Hold-Enter "Admin"
+// action in Nodes enters Admin directly while browsing normally. Both call the
+// single canonical UITask::openAdminFor(ContactInfo, from_picker) -> startFor(),
+// which remembers which door was used: Cancel/login-failure from a command
+// screen returns to the picker if that's how the user arrived, or straight
+// back to Nodes if they came in directly (see returnToOrigin()); backing out
+// of the picker itself returns to Tools.
 //
 // After login (session password, self-heals like room logins) a category tab
 // carousel of AdminField{label, get_cmd, set_prefix} rows unlocks:
@@ -22,6 +25,7 @@
 
 #include "FullscreenMsgView.h"
 #include "TabBar.h"
+#include "RadioParamsEditor.h"   // DigitEditor + stepSF/stepBW/stepCR -- same widgets Settings/Repeater use locally
 #include <helpers/ClientACL.h>   // PERM_ACL_ADMIN / PERM_ACL_ROLE_MASK
 
 class AdminScreen : public UIScreen {
@@ -31,6 +35,18 @@ class AdminScreen : public UIScreen {
   Phase _phase = LOGIN;
 
   ContactInfo _target;
+
+  // True when this visit was reached via the "Remote node..." picker
+  // (UITask::pickAdminTarget() -> NearbyScreen's pick-mode); false when reached
+  // directly from a node's own Hold-Enter "Admin" action while browsing Nodes
+  // normally. Determines where Cancel/failure paths send the user back to --
+  // see returnToOrigin(). Set fresh by startFor() on every entry.
+  bool _from_picker = true;
+
+  // Cancel/failure exit: back to the target picker if that's how we got here,
+  // otherwise straight back to Nodes (we were opened directly from its
+  // "Admin" context-menu action, so a bare pick-list would be a detour).
+  void returnToOrigin() { if (_from_picker) _task->pickAdminTarget(); else _task->gotoNearbyScreen(); }
 
   // LOGIN
   char _login_pw[16] = "";
@@ -50,7 +66,33 @@ class AdminScreen : public UIScreen {
   enum AdminTab : uint8_t { ATAB_SYSTEM, ATAB_RADIO, ATAB_ROUTING, ATAB_ACTIONS, ATAB_COUNT };
   static const char* TAB_LABELS[ATAB_COUNT];
 
-  struct AdminField { const char* label; const char* get_cmd; const char* set_prefix; };
+  // Most fields are still free text (get reply pre-fills the keyboard, user
+  // retypes, "set <prefix> <text>" on submit) -- fine for names/passwords, but
+  // painful for values that are really a number or one of a handful of options.
+  // `kind` (default FK_TEXT, so every existing 3-field {label,get,set} literal
+  // below still compiles unchanged) opts a field into a typed, in-place editor
+  // instead: FK_ONOFF toggles on/off; FK_NUMBER steps an int within
+  // [min_val,max_val] by `step`; FK_RADIO_* are four views onto the same
+  // "get radio"/"set radio f,bw,sf,cr" tuple (freq via the same digit-cursor
+  // DigitEditor Settings/Repeater use, bw/sf/cr via RadioParamsEditor's
+  // discrete-set steppers) -- editing any one re-sends all four, the other
+  // three carried over unchanged from the fetch. See activateField()/
+  // beginValueEdit()/the `_value_editing` block in handleInput().
+  enum FieldKind : uint8_t { FK_TEXT, FK_ONOFF, FK_NUMBER, FK_RADIO_FREQ, FK_RADIO_BW, FK_RADIO_SF, FK_RADIO_CR };
+  struct AdminField {
+    const char* label; const char* get_cmd; const char* set_prefix;
+    FieldKind kind;
+    float min_val, max_val, step;   // FK_NUMBER only
+    // Explicit ctor (not default member initializers) so every existing
+    // 3-field {label,get,set} literal below still compiles as a converting
+    // constructor call -- this toolchain's actual C++ standard (the Adafruit
+    // nRF52 core's default; only `env:native` sets -std=c++17) predates
+    // C++14's aggregate-with-default-member-initializer rule, so plain
+    // aggregate init here fails to convert.
+    AdminField(const char* l, const char* g, const char* s, FieldKind k = FK_TEXT,
+               float mn = 0, float mx = 0, float st = 1)
+      : label(l), get_cmd(g), set_prefix(s), kind(k), min_val(mn), max_val(mx), step(st) {}
+  };
   static const AdminField SYSTEM_FIELDS[];
   static const AdminField RADIO_FIELDS[];
   static const AdminField ROUTING_FIELDS[];
@@ -75,6 +117,15 @@ class AdminScreen : public UIScreen {
   uint32_t    _cmd_deadline_ms = 0;
   bool        _fetch_for_edit = false;       // true while waiting on a "get" whose reply opens an editor
   const char* _pending_set_prefix = nullptr; // non-null => edited keyboard text gets this prefix on submit
+
+  // ── Typed value editors (FK_ONOFF/FK_NUMBER/FK_RADIO_*) ────────────────────
+  bool              _fetch_for_value = false;   // true while waiting on a "get" whose reply feeds a typed editor
+  bool              _value_editing = false;     // true while the selected row's typed editor is live (Enter to send, Cancel to drop)
+  const AdminField* _edit_field = nullptr;      // field currently open in _value_editing
+  float             _edit_val = 0;              // FK_ONOFF (0/1) / FK_NUMBER current value
+  float             _radio_freq = 0, _radio_bw = 0;   // last-fetched radio tuple -- kept for whichever of the
+  uint8_t           _radio_sf = 0, _radio_cr = 0;     // 4 radio sub-fields isn't the one actually being edited
+  DigitEditor       _freq_ed;                   // FK_RADIO_FREQ's digit-cursor editor (same widget as Settings/Repeater)
 
   // REPLY
   FullscreenMsgView _reply_view;
@@ -157,6 +208,14 @@ class AdminScreen : public UIScreen {
   void activateField(const AdminField& f) {
     _fetch_for_edit = false;
     _pending_set_prefix = nullptr;
+    if (f.kind != FK_TEXT) {                     // typed editor: on/off, number, or a radio sub-field
+      _edit_field = &f;
+      _fetch_for_value = true;
+      strncpy(_cmd_text, f.get_cmd, sizeof(_cmd_text) - 1);
+      _cmd_text[sizeof(_cmd_text) - 1] = '\0';
+      sendCommand();
+      return;
+    }
     if (f.get_cmd == nullptr && f.set_prefix == nullptr) {          // Custom command...
       openValueKb(_cmd_text, true);
     } else if (f.set_prefix == nullptr) {                            // Action
@@ -183,6 +242,73 @@ class AdminScreen : public UIScreen {
     openValueKb("");
   }
 
+  // Splits a "get radio" reply's value ("freq,bw,sf,cr") into its 4 parts.
+  // Self-contained (no mesh::Utils dependency) since it only ever needs to
+  // parse this one, fixed 4-field shape.
+  static bool parseRadioReply(const char* val, float& freq, float& bw, uint8_t& sf, uint8_t& cr) {
+    char tmp[48];
+    strncpy(tmp, val, sizeof(tmp) - 1);
+    tmp[sizeof(tmp) - 1] = '\0';
+    char* p = tmp;
+    char* parts[4];
+    for (int i = 0; i < 4; i++) {
+      parts[i] = p;
+      if (i < 3) {
+        char* c = strchr(p, ',');
+        if (!c) return false;
+        *c = '\0';
+        p = c + 1;
+      }
+    }
+    freq = strtof(parts[0], nullptr);
+    bw   = strtof(parts[1], nullptr);
+    sf   = (uint8_t)atoi(parts[2]);
+    cr   = (uint8_t)atoi(parts[3]);
+    return true;
+  }
+
+  // Seeds the typed editor from a (already "> "-stripped) get-reply, per
+  // _edit_field->kind. Returns false on a malformed reply (caller falls back
+  // to an alert instead of entering an editor with garbage in it).
+  bool beginValueEdit(const char* val) {
+    switch (_edit_field->kind) {
+      case FK_ONOFF:
+        _edit_val = (memcmp(val, "on", 2) == 0) ? 1.0f : 0.0f;
+        return true;
+      case FK_NUMBER:
+        // Clamp in case the node's real value sits outside this row's declared
+        // range (e.g. set via a different firmware/build or the Custom command) --
+        // otherwise every LEFT/RIGHT step lands out of range and gets silently
+        // rejected in both directions, stranding the field on an unreachable value.
+        _edit_val = constrain((float)atoi(val), _edit_field->min_val, _edit_field->max_val);
+        return true;
+      case FK_RADIO_FREQ:
+      case FK_RADIO_BW:
+      case FK_RADIO_SF:
+      case FK_RADIO_CR:
+        if (!parseRadioReply(val, _radio_freq, _radio_bw, _radio_sf, _radio_cr)) return false;
+        if (_edit_field->kind == FK_RADIO_FREQ)
+          _freq_ed.begin(_radio_freq, _edit_field->min_val, _edit_field->max_val, 4, 3);
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // Right-column display text for the row currently in _value_editing (freq
+  // has its own DigitEditor::render call instead -- see render()). Matches
+  // RepeaterScreen's itemValue() formatting for the same quantities (plain
+  // %d for SF/CR, %.1f for BW) so a value reads the same wherever it's shown.
+  void formatEditValue(char* buf, size_t n) const {
+    switch (_edit_field->kind) {
+      case FK_ONOFF:    snprintf(buf, n, "%s", _edit_val != 0 ? "ON" : "OFF"); break;
+      case FK_RADIO_BW: snprintf(buf, n, "%.1f", _radio_bw); break;
+      case FK_RADIO_SF: snprintf(buf, n, "%d", (int)_radio_sf); break;
+      case FK_RADIO_CR: snprintf(buf, n, "%d", (int)_radio_cr); break;
+      default:          snprintf(buf, n, "%d", (int)_edit_val); break;   // FK_NUMBER
+    }
+  }
+
 public:
   explicit AdminScreen(UITask* task) : _task(task) {}
 
@@ -196,6 +322,8 @@ public:
     _waiting = false;
     _fetch_for_edit = false;
     _pending_set_prefix = nullptr;
+    _fetch_for_value = false;
+    _value_editing = false;
     _login_waiting = false;
     _admin_ok = false;
   }
@@ -204,8 +332,9 @@ public:
   // itself reached from NearbyScreen's "Admin" context-menu action or its
   // Admin-target pick-mode. Skips straight past login if this contact is already
   // admin-ok this visit.
-  void startFor(const ContactInfo& ci) {
+  void startFor(const ContactInfo& ci, bool from_picker) {
     _target = ci;
+    _from_picker = from_picker;
     if (isAdminOk(ci.id.pub_key)) {
       _tab = ATAB_SYSTEM; _row_sel = _row_scroll = 0;
       _phase = COMMAND;
@@ -235,13 +364,13 @@ public:
       // Correct password, just insufficient permission -- leave any saved
       // password alone, retyping the same one won't change the outcome.
       _task->showAlert("Not admin on this node", 1600);
-      _task->pickAdminTarget();
+      returnToOrigin();
     } else {
       // Wrong/stale password -- forget it so the next attempt prompts fresh,
       // same self-healing behaviour as a room login.
       the_mesh.forgetRoomPassword(pub_key);
       _task->showAlert("Login failed", 1400);
-      _task->pickAdminTarget();
+      returnToOrigin();
     }
   }
 
@@ -249,10 +378,25 @@ public:
   void onAdminReply(const uint8_t* pub_key, const char* text) {
     if (!_waiting || memcmp(_target.id.pub_key, pub_key, 4) != 0) return;
     _waiting = false;
+    // Every "get ..." reply comes back as "> value" (see CommonCLI::handleGetCmd) --
+    // strip that CLI-decoration prefix before parsing/pre-filling from it. The
+    // final free-form REPLY view still shows `text` raw: action confirmations
+    // like "OK" never have the prefix, and a user-typed Custom "get ..." is
+    // meant to echo the raw wire reply verbatim, prefix included.
+    const char* val = (text[0] == '>' && text[1] == ' ') ? text + 2 : text;
+    if (_fetch_for_value) {
+      _fetch_for_value = false;
+      if (beginValueEdit(val)) {
+        _value_editing = true;
+      } else {
+        _task->showAlert("Fetch failed", 1400);
+      }
+      return;
+    }
     if (_fetch_for_edit) {
       _fetch_for_edit = false;
       char trimmed[161];
-      strncpy(trimmed, text, sizeof(trimmed) - 1);
+      strncpy(trimmed, val, sizeof(trimmed) - 1);
       trimmed[sizeof(trimmed) - 1] = '\0';
       size_t n = strlen(trimmed);
       while (n > 0 && (trimmed[n-1] == '\n' || trimmed[n-1] == '\r' || trimmed[n-1] == ' ')) trimmed[--n] = '\0';
@@ -268,8 +412,9 @@ public:
   void poll() override {
     if (_phase == COMMAND && _waiting && (int32_t)(millis() - _cmd_deadline_ms) >= 0) {
       _waiting = false;
-      if (_fetch_for_edit) { fallBackToBlankEdit(); _task->showAlert("Fetch failed - enter value", 1400); }
-      else                 { _task->showAlert("No response (timeout)", 1600); }
+      if (_fetch_for_edit)       { fallBackToBlankEdit(); _task->showAlert("Fetch failed - enter value", 1400); }
+      else if (_fetch_for_value) { _fetch_for_value = false; _task->showAlert("Fetch failed - try again", 1400); }
+      else                       { _task->showAlert("No response (timeout)", 1600); }
     }
   }
 
@@ -294,16 +439,26 @@ public:
         snprintf(title, sizeof(title), "%.23s", _target.name);
         display.drawCenteredHeader(title);
         display.setCursor(2, display.listStart());
-        display.print(_fetch_for_edit ? "Fetching..." : "Waiting for reply...");
+        display.print((_fetch_for_edit || _fetch_for_value) ? "Fetching..." : "Waiting for reply...");
         return 500;
       }
       tabbar::draw(display, TAB_LABELS, ATAB_COUNT, _tab);
       int n = ROWS_PER_TAB[_tab];
       drawList(display, n, _row_sel, _row_scroll, [&](int i, int y, bool sel, int reserve) {
         drawRowSelection(display, y, sel, reserve);
-        display.drawTextEllipsized(2, y, display.width() - 4 - reserve, fieldAt(_tab, i).label);
+        const AdminField& f = fieldAt(_tab, i);
+        display.drawTextEllipsized(2, y, display.width() - 4 - reserve, f.label);
+        if (_value_editing && sel) {   // the row whose typed editor is currently open
+          if (f.kind == FK_RADIO_FREQ) {
+            _freq_ed.render(display, display.valCol(), y);
+          } else {
+            char val[16];
+            formatEditValue(val, sizeof(val));
+            display.drawTextRightAlign(display.width() - reserve - 2, y, val);
+          }
+        }
       });
-      return 2000;
+      return _value_editing ? 50 : 2000;
     }
 
     // REPLY
@@ -313,18 +468,18 @@ public:
   bool handleInput(char c) override {
     if (_phase == LOGIN) {
       if (_login_waiting) {
-        if (c == KEY_CANCEL) { _login_waiting = false; _task->pickAdminTarget(); }
+        if (c == KEY_CANCEL) { _login_waiting = false; returnToOrigin(); }
         return true;
       }
       auto r = kb().handleInput(c);
       if (r == KeyboardWidget::CANCELLED) {
-        _task->pickAdminTarget();
+        returnToOrigin();
       } else if (r == KeyboardWidget::DONE) {
         strncpy(_login_pw, kb().buf, sizeof(_login_pw) - 1);
         _login_pw[sizeof(_login_pw) - 1] = '\0';
         bool sent = the_mesh.sendRoomLogin(_target, _login_pw);
         _task->showAlert(sent ? "Logging in..." : "Login failed", sent ? 1000 : 1500);
-        if (sent) _login_waiting = true; else _task->pickAdminTarget();
+        if (sent) _login_waiting = true; else returnToOrigin();
         // else: stay in LOGIN until onRoomLoginResult() fires above.
       }
       return true;
@@ -353,14 +508,58 @@ public:
         }
         return true;
       }
-      if (_waiting) {
-        if (c == KEY_CANCEL) {
-          _waiting = false;
-          if (_fetch_for_edit) fallBackToBlankEdit();
+      if (_value_editing) {
+        bool commit = false;
+        if (_edit_field->kind == FK_RADIO_FREQ) {
+          auto r = _freq_ed.handleInput(c);
+          if (r == DigitEditor::DONE)            { _radio_freq = _freq_ed.value; commit = true; }
+          else if (r == DigitEditor::CANCELLED)  { _value_editing = false; }
+        } else if (keyIsPrev(c) || keyIsNext(c)) {
+          int dir = keyIsNext(c) ? 1 : -1;
+          switch (_edit_field->kind) {
+            case FK_ONOFF: _edit_val = (_edit_val != 0) ? 0.0f : 1.0f; break;
+            case FK_NUMBER: {
+              float nv = _edit_val + dir * _edit_field->step;
+              if (nv >= _edit_field->min_val && nv <= _edit_field->max_val) _edit_val = nv;
+              break;
+            }
+            case FK_RADIO_BW: RadioParamsEditor::stepBW(_radio_bw, dir); break;
+            case FK_RADIO_SF: RadioParamsEditor::stepSF(_radio_sf, dir); break;
+            case FK_RADIO_CR: RadioParamsEditor::stepCR(_radio_cr, dir); break;
+            default: break;
+          }
+        } else if (c == KEY_ENTER) {
+          commit = true;
+        } else if (c == KEY_CANCEL) {
+          _value_editing = false;
+        }
+        if (commit) {
+          _value_editing = false;
+          switch (_edit_field->kind) {
+            case FK_RADIO_FREQ: case FK_RADIO_BW: case FK_RADIO_SF: case FK_RADIO_CR:
+              snprintf(_cmd_text, sizeof(_cmd_text), "%s %.3f,%.3f,%d,%d",
+                       _edit_field->set_prefix, _radio_freq, _radio_bw, (int)_radio_sf, (int)_radio_cr);
+              break;
+            case FK_ONOFF:
+              snprintf(_cmd_text, sizeof(_cmd_text), "%s %s", _edit_field->set_prefix, _edit_val != 0 ? "on" : "off");
+              break;
+            default:   // FK_NUMBER
+              snprintf(_cmd_text, sizeof(_cmd_text), "%s %d", _edit_field->set_prefix, (int)_edit_val);
+              break;
+          }
+          sendCommand();
         }
         return true;
       }
-      if (c == KEY_CANCEL) { _task->pickAdminTarget(); return true; }
+      if (_waiting) {
+        if (c == KEY_CANCEL) {
+          _waiting = false;
+          if (_fetch_for_edit)       fallBackToBlankEdit();
+          else if (_fetch_for_value) _fetch_for_value = false;
+        }
+        return true;
+      }
+      if (c == KEY_CANCEL) { returnToOrigin(); return true; }
       if (keyIsPrev(c)) { _tab = (_tab + ATAB_COUNT - 1) % ATAB_COUNT; _row_sel = _row_scroll = 0; return true; }
       if (keyIsNext(c)) { _tab = (_tab + 1) % ATAB_COUNT;             _row_sel = _row_scroll = 0; return true; }
       int n = ROWS_PER_TAB[_tab];
@@ -384,15 +583,21 @@ const AdminScreen::AdminField AdminScreen::SYSTEM_FIELDS[] = {
   { "Owner info",     "get owner.info", "set owner.info" },
   { "Admin password", nullptr,          "password" },
 };
+// The 4 radio rows all share get_cmd/set_prefix ("get radio" / "set radio") --
+// each fetches and re-sends the whole f,bw,sf,cr tuple, only its own value
+// actually editable (see beginValueEdit()/the commit switch in handleInput()).
 const AdminScreen::AdminField AdminScreen::RADIO_FIELDS[] = {
-  { "Radio (f,bw,sf,cr)", "get radio", "set radio" },
-  { "TX power",           "get tx",    "set tx" },
+  { "Frequency (MHz)",  "get radio", "set radio", AdminScreen::FK_RADIO_FREQ, 150.0f, 2500.0f },
+  { "Bandwidth (kHz)",  "get radio", "set radio", AdminScreen::FK_RADIO_BW },
+  { "Spreading factor", "get radio", "set radio", AdminScreen::FK_RADIO_SF },
+  { "Coding rate",      "get radio", "set radio", AdminScreen::FK_RADIO_CR },
+  { "TX power (dBm)",   "get tx",    "set tx",    AdminScreen::FK_NUMBER, -9, 30, 1 },
 };
 const AdminScreen::AdminField AdminScreen::ROUTING_FIELDS[] = {
-  { "Repeat",                    "get repeat",               "set repeat" },
-  { "Advert interval (min)",     "get advert.interval",       "set advert.interval" },
-  { "Flood advert interval (h)", "get flood.advert.interval", "set flood.advert.interval" },
-  { "Max hops",                  "get flood.max",             "set flood.max" },
+  { "Repeat",                    "get repeat",                "set repeat",                AdminScreen::FK_ONOFF },
+  { "Advert interval (min)",     "get advert.interval",       "set advert.interval",       AdminScreen::FK_NUMBER, 0, 240, 2 },
+  { "Flood advert interval (h)", "get flood.advert.interval", "set flood.advert.interval", AdminScreen::FK_NUMBER, 0, 168, 1 },
+  { "Max hops",                  "get flood.max",             "set flood.max",             AdminScreen::FK_NUMBER, 0, 64, 1 },
 };
 const AdminScreen::AdminField AdminScreen::ACTION_FIELDS[] = {
   { "Send advert",          "advert",         nullptr },

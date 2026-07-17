@@ -18,10 +18,12 @@ The Messages screen is split into three modes — **DMs**, **Channels**, and **R
 | :-----------------------: | :-----------------------: |
 | ![](./compose_oled.png) | ![](./compose_eink.png) |
 
-Press **Enter** on a contact or channel to open its history, then press **Enter** again (or select an empty send row) to compose a message. Choose between:
+Press **Enter** on a contact or channel to open its history, then press **Enter** again (or select the **[+ send]** button, anchored at the right edge of the history) to compose a message. Choose between:
 
 - **Custom message** — opens the on-screen keyboard
 - **Q1–Q10** — quick reply templates editable in Settings › Messages
+
+While typing, **Hold Enter** enters cursor mode (LEFT/RIGHT move the insertion point, UP/DOWN jump to start/end, Enter/Cancel exit) so you can edit or insert in the middle of what you've typed instead of only at the end — see the on-screen keyboard section of the [UI framework guide](../../design/solo_ui_framework.md) for the full key set (Shift, T9 multi-tap, alternate alphabets).
 
 The keyboard supports placeholders that insert live data at send time:
 
@@ -60,7 +62,7 @@ Posting to a **room server** requires a login handshake first, so the device can
 | :-----------------------: | :-----------------------: |
 | ![](./history_oled.png) | ![](./history_eink.png) |
 
-Each entry in the history list shows the sender name and a compact age indicator (`3m`, `2h`, `>1d`) in the top-right corner.
+Messages are drawn as chat bubbles sized to fit their content, anchored **right** for your own outgoing messages and **left** for incoming ones (like a typical messenger), with the sender name and a compact age indicator (`3m`, `2h`, `>1d`) in the top-right corner of each bubble. The list runs **newest at the bottom** — opening a history starts you at the latest message, and scrolling **up** goes further into the past.
 
 **Short Enter** on a message opens it in fullscreen. **Hold Enter** — on a history row or in fullscreen — opens the same options menu: Reply, plus **Navigate** / **Save waypoint** when the message contains a location (see Fullscreen message view). You don't need to open the message first.
 
@@ -144,7 +146,7 @@ Joining a new community channel, or creating one to share with others, no longer
 | Secret | **LEFT/RIGHT** toggles between two entry modes; **Enter** opens the keyboard for whichever is selected |
 
 - **Passphrase** (default) — type any text; the device hashes it down to the channel's 16-byte secret. Easiest to agree on verbally, the same idea as a room password — two people who type the same passphrase end up on the same channel.
-- **Hex key** — type the exact 32-hex-character secret (the format used by channel QR codes, see [QR Codes](../../qr_codes.md)), for joining a channel whose precise secret you were given rather than agreeing on a new passphrase.
+- **Hex key** — type the exact 32-hex-character secret (the format used by channel QR codes, see [QR Codes](../../qr_codes.md)), for joining a channel whose precise secret you were given rather than agreeing on a new passphrase. An all-zero secret (`00…0`) is rejected ("Invalid secret") — that value is reserved internally to mark an empty channel slot.
 
 Select **[Save]** to commit. The secret can't be redisplayed once saved (only the derived key is kept) — editing it later means typing a new passphrase or hex key, the same as re-logging into a room with a new password.
 

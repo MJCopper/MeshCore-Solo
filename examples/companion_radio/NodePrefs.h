@@ -77,8 +77,8 @@ struct NodePrefs {  // persisted to file
   uint16_t low_batt_mv;         // auto-shutdown threshold: 0=disabled, 3000-3500 mV
   uint8_t batt_display_mode;   // 0=icon, 1=percent, 2=voltage
   char custom_msgs[10][140];   // user-defined quick messages (supports {loc}, {time})
-  uint64_t ch_notif_override;  // bitmask: bit i = channel i has explicit notification setting
-  uint64_t ch_notif_muted;     // bitmask: bit i = channel i muted (only if override bit set)
+  uint64_t ch_notif_override;  // bitmask: bit i = channel i has explicit notification setting [del→onChannelRemoved]
+  uint64_t ch_notif_muted;     // bitmask: bit i = channel i muted (only if override bit set) [del→onChannelRemoved]
   uint8_t  dm_show_all;        // 0=favourites only (default), 1=all chat contacts
   uint8_t  room_fav_only;      // 0=all room servers (default), 1=favourites only
   uint8_t  ringtone_bpm_idx;   // index into {60,90,120,150,180}
@@ -148,7 +148,7 @@ struct NodePrefs {  // persisted to file
   uint8_t trail_min_delta_idx;  // min-distance gate level (0=finest..3); metres or feet per units_imperial
   uint8_t trail_units_idx;      // legacy: old combined speed/pace+unit index (km/h, mph, min/km, min/mi)
 
-  uint64_t ch_fav_bitmask;      // bit i = channel i is marked as favourite
+  uint64_t ch_fav_bitmask;      // bit i = channel i is marked as favourite [del→onChannelRemoved]
   uint8_t  ch_fav_only;         // 0=show all channels (default), 1=show favourites only
 
   // Global measurement system for every distance/speed shown in the UI
@@ -329,8 +329,8 @@ struct NodePrefs {  // persisted to file
   // key (Latin → alphabet → symbols → Latin), so composing in it needs no new
   // key, just Settings › Keyboard › Alphabet to pick which one is available.
   // See KeyboardWidget.h for the per-alphabet grids (KB_CYRILLIC_CHARS etc.)
-  // and Lemon font (src/helpers/ui/LemonFont.h) for on-screen rendering —
-  // every alphabet here must be in Lemon's U+0020-04FF range.
+  // and the misc-fixed font (src/helpers/ui/MiscFixedFont.h) for on-screen
+  // rendering — every alphabet here must be in its U+0020-04FF range.
   //
   // The Latin-diacritic entries (Polish..Nordic) replace what used to be a
   // single combined "Ext.Latin" curated subset — each is now its own full,

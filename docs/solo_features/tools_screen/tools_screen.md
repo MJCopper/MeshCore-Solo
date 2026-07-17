@@ -453,7 +453,15 @@ Each target's Commands toggle is independent — e.g. answer `!ping` in DMs but 
 
 <!-- screenshot pending: Diagnostics — live device/mesh stats rows (uptime, rx/tx counters, heap, RSSI/SNR, queue, errors) -->
 
-A single read-only screen of live device and mesh stats, refreshed once a second. On a small OLED the rows scroll with **UP/DOWN**; on a larger e-ink display they all fit at once.
+A circular tab carousel of live device and mesh stats, refreshed once a second (same tab idiom as Auto-Reply Bot / Nodes). **LEFT/RIGHT** switches tab; **UP/DOWN** scrolls within it on a small OLED — on a larger e-ink display a tab's rows all fit at once.
+
+| Tab | Shows |
+| --- | ----- |
+| **Live** | Live counters — see table below. |
+| **System** | Static device identity: firmware version + build date, device model, node name, and the active radio parameters. |
+| **Font** | A rendering test card — one sample line per script the on-device font claims to cover (Latin, diacritics, Greek, Cyrillic, digits, symbols), so its coverage can be eyeballed directly. |
+
+**Live** tab rows:
 
 | Row          | Shows                                                                                              |
 | ------------ | -------------------------------------------------------------------------------------------------- |
@@ -472,7 +480,7 @@ A single read-only screen of live device and mesh stats, refreshed once a second
 | Queue        | Packets waiting in the outbound queue                                                               |
 | Errors       | Radio error flags since boot/reset — `OK`, or tokens `F` (queue full), `C` (CAD timeout), `R` (RX-start timeout) |
 
-The packet counters, **Forwarded** and **Errors** are cumulative since boot. **Hold Enter** opens a one-item *Reset counters* menu (Back dismisses it); the live readings (noise, RSSI/SNR, pool, queue, uptime) are not affected. **Cancel/Back** returns to the Tools list.
+The packet counters, **Forwarded** and **Errors** are cumulative since boot. On the **Live** tab, **Hold Enter** opens a one-item *Reset counters* menu (Back dismisses it); the live readings (noise, RSSI/SNR, pool, queue, uptime) are not affected. **Cancel/Back** returns to the Tools list.
 
 The counters make the repeater behaviour observable: **Forwarded** confirms the node is actually relaying (not just configured to), and **Pool free** / **Queue** show whether forwarding is exhausting the packet pool. See **Tools › Repeater** for the relaying options.
 
@@ -526,12 +534,13 @@ Send commands to a **repeater/room server you have admin permission on** — the
    | Tab | Rows |
    | --- | ---- |
    | **System** | Name, Owner info, Admin password |
-   | **Radio** | Radio (freq, bandwidth, spreading factor, coding rate), TX power |
+   | **Radio** | Frequency, Bandwidth, Spreading factor, Coding rate, TX power |
    | **Routing** | Repeat, Advert interval, Flood advert interval, Max hops |
    | **Actions** | Send advert, Send zero-hop advert, Sync clock, Reboot, **Custom command...** |
 
-   **Enter** on a row does one of three things, depending on the field:
-   - Most **System/Radio/Routing** rows first **fetch** the node's current value, then open the keyboard **pre-filled** with it to edit — submitting sends the change. If the fetch fails or times out, the keyboard still opens (blank), so the value can be set blind.
+   **Enter** on a row does one of four things, depending on the field:
+   - **Name / Owner info** first **fetch** the node's current value, then open the keyboard **pre-filled** with it to edit — submitting sends the change. If the fetch fails or times out, the keyboard still opens (blank), so the value can be set blind.
+   - **Radio and Routing rows** are typed, not free text: **Repeat** is an ON/OFF toggle; **Advert interval / Flood advert interval / Max hops / TX power** are number steppers (**LEFT/RIGHT** to adjust, within that field's valid range); **Frequency** uses the same digit-by-digit cursor editor as Settings' own Radio screen (**LEFT/RIGHT** moves between digits, **UP/DOWN** changes the selected one); **Bandwidth / Spreading factor / Coding rate** step through their valid discrete LoRa values with **LEFT/RIGHT**. All four Radio-tuple fields (Frequency/Bandwidth/SF/Coding rate) fetch and re-send the same underlying `radio` value together — editing any one of them still only overwrites that one, the other three round-trip unchanged. **Enter** sends the change; **Cancel** discards it and returns to the row list without sending anything.
    - **Admin password** has no fetch (there's no way to read a password back) — it opens straight to a blank keyboard.
    - **Actions** (Reboot, Send advert, …) send immediately, no editing step.
    - **Custom command...** (last row of Actions) opens the same free-text entry for anything not covered above — up to 160 characters, see the linked reference for the full grammar. The keyboard's **{}** key doubles as command completion here: it lists commands matching whatever's typed since the last space (narrowing as you type), and picking one completes that word instead of just inserting after it.

@@ -95,8 +95,14 @@ pixel sizes** — derive everything from these:
 
 Drawing helpers (all clip/measure for you):
 
-- `drawCenteredHeader(title)` — plain centered title + separator.
-- `drawInvertedHeader(label)` — filled title bar (used by detail views).
+- `drawCenteredHeader(title, menu_hint=false, menu_open=false)` — plain centered
+  title + separator.
+- `drawInvertedHeader(label, menu_hint=false, menu_open=false)` — filled title
+  bar (used by detail views).
+- Both take an optional `menu_hint`: pass `true` on a screen with a Hold-Enter
+  context menu to reserve a `≡` glyph (`menuHintWidth()`/`drawContextMenuHint()`)
+  in the header, so the menu is discoverable without already knowing the
+  shortcut; `menu_open` highlights it while the menu is actually up.
 - `drawSelectionRow(x, y, w, h, sel)` — the highlight bar behind a list row.
 - `drawTextEllipsized(x, y, max_w, str)` — truncates with `…`; **use this for
   any user string** (names, labels) so long/UTF-8 text can't overrun.
@@ -167,6 +173,19 @@ sensor tokens) via `addPlaceholder()` / `clearPlaceholders()`; the shared
 `kbAddSensorPlaceholders()` (`ui-new/SensorPlaceholders.h`) adds only the tokens
 the board's sensors actually provide. Expand them with `expandMsg()` at send time.
 
+Two layouts share every grid: **ABC** (one key per letter) and **T9**
+(phone-keypad multi-tap — repeated Enter within `KB_T9_TIMEOUT_MS` cycles a
+cell's letter group, then its digit). `NodePrefs::keyboard_alt_alphabet` adds a
+non-Latin alphabet's own page to the cycle (Latin → alphabet → Symbols →
+Latin); each alphabet defines both its ABC grid (`KB_*_CHARS`) and T9 group
+table (`KB_T9_GROUPS_*`) so the two layouts always offer the same letters.
+Shift is one-shot by default (capitalises the next letter, including whichever
+candidate a T9 multi-tap cycle settles on) or Hold-Enter to toggle caps-lock;
+Hold-Clear erases the whole field. Hold-Enter elsewhere in the field enters
+**cursor mode** (LEFT/RIGHT move the insertion point, UP/DOWN jump to
+start/end) so edits/inserts can target any point in the typed text, not just
+the end.
+
 `FullscreenMsgView::wrapLines()` is a standalone pixel-accurate word-wrapper
 (O(n), variable-width-font aware) reusable by any multi-line layout; it writes
 into the shared `s_wrap_trans` / `s_wrap_lines` scratch (single-threaded render,
@@ -222,6 +241,17 @@ use `BIG_ICON` / `bigIconDraw`. The home status bar composes these right-to-left
 with a `blinkOn()` cadence for "leave it on and forget" broadcasts (auto-advert,
 Live Share, trail, repeater) — follow that pattern when adding an indicator:
 always shown on e-ink, blinking on OLED.
+
+Icons are drawn from a fixed priority-ordered table (`HomeScreen::renderBatteryIndicator()`,
+`UITask.cpp`); once the row runs out of horizontal space the loop just stops,
+so the lowest-priority icons silently drop first rather than the whole bar
+crushing the node name. A blinking icon still reserves its width on the
+off-phase of its blink, so the row's layout can't visibly shift width as icons
+blink in and out.
+
+Screens with a Hold-Enter context menu (Nodes, Bot, Admin, Diagnostics, …) pass
+`menu_hint=true` to their header call (see §2) so a `≡` glyph advertises the
+menu; `KEY_CONTEXT_MENU` (Hold-Enter) opens it.
 
 ---
 

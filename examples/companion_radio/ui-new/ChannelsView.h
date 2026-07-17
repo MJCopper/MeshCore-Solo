@@ -52,6 +52,14 @@ class ChannelsView {
         if (*end != 0) return false;
         tmp[i] = (uint8_t)v;
       }
+      // An all-zero 16-byte secret is the sentinel setChannelLocal() reads as
+      // "slot deleted" (see isAllZero() in MyMesh.cpp) -- saving one here would
+      // pass, then immediately trigger onChannelRemoved() on this very slot,
+      // silently discarding the channel and its bot/notif/favourite state.
+      // Reject it up front rather than let that self-delete happen invisibly.
+      bool all_zero = true;
+      for (int i = 0; i < 16 && all_zero; i++) if (tmp[i]) all_zero = false;
+      if (all_zero) return false;
       memset(out, 0, 32);
       memcpy(out, tmp, 16);
       return true;
@@ -68,7 +76,7 @@ class ChannelsView {
     if (_name[0] == '\0') { _task->showAlert("Name required", 1200); return; }
     uint8_t secret[32];
     if (!deriveSecret(secret)) {
-      _task->showAlert(_hex_mode ? "Need 32 hex chars" : "Secret required", 1400);
+      _task->showAlert(_hex_mode ? "Invalid secret" : "Secret required", 1400);
       return;
     }
     ChannelDetails ch;

@@ -26,7 +26,6 @@ class SettingsScreen : public UIScreen {
     CLOCK_SECONDS,
 #endif
     CLOCK_FORMAT,
-    FONT,
 #if FEAT_DISPLAY_ROTATION_SETTING
     ROTATION,
 #endif
@@ -585,10 +584,6 @@ class SettingsScreen : public UIScreen {
       display.print("Format");
       display.setCursor(valCol(display), y);
       display.print((p && p->clock_12h) ? "12h" : "24h");
-    } else if (item == FONT) {
-      display.print("Font");
-      display.setCursor(valCol(display), y);
-      display.print((p && p->use_lemon_font) ? "Lemon" : "Default");
 #if FEAT_DISPLAY_ROTATION_SETTING
     } else if (item == ROTATION) {
       display.print("Rotation");
@@ -958,14 +953,6 @@ public:
 #endif
     if (_selected == CLOCK_FORMAT && p && (left || right || enter)) {
       p->clock_12h ^= 1;
-      _dirty = true;
-      return true;
-    }
-    if (_selected == FONT && p && (left || right || enter)) {
-      // Normalise (not ^=1): a stale value >1 from an older build with extra
-      // font modes would otherwise toggle 2<->3 and stay stuck on Lemon.
-      p->use_lemon_font = p->use_lemon_font ? 0 : 1;
-      _task->applyFont();
       _dirty = true;
       return true;
     }

@@ -103,7 +103,7 @@ public:
     if (_text_sz == 4) return 6 * BIG_TEXT_SCALE;
     if (_text_sz == 3) return 17;
     if (_text_sz == 2) return 12 * sc;
-    return (_use_lemon ? 6 : 6) * sc;   // misc-fixed 6x9 is 6px wide
+    return 6 * sc;   // misc-fixed 6x9 is 6px wide
   }
   int getLineHeight() const override {
     int sc = scale();

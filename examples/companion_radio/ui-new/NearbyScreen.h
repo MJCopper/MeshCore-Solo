@@ -621,7 +621,7 @@ class NearbyScreen : public UIScreen {
         const Entry* e = selected();
         ContactInfo ci;
         if (e && e->contact_idx >= 0 && the_mesh.getContactByIdx(e->contact_idx, ci))
-          _task->openAdminFor(ci);
+          _task->openAdminFor(ci, false);   // direct from Nodes -- Cancel should return here, not to a pick-list
         break;
       }
       case ACT_SORT:     break;  // adjusted in-place via LEFT/RIGHT, not ENTER
@@ -950,7 +950,7 @@ public:
         if (e && e->contact_idx >= 0 && (e->type == ADV_TYPE_REPEATER || e->type == ADV_TYPE_ROOM)
             && the_mesh.getContactByIdx(e->contact_idx, ci)) {
           _pick_admin_target = false;
-          _task->openAdminFor(ci);
+          _task->openAdminFor(ci, true);   // via the picker -- Cancel should return here
         }
         // else: row isn't an eligible admin target -- ignore, stay on the picker.
         return true;

@@ -629,12 +629,22 @@ public:
   // the outgoing path can attach a relay seq to that exact entry.
   int addChannelMsg(uint8_t ch_idx, const char* text, uint32_t timestamp = 0) {
     bool viewing = (_phase == CHANNEL_HIST && _sel_channel_idx == (int)ch_idx);
-    return _history.addChannelMsg(ch_idx, text, viewing, timestamp);
+    int pos = _history.addChannelMsg(ch_idx, text, viewing, timestamp);
+    // Ring entries are numbered newest-first (0 == newest), so a new insert
+    // shifts every older message's index up by one. If the user has scrolled
+    // up to an older message (_hist_sel > 0), re-point the selection at that
+    // same message instead of silently relabeling a different one in under
+    // them. At _hist_sel <= 0 (already at newest, or -1 == compose button
+    // focused) there's nothing to preserve.
+    if (viewing && _hist_sel > 0) { _hist_sel++; _hist_scroll++; }
+    return pos;
   }
   void markChannelRelayed(uint32_t seq) { _history.markChannelRelayed(seq); }
   void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text,
                 uint32_t sender_timestamp = 0) {
+    bool viewing = (_phase == DM_HIST && memcmp(_sel_contact.id.pub_key, pub_key, 4) == 0);
     _history.addDMMsg(pub_key, outgoing, text, sender_timestamp);
+    if (viewing && _dm_hist_sel > 0) { _dm_hist_sel++; _dm_hist_scroll++; }   // see addChannelMsg
   }
   void markDmDelivered(uint32_t ack_crc) { _history.markDmDelivered(ack_crc); }
 
@@ -648,8 +658,14 @@ public:
   int _room_login_head = 0, _room_login_count = 0;
 
   bool isRoomLoggedIn(const uint8_t* pub_key) const {
-    for (int i = 0; i < _room_login_count; i++)
-      if (memcmp(_room_login_prefix[i], pub_key, 4) == 0) return true;
+    // Indices are relative to _room_login_head, same as forgetRoomLoggedIn() --
+    // direct 0.._room_login_count indexing only happens to work before the
+    // ring has wrapped once (head==0); after that it silently checks the wrong
+    // slots.
+    for (int i = 0; i < _room_login_count; i++) {
+      int pos = (_room_login_head + i) % ROOM_LOGIN_TABLE_SIZE;
+      if (memcmp(_room_login_prefix[pos], pub_key, 4) == 0) return true;
+    }
     return false;
   }
 

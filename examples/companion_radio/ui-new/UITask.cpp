@@ -1481,9 +1481,9 @@ void UITask::pickAdminTarget() {
   ((NearbyScreen*)nearby_screen)->startPickAdminTarget();
 }
 
-void UITask::openAdminFor(const ContactInfo& ci) {
+void UITask::openAdminFor(const ContactInfo& ci, bool from_picker) {
   setCurrScreen(admin_screen);   // runs AdminScreen::onShow()'s reset first
-  ((AdminScreen*)admin_screen)->startFor(ci);
+  ((AdminScreen*)admin_screen)->startFor(ci, from_picker);
 }
 void UITask::gotoDashboardConfig() { setCurrScreen(dashboard_config); }
 void UITask::gotoTrailScreen()     { setCurrScreen(trail_screen); }
@@ -2624,7 +2624,8 @@ void UITask::onContactRemoved(const uint8_t* pub_key) {
 // CONTRACT: every NodePrefs field that keys on a channel index is cleared here,
 // so a channel re-added at a freed slot can't inherit the old one's settings.
 // If you add such a field, add its cleanup below (and mark it in NodePrefs.h).
-// Currently covered: bot_channel_idx, loc_share_channel_idx, ch_notif_melody_*.
+// Currently covered: bot_channel_idx, loc_share_channel_idx, ch_notif_melody_*,
+// ch_notif_override/ch_notif_muted, ch_fav_bitmask.
 void UITask::onChannelRemoved(uint8_t channel_idx) {
   if (!_node_prefs) return;
   bool changed = false;
@@ -2642,6 +2643,15 @@ void UITask::onChannelRemoved(uint8_t channel_idx) {
   if (_node_prefs->ch_notif_melody_set & mask) {
     _node_prefs->ch_notif_melody_set &= ~mask;
     _node_prefs->ch_notif_melody_2   &= ~mask;
+    changed = true;
+  }
+  if (_node_prefs->ch_notif_override & mask) {
+    _node_prefs->ch_notif_override &= ~mask;
+    _node_prefs->ch_notif_muted    &= ~mask;
+    changed = true;
+  }
+  if (_node_prefs->ch_fav_bitmask & mask) {
+    _node_prefs->ch_fav_bitmask &= ~mask;
     changed = true;
   }
 
