@@ -332,27 +332,65 @@ class MessagesScreen : public UIScreen {
   // Selection frame for one history message box, shared by the DM/room and
   // channel history lists. Selected = solid fill; unselected = outline with a
   // filled header strip. Leaves the ink DARK (for the sender row drawn next).
-  static void drawHistRowFrame(DisplayDriver& d, int y, int bh, int reserve, int lh, bool sel) {
+  // Spans exactly [box_x, box_x+box_w) — the caller sizes/positions the bubble
+  // (see computeBubbleBox below), this just draws whatever box it's given.
+  static void drawHistRowFrame(DisplayDriver& d, int box_x, int box_w, int y, int bh, int lh, bool sel) {
     d.setColor(DisplayDriver::LIGHT);
     if (sel) {
-      d.fillRect(0, y, d.width() - reserve, bh);
+      d.fillRect(box_x, y, box_w, bh);
     } else {
-      d.drawRect(0, y, d.width() - reserve, bh);
-      d.fillRect(1, y + 1, d.width() - 2 - reserve, lh);
+      d.drawRect(box_x, y, box_w, bh);
+      d.fillRect(box_x + 1, y + 1, box_w - 2, lh);
     }
     d.setColor(DisplayDriver::DARK);
   }
 
-  // Bottom-left "[+ send]" compose button, shared by both history lists:
-  // bordered when idle, inverted (filled) when selected. Always reset to LIGHT
-  // first so it stays visible regardless of the ink the message loop left.
+  // Width of an ack/delivery glyph (see drawAckGlyph) — needed up front to size
+  // an outgoing bubble before it's drawn.
+  static int ackGlyphWidth(DisplayDriver& d, AckState s, int sends) {
+    const int sc = miniIconScale(d);
+    switch (s) {
+      case ACK_PENDING: return sends * 3 * sc;   // dot+gap pitch (icons.h), slightly generous
+      case ACK_OK:      return ICON_CHECK.w * sc;
+      case ACK_FAIL:    return ICON_CROSS.w * sc;
+      default:          return 0;
+    }
+  }
+
+  // A chat bubble's horizontal extent: shrunk to fit its own content (the
+  // sender+ack+age header line vs the wrapped/measured body, whichever is
+  // wider), capped at the full available width, and anchored to the right for
+  // outgoing ("Me") messages or the left for incoming ones — so which side a
+  // bubble sits on shows who sent it, the same convention as a typical
+  // messenger. Everything else in the row (sender, age, ack glyph, body) is
+  // then drawn relative to this box's own x instead of the screen edge.
+  struct BubbleBox { int x, w; };
+  static BubbleBox computeBubbleBox(int full_avail, bool outgoing, int header_w, int body_w) {
+    int w = header_w > body_w ? header_w : body_w;
+    if (w > full_avail) w = full_avail;
+    if (w < 1) w = 1;
+    return { outgoing ? (full_avail - w) : 0, w };
+  }
+
+  // Bottom-right "[+ send]" compose button, shared by both history lists:
+  // bordered when idle, inverted (filled) when selected. Right-aligned to
+  // match the outgoing ("Me") bubbles anchored on that side, so composing
+  // sits under your own messages rather than the other side's. Box is exactly
+  // lh tall (no added border padding) — the text has no descenders ("[+
+  // send]"), so padding sized against the font's full ascent+descent cell
+  // read as a lopsided 1px-top/3px-bottom gap instead of an even border;
+  // tight framing avoids that and gives the history list back the 2px. Always
+  // reset to LIGHT first so it stays visible regardless of the ink the
+  // message loop left.
   static void drawComposeButton(DisplayDriver& d, int cby, int lh, bool sel) {
     const char* ctxt = "[+ send]";
     int ctw = d.getTextWidth(ctxt);
+    int bw = ctw + 4;
+    int bx = d.width() - bw;
     d.setColor(DisplayDriver::LIGHT);
-    if (sel) { d.fillRect(0, cby - 1, ctw + 4, lh + 2); d.setColor(DisplayDriver::DARK); }
-    else       d.drawRect(0, cby - 1, ctw + 4, lh + 2);
-    d.setCursor(2, cby);
+    if (sel) { d.fillRect(bx, cby, bw, lh); d.setColor(DisplayDriver::DARK); }
+    else       d.drawRect(bx, cby, bw, lh);
+    d.setCursor(bx + 2, cby);
     d.print(ctxt);
     d.setColor(DisplayDriver::LIGHT);
   }
@@ -885,7 +923,6 @@ public:
     int lh      = display.getLineHeight();
     int item_h  = display.lineStep();
     int start_y = display.listStart();
-    int cw      = display.getCharWidth();
 
     if (_phase == MODE_SELECT) {
       display.drawCenteredHeader("MESSAGE", true, _ctx_menu.active);
@@ -998,7 +1035,7 @@ public:
       }
 
       int hist_start_y = display.headerH();
-      int cby = display.height() - lh - 2;
+      int cby = display.height() - lh;   // compose button is now exactly lh tall, no added border padding
 
       char title[24];
       snprintf(title, sizeof(title), "%.23s", filtered_name);
@@ -1068,20 +1105,37 @@ public:
         char age[6]; geo::fmtAgeShort(age, sizeof(age), now_ts, e.timestamp);
         int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
 
-        drawHistRowFrame(display, y, bh, reserve, lh, sel);
-        display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w - reserve, sender);
-        if (e.outgoing) {                       // delivery marker after "Me"
-          int gx = 3 + display.getTextWidth(sender) + 3;
-          drawAckGlyph(display, gx, y + 1, _history.dmEffectiveStatus(e), e.attempt + 1);
-        }
-        if (age[0]) { display.setCursor(display.width() - age_w - reserve, y + 1); display.print(age); }
-        if (!sel) display.setColor(DisplayDriver::LIGHT);
+        // Size the bubble to its own content before drawing anything (see
+        // computeBubbleBox): the header (sender+ack+age) vs the body, measured
+        // once here and reused below instead of re-wrapping.
+        int full_avail = display.width() - reserve;
+        int ack_w = e.outgoing ? (3 + ackGlyphWidth(display, _history.dmEffectiveStatus(e), e.attempt + 1)) : 0;
+        int header_w = 3 + display.getTextWidth(sender) + ack_w + age_w + 3;
+        int body_w, nl = 0;
         if (portrait_expand) {
           display.translateUTF8ToBlocks(s_wrap_trans, body, sizeof(s_wrap_trans));
-          int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 8);
-          for (int li = 0; li < nl; li++) { display.setCursor(3, y + (li + 1) * lh + 1); display.print(s_wrap_lines[li]); }
+          nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, full_avail - 6, s_wrap_lines, 8);
+          body_w = 0;
+          for (int li = 0; li < nl; li++) { int w = display.getTextWidth(s_wrap_lines[li]); if (w > body_w) body_w = w; }
+          body_w += 6;
         } else {
-          display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, body);
+          int raw_w = display.getTextWidth(body);
+          body_w = (raw_w > full_avail - 6 ? full_avail - 6 : raw_w) + 6;
+        }
+        BubbleBox box = computeBubbleBox(full_avail, e.outgoing, header_w, body_w);
+
+        drawHistRowFrame(display, box.x, box.w, y, bh, lh, sel);
+        display.drawTextEllipsized(box.x + 3, y + 1, box.w - 6 - age_w, sender);
+        if (e.outgoing) {                       // delivery marker after "Me"
+          int gx = box.x + 3 + display.getTextWidth(sender) + 3;
+          drawAckGlyph(display, gx, y + 1, _history.dmEffectiveStatus(e), e.attempt + 1);
+        }
+        if (age[0]) { display.setCursor(box.x + box.w - age_w, y + 1); display.print(age); }
+        if (!sel) display.setColor(DisplayDriver::LIGHT);
+        if (portrait_expand) {
+          for (int li = 0; li < nl; li++) { display.setCursor(box.x + 3, y + (li + 1) * lh + 1); display.print(s_wrap_lines[li]); }
+        } else {
+          display.drawTextEllipsized(box.x + 3, y + lh + 1, box.w - 6, body);
         }
       }
 
@@ -1139,7 +1193,7 @@ public:
       }
 
       int hist_start_y = display.headerH();
-      int cby = display.height() - lh - 2;
+      int cby = display.height() - lh;   // compose button is now exactly lh tall, no added border padding
 
       ChannelDetails ch;
       the_mesh.getChannel(_sel_channel_idx, ch);
@@ -1220,24 +1274,43 @@ public:
 
         char age[6]; geo::fmtAgeShort(age, sizeof(age), now_ts, _history.chAtPos(ring_pos).timestamp);
         int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
+        const char* body = skipReplyPrefix(msg_part);
 
-        drawHistRowFrame(display, y, bh, reserve, lh, sel);
-        display.drawTextEllipsized(3, y + 1, display.width() - cw - 2 - age_w - reserve, sender);
-        // Channels have no recipient ACK — only show ✓ once a repeater echo
-        // confirms the send was relayed into the mesh; otherwise no marker
-        // (absence is normal, not a failure).
-        if (strcmp(sender, "Me") == 0 && _history.chAtPos(ring_pos).relay_status == ACK_OK) {
-          int gx = 3 + display.getTextWidth(sender) + 3;
+        // Size the bubble to its own content before drawing anything (see
+        // computeBubbleBox): the header (sender+ack+age) vs the body, measured
+        // once here and reused below instead of re-wrapping. Channels have no
+        // recipient ACK — only show ✓ once a repeater echo confirms the send
+        // was relayed into the mesh; otherwise no marker (absence is normal).
+        bool outgoing = strcmp(sender, "Me") == 0;
+        bool show_ack = outgoing && _history.chAtPos(ring_pos).relay_status == ACK_OK;
+        int full_avail = display.width() - reserve;
+        int ack_w = show_ack ? (3 + ackGlyphWidth(display, ACK_OK, 1)) : 0;
+        int header_w = 3 + display.getTextWidth(sender) + ack_w + age_w + 3;
+        int body_w, nl = 0;
+        if (portrait_expand) {
+          display.translateUTF8ToBlocks(s_wrap_trans, body, sizeof(s_wrap_trans));
+          nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, full_avail - 6, s_wrap_lines, 8);
+          body_w = 0;
+          for (int li = 0; li < nl; li++) { int w = display.getTextWidth(s_wrap_lines[li]); if (w > body_w) body_w = w; }
+          body_w += 6;
+        } else {
+          int raw_w = display.getTextWidth(body);
+          body_w = (raw_w > full_avail - 6 ? full_avail - 6 : raw_w) + 6;
+        }
+        BubbleBox box = computeBubbleBox(full_avail, outgoing, header_w, body_w);
+
+        drawHistRowFrame(display, box.x, box.w, y, bh, lh, sel);
+        display.drawTextEllipsized(box.x + 3, y + 1, box.w - 6 - age_w, sender);
+        if (show_ack) {
+          int gx = box.x + 3 + display.getTextWidth(sender) + 3;
           drawAckGlyph(display, gx, y + 1, ACK_OK);
         }
-        if (age[0]) { display.setCursor(display.width() - age_w - reserve, y + 1); display.print(age); }
+        if (age[0]) { display.setCursor(box.x + box.w - age_w, y + 1); display.print(age); }
         if (!sel) display.setColor(DisplayDriver::LIGHT);
         if (portrait_expand) {
-          display.translateUTF8ToBlocks(s_wrap_trans, skipReplyPrefix(msg_part), sizeof(s_wrap_trans));
-          int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 8);
-          for (int li = 0; li < nl; li++) { display.setCursor(3, y + (li + 1) * lh + 1); display.print(s_wrap_lines[li]); }
+          for (int li = 0; li < nl; li++) { display.setCursor(box.x + 3, y + (li + 1) * lh + 1); display.print(s_wrap_lines[li]); }
         } else {
-          display.drawTextEllipsized(3, y + lh + 1, display.width() - cw - 2, skipReplyPrefix(msg_part));
+          display.drawTextEllipsized(box.x + 3, y + lh + 1, box.w - 6, body);
         }
       }
 

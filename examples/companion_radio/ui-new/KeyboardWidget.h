@@ -297,6 +297,20 @@ static int kbUtf8LastCharBytes(const char* buf, int len) {
   return n;
 }
 
+// Byte width of the codepoint STARTING at buf[pos] (pos in [0,len)) — the
+// forward counterpart to kbUtf8LastCharBytes, for moving the edit cursor
+// right by one whole codepoint instead of one byte.
+static int kbUtf8CharBytesAt(const char* buf, int pos, int len) {
+  if (pos >= len) return 0;
+  uint8_t c = (uint8_t)buf[pos];
+  int n = 1;
+  if ((c & 0xE0) == 0xC0)      n = 2;
+  else if ((c & 0xF0) == 0xE0) n = 3;
+  else if ((c & 0xF8) == 0xF0) n = 4;
+  if (pos + n > len) n = len - pos;   // truncated/corrupt sequence: don't overrun
+  return n;
+}
+
 static const int KB_PH_MAX     = 20;  // max placeholders in list (PopupMenu::PM_MAX_ITEMS=24 is the hard ceiling)
 static const int KB_PH_LEN     = 30;  // max placeholder string length incl. null -- sized for the longest
                                        // CLI-command candidate (AdminScreen), not just the short {x} tokens
@@ -316,6 +330,8 @@ struct KeyboardWidget {
   char buf[KB_MAX_LEN + 1];
   int  len;
   int  max_len;
+  int  cursor_pos;    // insertion point into buf, in bytes; defaults to len (append)
+  bool cursor_mode;   // true while Hold-Enter has parked the grid to reposition cursor_pos
   int  row, col;
   int  page;        // see totalPages()/pageIsAltAlphabet()/pageIsSymbols() below
   bool caps;
@@ -434,6 +450,8 @@ struct KeyboardWidget {
     strncpy(buf, initial, max_len);
     buf[max_len] = '\0';
     len = strlen(buf);
+    cursor_pos = len;
+    cursor_mode = false;
     row = col = 0;
     page = 0;
     caps = false;
@@ -486,21 +504,30 @@ struct KeyboardWidget {
     const int spec_y  = chars_y + rows * cell_h;
     const int spec_w  = display.width() / KB_SPECIAL;
 
-    // multi-line text preview: cursor always on last preview line
+    // Multi-line text preview: the view follows cursor_pos (normally == len,
+    // i.e. the end — so this is identical to the old "always the last line"
+    // behaviour until cursor mode moves cursor_pos elsewhere, at which point
+    // the preview scrolls to keep the repositioned cursor in view).
     int cpl = display.width() / cw;  // chars per preview line
     if (cpl < 1) cpl = 1;
     if (cpl > KB_PREVIEW_CAP) cpl = KB_PREVIEW_CAP;  // never overrun linebuf below
-    int cursor_line = len / cpl;
+    int cursor_line = cursor_pos / cpl;
     int first_line  = (cursor_line >= prev_lines) ? (cursor_line - prev_lines + 1) : 0;
     int start = first_line * cpl;
     for (int pl = 0; pl < prev_lines; pl++) {
       int ps = start + pl * cpl;
       int pe = ps + cpl;
-      bool cursor_here = (ps <= len && (len < pe || pl == prev_lines - 1));
+      bool cursor_here = (ps <= cursor_pos && (cursor_pos < pe || pl == prev_lines - 1));
       char linebuf[KB_PREVIEW_CAP + 2];   // cpl chars + cursor '_' + NUL
       if (cursor_here) {
-        int nc = len - ps; if (nc < 0) nc = 0; if (nc > cpl - 1) nc = cpl - 1;
-        snprintf(linebuf, sizeof(linebuf), "%.*s_", nc, buf + ps);
+        // Cursor drawn as an inserted '_' between whatever text precedes and
+        // follows it on this line -- reduces to the old "text + trailing _"
+        // when cursor_pos == len (after_n is always 0 in that case).
+        int before_n = cursor_pos - ps; if (before_n < 0) before_n = 0; if (before_n > cpl) before_n = cpl;
+        int line_text_end = (len < pe) ? len : pe;
+        int after_n = line_text_end - cursor_pos; if (after_n < 0) after_n = 0;
+        if (before_n + after_n > cpl) after_n = cpl - before_n;
+        snprintf(linebuf, sizeof(linebuf), "%.*s_%.*s", before_n, buf + ps, after_n, buf + ps + before_n);
       } else if (len > ps) {
         int nc = (len < pe) ? (len - ps) : cpl;
         snprintf(linebuf, sizeof(linebuf), "%.*s", nc, buf + ps);
@@ -513,6 +540,22 @@ struct KeyboardWidget {
       display.print(linebuf_t);
     }
     display.fillRect(0, sep_y, display.width(), display.sepH());
+
+    // Cursor-positioning mode: LEFT/RIGHT/UP/DOWN now drive the text cursor
+    // instead of the grid (see handleInput), so the grid would otherwise just
+    // sit there frozen with no sign anything's different. Replace it with an
+    // explicit hint instead.
+    if (cursor_mode) {
+      const int hh = lh + 2;
+      display.setColor(DisplayDriver::LIGHT);
+      display.fillRect(0, chars_y, display.width(), hh);
+      display.setColor(DisplayDriver::DARK);
+      display.drawTextCentered(display.width() / 2, chars_y + 1, "CURSOR MODE");
+      display.setColor(DisplayDriver::LIGHT);
+      display.drawTextCentered(display.width() / 2, chars_y + hh + 2, "L/R move");
+      display.drawTextCentered(display.width() / 2, chars_y + hh + 2 + lh, "U/D start/end");
+      return 50;
+    }
 
     // character grid
     if (isT9()) {
@@ -607,18 +650,37 @@ struct KeyboardWidget {
         const char* ph = _ph_buf[idx];
         int ph_len = strlen(ph);
         // Contextual (refresh-hook) fields complete the in-progress word --
-        // the text since the last space -- instead of appending after it, so
-        // picking a match doesn't duplicate what's already been typed.
-        int base_len = len;
+        // the text since the last space, up to the cursor -- instead of
+        // appending after it, so picking a match doesn't duplicate what's
+        // already been typed. Anything after the cursor (if it's not at the
+        // end) shifts along with the insertion, same as a normal keystroke.
+        int base_len = cursor_pos;
         if (_ph_refresh) {
           while (base_len > 0 && buf[base_len - 1] != ' ') base_len--;
         }
-        if (base_len + ph_len <= max_len) {
+        int tail_len = len - cursor_pos;
+        if (base_len + ph_len + tail_len <= max_len) {
+          memmove(buf + base_len + ph_len, buf + cursor_pos, tail_len);
           memcpy(buf + base_len, ph, ph_len);
-          len = base_len + ph_len;
+          len = base_len + ph_len + tail_len;
+          cursor_pos = base_len + ph_len;
           buf[len] = '\0';
         }
       }
+      return NONE;
+    }
+
+    // Cursor-positioning sub-mode (see the Hold-Enter block below): the grid
+    // selection is parked while LEFT/RIGHT walk cursor_pos one codepoint at a
+    // time and UP/DOWN jump to the very start/end -- Home/End, in effect.
+    // Enter/Cancel just leave the mode; the actual edit (insert/backspace)
+    // happens back in normal typing, now targeting the repositioned cursor.
+    if (cursor_mode) {
+      if (c == KEY_LEFT)  { if (cursor_pos > 0)   cursor_pos -= kbUtf8LastCharBytes(buf, cursor_pos); return NONE; }
+      if (c == KEY_RIGHT) { if (cursor_pos < len) cursor_pos += kbUtf8CharBytesAt(buf, cursor_pos, len); return NONE; }
+      if (c == KEY_UP)    { cursor_pos = 0; return NONE; }
+      if (c == KEY_DOWN)  { cursor_pos = len; return NONE; }
+      if (c == KEY_ENTER || c == KEY_CANCEL) { cursor_mode = false; return NONE; }
       return NONE;
     }
 
@@ -627,11 +689,12 @@ struct KeyboardWidget {
     const int rows = gridRows();
     const int cols = gridCols();
 
-    // Hold-Enter is normally "cancel", but over the two keys where a long-press
-    // has its own well-known meaning on a phone keyboard, it does that instead:
-    // Shift -> toggle a persistent caps-lock (a plain tap is one-shot -- see the
-    // commit sites below); Backspace -> clear the whole field in one action
-    // instead of holding it down. Every other cell keeps hold-to-cancel.
+    // Hold-Enter is normally "cancel", but three places give it a more useful
+    // meaning instead: Shift -> toggle a persistent caps-lock (a plain tap is
+    // one-shot -- see the commit sites below); Backspace -> clear the whole
+    // field in one action instead of holding it down; anywhere on the letter/
+    // symbol grid -> enter cursor-positioning mode (see above). Every other
+    // special-row cell keeps hold-to-cancel.
     if (c == KEY_CONTEXT_MENU) {
       if (row == rows && col == 0) {          // Shift
         caps_lock = !caps_lock;
@@ -640,6 +703,12 @@ struct KeyboardWidget {
       }
       if (row == rows && col == 2) {          // Backspace
         len = 0; buf[0] = '\0';
+        cursor_pos = 0;
+        t9_cell = -1;
+        return NONE;
+      }
+      if (row < rows) {                       // any letter/symbol cell
+        cursor_mode = true;
         t9_cell = -1;
         return NONE;
       }
@@ -691,18 +760,23 @@ struct KeyboardWidget {
         bool cycling = (t9_cell == cell) && (millis() - t9_last_ms < KB_T9_TIMEOUT_MS);
         if (cycling) {
           t9_cycle = (t9_cycle + 1) % total;
-          if (len > 0) {
+          if (cursor_pos > 0) {
             char one[5];
             if (t9_cycle < glen) kbUtf8CharAt(group, t9_cycle, one);
             else { one[0] = (char)('1' + cell); one[1] = '\0'; }
             char shown[5];
             kbApplyCapsUtf8(one, caps, shown, sizeof(shown));
-            int old_n = kbUtf8LastCharBytes(buf, len);
-            int new_len = len - old_n;
+            // Replace the codepoint just before the cursor (what the previous
+            // tap inserted), preserving anything after the cursor too.
+            int old_n = kbUtf8LastCharBytes(buf, cursor_pos);
+            int new_pos = cursor_pos - old_n;
+            int tail_len = len - cursor_pos;
             int n = (int)strlen(shown);
-            if (new_len + n <= max_len) {
-              memcpy(buf + new_len, shown, n);
-              len = new_len + n;
+            if (new_pos + n + tail_len <= max_len) {
+              memmove(buf + new_pos + n, buf + cursor_pos, tail_len);
+              memcpy(buf + new_pos, shown, n);
+              len = new_pos + n + tail_len;
+              cursor_pos = new_pos + n;
               buf[len] = '\0';
             }
           }
@@ -710,9 +784,12 @@ struct KeyboardWidget {
           char one[5]; kbUtf8CharAt(group, 0, one);
           char shown[5]; kbApplyCapsUtf8(one, caps, shown, sizeof(shown));
           int n = (int)strlen(shown);
+          int tail_len = len - cursor_pos;
           if (len + n <= max_len) {
-            memcpy(buf + len, shown, n);
+            memmove(buf + cursor_pos + n, buf + cursor_pos, tail_len);
+            memcpy(buf + cursor_pos, shown, n);
             len += n;
+            cursor_pos += n;
             buf[len] = '\0';
             t9_cell = cell;
             t9_cycle = 0;
@@ -724,9 +801,12 @@ struct KeyboardWidget {
         char shown[3];
         kbApplyCapsUtf8(cellStr(row, col), caps, shown, sizeof(shown));
         int n = (int)strlen(shown);
+        int tail_len = len - cursor_pos;
         if (len + n <= max_len) {
-          memcpy(buf + len, shown, n);
+          memmove(buf + cursor_pos + n, buf + cursor_pos, tail_len);
+          memcpy(buf + cursor_pos, shown, n);
           len += n;
+          cursor_pos += n;
           buf[len] = '\0';
           if (caps && !caps_lock) caps = false;   // one-shot: revert after the letter it capitalised
         }
@@ -737,10 +817,20 @@ struct KeyboardWidget {
           // on this key, see handleInput's top), a tap cancels the lock instead.
           case 0: if (caps_lock) { caps = false; caps_lock = false; } else { caps = !caps; } break;
           case 1:
-            if (len < max_len) { buf[len++] = ' '; buf[len] = '\0'; }
+            if (len < max_len) {
+              memmove(buf + cursor_pos + 1, buf + cursor_pos, len - cursor_pos);
+              buf[cursor_pos] = ' ';
+              len++; cursor_pos++;
+              buf[len] = '\0';
+            }
             break;
           case 2:
-            if (len > 0) { len -= kbUtf8LastCharBytes(buf, len); buf[len] = '\0'; }
+            if (cursor_pos > 0) {
+              int n = kbUtf8LastCharBytes(buf, cursor_pos);
+              memmove(buf + cursor_pos - n, buf + cursor_pos, len - cursor_pos);
+              len -= n; cursor_pos -= n;
+              buf[len] = '\0';
+            }
             break;
           case 3:
             if (_ph_refresh) _ph_refresh(*this, _ph_refresh_ctx);   // contextual repopulate, if wired up
