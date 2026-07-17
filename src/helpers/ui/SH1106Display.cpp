@@ -93,7 +93,13 @@ int16_t SH1106Display::drawLemonChar(int16_t x, int16_t y, uint32_t cp) {
   // Font glyphs come from misc-fixed 6x9 (full Latin/Greek/Cyrillic, ascent 7) —
   // baseline +7. The custom UI icons above keep +6, so they sit 1px higher.
   if (cp < MiscFixed.first || cp > MiscFixed.last) {
-    if (cp >= 0x20) display.fillRect(x + sz, y - 7*sz, 4*sz, 6*sz, _color);
+    // y here is the top of the current text row, i.e. already baseline minus
+    // the font's 7px ascent (see real-glyph rendering just below: y + 7 + yo +
+    // row) -- unlike GxEPDDisplay's drawLemonChar, where y IS the baseline and
+    // the box sits at y - 7*sc for the same reason. Drawing this box at plain
+    // `y` (not y - 7*sz) lands it in the same ascent-top position, within its
+    // own row instead of bleeding into the row above.
+    if (cp >= 0x20) display.fillRect(x + sz, y, 4*sz, 6*sz, _color);
     return x + 6 * sz;
   }
   const GFXglyph* g = &MiscFixedGlyphs[cp - MiscFixed.first];
