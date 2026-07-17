@@ -447,10 +447,21 @@ public:
       drawList(display, n, _row_sel, _row_scroll, [&](int i, int y, bool sel, int reserve) {
         drawRowSelection(display, y, sel, reserve);
         const AdminField& f = fieldAt(_tab, i);
-        display.drawTextEllipsized(2, y, display.width() - 4 - reserve, f.label);
-        if (_value_editing && sel) {   // the row whose typed editor is currently open
+        bool show_val = _value_editing && sel;   // the row whose typed editor is currently open
+        // Leave room for the value column on the row currently showing one, so a
+        // long label (e.g. "Flood advert interval (h)") can't run under/through
+        // the value being edited -- only rows without an inline value get the
+        // full row width.
+        int label_max = show_val ? display.valCol() - 4 : display.width() - 4 - reserve;
+        display.drawTextEllipsized(2, y, label_max, f.label);
+        if (show_val) {
           if (f.kind == FK_RADIO_FREQ) {
-            _freq_ed.render(display, display.valCol(), y);
+            // valCol() reserves exactly the 8-char width this editor draws (4
+            // int + '.' + 3 dec), so with no margin to spare, a visible
+            // scrollbar's reserve column would otherwise swallow the last
+            // (thousandths) digit -- shift left to stay clear of it, same as
+            // the plain-value branch below.
+            _freq_ed.render(display, display.valCol() - reserve, y);
           } else {
             char val[16];
             formatEditValue(val, sizeof(val));
