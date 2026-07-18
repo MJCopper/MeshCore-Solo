@@ -12,6 +12,14 @@ The Messages screen is split into three modes — **DMs**, **Channels**, and **R
 
 ---
 
+### Child Mode
+
+When [Child Mode](../child_mode/child_mode.md) is locked, the conversation lists contain only upstream-starred contacts and rooms, plus favourited channels. Contact, room, and channel context editing is disabled. Contacts already pinned to the optional Favourites Dial can also be opened directly.
+
+Configure and favourite the allowed conversations before enabling Child Mode.
+
+---
+
 ### Sending messages
 
 |           OLED            |           E-Ink           |

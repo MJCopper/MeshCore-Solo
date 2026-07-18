@@ -143,6 +143,12 @@ public:
   void poll() override { _wp.poll(); }
 
   bool handleInput(char c) override {
+    // Child-visible Map is deliberately read-only: GPS, trail, waypoint and
+    // sharing configuration remain exactly as the parent left them.
+    if (_task->isChildModeLocked()) {
+      if (c == KEY_CANCEL) _task->gotoHomeScreen();
+      return true;
+    }
     // Waypoint management UI consumes all input while active.
     if (_wp.active()) return _wp.handleInput(c);
 

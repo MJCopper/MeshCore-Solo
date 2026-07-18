@@ -35,6 +35,8 @@
 
 #include "icons.h"
 #include "GfxUtils.h"   // gfx::drawLine — connects trail points on the Home map preview
+#include "ChildMode.h"
+#include "DigitEditor.h"
 
 // Blinking status indicators: on for the first half of a 4 s cycle, but e-ink
 // can't repaint fast enough to blink, so it shows them steadily.
@@ -110,6 +112,39 @@ public:
     if (millis() >= dismiss_after) {
       _task->gotoHomeScreen();
     }
+  }
+};
+
+class ChildUnlockScreen : public UIScreen {
+  UITask* _task;
+  DigitEditor _pin;
+public:
+  ChildUnlockScreen(UITask* task) : _task(task) {}
+  void onShow() override { _pin.begin(0, 0, 999999, 6, 0); }
+  int render(DisplayDriver& display) override {
+    display.setTextSize(1);
+    display.drawCenteredHeader("PARENT PIN");
+    display.setCursor(4, display.height() / 2 - display.getLineHeight() / 2);
+    display.print("PIN:");
+    childmode::renderPinEditor(display, _pin, display.valCol(),
+                               display.height() / 2 - display.getLineHeight() / 2);
+    return 0;
+  }
+  bool handleInput(char c) override {
+    DigitEditor::Result r = _pin.handleInput(c);
+    if (r == DigitEditor::DONE) {
+      NodePrefs* p = _task->getNodePrefs();
+      if (p && childmode::pinHash((uint32_t)_pin.value) == p->child_mode_pin_hash) {
+        _task->setChildAdminUnlocked(true);
+        _task->gotoSettingsScreen();
+      } else {
+        _task->showAlert("Wrong PIN", 1000);
+        _pin.begin(0, 0, 999999, 6, 0);
+      }
+      return true;
+    }
+    if (r == DigitEditor::CANCELLED) { _task->gotoHomeScreen(); return true; }
+    return true;
   }
 };
 
@@ -396,6 +431,15 @@ class HomeScreen : public UIScreen {
     int bit = pageBit(page);
     if (bit < 0) return true;
     uint16_t mask = (_node_prefs && _node_prefs->home_pages_mask) ? _node_prefs->home_pages_mask : NodePrefs::HP_ALL;
+    if (_task->isChildModeLocked()) {
+      const uint16_t optional = NodePrefs::HP_RECENT | NodePrefs::HP_FAVOURITES |
+                                NodePrefs::HP_MAP | NodePrefs::HP_SENSORS | NodePrefs::HP_SHUTDOWN;
+      if (optional & (1U << bit)) return (_node_prefs->child_visible_pages & (1U << bit)) != 0;
+      const uint16_t child_hidden = NodePrefs::HP_RADIO | NodePrefs::HP_BLUETOOTH |
+                                    NodePrefs::HP_ADVERT | NodePrefs::HP_GPS |
+                                    NodePrefs::HP_TOOLS;
+      if (child_hidden & (1U << bit)) return false;
+    }
     return (mask >> bit) & 1;
   }
 
@@ -1296,7 +1340,8 @@ public:
           _task->showAlert("Contact not found", 800);
         } else {
           // Empty slot → open in-place pin picker.
-          buildPinPicker(_fav_sel);
+          if (_task->isChildModeLocked()) _task->showAlert("Parent only", 800);
+          else buildPinPicker(_fav_sel);
         }
         return true;
       }
@@ -1342,7 +1387,8 @@ public:
     }
 #endif
     if (c == KEY_ENTER && _page == HomePage::SETTINGS) {
-      _task->gotoSettingsScreen();
+      if (_task->isChildModeLocked()) _task->gotoChildUnlockScreen();
+      else _task->gotoSettingsScreen();
       return true;
     }
     if (c == KEY_ENTER && _page == HomePage::MAP) {
@@ -1362,14 +1408,17 @@ public:
       return true;
     }
     if (c == KEY_ENTER && _page == HomePage::CLOCK) {
+      if (_task->isChildModeLocked()) return true;
       _task->gotoClockTools();   // Alarm / Timer / Stopwatch
       return true;
     }
     if (c == KEY_CONTEXT_MENU && _page == HomePage::CLOCK) {
+      if (_task->isChildModeLocked()) return true;
       _task->gotoDashboardConfig();
       return true;
     }
     if (c == KEY_CONTEXT_MENU && _page == HomePage::MAP) {
+      if (_task->isChildModeLocked()) return true;
       _task->quickShareMyLocation();
       return true;
     }
@@ -1382,6 +1431,8 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _display = display;
   _sensors = sensors;
   _node_prefs = node_prefs;
+  _child_admin_unlocked = !_node_prefs || !_node_prefs->child_mode_enabled;
+  applyChildMode();
   _kb.prefs = node_prefs;
   uint32_t aoff = autoOffMillis();
   _auto_off = millis() + (aoff > 0 ? aoff : AUTO_OFF_MILLIS);
@@ -1459,6 +1510,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   home = new HomeScreen(this, &rtc_clock, sensors, node_prefs);
   settings = new SettingsScreen(this, &_kb);
   messages_screen = new MessagesScreen(this, &_kb);
+  child_unlock = new ChildUnlockScreen(this);
   tools_screen  = new ToolsScreen(this);
   ringtone_edit = new RingtoneEditorScreen(this, node_prefs);
   bot_screen    = new BotScreen(this, node_prefs, &_kb);
@@ -1485,6 +1537,17 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 
 // onShow() is invoked by setCurrScreen(), so most navigators are just that.
 void UITask::gotoSettingsScreen()  { setCurrScreen(settings); }
+void UITask::gotoChildUnlockScreen() { setCurrScreen(child_unlock); }
+void UITask::setChildAdminUnlocked(bool unlocked) {
+  _child_admin_unlocked = unlocked;
+  applyChildMode();
+}
+void UITask::applyChildMode() {
+  if (!_serial) return;
+  if (isChildModeLocked()) _serial->disable();
+  else _serial->enable();
+  _next_refresh = 0;
+}
 void UITask::gotoToolsScreen()     { setCurrScreen(tools_screen); }
 void UITask::gotoBotScreen()       { setCurrScreen(bot_screen); }
 void UITask::gotoNearbyScreen()    { setCurrScreen(nearby_screen); }
@@ -1810,6 +1873,11 @@ void UITask::showAlert(const char* text, int duration_millis) {
 }
 
 void UITask::notify(UIEventType t) {
+  // Child mode still accepts and processes adverts in the background, but they
+  // do not make sound or vibrate. Do not mutate the parent's saved advert sound
+  // preference; it resumes automatically after unlock.
+  if (isChildModeLocked() &&
+      (t == UIEventType::advertReceivedFlood || t == UIEventType::advertReceivedZeroHop)) return;
 #if defined(PIN_BUZZER)
 {
   SoundNotifier sn(buzzer, _node_prefs, _notif_mel_buf, sizeof(_notif_mel_buf));
@@ -2499,6 +2567,10 @@ void UITask::loop() {
 #ifdef PIN_LED
       digitalWrite(PIN_LED, LOW);  // turn off status LED with display to save power
 #endif
+      // A parent session never survives display sleep. Child mode then closes
+      // both companion transports before the device can be woken by the child.
+      if (_node_prefs && _node_prefs->child_mode_enabled && _child_admin_unlocked)
+        setChildAdminUnlocked(false);
       if (_node_prefs && _node_prefs->auto_lock) {
         _locked = true;
         _lock_wake_until = 0;

@@ -51,3 +51,9 @@ The display turns off again automatically after 5 seconds of inactivity (or 2 se
 ### Auto-lock
 
 Enable **Auto-lock** in **Settings › Display** to lock the device automatically whenever the display turns off due to auto-off timeout. With auto-lock on, the device is always locked after the screen goes dark — no manual lock needed.
+
+---
+
+### Screen Lock and Child Mode
+
+Screen Lock prevents accidental input; it does not hide settings or restrict messaging. [Child Mode](../child_mode/child_mode.md) provides a PIN-protected interface, favourite-only conversation lists, optional home pages, and disabled Bluetooth/USB companion access. Both modes can be enabled together.

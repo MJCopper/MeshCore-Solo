@@ -7,6 +7,8 @@
 #include "RadioParamsEditor.h"
 #include "RadioPresetPicker.h"
 #include "AccordionList.h"
+#include "ChildMode.h"
+#include "DigitEditor.h"
 
 class SettingsScreen : public UIScreen {
   UITask* _task;
@@ -78,6 +80,9 @@ class SettingsScreen : public UIScreen {
 #endif
     // Contacts section
     SECTION_CONTACTS, DM_FILTER, CH_FILTER, ROOM_FILTER,
+    // Child mode section
+    SECTION_CHILD, CHILD_ENABLED, CHILD_PIN, CHILD_RECENT, CHILD_FAVOURITES,
+    CHILD_MAP, CHILD_SENSORS, CHILD_SHUTDOWN,
     // Messages section
     SECTION_MESSAGES,
     DM_RESEND,
@@ -94,7 +99,7 @@ class SettingsScreen : public UIScreen {
   bool _dirty = false;
 
   AccordionList _acc;
-  static const int NUM_SECTIONS = 8;
+  static const int NUM_SECTIONS = 9;
   static const int MAX_PER_SEC  = 16;
   uint8_t _sec_items[NUM_SECTIONS][MAX_PER_SEC]; // SettingItem per (section, row)
   uint8_t _sec_count[NUM_SECTIONS];
@@ -178,7 +183,7 @@ class SettingsScreen : public UIScreen {
            item == SECTION_HOME_PAGES ||
            item == SECTION_RADIO   || item == SECTION_SYSTEM ||
            item == SECTION_KEYBOARD ||
-           item == SECTION_CONTACTS || item == SECTION_MESSAGES;
+           item == SECTION_CONTACTS || item == SECTION_CHILD || item == SECTION_MESSAGES;
   }
 
   const char* sectionName(int item) const {
@@ -189,6 +194,7 @@ class SettingsScreen : public UIScreen {
     if (item == SECTION_SYSTEM)     return "System";
     if (item == SECTION_KEYBOARD)   return "Keyboard";
     if (item == SECTION_CONTACTS)   return "Contacts";
+    if (item == SECTION_CHILD)      return "Child Mode";
     if (item == SECTION_MESSAGES)   return "Messages";
     return "";
   }
@@ -637,6 +643,22 @@ class SettingsScreen : public UIScreen {
       display.print("Rooms");
       display.setCursor(valCol(display), y);
       display.print((p && p->room_fav_only) ? "fav" : "all");
+    } else if (item == CHILD_ENABLED) {
+      display.print("Enabled"); display.setCursor(valCol(display), y);
+      display.print((p && p->child_mode_enabled) ? "ON" : "OFF");
+    } else if (item == CHILD_PIN) {
+      display.print("Set PIN"); display.setCursor(valCol(display), y); display.print("******");
+    } else if (item == CHILD_RECENT || item == CHILD_FAVOURITES || item == CHILD_MAP ||
+               item == CHILD_SENSORS || item == CHILD_SHUTDOWN) {
+      uint16_t bit = item == CHILD_RECENT ? NodePrefs::HP_RECENT :
+                     (item == CHILD_FAVOURITES ? NodePrefs::HP_FAVOURITES :
+                     (item == CHILD_MAP ? NodePrefs::HP_MAP :
+                     (item == CHILD_SENSORS ? NodePrefs::HP_SENSORS : NodePrefs::HP_SHUTDOWN)));
+      display.print(item == CHILD_RECENT ? "Recent" :
+                    (item == CHILD_FAVOURITES ? "Favourites" :
+                    (item == CHILD_MAP ? "Map" : (item == CHILD_SENSORS ? "Sensors" : "Shutdown"))));
+      display.setCursor(valCol(display), y);
+      display.print((p && (p->child_visible_pages & bit)) ? "ON" : "OFF");
     } else if (item == DM_RESEND) {
       display.print("Resend");
       display.setCursor(valCol(display), y);
@@ -668,6 +690,11 @@ class SettingsScreen : public UIScreen {
   // Manual radio-parameter editing (digit-by-digit Freq editor + SF/BW/CR
   // stepping), shared with Tools › Repeater — see RadioParamsEditor.h.
   RadioParamsEditor _editor;
+  DigitEditor _child_pin;
+  uint32_t _child_pin_first_hash = 0;
+  bool _child_pin_confirming = false;
+  bool _child_warning_active = false;
+  bool _child_warning_enable = false;
 
 public:
   SettingsScreen(UITask* task, KeyboardWidget* kb)
@@ -687,6 +714,26 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
 
+    if (_child_warning_active) {
+      display.drawCenteredHeader("CAUTION");
+      int y = display.listStart();
+      display.drawTextCentered(display.width() / 2, y, "If you forget the");
+      display.drawTextCentered(display.width() / 2, y + display.lineStep(), "PIN, the device must");
+      display.drawTextCentered(display.width() / 2, y + display.lineStep() * 2, "be ERASED & REFLASHED");
+      int oy = display.height() - display.lineStep();
+      int half = display.width() / 2;
+      display.drawSelectionRow(0, oy - 1, half - 1, display.getLineHeight() + 1, _child_warning_enable);
+      display.drawTextCentered(half / 2, oy, "Enable");
+      display.drawSelectionRow(half, oy - 1, half - 1, display.getLineHeight() + 1, !_child_warning_enable);
+      display.drawTextCentered(half + half / 2, oy, "Cancel");
+      display.setColor(DisplayDriver::LIGHT);
+      return 0;
+    }
+    if (_child_pin.active) {
+      display.drawCenteredHeader(_child_pin_confirming ? "CONFIRM PIN" : "SET CHILD PIN");
+      childmode::renderPinEditor(display, _child_pin, display.valCol(), display.height() / 2);
+      return 0;
+    }
     if (_edit_slot >= 0 || _edit_name || _picker.saving) {
       return _kb->render(display);
     }
@@ -716,6 +763,45 @@ public:
   }
 
   bool handleInput(char c) override {
+    if (_child_warning_active) {
+      if (keyIsPrev(c) || keyIsNext(c) || c == KEY_UP || c == KEY_DOWN) {
+        _child_warning_enable = !_child_warning_enable;
+      } else if (c == KEY_ENTER) {
+        if (_child_warning_enable) {
+          NodePrefs* p = _task->getNodePrefs();
+          if (p) { p->child_mode_enabled = 1; _dirty = true; }
+        }
+        _child_warning_active = false;
+      } else if (c == KEY_CANCEL) {
+        _child_warning_active = false;
+      }
+      return true;
+    }
+    if (_child_pin.active) {
+      DigitEditor::Result r = _child_pin.handleInput(c);
+      if (r == DigitEditor::DONE) {
+        uint32_t hash = childmode::pinHash((uint32_t)_child_pin.value);
+        if (!_child_pin_confirming) {
+          _child_pin_first_hash = hash;
+          _child_pin_confirming = true;
+          _child_pin.begin(0, 0, 999999, 6, 0);
+        } else if (hash == _child_pin_first_hash) {
+          NodePrefs* p = _task->getNodePrefs();
+          if (p) { p->child_mode_pin_hash = hash; _dirty = true; }
+          _child_pin_confirming = false;
+          _child_pin_first_hash = 0;
+          _task->showAlert("PIN saved", 800);
+        } else {
+          _child_pin_confirming = false;
+          _child_pin_first_hash = 0;
+          _task->showAlert("PINs did not match", 1200);
+        }
+      } else if (r == DigitEditor::CANCELLED) {
+        _child_pin_confirming = false;
+        _child_pin_first_hash = 0;
+      }
+      return true;
+    }
     NodePrefs* p = _task->getNodePrefs();
 
     // Keyboard editing mode for message slots
@@ -799,6 +885,7 @@ public:
 
     if (c == KEY_CANCEL) {
       _task->savePrefsIfDirty(_dirty);
+      if (p && p->child_mode_enabled) _task->setChildAdminUnlocked(false);
       _task->gotoHomeScreen();
       return true;
     }
@@ -1030,6 +1117,38 @@ public:
     }
     if (_selected == ROOM_FILTER && p && (left || right || enter)) {
       p->room_fav_only = p->room_fav_only ? 0 : 1;
+      _dirty = true;
+      return true;
+    }
+    if (_selected == CHILD_PIN && p && enter) {
+      _child_pin_confirming = false;
+      _child_pin_first_hash = 0;
+      _child_pin.begin(0, 0, 999999, 6, 0);
+      return true;
+    }
+    if (_selected == CHILD_ENABLED && p && (left || right || enter)) {
+      if (!p->child_mode_enabled && p->child_mode_pin_hash == 0) {
+        _task->showAlert("Set PIN first", 1000);
+        return true;
+      }
+      if (p->child_mode_enabled) {
+        p->child_mode_enabled = 0;
+        _dirty = true;
+      } else {
+        _child_warning_active = true;
+        _child_warning_enable = false;  // confirmation defaults to Cancel
+      }
+      // The parent remains in this settings session. Leaving Settings locks it.
+      return true;
+    }
+    if ((_selected == CHILD_RECENT || _selected == CHILD_FAVOURITES || _selected == CHILD_MAP ||
+         _selected == CHILD_SENSORS || _selected == CHILD_SHUTDOWN) &&
+        p && (left || right || enter)) {
+      uint16_t bit = _selected == CHILD_RECENT ? NodePrefs::HP_RECENT :
+                     (_selected == CHILD_FAVOURITES ? NodePrefs::HP_FAVOURITES :
+                     (_selected == CHILD_MAP ? NodePrefs::HP_MAP :
+                     (_selected == CHILD_SENSORS ? NodePrefs::HP_SENSORS : NodePrefs::HP_SHUTDOWN)));
+      p->child_visible_pages ^= bit;
       _dirty = true;
       return true;
     }

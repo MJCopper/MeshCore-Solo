@@ -336,6 +336,31 @@ or `clearTarget()` — one definition used by the Locator screen, the map, and t
 Nearby/Waypoints "Set as target" actions. Resolve a person's current position
 with `resolvePersonPos()` (live `[LOC]` share, else last-advertised fix).
 
+### Child Mode policy
+
+Child Mode is deliberately kept as a thin policy layer so upstream screen
+changes remain easy to merge. Shared PIN rendering and allow-list predicates
+live in `ui-new/ChildMode.h`; session state and transport enforcement live in
+`UITask`. Screens should query `UITask::isChildModeLocked()` rather than reading
+the preference directly, because a verified parent session temporarily lifts
+the restrictions while leaving the persisted mode enabled.
+
+The persisted configuration appends `child_mode_enabled`,
+`child_mode_pin_hash`, and `child_visible_pages` to `NodePrefs`. Optional pages
+use the existing `HomePageBit` positions, avoiding a second navigation model.
+Keep the policy at existing boundaries when extending it:
+
+- filter home pages in the central page-visibility predicate;
+- filter message destinations where conversation lists are built;
+- suppress mutation at the context-menu input boundary;
+- use `UITask::applyChildMode()` for companion transport state; and
+- suppress advert notification effects without dropping background advert
+  processing.
+
+The stored PIN hash is only an on-device UI check and is intentionally not a
+cryptographic security boundary. Physical erase/reflash access remains a
+recovery and bypass path.
+
 ---
 
 ## 9. Conventions & gotchas

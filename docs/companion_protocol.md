@@ -42,6 +42,8 @@ All secrets, hashes, and cryptographic values shown in this guide are example va
 
 ## BLE Connection
 
+> **Solo Child Mode:** BLE and USB companion protocol access is disabled while Child Mode is locked. A parent must unlock Settings with the device PIN, or disable Child Mode, before a companion client can connect. USB charging is unaffected.
+
 ### Service and Characteristics
 
 MeshCore Companion devices expose a BLE service with the following UUIDs:

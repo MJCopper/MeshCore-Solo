@@ -64,3 +64,9 @@ Open the contact's DM, **Hold Enter** › context menu › **Unpin (slot N)**.
 ### Reordering the Favourites page
 
 The position of the Favourites Dial in the home page navigation sequence can be changed in **Settings › Home Pages** — press **LEFT / RIGHT** on the Favourites entry to move it earlier or later.
+
+---
+
+### Child Mode
+
+The Favourites page is enabled by default in [Child Mode](../child_mode/child_mode.md), but a parent can hide it under **Settings › Child Mode**. While locked, the child can open and message contacts already pinned to the dial, but cannot add, move, or remove pins. Prepare the six slots before enabling Child Mode.

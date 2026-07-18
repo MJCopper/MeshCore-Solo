@@ -119,6 +119,24 @@ European Latin-diacritic letters (Polish, Czech, Slovak, German, French, Spanish
 
 ---
 
+### Child Mode
+
+| Setting    | Options  | Notes                                                                    |
+| ---------- | -------- | ------------------------------------------------------------------------ |
+| Enabled    | ON / OFF | Enables the restricted interface; requires a saved PIN and confirmation  |
+| Set PIN    | 000000–999999 | Enter the six-digit parent PIN twice; the saved value is not displayed |
+| Recent     | ON / OFF | Allows the Recent page; default OFF                                      |
+| Favourites | ON / OFF | Allows the Favourites Dial; default ON                                   |
+| Map        | ON / OFF | Allows a read-only Map page; default OFF                                 |
+| Sensors    | ON / OFF | Allows the Sensors page; default OFF                                     |
+| Shutdown   | ON / OFF | Allows the Shutdown page; default OFF                                    |
+
+While Child Mode is locked, selecting Settings opens the parent PIN prompt. A successful PIN entry temporarily restores the full Settings screen and companion access. Leaving Settings or allowing the display to sleep ends the parent session.
+
+See [Child Mode](../child_mode/child_mode.md) for preparation, restrictions, GPS/advert behaviour, and PIN recovery details.
+
+---
+
 ### Messages
 
 | Setting | Options        | Notes                                                                                          |

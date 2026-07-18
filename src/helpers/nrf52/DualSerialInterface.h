@@ -5,8 +5,9 @@
 #include "SerialBLEInterface.h"
 
 // Wraps BLE + USB serial interfaces: BLE takes priority when connected,
-// USB is always ready as a fallback.
-// enable()/disable() control BLE only — USB is always on.
+// USB is the fallback while companion access is enabled.
+// enable()/disable() control both companion transports. USB power/charging is
+// unaffected; disabling only stops the framed companion protocol.
 // BLE state machine is only pumped when BLE is enabled; USB is not read while BLE is connected.
 class DualSerialInterface : public BaseSerialInterface {
   SerialBLEInterface _ble;
@@ -22,14 +23,15 @@ public:
   void begin(const char* ble_prefix, char* node_name, uint32_t pin_code, Stream& usb_stream) {
     _ble.begin(ble_prefix, node_name, pin_code);
     _usb.begin(usb_stream);
-    _usb.enable();  // USB is always on
+    _usb.enable();
   }
 
-  void enable() override  { _ble.enable(); _ble_enabled = true; }
-  void disable() override { _ble.disable(); _ble_enabled = false; }
+  void enable() override  { _usb.enable(); _ble.enable(); _ble_enabled = true; }
+  void disable() override { _ble.disable(); _usb.disable(); _ble_enabled = false; }
   bool isEnabled() const override { return _ble_enabled; }
 
-  // Always true — USB is always available as fallback, so the mesh can send.
+  // Keep the historical send-fallback contract. disable() prevents framed USB
+  // input; writes made while locked are harmless because no client can request them.
   bool isConnected() const override { return true; }
   // True only when a BLE companion app is paired and connected.
   bool isBLEConnected() const override { return _ble_enabled && _ble.isConnected(); }

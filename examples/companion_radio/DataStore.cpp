@@ -557,6 +557,14 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.keyboard_cardkb_compact, sizeof(_prefs.keyboard_cardkb_compact));
   if (_prefs.keyboard_cardkb_compact > 1) _prefs.keyboard_cardkb_compact = 0;
 
+  // → 0xC0DE0024: child-mode UI lock. All optional pages default hidden.
+  rd(&_prefs.child_mode_enabled, sizeof(_prefs.child_mode_enabled));
+  rd(&_prefs.child_mode_pin_hash, sizeof(_prefs.child_mode_pin_hash));
+  rd(&_prefs.child_visible_pages, sizeof(_prefs.child_visible_pages));
+  if (_prefs.child_mode_enabled > 1) _prefs.child_mode_enabled = 0;
+  _prefs.child_visible_pages &= NodePrefs::HP_RECENT | NodePrefs::HP_FAVOURITES |
+                                NodePrefs::HP_MAP | NodePrefs::HP_SENSORS | NodePrefs::HP_SHUTDOWN;
+
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
   // so we just log it — next savePrefs writes the current sentinel.
@@ -769,6 +777,9 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.gpio3_mode, sizeof(_prefs.gpio3_mode));
     file.write((uint8_t *)&_prefs.gpio4_mode, sizeof(_prefs.gpio4_mode));
     file.write((uint8_t *)&_prefs.keyboard_cardkb_compact, sizeof(_prefs.keyboard_cardkb_compact));
+    file.write((uint8_t *)&_prefs.child_mode_enabled, sizeof(_prefs.child_mode_enabled));
+    file.write((uint8_t *)&_prefs.child_mode_pin_hash, sizeof(_prefs.child_mode_pin_hash));
+    file.write((uint8_t *)&_prefs.child_visible_pages, sizeof(_prefs.child_visible_pages));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good

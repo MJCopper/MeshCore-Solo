@@ -474,14 +474,14 @@ class MessagesScreen : public UIScreen {
     int total = the_mesh.getNumContacts();
     _num_contacts = 0;
     if (_room_mode) {
-      bool fav_only = (p && p->room_fav_only);
+      bool fav_only = (p && (p->room_fav_only || _task->isChildModeLocked()));
       for (int i = 0; i < total; i++) {
         if (!the_mesh.getContactByIdx(i, c) || c.type != ADV_TYPE_ROOM) continue;
         if (fav_only && !(c.flags & 0x01)) continue;
         _sorted[_num_contacts++] = i;
       }
     } else {
-      bool show_all = (p && p->dm_show_all);
+      bool show_all = (p && p->dm_show_all && !_task->isChildModeLocked());
       // Build _sorted and counts[] in one pass — avoids a second getContactByIdx loop.
       // uint8_t, not int: values are bounded by MessageHistory::DM_HIST_MAX (32), and
       // this array is 1400 B at this build's MAX_CONTACTS=350 as an int[] -- a sizeable
@@ -508,7 +508,7 @@ class MessagesScreen : public UIScreen {
 
   void buildChannelList() {
     NodePrefs* p = _task->getNodePrefs();
-    bool fav_only = (p && p->ch_fav_only);
+    bool fav_only = (p && (p->ch_fav_only || _task->isChildModeLocked()));
     _num_channels = 0;
     for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
       ChannelDetails ch;
@@ -1456,7 +1456,7 @@ public:
       if (c == KEY_CANCEL) { _task->gotoHomeScreen(); return true; }
       if (c == KEY_UP)   { _mode_sel = (_mode_sel > 0) ? _mode_sel - 1 : 2; return true; }
       if (c == KEY_DOWN) { _mode_sel = (_mode_sel < 2) ? _mode_sel + 1 : 0; return true; }
-      if (c == KEY_CONTEXT_MENU) {
+      if (c == KEY_CONTEXT_MENU && !_task->isChildModeLocked()) {
         // PopupMenu stores the title pointer verbatim — use static strings.
         static const char* MODE_TITLES[] = { "DM options", "Channel options", "Room options" };
         _ctx_menu.begin(MODE_TITLES[_mode_sel < 3 ? _mode_sel : 0], 1);
@@ -1650,7 +1650,7 @@ public:
         }
         return true;
       }
-      if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && _room_mode) {
+      if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && _room_mode && !_task->isChildModeLocked()) {
         ContactInfo ci;
         bool logged_in = the_mesh.getContactByIdx(_sorted[_contact_sel], ci) && isRoomLoggedIn(ci.id.pub_key);
         _ctx_menu.begin("Room options", logged_in ? 2 : 1);
@@ -1658,7 +1658,7 @@ public:
         if (logged_in) _ctx_menu.addItem("Logout");
         return true;
       }
-      if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && !_room_mode) {
+      if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && !_room_mode && !_task->isChildModeLocked()) {
         static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };
         ContactInfo ci;
         the_mesh.getContactByIdx(_sorted[_contact_sel], ci);
@@ -1779,7 +1779,8 @@ public:
         if (_share_mode) beginShareCompose(true);
         return true;
       }
-      if (c == KEY_CONTEXT_MENU && _num_channels > 0 && _channel_sel < _num_channels) {
+      if (c == KEY_CONTEXT_MENU && _num_channels > 0 && _channel_sel < _num_channels &&
+          !_task->isChildModeLocked()) {
         uint8_t ch_idx = _channel_indices[_channel_sel];
         _ctx_ch_idx = ch_idx;   // freeze the menu's target channel
         static const char* NOTIF_LABELS[] = { "default", "OFF", "ON" };

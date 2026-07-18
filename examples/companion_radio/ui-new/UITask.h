@@ -39,6 +39,7 @@ class UITask : public AbstractUITask {
   unsigned long _next_refresh, _auto_off;
   NodePrefs* _node_prefs;
   bool _locked;
+  bool _child_admin_unlocked;
   unsigned long _lock_wake_until;  // when to blank screen again after locked wake (5s)
   int  _lock_seq_count;            // Enter presses while Back held (lock/unlock sequence)
   unsigned long _lock_seq_ms;      // millis() of last lock-sequence press (for timeout)
@@ -81,6 +82,7 @@ class UITask : public AbstractUITask {
   UIScreen* home = nullptr;
   UIScreen* settings = nullptr;
   UIScreen* messages_screen = nullptr;
+  UIScreen* child_unlock = nullptr;
   UIScreen* tools_screen = nullptr;
   UIScreen* ringtone_edit = nullptr;
   UIScreen* bot_screen = nullptr;
@@ -224,6 +226,7 @@ public:
     _batt_mv = 0;
     _msgcount = _room_unread = 0;
     _locked = false;
+    _child_admin_unlocked = true;
     _lock_wake_until = 0;
     _lock_seq_count = 0; _lock_seq_ms = 0; _lock_seq_used = false;
     _last_notif_ch_idx = -1;
@@ -236,12 +239,18 @@ public:
   void onBLEDisconnected() override { _next_refresh = 0; }
 
   NodePrefs* getNodePrefs() const { return _node_prefs; }
+  bool isChildModeLocked() const {
+    return _node_prefs && _node_prefs->child_mode_enabled && !_child_admin_unlocked;
+  }
+  void setChildAdminUnlocked(bool unlocked);
+  void applyChildMode();
   // Global metric/imperial preference for distance/speed display.
   bool useImperial() const { return _node_prefs && _node_prefs->units_imperial; }
   uint16_t getBattMilliVolts() const { return _batt_mv > 0 ? _batt_mv : AbstractUITask::getBattMilliVolts(); }
   void gotoHomeScreen() { setCurrScreen(home); }
   void gotoSettingsScreen();
   void gotoMessagesScreen();
+  void gotoChildUnlockScreen();
   void openContactDM(const ContactInfo& ci);
   void shareToMessage(const char* text);   // open Messages pre-loaded to share `text`
   void quickShareMyLocation();             // Home Map Hold-Enter: one-shot position share
