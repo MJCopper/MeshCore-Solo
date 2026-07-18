@@ -27,8 +27,20 @@ runs:
     - name: Extract Version from Git Tag
       shell: bash
       run: |
-        GIT_TAG_NAME="${GITHUB_REF#refs/tags/}"
-        case "$GIT_TAG_NAME" in
-          v*) echo "GIT_TAG_VERSION=${GIT_TAG_NAME}" >> $GITHUB_ENV ;;
-          *)  echo "GIT_TAG_VERSION=v${GIT_TAG_NAME#*-v}" >> $GITHUB_ENV ;;
-        esac
+        if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+          # triggered by a tag push -- keep this fork's own tag conventions:
+          #   "room-server-v1.2.3"        -> "v1.2.3"
+          #   "wio-tracker-v1.15-plus.1.3" -> "v1.15-plus.1.3"
+          #   "v1.11"                      -> "v1.11"
+          GIT_TAG_NAME="${GITHUB_REF#refs/tags/}"
+          case "$GIT_TAG_NAME" in
+            v*) VERSION_STRING="${GIT_TAG_NAME}" ;;
+            *)  VERSION_STRING="v${GIT_TAG_NAME#*-v}" ;;
+          esac
+        else
+          # triggered by a workflow dispatch (e.g: refs/heads/main)
+          # strip "refs/heads/" prefix and replace any remaining "/" with "-" to protect file paths
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          VERSION_STRING=$(echo "$BRANCH_NAME" | tr '/' '-')
+        fi
+        echo "GIT_TAG_VERSION=${VERSION_STRING}" >> $GITHUB_ENV
