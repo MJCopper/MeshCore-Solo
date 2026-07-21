@@ -125,7 +125,7 @@ const ToolsScreen::Tool ToolsScreen::LOCATION_TOOLS[] = {
   { "Compass",      &ICON_MAP_NORTH,    ACT_COMPASS },
 };
 const ToolsScreen::Tool ToolsScreen::COMMS_TOOLS[] = {
-  { "Auto-Reply Bot", &ICON_BOT,      ACT_BOT },
+  { "Remote Bot",     &ICON_BOT,      ACT_BOT },
   { "Auto-Advert",    &ICON_ADVERT,   ACT_AUTOADVERT },
   { "Repeater",       &ICON_REPEATER, ACT_REPEATER },
   { "Admin",          &ICON_GEAR,     ACT_ADMIN },

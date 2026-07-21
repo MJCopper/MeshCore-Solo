@@ -8,7 +8,7 @@
 | :-----------------------: | :-----------------------: |
 | ![](./overview_oled.png) | ![](./overview_eink.png) |
 
-The Tools screen is a hub for GPS trail recording, nearby node browsing, ringtone editing, auto-reply bot, auto-advert, live location sharing, locator, compass, clock tools (alarm / timer / stopwatch), device diagnostics, repeater mode, and remote admin. Tools are grouped into collapsible **Location** / **Comms** / **System** sections — the same fold-in-place model as Settings; Tools always opens folded back to the section list. Navigate with **UP/DOWN**, press **Enter** on a section header to expand or collapse it, or on a tool to open it.
+The Tools screen is a hub for GPS trail recording, nearby node browsing, ringtone editing, the remote bot, auto-advert, live location sharing, locator, compass, clock tools (alarm / timer / stopwatch), device diagnostics, repeater mode, and remote admin. Tools are grouped into collapsible **Location** / **Comms** / **System** sections — the same fold-in-place model as Settings; Tools always opens folded back to the section list. Navigate with **UP/DOWN**, press **Enter** on a section header to expand or collapse it, or on a tool to open it.
 
 ---
 
@@ -359,7 +359,7 @@ Melodies can be assigned in **Settings › Sound** (global default) or overridde
 
 ---
 
-## Auto-Reply Bot
+## Remote Bot
 
 |           OLED            |           E-Ink           |
 | :-----------------------: | :-----------------------: |
@@ -467,7 +467,7 @@ On boards with user GPIO (see **GPIO** under System tools below), the same Actio
 
 <!-- screenshot pending: Diagnostics — live device/mesh stats rows (uptime, rx/tx counters, heap, RSSI/SNR, queue, errors) -->
 
-A circular tab carousel of live device and mesh stats, refreshed once a second (same tab idiom as Auto-Reply Bot / Nodes). **LEFT/RIGHT** switches tab; **UP/DOWN** scrolls within it on a small OLED — on a larger e-ink display a tab's rows all fit at once.
+A circular tab carousel of live device and mesh stats, refreshed once a second (same tab idiom as Remote Bot / Nodes). **LEFT/RIGHT** switches tab; **UP/DOWN** scrolls within it on a small OLED — on a larger e-ink display a tab's rows all fit at once.
 
 | Tab | Shows |
 | --- | ----- |
@@ -510,7 +510,7 @@ Once a pin is set to **Output**, a second **State** row appears right underneath
 - **Analog** (GPIO1/GPIO2 only) shows a live millivolt reading inline instead: e.g. `1650mV`. Has no State row — it's read-only.
 - **Output** shows just `Output` on the Mode row; the actual ON/OFF value lives on the State row below it.
 
-The same 4 pins are reachable remotely via the Auto-Reply Bot's `!gpio1`..`!gpio4` commands (see **Actions** under Auto-Reply Bot below) — both paths read/write the same underlying state, so the Tools screen and the bot never disagree. A bare `!gpio1` reports the pin's current mode and reading (`gpio1: out on`, `gpio1: in on`, or `gpio1: 1650mV` in Analog mode); `!gpio1 on`/`!gpio1 off` only takes effect if that pin is currently set to Output here (otherwise the bot replies "not output", including when the pin is in Analog mode).
+The same 4 pins are reachable remotely via the Remote Bot's `!gpio1`..`!gpio4` commands (see **Actions** under Remote Bot below) — both paths read/write the same underlying state, so the Tools screen and the bot never disagree. A bare `!gpio1` reports the pin's current mode and reading (`gpio1: out on`, `gpio1: in on`, or `gpio1: 1650mV` in Analog mode); `!gpio1 on`/`!gpio1 off` only takes effect if that pin is currently set to Output here (otherwise the bot replies "not output", including when the pin is in Analog mode).
 
 ---
 
@@ -557,7 +557,7 @@ Send commands to a **repeater/room server you have admin permission on** — the
 
 1. **Select a node** — opening **Tools › Admin** goes straight to **Tools › Nodes** (the same screen, filters, sort and live scan as browsing it normally) so picking a node for Admin looks exactly like using Nodes for anything else; **Enter** on a repeater/room row hands it to Admin, **Cancel** returns to Tools. Admin is also reachable directly from a node's own **Hold Enter** menu in Nodes.
 2. **Log in** — type the node's **admin password** (the same login handshake Messages uses for room servers; a repeater's admin password is set with the `password` CLI command). If a password was already saved for this node from an earlier successful login, it retries silently instead of prompting. Only a login that comes back with **admin**-level permission unlocks the next step — anything less shows "Not admin on this node".
-3. **Pick a category and a field** — a tab carousel (**LEFT/RIGHT** to switch category, **UP/DOWN** to move within it, same as Auto-Reply Bot's tabs), so common settings don't need the CLI grammar memorised:
+3. **Pick a category and a field** — a tab carousel (**LEFT/RIGHT** to switch category, **UP/DOWN** to move within it, same as Remote Bot's tabs), so common settings don't need the CLI grammar memorised:
 
    | Tab | Rows |
    | --- | ---- |
