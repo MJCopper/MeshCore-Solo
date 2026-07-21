@@ -193,6 +193,17 @@ class UITask : public AbstractUITask {
   void enqueueKey(char c);
   bool dequeueKey(char& c);
 
+  // Optional M5Stack CardKB (I2C keyboard, addr 0x5F) on the Grove/Wire1 bus
+  // -- reuses ENV_PIN_SDA/ENV_PIN_SCL (already brought up for
+  // EnvironmentSensorManager) as the "this board has a second I2C bus" gate,
+  // rather than a new board-specific pin define. No-op entirely on boards
+  // without that bus, or when nothing ACKs 0x5F at boot.
+#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+  bool     _has_cardkb = false;
+  uint32_t _cardkb_poll_ms = 0;
+#endif
+  void pollCardKB();
+
   void setCurrScreen(UIScreen* c);
 
   // Centred alert overlay (the showAlert() box). Wraps long text to up to

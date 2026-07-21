@@ -1386,6 +1386,13 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   uint32_t aoff = autoOffMillis();
   _auto_off = millis() + (aoff > 0 ? aoff : AUTO_OFF_MILLIS);
 
+#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+  // Wire1 is already brought up by sensors.begin() (EnvironmentSensorManager),
+  // which runs before this -- just probe for a CardKB sitting on it.
+  Wire1.beginTransmission(0x5F);
+  _has_cardkb = (Wire1.endTransmission() == 0);
+#endif
+
 #if defined(PIN_USER_BTN)
   user_btn.begin();
 #endif
@@ -2063,6 +2070,47 @@ bool UITask::dequeueKey(char& c) {
   return true;
 }
 
+// Poll an optional CardKB (I2C keyboard, addr 0x5F) on Wire1/Grove, feeding
+// the same key queue as every physical button. Most of its output needs no
+// translation at all: CardKB's own arrow/Enter/Esc byte codes are already
+// identical to this UI's KEY_LEFT/UP/DOWN/RIGHT/ENTER/CANCEL (0xB4-0xB7, 13,
+// 27), and Backspace (0x08) / printable ASCII (0x20-0x7E) collide with
+// nothing that existed before. Two bytes get remapped:
+//  - Enter, while the on-screen keyboard's plain grid state is active (no
+//    placeholder/accent popup, not in cursor-mode) -- there it means "submit
+//    the field", not KEY_ENTER's usual "commit grid cell (row,col)", which
+//    would otherwise insert a stray character since direct typing never
+//    touches the grid. See KeyboardWidget::handleInput()'s KEY_KB_ENTER
+//    branch.
+//  - Tab (0x09, otherwise unused by any screen) -> KEY_CONTEXT_MENU, the
+//    "Hold-Enter" context-menu gesture used in ~30 places across the UI
+//    (message reply/navigate, Bot/Admin/Repeater menus, ...). CardKB has no
+//    press-duration concept to detect a long-press with, so Tab is the
+//    closest free key standing in for it -- full keyboard-only navigation
+//    would otherwise be unable to reach any of those menus at all.
+void UITask::pollCardKB() {
+#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+  if (!_has_cardkb) return;
+  if (millis() - _cardkb_poll_ms < 30) return;   // ~33 Hz poll, plenty for typing
+  _cardkb_poll_ms = millis();
+  Wire1.requestFrom(0x5F, 1);
+  if (!Wire1.available()) return;
+  uint8_t raw = Wire1.read();
+  if (raw == 0) return;   // no key down
+
+  char key;
+  if (raw == 0x0D &&
+      _kb.isVisible() && !_kb._ph_menu.active && !_kb.cursor_mode && !_kb.accent_active) {
+    key = KEY_KB_ENTER;
+  } else if (raw == 0x09) {
+    key = KEY_CONTEXT_MENU;
+  } else {
+    key = (char)raw;
+  }
+  enqueueKey(checkDisplayOn(key));
+#endif
+}
+
 void UITask::loop() {
   // Background delivery: resend pending on-device DMs whose ACK timed out, and
   // finalise the ✗ marker — runs regardless of which screen is active.
@@ -2159,6 +2207,7 @@ void UITask::loop() {
     _analogue_pin_read_millis = millis();
   }
 #endif
+  pollCardKB();
 #if defined(BACKLIGHT_BTN)
   if (millis() > next_backlight_btn_check) {
     bool touch_state = digitalRead(PIN_BUTTON2);

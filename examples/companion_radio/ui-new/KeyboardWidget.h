@@ -721,6 +721,30 @@ struct KeyboardWidget {
 
     if (c == KEY_CANCEL) return CANCELLED;
 
+    // Direct-typing passthrough (CardKB or similar literal-ASCII input
+    // source, see UITask::pollCardKB()). Printable characters insert
+    // straight at the cursor, bypassing the on-screen grid entirely -- no
+    // caps re-application, the source already sends the correct case.
+    // Backspace deletes the previous character. KEY_KB_ENTER (only ever
+    // emitted when the grid is in this exact plain state -- no popup, no
+    // cursor-mode, see pollCardKB()) submits the field, instead of
+    // KEY_ENTER's usual "commit grid cell (row,col)".
+    if (c == KEY_KB_ENTER) return DONE;
+    if (c == 0x08) {
+      if (cursor_pos > 0) {
+        int n = kbUtf8LastCharBytes(buf, cursor_pos);
+        memmove(buf + cursor_pos - n, buf + cursor_pos, len - cursor_pos);
+        len -= n; cursor_pos -= n;
+        buf[len] = '\0';
+      }
+      return NONE;
+    }
+    if (c >= 0x20 && c <= 0x7E) {
+      char one[2] = { c, '\0' };
+      insertGlyph(one, false);
+      return NONE;
+    }
+
     const int rows = gridRows();
     const int cols = gridCols();
 
