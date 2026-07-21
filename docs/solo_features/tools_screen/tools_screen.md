@@ -367,7 +367,7 @@ Melodies can be assigned in **Settings › Sound** (global default) or overridde
 
 <!-- screenshots pending: these predate the tab-carousel layout below (still show the old flat grouped list) -->
 
-Automatically replies to incoming messages that contain a configured trigger word (case-insensitive, contains match). The bot has three independent targets — **DM**, a monitored **Channel**, and a monitored **Room** — each with its own trigger/reply pair.
+Automatically replies to incoming messages that contain a configured trigger word (case-insensitive, contains match). Multiple trigger phrases can be packed into one Trigger field, comma-separated (e.g. `hi,hello there,yo`) — matching any one of them is enough; spaces around each phrase are trimmed, so `hi, hello there` and `hi,hello there` behave the same. The bot has three independent targets — **DM**, a monitored **Channel**, and a monitored **Room** — each with its own trigger/reply pair.
 
 The screen is a **circular tab carousel**, the same style as Tools › Nearby Nodes' filter tabs: **LEFT/RIGHT** switches between the **Channel** / **Room** / **Direct** / **Other** tabs (opens on Channel), **UP/DOWN** moves between the rows within the active tab, and **Enter** acts on the selected row (LEFT/RIGHT is reserved entirely for tab-switching, so every row's value is changed via Enter, not by cycling it in place).
 
@@ -443,6 +443,20 @@ Several commands can be combined in one message — `!batt !time !hops` is answe
 
 Each target's Commands toggle is independent — e.g. answer `!ping` in DMs but stay quiet on a busy public channel. Channel and room replies are broadcast/posted to everyone there, so unlike DM commands they respect quiet hours and use their own shared cooldown. DM commands use the per-contact throttle and the **DM allow** scope above.
 
+### Actions
+
+A separate **Actions** toggle, nested under Commands (Commands must be ON for Actions to do anything) — these commands change the device's own behaviour, not just report on it, so they default OFF and are kept independent of the read-only Commands toggle:
+
+| Command          | Effect                                                              |
+| ----------------- | -------------------------------------------------------------------- |
+| `!buzz [seconds]` | Sounds the buzzer as a find-me signal — default 5s, capped at 30s. Sounds even if the buzzer is muted in Settings (that's the point of a find-me signal). |
+| `!gps on` / `!gps off` | Enables/disables GPS, same effect as the Home page's GPS toggle.  |
+| `!advert`         | Sends an advert immediately, same as the Home page's manual advert action. |
+
+Actions combine with Commands and each other in one message the same way — `!batt !gps on` answers with `4.10V | GPS: on` in a single reply. With Actions OFF for a target, `!buzz`/`!gps`/`!advert` are silently ignored (no reply, no effect) exactly like any other unrecognised command, and `!help`'s reply doesn't mention them.
+
+On boards with user GPIO (see **GPIO** under System tools below), the same Actions gate also covers `!gpio1`..`!gpio4`.
+
 ---
 
 ## Diagnostics
@@ -483,6 +497,20 @@ A circular tab carousel of live device and mesh stats, refreshed once a second (
 The packet counters, **Forwarded** and **Errors** are cumulative since boot. On the **Live** tab, **Hold Enter** opens a one-item *Reset counters* menu (Back dismisses it); the live readings (noise, RSSI/SNR, pool, queue, uptime) are not affected. **Cancel/Back** returns to the Tools list.
 
 The counters make the repeater behaviour observable: **Forwarded** confirms the node is actually relaying (not just configured to), and **Pool free** / **Queue** show whether forwarding is exhausting the packet pool. See **Tools › Repeater** for the relaying options.
+
+---
+
+## GPIO
+
+*Board-specific — currently Wio Tracker L1 only.* Four otherwise-unused pins (GPIO1-GPIO4) are exposed for general-purpose use. Each pin gets its own row showing its current mode; **Enter** (or LEFT/RIGHT) cycles it through **Off → Input → Output** and back to Off — GPIO1 and GPIO2 additionally step through **Analog** between Output and Off (GPIO3/GPIO4 have no ADC channel, so their cycle skips it). Switching a pin's mode shows a brief confirmation (`GPIO1: Input`, `GPIO1: Output`, …).
+
+Once a pin is set to **Output**, a second **State** row appears right underneath it — **Enter** toggles it **ON**/**OFF**, with its own confirmation. The direction (Mode row) and the on/off state (State row) are deliberately separate: changing one never surprises you by also changing the other.
+
+- **Input** shows its live level inline on the Mode row: `Input (High)` / `Input (Low)`, refreshed continuously.
+- **Analog** (GPIO1/GPIO2 only) shows a live millivolt reading inline instead: e.g. `1650mV`. Has no State row — it's read-only.
+- **Output** shows just `Output` on the Mode row; the actual ON/OFF value lives on the State row below it.
+
+The same 4 pins are reachable remotely via the Auto-Reply Bot's `!gpio1`..`!gpio4` commands (see **Actions** under Auto-Reply Bot below) — both paths read/write the same underlying state, so the Tools screen and the bot never disagree. A bare `!gpio1` reports the pin's current mode and reading (`gpio1: out on`, `gpio1: in on`, or `gpio1: 1650mV` in Analog mode); `!gpio1 on`/`!gpio1 off` only takes effect if that pin is currently set to Output here (otherwise the bot replies "not output", including when the pin is in Analog mode).
 
 ---
 

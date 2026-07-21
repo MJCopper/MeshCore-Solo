@@ -16,9 +16,9 @@ class BotScreen : public UIScreen {
   enum Tab : uint8_t { TAB_CHANNEL, TAB_ROOM, TAB_DIRECT, TAB_OTHER, TAB_COUNT };
   static const char* TAB_LABELS[TAB_COUNT];
 
-  enum Kind : uint8_t { ENABLE_DM, DM_SCOPE, COMMANDS_DM, TRIGGER_DM, REPLY_DM,
-                        ENABLE_CH, CHANNEL, COMMANDS_CH, TRIGGER_CH, REPLY_CH,
-                        ENABLE_ROOM, ROOM, COMMANDS_ROOM, TRIGGER_ROOM, REPLY_ROOM,
+  enum Kind : uint8_t { ENABLE_DM, DM_SCOPE, COMMANDS_DM, ACTIONS_DM, TRIGGER_DM, REPLY_DM,
+                        ENABLE_CH, CHANNEL, COMMANDS_CH, ACTIONS_CH, TRIGGER_CH, REPLY_CH,
+                        ENABLE_ROOM, ROOM, COMMANDS_ROOM, ACTIONS_ROOM, TRIGGER_ROOM, REPLY_ROOM,
                         QUIET_FROM, QUIET_TO };
   struct Row { Kind kind; const char* label; };
 
@@ -33,6 +33,7 @@ class BotScreen : public UIScreen {
       { ENABLE_DM,   "Enable" },
       { DM_SCOPE,    "DM allow" },
       { COMMANDS_DM, "Commands" },
+      { ACTIONS_DM,  "Actions" },
       { TRIGGER_DM,  "Trigger" },
       { REPLY_DM,    "Reply" },
     };
@@ -40,6 +41,7 @@ class BotScreen : public UIScreen {
       { ENABLE_CH,   "Enable" },
       { CHANNEL,     "Channel" },
       { COMMANDS_CH, "Commands" },
+      { ACTIONS_CH,  "Actions" },
       { TRIGGER_CH,  "Trigger" },
       { REPLY_CH,    "Reply" },
     };
@@ -47,6 +49,7 @@ class BotScreen : public UIScreen {
       { ENABLE_ROOM,   "Enable" },
       { ROOM,          "Room" },
       { COMMANDS_ROOM, "Commands" },
+      { ACTIONS_ROOM,  "Actions" },
       { TRIGGER_ROOM,  "Trigger" },
       { REPLY_ROOM,    "Reply" },
     };
@@ -218,6 +221,15 @@ public:
         case COMMANDS_ROOM:
           display.print(_prefs->bot_commands_room ? "ON" : "OFF");
           break;
+        case ACTIONS_DM:
+          display.print(_prefs->bot_actions_dm ? "ON" : "OFF");
+          break;
+        case ACTIONS_CH:
+          display.print(_prefs->bot_actions_ch ? "ON" : "OFF");
+          break;
+        case ACTIONS_ROOM:
+          display.print(_prefs->bot_actions_room ? "ON" : "OFF");
+          break;
         case QUIET_FROM:
         case QUIET_TO: {
           bool off = (_prefs->bot_quiet_start == _prefs->bot_quiet_end);
@@ -300,6 +312,9 @@ public:
       case COMMANDS_DM:   _prefs->bot_commands_enabled ^= 1; _dirty = true; return true;
       case COMMANDS_CH:   _prefs->bot_commands_ch ^= 1;      _dirty = true; return true;
       case COMMANDS_ROOM: _prefs->bot_commands_room ^= 1;    _dirty = true; return true;
+      case ACTIONS_DM:    _prefs->bot_actions_dm ^= 1;       _dirty = true; return true;
+      case ACTIONS_CH:    _prefs->bot_actions_ch ^= 1;       _dirty = true; return true;
+      case ACTIONS_ROOM:  _prefs->bot_actions_room ^= 1;     _dirty = true; return true;
       case CHANNEL:
         // Full browsable channel picker (same experience as Live Share's "To"
         // row); which channel is *active* is now the separate Enable row.
@@ -368,4 +383,4 @@ private:
 };
 
 const char* BotScreen::TAB_LABELS[BotScreen::TAB_COUNT] = { "Channel", "Room", "Direct", "Other" };
-const int   BotScreen::ROWS_PER_TAB[BotScreen::TAB_COUNT] = { 5, 5, 5, 2 };
+const int   BotScreen::ROWS_PER_TAB[BotScreen::TAB_COUNT] = { 6, 6, 6, 2 };

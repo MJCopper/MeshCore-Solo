@@ -16,6 +16,9 @@ class ToolsScreen : public UIScreen {
     ACT_NEARBY, ACT_LIVESHARE, ACT_TRAIL, ACT_LOCATOR, ACT_COMPASS,
     ACT_BOT, ACT_AUTOADVERT, ACT_REPEATER, ACT_ADMIN,
     ACT_CLOCK, ACT_RINGTONE, ACT_DIAGNOSTICS
+#if defined(PIN_GPIO1)
+    , ACT_GPIO
+#endif
   };
   struct Tool { const char* label; const MiniIcon* icon; Action action; };
   struct Section { const char* name; const MiniIcon* icon; const Tool* tools; uint8_t count; };
@@ -53,6 +56,9 @@ class ToolsScreen : public UIScreen {
       case ACT_CLOCK:       _task->gotoClockTools();        break;
       case ACT_RINGTONE:    _task->gotoRingtoneEditor();    break;
       case ACT_DIAGNOSTICS: _task->gotoDiagnosticsScreen(); break;
+#if defined(PIN_GPIO1)
+      case ACT_GPIO:        _task->gotoGpioScreen();        break;
+#endif
     }
   }
 
@@ -128,9 +134,12 @@ const ToolsScreen::Tool ToolsScreen::SYSTEM_TOOLS[] = {
   { "Clock Tools",     &ICON_ALARM, ACT_CLOCK },
   { "Ringtone Editor", &ICON_NOTE,  ACT_RINGTONE },
   { "Diagnostics",     &ICON_CHART, ACT_DIAGNOSTICS },
+#if defined(PIN_GPIO1)
+  { "GPIO",            &ICON_GEAR,  ACT_GPIO },
+#endif
 };
 const ToolsScreen::Section ToolsScreen::SECTIONS[] = {
   { "Location", &ICON_MAP_CONTACT, LOCATION_TOOLS, 5 },
   { "Comms",    &ICON_ADVERT,      COMMS_TOOLS,    4 },
-  { "System",   &ICON_GEAR,        SYSTEM_TOOLS,   3 },
+  { "System",   &ICON_GEAR,        SYSTEM_TOOLS,   (uint8_t)(sizeof(SYSTEM_TOOLS)/sizeof(SYSTEM_TOOLS[0])) },
 };

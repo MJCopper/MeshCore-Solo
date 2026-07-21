@@ -1,3 +1,17 @@
+## Unreleased
+
+### What's new
+
+- **Auto-Reply Bot gains Actions: `!buzz`, `!gps`, `!advert`.** A new **Actions** toggle (per target — Direct/Channel/Room, nested under each target's existing **Commands** toggle) enables three commands that change the device's own behaviour instead of just reporting on it: `!buzz [seconds]` sounds the buzzer as a find-me signal (default 5s, capped at 30s, sounds even if the buzzer is muted), `!gps on`/`!gps off` toggles GPS, and `!advert` sends an immediate advert. Off by default; combines with the existing query commands in one message the same way (`!batt !gps on` → `4.10V | GPS: on`).
+- **Bot Trigger fields accept multiple phrases.** Pack several trigger words into one Trigger field, comma-separated (`hi,hello there,yo`) — matching any one of them fires the reply, same as before for a single phrase.
+- **Auto-Reply Bot Actions gain `!gpio1`..`!gpio4`** (Wio Tracker L1 only — 4 otherwise-unused pins). Each pin is independently set to Off/Input/Output (GPIO1/GPIO2 also offer Analog) from a new **Tools › GPIO** screen; `!gpio1 on`/`!gpio1 off` drives an Output pin remotely, a bare `!gpio1` reports the current mode and reading (including a millivolt value in Analog mode). Gated by the same per-target Actions toggle as `!buzz`/`!gps`/`!advert`.
+
+### Fixes
+
+- **DM/room replies sometimes didn't show who they were addressed to, and room messages could wrap incorrectly.** The reply-prefix (`@[nick] `) was being stripped at the wrong point for room posts and DMs feeding the fullscreen message view, so a DM reply's "To:" header could go missing while a room reply showed the raw `@[nick] ` marker as literal message text; a related mismatch meant the history list's scrollbar/box-height sizing pass wrapped room messages with their sender name still attached, disagreeing with the actual rendered text.
+
+---
+
 ## MeshCore Solo Companion Firmware v1.23
 
 ### What's new

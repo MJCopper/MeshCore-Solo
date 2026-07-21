@@ -399,6 +399,29 @@ struct NodePrefs {  // persisted to file
   // main behaviour for upgraders.
   uint8_t  keyboard_main_alphabet;
 
+  // Per-target toggle for bot *action* commands (!buzz/!gps/!advert) --
+  // separate from bot_commands_ch/bot_commands_room above, which only gate
+  // the read-only query commands (!ping/!batt/...). Nested under that
+  // Commands toggle (Commands=off means neither queries nor actions run for
+  // that target); Actions=on additionally lets the state-changing commands
+  // through. Default 0 (off) -- these change device behaviour remotely, so
+  // upgraders don't get them silently enabled.
+  uint8_t  bot_actions_dm;
+  uint8_t  bot_actions_ch;
+  uint8_t  bot_actions_room;
+
+  // User-assignable GPIO pins (board-specific, see PIN_GPIO1..4 in the
+  // variant header -- currently Wio Tracker L1 only). One byte per pin packs
+  // direction + output level (+ analog, gpio1/2 only) into one field:
+  // 0=Off 1=Input 2=Output(low) 3=Output(high) 4=Analog. Mode 4 is only
+  // meaningful for gpio1/gpio2 (the nRF52840's AIN0/AIN5 -- gpio3/gpio4 have
+  // no ADC channel), so those two fields are clamped to 0-3 on load, not 0-4
+  // (see DataStore::loadPrefsInt). Default 0 (off/disconnected) on upgrade.
+  uint8_t  gpio1_mode;
+  uint8_t  gpio2_mode;
+  uint8_t  gpio3_mode;
+  uint8_t  gpio4_mode;
+
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
   static const uint8_t LOC_SHARE_MOVE_COUNT = 4;
@@ -461,7 +484,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0020;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0022;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -558,10 +581,13 @@ struct NodePrefs {  // persisted to file
 //   3. clamp it on load (an upgrader's file lacks it → stray bytes)
 //   4. bump SCHEMA_SENTINEL's low byte
 // (Padding can also shift sizeof; a "false" trip just means re-check + rebump.)
-// keyboard_main_alphabet (added alongside this bump) landed in existing tail
-// padding -- confirmed via a real build's sizeof() -- so the size is
-// unchanged from before that field existed.
-static_assert(sizeof(NodePrefs) == 2712,
+// keyboard_main_alphabet (added in the prior bump) landed in existing tail
+// padding -- confirmed via a real build's sizeof() -- so that bump left the
+// size unchanged. bot_actions_dm/ch/room and gpio1..4_mode (the last two
+// bumps, 7 more uint8_t total) added 8 bytes, not 7 -- one byte of tail
+// padding got consumed along the way. 2720 confirmed via a real
+// WioTrackerL1Eink_companion_solo_dual build.
+static_assert(sizeof(NodePrefs) == 2720,
               "NodePrefs layout changed — sync DataStore save/load + clamp, bump "
               "SCHEMA_SENTINEL, then update this size (see steps above).");
 

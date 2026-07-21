@@ -11,9 +11,11 @@ static const unsigned long BOT_REPLY_COOLDOWN_MS = 10000UL;
 // incoming message (MAX_TEXT_LEN ~160) plus the 140-byte reply templates.
 static const int BOT_SCRATCH = 200;
 
-// Case-insensitive (ASCII) substring test: does `body` contain `trigger`? A lone
-// "*" trigger means "match everything" (away / reply-to-all mode); honoured only
-// where allow_wildcard is set. DM, channel and room each pass their own trigger string.
+// Case-insensitive (ASCII) substring test: does `body` contain any one of
+// `trigger`'s comma-separated phrases? A lone "*" trigger (the whole field,
+// not one comma-separated phrase) means "match everything" (away / reply-to-
+// all mode); honoured only where allow_wildcard is set. DM, channel and room
+// each pass their own trigger string.
 bool MyMesh::botTriggerMatches(const char* trigger, const char* body, bool allow_wildcard) const {
   if (!trigger[0]) return false;             // empty trigger would match everything
   if (trigger[0] == '*' && trigger[1] == '\0')
@@ -25,12 +27,28 @@ bool MyMesh::botTriggerMatches(const char* trigger, const char* body, bool allow
   for (size_t i = 0; i < n; i++) low[i] = (char)tolower((uint8_t)body[i]);
   low[n] = '\0';
 
-  char low_trigger[64];
-  size_t tlen = strnlen(trigger, sizeof(low_trigger) - 1);
-  for (size_t i = 0; i < tlen; i++) low_trigger[i] = (char)tolower((uint8_t)trigger[i]);
-  low_trigger[tlen] = '\0';
+  // Multiple phrases can be packed into one Trigger field, comma-separated
+  // ("hi,hello there,yo") -- any single phrase matching is enough. Each
+  // phrase is trimmed of surrounding spaces so "foo, bar" and "foo,bar"
+  // behave the same; empty phrases (a stray/trailing comma) are skipped.
+  for (const char* p = trigger; *p; ) {
+    while (*p == ' ' || *p == ',') p++;        // skip separators / leading space
+    if (!*p) break;
+    const char* start = p;
+    while (*p && *p != ',') p++;               // phrase runs to the next comma (or end)
+    const char* end = p;
+    while (end > start && end[-1] == ' ') end--;  // trim trailing space
+    size_t plen = (size_t)(end - start);
+    if (plen == 0) continue;
 
-  return strstr(low, low_trigger) != NULL;
+    char low_trigger[64];
+    if (plen >= sizeof(low_trigger)) plen = sizeof(low_trigger) - 1;
+    for (size_t i = 0; i < plen; i++) low_trigger[i] = (char)tolower((uint8_t)start[i]);
+    low_trigger[plen] = '\0';
+
+    if (strstr(low, low_trigger)) return true;
+  }
+  return false;
 }
 
 // DM allow-list gate: when bot_dm_scope is favourites-only, ignore triggers/
@@ -238,13 +256,68 @@ void MyMesh::tryBotReplyRoom(const ContactInfo& from, const uint8_t* sender_pref
 // reply without needing a template); the rest expand a static template via
 // expandMsg's placeholders, including {name}/{hops} if the sender wrote them
 // into a custom reply — not used by any of the built-in templates below today.
-bool MyMesh::botCommandReply(const char* cmd, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name) {
+bool MyMesh::botCommandReply(const char* cmd, const char* arg, bool actions_allowed,
+                              uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name) {
   if (!strcmp(cmd, "hops")) {
     if (hops == 0) strncpy(out, "direct", out_len);     // heard directly (0 repeaters)
     else           snprintf(out, out_len, "%u hops", (unsigned)hops);
     out[out_len - 1] = '\0';
     return true;
   }
+
+  // Action commands change device state, unlike every query below — gated by
+  // this target's own bot_actions_* toggle (nested under Commands being on),
+  // not by the templating/expandMsg mechanism the queries share.
+  if (actions_allowed) {
+    if (!strcmp(cmd, "gps")) {
+      bool on  = !strcmp(arg, "on");   // arg was lowercased while parsing (see botScanCommands)
+      bool off = !strcmp(arg, "off");
+      if (!on && !off) { snprintf(out, out_len, "gps: on|off?"); return true; }
+      if (_ui) _ui->botSetGPS(on);
+      snprintf(out, out_len, "GPS: %s", on ? "on" : "off");
+      return true;
+    }
+    if (!strcmp(cmd, "buzz")) {
+      int secs = arg[0] ? atoi(arg) : 5;   // UITask::botBuzz() clamps to [1,30]
+      if (_ui) _ui->botBuzz(secs);
+      snprintf(out, out_len, "Buzzing");
+      return true;
+    }
+    if (!strcmp(cmd, "advert")) {
+      snprintf(out, out_len, advert() ? "Advert sent" : "Advert failed");
+      return true;
+    }
+    // !gpio1..!gpio4 -- user-assignable pins (see UITask::botSetGPIO/
+    // botGetGPIO/botGetGPIOAnalog; no-op on boards without them). Bare (no
+    // arg) reports current mode+level (millivolts if in Analog mode, GPIO1/
+    // GPIO2 only); on/off only takes effect if that pin's Tools > GPIO mode
+    // is currently Output (Analog/Input/Off all reply "not output").
+    if (!strncmp(cmd, "gpio", 4) && cmd[4] >= '1' && cmd[4] <= '4' && cmd[5] == '\0') {
+      int idx = cmd[4] - '0';
+      if (arg[0]) {
+        bool on  = !strcmp(arg, "on");
+        bool off = !strcmp(arg, "off");
+        if (!on && !off) { snprintf(out, out_len, "gpio%d: on|off?", idx); return true; }
+        if (_ui && _ui->botSetGPIO(idx, on)) {
+          snprintf(out, out_len, "gpio%d: %s", idx, on ? "on" : "off");
+        } else {
+          snprintf(out, out_len, "gpio%d: not output", idx);
+        }
+        return true;
+      }
+      int mv = 0;
+      bool is_out = false, val = false;
+      if (_ui && _ui->botGetGPIOAnalog(idx, mv)) {
+        snprintf(out, out_len, "gpio%d: %dmV", idx, mv);
+      } else if (_ui && _ui->botGetGPIO(idx, is_out, val)) {
+        snprintf(out, out_len, "gpio%d: %s %s", idx, is_out ? "out" : "in", val ? "on" : "off");
+      } else {
+        snprintf(out, out_len, "gpio%d: off", idx);
+      }
+      return true;
+    }
+  }
+
   const char* tmpl = nullptr;
   if      (!strcmp(cmd, "ping"))   tmpl = "pong";
   else if (!strcmp(cmd, "batt"))   tmpl = "{batt}";
@@ -252,7 +325,9 @@ bool MyMesh::botCommandReply(const char* cmd, uint8_t hops, uint32_t ts, char* o
   else if (!strcmp(cmd, "time"))   tmpl = "{time}";
   else if (!strcmp(cmd, "temp"))   tmpl = "{temp}";
   else if (!strcmp(cmd, "status")) tmpl = "batt {batt} loc {loc} at {time}";
-  else if (!strcmp(cmd, "help"))   tmpl = "cmds: !ping !batt !loc !time !temp !hops !status";
+  else if (!strcmp(cmd, "help"))   tmpl = actions_allowed
+                                             ? "cmds: !ping !batt !loc !time !temp !hops !status !gps !buzz !advert !gpio1-4"
+                                             : "cmds: !ping !batt !loc !time !temp !hops !status";
   else return false;                             // unknown — let the trigger bot try
 
   expandMsg(tmpl, out, out_len,
@@ -268,7 +343,10 @@ bool MyMesh::botCommandReply(const char* cmd, uint8_t hops, uint32_t ts, char* o
 // Scans body for any number of space-separated "!word" tokens, building a single
 // combined reply (segments joined by " | ") into out. Returns how many commands
 // were recognised. Shared by the DM, channel and room command paths.
-int MyMesh::botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name) {
+// actions_allowed gates the state-changing commands (!gps/!buzz/!advert) --
+// the read-only queries are always reachable once a target's Commands is on.
+int MyMesh::botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* out, int out_len,
+                             const char* sender_name, bool actions_allowed) {
   int oi = 0;
   int matched = 0;
   for (const char* p = body; *p; ) {
@@ -286,8 +364,23 @@ int MyMesh::botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* o
     while (*p && *p != ' ') p++;                  // consume any overflow of this token
     if (!cmd[0]) continue;
 
-    char seg[64];
-    if (!botCommandReply(cmd, hops, ts, seg, sizeof(seg), sender_name)) continue;  // unknown
+    // Optional argument: the next space-delimited token, unless it's itself
+    // the start of another command ("!"). E.g. "!gps on !batt" -- "on" is
+    // !gps's argument, "!batt" starts the next command. Query commands
+    // ignore arg; a stray word after e.g. "!ping" (no command reads it) is
+    // just consumed here instead of by the "not a command token" branch on
+    // the next iteration -- same net effect, no behaviour change.
+    while (*p == ' ') p++;
+    char arg[16] = "";
+    if (*p && *p != '!') {
+      int ai = 0;
+      while (*p && *p != ' ' && ai < (int)sizeof(arg) - 1) arg[ai++] = (char)tolower((uint8_t)*p++);
+      arg[ai] = '\0';
+      while (*p && *p != ' ') p++;                // consume any overflow of this token
+    }
+
+    char seg[80];
+    if (!botCommandReply(cmd, arg, actions_allowed, hops, ts, seg, sizeof(seg), sender_name)) continue;  // unknown
 
     if (matched > 0 && oi + 3 < out_len) {        // " | " separator
       out[oi++] = ' '; out[oi++] = '|'; out[oi++] = ' ';
@@ -311,7 +404,7 @@ bool MyMesh::tryBotCommand(const ContactInfo& from, const char* text, uint8_t ho
 
   uint32_t ts = getRTCClock()->getCurrentTime();
   char out[BOT_SCRATCH];
-  if (botScanCommands(text, hops, ts, out, sizeof(out), from.name) == 0) return false;  // no commands
+  if (botScanCommands(text, hops, ts, out, sizeof(out), from.name, _prefs.bot_actions_dm != 0) == 0) return false;  // no commands
   if (!botDmAllowed(from.id.pub_key)) return true;                           // throttled
 
   uint32_t expected_ack, est_timeout;
@@ -340,7 +433,7 @@ bool MyMesh::tryBotChannelCommand(uint8_t channel_idx, const char* text, uint8_t
 
   uint32_t ts = getRTCClock()->getCurrentTime();
   char out[BOT_SCRATCH];
-  if (botScanCommands(msg, hops, ts, out, sizeof(out), sender_name) == 0) return false;  // no commands
+  if (botScanCommands(msg, hops, ts, out, sizeof(out), sender_name, _prefs.bot_actions_ch != 0) == 0) return false;  // no commands
   if (botInQuietHours()) return true;                                       // quiet hours
   if (millis() - _bot_last_ch_reply_ms <= BOT_REPLY_COOLDOWN_MS) return true;  // throttled
 
@@ -375,7 +468,7 @@ bool MyMesh::tryBotRoomCommand(const ContactInfo& from, const uint8_t* sender_pr
 
   uint32_t ts = getRTCClock()->getCurrentTime();
   char out[BOT_SCRATCH];
-  if (botScanCommands(text, hops, ts, out, sizeof(out), sender_name) == 0) return false;  // no commands
+  if (botScanCommands(text, hops, ts, out, sizeof(out), sender_name, _prefs.bot_actions_room != 0) == 0) return false;  // no commands
   if (botInQuietHours()) return true;                                          // quiet hours
   if (millis() - _bot_last_room_reply_ms <= BOT_REPLY_COOLDOWN_MS) return true;   // throttled
 

@@ -316,8 +316,8 @@ private:
   bool tryBotCommand(const ContactInfo& from, const char* text, uint8_t hops);          // DM commands
   bool tryBotChannelCommand(uint8_t channel_idx, const char* text, uint8_t hops);       // channel commands
   bool tryBotRoomCommand(const ContactInfo& from, const uint8_t* sender_prefix, const char* text, uint8_t hops); // room commands
-  bool botCommandReply(const char* cmd, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name);  // one command → reply text
-  int  botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name); // scan "!word"s → combined reply, returns count
+  bool botCommandReply(const char* cmd, const char* arg, bool actions_allowed, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name);  // one command → reply text
+  int  botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name, bool actions_allowed); // scan "!word"s → combined reply, returns count
   bool botTriggerMatches(const char* trigger, const char* body, bool allow_wildcard) const;
   bool botInQuietHours() const;               // true when auto-replies should stay silent
   bool botDmAllowed(const uint8_t* pubkey);   // per-contact DM throttle: ok to reply?

@@ -526,6 +526,31 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.keyboard_main_alphabet, sizeof(_prefs.keyboard_main_alphabet));
   if (_prefs.keyboard_main_alphabet >= NodePrefs::KB_ALPHABET_COUNT) _prefs.keyboard_main_alphabet = 0;
 
+  // → 0xC0DE0021: append the per-target bot-actions toggles at the tail. A
+  // pre-0x21 file has neither byte here; clamp to 0 (off) -- these gate
+  // state-changing bot commands (!buzz/!gps/!advert), so an upgrader must
+  // opt in deliberately rather than get them silently enabled.
+  rd(&_prefs.bot_actions_dm, sizeof(_prefs.bot_actions_dm));
+  if (_prefs.bot_actions_dm > 1) _prefs.bot_actions_dm = 0;
+  rd(&_prefs.bot_actions_ch, sizeof(_prefs.bot_actions_ch));
+  if (_prefs.bot_actions_ch > 1) _prefs.bot_actions_ch = 0;
+  rd(&_prefs.bot_actions_room, sizeof(_prefs.bot_actions_room));
+  if (_prefs.bot_actions_room > 1) _prefs.bot_actions_room = 0;
+
+  // → 0xC0DE0022: user-assignable GPIO pin modes (0=Off 1=In 2=Out-low
+  // 3=Out-high 4=Analog). A pre-0x22 file has none of these bytes; clamp to
+  // 0 (off). gpio1/gpio2 (AIN0/AIN5) allow mode 4; gpio3/gpio4 have no ADC
+  // channel, so their clamp stops at 3 -- a stray 4 there (corrupt file,
+  // schema mismatch) falls back to Off rather than doing something undefined.
+  rd(&_prefs.gpio1_mode, sizeof(_prefs.gpio1_mode));
+  if (_prefs.gpio1_mode > 4) _prefs.gpio1_mode = 0;
+  rd(&_prefs.gpio2_mode, sizeof(_prefs.gpio2_mode));
+  if (_prefs.gpio2_mode > 4) _prefs.gpio2_mode = 0;
+  rd(&_prefs.gpio3_mode, sizeof(_prefs.gpio3_mode));
+  if (_prefs.gpio3_mode > 3) _prefs.gpio3_mode = 0;
+  rd(&_prefs.gpio4_mode, sizeof(_prefs.gpio4_mode));
+  if (_prefs.gpio4_mode > 3) _prefs.gpio4_mode = 0;
+
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
   // so we just log it — next savePrefs writes the current sentinel.
@@ -730,6 +755,13 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.bot_commands_ch,   sizeof(_prefs.bot_commands_ch));
     file.write((uint8_t *)&_prefs.bot_commands_room, sizeof(_prefs.bot_commands_room));
     file.write((uint8_t *)&_prefs.keyboard_main_alphabet, sizeof(_prefs.keyboard_main_alphabet));
+    file.write((uint8_t *)&_prefs.bot_actions_dm,   sizeof(_prefs.bot_actions_dm));
+    file.write((uint8_t *)&_prefs.bot_actions_ch,   sizeof(_prefs.bot_actions_ch));
+    file.write((uint8_t *)&_prefs.bot_actions_room, sizeof(_prefs.bot_actions_room));
+    file.write((uint8_t *)&_prefs.gpio1_mode, sizeof(_prefs.gpio1_mode));
+    file.write((uint8_t *)&_prefs.gpio2_mode, sizeof(_prefs.gpio2_mode));
+    file.write((uint8_t *)&_prefs.gpio3_mode, sizeof(_prefs.gpio3_mode));
+    file.write((uint8_t *)&_prefs.gpio4_mode, sizeof(_prefs.gpio4_mode));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good

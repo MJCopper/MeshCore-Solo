@@ -146,6 +146,9 @@ static const int QUICK_MSGS_MAX = 10;
 #include "CompassScreen.h"
 #include "DiagnosticsScreen.h"
 #include "RepeaterScreen.h"
+#if defined(PIN_GPIO1)
+#include "GpioScreen.h"
+#endif
 #include "ToolsScreen.h"
 #include "ClockToolsScreen.h"   // Alarm / Timer / Stopwatch (Clock page › Enter)
 
@@ -1463,10 +1466,14 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   diag_screen        = new DiagnosticsScreen(this);
   repeater_screen    = new RepeaterScreen(this);
   clock_tools        = new ClockToolsScreen(this, node_prefs);
+#if defined(PIN_GPIO1)
+  gpio_screen        = new GpioScreen(this, node_prefs);
+#endif
   applyBrightness();
   applyFont();
   applyRotation();
   applyFullRefreshInterval();
+  applyAllGpioModes();   // restore persisted pin modes to hardware before any UI/bot use
   setCurrScreen(splash);
 }
 
@@ -1491,6 +1498,11 @@ void UITask::gotoCompassScreen()   { setCurrScreen(compass_screen); }
 void UITask::gotoDiagnosticsScreen() { setCurrScreen(diag_screen); }
 void UITask::gotoRepeaterScreen()  { setCurrScreen(repeater_screen); }
 void UITask::gotoClockTools()      { setCurrScreen(clock_tools); }
+void UITask::gotoGpioScreen() {
+#if defined(PIN_GPIO1)
+  setCurrScreen(gpio_screen);
+#endif
+}
 void UITask::gotoLiveShareScreen() { setCurrScreen(live_share_screen); }
 
 // ── Clock tools engine (alarm / countdown / ring) ───────────────────────────
@@ -2893,27 +2905,225 @@ bool UITask::hasGPS() {
 }
 
 void UITask::toggleGPS() {
-    if (_sensors != NULL) {
-    // toggle GPS on/off
-    int num = _sensors->getNumSettings();
-    for (int i = 0; i < num; i++) {
-      if (strcmp(_sensors->getSettingName(i), "gps") == 0) {
-        if (strcmp(_sensors->getSettingValue(i), "1") == 0) {
-          _sensors->setSettingValue("gps", "0");
-          _node_prefs->gps_enabled = 0;
-          notify(UIEventType::ack);
-        } else {
-          _sensors->setSettingValue("gps", "1");
-          _node_prefs->gps_enabled = 1;
-          notify(UIEventType::ack);
-        }
-        the_mesh.savePrefs();
-        showAlert(_node_prefs->gps_enabled ? "GPS: Enabled" : "GPS: Disabled", 800);
-        _next_refresh = 0;
-        break;
-      }
+  if (_node_prefs) applyGpsState(_node_prefs->gps_enabled == 0);
+}
+
+// Sets GPS to an absolute state (vs. toggleGPS()'s flip) -- shared by the
+// Home-page manual toggle and the bot's !gps on/off command, which needs to
+// set a specific state rather than flip whatever it currently is.
+void UITask::applyGpsState(bool on) {
+  if (_sensors == NULL) return;
+  int num = _sensors->getNumSettings();
+  for (int i = 0; i < num; i++) {
+    if (strcmp(_sensors->getSettingName(i), "gps") == 0) {
+      _sensors->setSettingValue("gps", on ? "1" : "0");
+      _node_prefs->gps_enabled = on ? 1 : 0;
+      notify(UIEventType::ack);
+      the_mesh.savePrefs();
+      showAlert(_node_prefs->gps_enabled ? "GPS: Enabled" : "GPS: Disabled", 800);
+      _next_refresh = 0;
+      break;
     }
   }
+}
+
+void UITask::botSetGPS(bool on) {
+  applyGpsState(on);
+}
+
+// Bot !buzz [seconds] -- a find-me signal, so it deliberately uses
+// playForced() (bypasses the buzzer_quiet mute) rather than play(): a
+// find-me beep that respects mute defeats its own purpose. Builds a simple
+// repeating beep/rest RTTTL string sized to the requested duration into the
+// persistent _bot_buzz_buf -- the nRF52 RTTTL player keeps a raw pointer into
+// whatever buffer it's given and reads from it across loop() calls for the
+// whole playback (same constraint as _notif_mel_buf), so this can't be a
+// local/stack buffer.
+void UITask::botBuzz(int seconds) {
+#if defined(PIN_BUZZER)
+  if (seconds < 1) seconds = 5;
+  if (seconds > 30) seconds = 30;
+  int pairs = seconds * 2;   // b=120: an "8c,8p," pair is 250+250 = 500ms
+  int n = snprintf(_bot_buzz_buf, sizeof(_bot_buzz_buf), "Buzz:b=120:");
+  for (int i = 0; i < pairs && n < (int)sizeof(_bot_buzz_buf) - 7; i++)
+    n += snprintf(_bot_buzz_buf + n, sizeof(_bot_buzz_buf) - n, "8c,8p,");
+  buzzer.playForced(_bot_buzz_buf);
+#endif
+}
+
+#if defined(PIN_GPIO1)
+static uint32_t gpioPin(int idx) {   // idx 1..4
+  static const uint32_t pins[4] = { PIN_GPIO1, PIN_GPIO2, PIN_GPIO3, PIN_GPIO4 };
+  return (idx >= 1 && idx <= 4) ? pins[idx - 1] : 0xFFFFFFFF;
+}
+
+static uint8_t* gpioModeField(NodePrefs* p, int idx) {   // idx 1..4
+  switch (idx) {
+    case 1: return &p->gpio1_mode;
+    case 2: return &p->gpio2_mode;
+    case 3: return &p->gpio3_mode;
+    case 4: return &p->gpio4_mode;
+    default: return NULL;
+  }
+}
+
+// Push a saved mode value to the actual pin hardware -- shared by
+// setGpioMode() (live edits from the UI) and applyAllGpioModes() (boot
+// restore), which differ only in whether the mode gets persisted. Mode 4
+// (Analog) uses the same "leave it alone" config as Off: the SAADC reads the
+// pin directly regardless of the GPIO block's state, and cfg_default (no
+// pull, disconnected buffer) is exactly what Nordic recommends for an ADC
+// input to avoid extra leakage current -- there's nothing separate to set up
+// here, unlike Input/Output.
+static void applyGpioModeToPin(uint32_t pin, uint8_t mode) {
+  switch (mode) {
+    case 1: nrf_gpio_cfg_input(pin, NRF_GPIO_PIN_PULLUP); break;        // Input
+    case 2: nrf_gpio_cfg_output(pin); nrf_gpio_pin_clear(pin); break;   // Output, off
+    case 3: nrf_gpio_cfg_output(pin); nrf_gpio_pin_set(pin);   break;   // Output, on
+    default: nrf_gpio_cfg_default(pin); break;                         // Off / Analog
+  }
+}
+
+// GPIO1 (P0.02) = AIN0, GPIO2 (P0.29) = AIN5 -- the only two user pins wired
+// to the nRF52840's SAADC (confirmed against wiring_analog_nRF52.c's own
+// pin->channel switch). GPIO3/GPIO4 (P0.09/P0.10) have no ADC channel.
+static uint32_t gpioAnalogPsel(int idx) {   // idx 1..4; 0 (NC) if unsupported
+  if (idx == 1) return SAADC_CH_PSELP_PSELP_AnalogInput0;
+  if (idx == 2) return SAADC_CH_PSELP_PSELP_AnalogInput5;
+  return SAADC_CH_PSELP_PSELP_NC;
+}
+
+// One-shot SAADC read, bypassing Arduino's analogRead() -- that function
+// treats its argument as an ARDUINO PIN INDEX (looked up through
+// g_ADigitalPinMap[]), not a raw channel, and no Arduino index maps to our
+// raw GPIO1/GPIO2 pins (same reason digitalWrite()/pinMode() can't be used
+// for these pins either -- see the file-level notes on PIN_GPIO1..4).
+// Mirrors wiring_analog_nRF52.c's analogRead_internal() exactly (10-bit,
+// 0.6V internal reference, 1/6 gain -> 0-3.6V range) so the numbers read the
+// same as a normal analogRead() would, just addressing the SAADC channel
+// directly instead of going through the pin-index dispatch.
+static uint16_t readAnalogMv(uint32_t psel) {
+  NRF_SAADC->RESOLUTION = SAADC_RESOLUTION_VAL_10bit;
+  NRF_SAADC->ENABLE = (SAADC_ENABLE_ENABLE_Enabled << SAADC_ENABLE_ENABLE_Pos);
+  for (int i = 0; i < 8; i++) {
+    NRF_SAADC->CH[i].PSELN = SAADC_CH_PSELP_PSELP_NC;
+    NRF_SAADC->CH[i].PSELP = SAADC_CH_PSELP_PSELP_NC;
+  }
+  NRF_SAADC->CH[0].CONFIG =
+      ((SAADC_CH_CONFIG_RESP_Bypass     << SAADC_CH_CONFIG_RESP_Pos)   & SAADC_CH_CONFIG_RESP_Msk)
+    | ((SAADC_CH_CONFIG_RESP_Bypass     << SAADC_CH_CONFIG_RESN_Pos)   & SAADC_CH_CONFIG_RESN_Msk)
+    | ((SAADC_CH_CONFIG_GAIN_Gain1_6    << SAADC_CH_CONFIG_GAIN_Pos)   & SAADC_CH_CONFIG_GAIN_Msk)
+    | ((SAADC_CH_CONFIG_REFSEL_Internal << SAADC_CH_CONFIG_REFSEL_Pos) & SAADC_CH_CONFIG_REFSEL_Msk)
+    | ((SAADC_CH_CONFIG_TACQ_3us        << SAADC_CH_CONFIG_TACQ_Pos)   & SAADC_CH_CONFIG_TACQ_Msk)
+    | ((SAADC_CH_CONFIG_MODE_SE         << SAADC_CH_CONFIG_MODE_Pos)   & SAADC_CH_CONFIG_MODE_Msk);
+  NRF_SAADC->CH[0].PSELN = psel;
+  NRF_SAADC->CH[0].PSELP = psel;
+
+  volatile int16_t value = 0;
+  NRF_SAADC->RESULT.PTR = (uint32_t)&value;
+  NRF_SAADC->RESULT.MAXCNT = 1;
+
+  NRF_SAADC->TASKS_START = 1;
+  while (!NRF_SAADC->EVENTS_STARTED);
+  NRF_SAADC->EVENTS_STARTED = 0;
+
+  NRF_SAADC->TASKS_SAMPLE = 1;
+  while (!NRF_SAADC->EVENTS_END);
+  NRF_SAADC->EVENTS_END = 0;
+
+  NRF_SAADC->TASKS_STOP = 1;
+  while (!NRF_SAADC->EVENTS_STOPPED);
+  NRF_SAADC->EVENTS_STOPPED = 0;
+
+  NRF_SAADC->ENABLE = (SAADC_ENABLE_ENABLE_Disabled << SAADC_ENABLE_ENABLE_Pos);
+
+  if (value < 0) value = 0;
+  // 10-bit, 1/6 gain, 0.6V internal ref -> full-scale = 0.6V / (1/6) = 3.6V
+  return (uint16_t)(((uint32_t)value * 3600) / 1024);
+}
+#endif
+
+// Cycle a user GPIO pin's mode (Off/In/Out-low/Out-high), apply it to the
+// actual pin, and persist. Called by GpioScreen on Enter.
+void UITask::setGpioMode(int idx, uint8_t mode) {
+#if defined(PIN_GPIO1)
+  if (!_node_prefs) return;
+  uint8_t* f = gpioModeField(_node_prefs, idx);
+  uint32_t pin = gpioPin(idx);
+  if (!f || pin == 0xFFFFFFFF) return;
+  if (mode == 4 && !gpioSupportsAnalog(idx)) mode = 0;   // no ADC channel on this pin -- fall back to Off
+  *f = mode;
+  applyGpioModeToPin(pin, mode);
+  the_mesh.savePrefs();
+#else
+  (void)idx; (void)mode;
+#endif
+}
+
+// Boot-time restore: push each pin's saved mode to hardware before any UI/bot
+// interaction (mirrors MyMesh::applyGpsPrefs()'s role for the GPS toggle --
+// there's no generic "restore all settings" hook in this codebase, each
+// persisted hardware toggle gets its own bespoke boot call). Deliberately
+// doesn't call savePrefs() -- nothing changed, just re-applying what's
+// already on disk.
+void UITask::applyAllGpioModes() {
+#if defined(PIN_GPIO1)
+  if (!_node_prefs) return;
+  for (int i = 1; i <= 4; i++) {
+    uint8_t* f = gpioModeField(_node_prefs, i);
+    if (f) applyGpioModeToPin(gpioPin(i), *f);
+  }
+#endif
+}
+
+bool UITask::botSetGPIO(int idx, bool on) {
+#if defined(PIN_GPIO1)
+  if (!_node_prefs) return false;
+  uint8_t* f = gpioModeField(_node_prefs, idx);
+  if (!f || (*f != 2 && *f != 3)) return false;   // not configured as Output
+  setGpioMode(idx, on ? 3 : 2);
+  return true;
+#else
+  (void)idx; (void)on;
+  return false;
+#endif
+}
+
+bool UITask::botGetGPIO(int idx, bool& is_output, bool& value) {
+#if defined(PIN_GPIO1)
+  if (!_node_prefs) return false;
+  uint8_t* f = gpioModeField(_node_prefs, idx);
+  uint32_t pin = gpioPin(idx);
+  if (!f || *f == 0 || *f == 4 || pin == 0xFFFFFFFF) return false;   // Off / Analog / unsupported
+  is_output = (*f == 2 || *f == 3);
+  value = is_output ? (nrf_gpio_pin_out_read(pin) != 0) : (nrf_gpio_pin_read(pin) != 0);
+  return true;
+#else
+  (void)idx; (void)is_output; (void)value;
+  return false;
+#endif
+}
+
+bool UITask::gpioSupportsAnalog(int idx) const {
+#if defined(PIN_GPIO1)
+  return idx == 1 || idx == 2;
+#else
+  (void)idx;
+  return false;
+#endif
+}
+
+bool UITask::botGetGPIOAnalog(int idx, int& millivolts) {
+#if defined(PIN_GPIO1)
+  if (!_node_prefs || !gpioSupportsAnalog(idx)) return false;
+  uint8_t* f = gpioModeField(_node_prefs, idx);
+  if (!f || *f != 4) return false;   // not in Analog mode
+  millivolts = readAnalogMv(gpioAnalogPsel(idx));
+  return true;
+#else
+  (void)idx; (void)millivolts;
+  return false;
+#endif
 }
 
 void UITask::applyTxPower() {
