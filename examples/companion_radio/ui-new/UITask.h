@@ -200,7 +200,11 @@ class UITask : public AbstractUITask {
   // without that bus, or when nothing ACKs 0x5F at boot.
 #if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
   bool     _has_cardkb = false;
-  uint32_t _cardkb_poll_ms = 0;
+  // CardKB is level-triggered, not edge-triggered -- it keeps returning the
+  // same byte for as long as the physical key is held, not just once. Track
+  // the last raw byte seen so a held key enqueues exactly one press instead
+  // of one per poll tick.
+  uint8_t  _cardkb_last_raw = 0;
 #endif
   void pollCardKB();
 

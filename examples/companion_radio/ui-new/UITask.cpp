@@ -2070,42 +2070,75 @@ bool UITask::dequeueKey(char& c) {
   return true;
 }
 
+#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+// CardKB's "fn" column (key_map in M5Stack's unit_CardKB.cpp): Fn+<physical
+// key> sends 0x80 + that key's row index, entirely disjoint from every other
+// code this UI recognises. Indexed by (raw - 0x80); non-letter slots (digits,
+// arrows, enter, tab, bs, space -- handled separately or unused) are 0.
+static const char CARDKB_FN_BASE[48] = {
+  0,0,0,0,0,0,0,0,0,0,0,0,0,                                     // esc,1-0,bs,tab
+  'q','w','e','r','t','y','u','i','o','p', 0, 0,0,                // q-p, (unused), LEFT,UP
+  'a','s','d','f','g','h','j','k','l', 0, 0,0,                    // a-l, enter, DOWN,RIGHT
+  'z','x','c','v','b','n','m', 0,0,0,                             // z-m, comma,period,space
+};
+#endif
+
 // Poll an optional CardKB (I2C keyboard, addr 0x5F) on Wire1/Grove, feeding
 // the same key queue as every physical button. Most of its output needs no
 // translation at all: CardKB's own arrow/Enter/Esc byte codes are already
 // identical to this UI's KEY_LEFT/UP/DOWN/RIGHT/ENTER/CANCEL (0xB4-0xB7, 13,
 // 27), and Backspace (0x08) / printable ASCII (0x20-0x7E) collide with
-// nothing that existed before. Two bytes get remapped:
-//  - Enter, while the on-screen keyboard's plain grid state is active (no
-//    placeholder/accent popup, not in cursor-mode) -- there it means "submit
-//    the field", not KEY_ENTER's usual "commit grid cell (row,col)", which
-//    would otherwise insert a stray character since direct typing never
-//    touches the grid. See KeyboardWidget::handleInput()'s KEY_KB_ENTER
-//    branch.
-//  - Tab (0x09, otherwise unused by any screen) -> KEY_CONTEXT_MENU, the
-//    "Hold-Enter" context-menu gesture used in ~30 places across the UI
-//    (message reply/navigate, Bot/Admin/Repeater menus, ...). CardKB has no
-//    press-duration concept to detect a long-press with, so Tab is the
-//    closest free key standing in for it -- full keyboard-only navigation
-//    would otherwise be unable to reach any of those menus at all.
+// nothing that existed before. Plain Enter now always acts like the physical
+// centre button (commit/repeat a grid cell) -- no more ambiguity to resolve,
+// since Fn gives two clean, stateless modifiers instead:
+//  - Fn+Enter (0xA3) submits the field (KEY_KB_ENTER) from anywhere, without
+//    needing to navigate to the special row's DONE cell.
+//  - Fn+Tab (0x8C) opens the Hold-Enter equivalent (shift-lock, clear-all,
+//    accent popup on whatever cell is selected) -- plain Tab (otherwise
+//    unused) still does this for the ~30 non-keyboard Hold-Enter menus
+//    (message reply/navigate, Bot/Admin/Repeater, ...) but is inert while the
+//    on-screen keyboard itself is showing, where Fn+Tab/Fn+letter cover it.
+//  - Fn+<letter> opens the accent popup for that base letter directly
+//    (KeyboardWidget::openAccentFor()) -- no arrow-hunting across the grid.
+// CardKB is level-triggered (it keeps returning the held key's byte, not just
+// once), so _cardkb_last_raw debounces it into one press per physical
+// keypress, same as a MomentaryButton's CLICK event.
 void UITask::pollCardKB() {
 #if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
   if (!_has_cardkb) return;
-  if (millis() - _cardkb_poll_ms < 30) return;   // ~33 Hz poll, plenty for typing
-  _cardkb_poll_ms = millis();
+  // No artificial throttle: unlike a MomentaryButton (BUTTON_USE_INTERRUPTS
+  // latches every edge in an ISR ring buffer, so it survives a blocking e-ink
+  // refresh untouched), CardKB is plain I2C polling with no interrupt line on
+  // the Grove cable and no onboard queue -- it only ever reports "what's held
+  // right now". A press that starts and fully releases while curr->render()
+  // is blocked is physically unobservable, no software fix can recover it.
+  // Polling every loop() iteration (same as a digital button's check(), which
+  // has no throttle either) just shrinks that miss window down to exactly the
+  // render() duration instead of render()+30ms.
   Wire1.requestFrom(0x5F, 1);
   if (!Wire1.available()) return;
   uint8_t raw = Wire1.read();
-  if (raw == 0) return;   // no key down
+  if (raw == _cardkb_last_raw) return;   // still held (or still released) -- no new edge
+  _cardkb_last_raw = raw;
+  if (raw == 0) return;   // key just released, nothing to enqueue
 
   char key;
-  if (raw == 0x0D &&
-      _kb.isVisible() && !_kb._ph_menu.active && !_kb.cursor_mode && !_kb.accent_active) {
+  if (raw == 0xA3) {          // Fn+Enter -- submit the field
     key = KEY_KB_ENTER;
-  } else if (raw == 0x09) {
+  } else if (raw == 0x8C) {   // Fn+Tab -- Hold-Enter equivalent, unconditionally
     key = KEY_CONTEXT_MENU;
+  } else if (raw == 0x09) {   // plain Tab -- same, but only outside the keyboard
+    if (_kb.isVisible()) return;
+    key = KEY_CONTEXT_MENU;
+  } else if (raw >= 0x80 && raw <= 0xAF) {   // Fn+<letter> -- open its accent popup
+    char base = CARDKB_FN_BASE[raw - 0x80];
+    if (base == 0) return;   // Fn+digit/symbol/arrow -- not used by this UI
+    char woke = checkDisplayOn(base);
+    if (woke) _kb.openAccentFor(base);
+    return;
   } else {
-    key = (char)raw;
+    key = (char)raw;   // plain Enter/arrows/backspace/ASCII -- byte-identical
+                        // to a physical keystroke, no CardKB-specific state
   }
   enqueueKey(checkDisplayOn(key));
 #endif

@@ -645,6 +645,27 @@ struct KeyboardWidget {
     return 50;
   }
 
+  // CardKB's Fn+letter ("alt") gesture, see UITask::pollCardKB(): open the
+  // accent popup for this base Latin letter directly, skipping the
+  // arrow-hunt to find its cell first. `base` always comes from CardKB's own
+  // physical QWERTY layout, so this only makes sense -- same gating as the
+  // physical Hold-Enter-on-a-letter-cell path just below -- while the
+  // keyboard is idle on its plain Latin page: on T9, symbols, or a non-Latin
+  // main/alt script (Cyrillic, Greek, ...), the on-screen grid isn't showing
+  // Latin letters at all, so it's a no-op rather than inserting a stray
+  // Latin accent into unrelated text.
+  bool openAccentFor(char base) {
+    if (!isVisible() || _ph_menu.active || cursor_mode || accent_active) return false;
+    if (isT9() || pageIsSymbols(page) || scriptAt(page) != NodePrefs::KB_ALPHABET_LATIN_ONLY) return false;
+    int gi = findAccentGroup(base);
+    if (gi < 0) return false;
+    accent_active = true;
+    accent_group = gi;
+    accent_sel = 0;
+    t9_cell = -1;
+    return true;
+  }
+
   Result handleInput(char c) {
     // placeholder overlay consumes all input
     if (_ph_menu.active) {
@@ -726,9 +747,10 @@ struct KeyboardWidget {
     // straight at the cursor, bypassing the on-screen grid entirely -- no
     // caps re-application, the source already sends the correct case.
     // Backspace deletes the previous character. KEY_KB_ENTER (only ever
-    // emitted when the grid is in this exact plain state -- no popup, no
-    // cursor-mode, see pollCardKB()) submits the field, instead of
-    // KEY_ENTER's usual "commit grid cell (row,col)".
+    // emitted for CardKB's Fn+Enter, see pollCardKB()) submits the field
+    // directly -- plain Enter (byte-identical to a physical button's
+    // KEY_ENTER) always acts on the grid instead, same as a physical-button
+    // user, so there's no ambiguity to resolve here.
     if (c == KEY_KB_ENTER) return DONE;
     if (c == 0x08) {
       if (cursor_pos > 0) {
@@ -822,6 +844,10 @@ struct KeyboardWidget {
       return NONE;
     }
     if (c == KEY_ENTER) {
+      // Plain Enter always acts on the grid (repeat a letter, cycle T9,
+      // switch page/script, reach the special row's DONE cell) -- same as a
+      // physical button. CardKB submits via the separate KEY_KB_ENTER
+      // (Fn+Enter, see pollCardKB()) instead, so there's no ambiguity here.
       if (row < rows && isT9()) {
         int cell = row * cols + col;
         const char* group = t9GroupStr(cell);
