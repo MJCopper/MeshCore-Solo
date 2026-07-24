@@ -410,6 +410,23 @@ public:
       openValueKb(trimmed);   // _pending_set_prefix is already set from activateField()
       return;
     }
+    // The "Admin password" row (SYSTEM_FIELDS, set-only) just changed the
+    // remote's own admin credential -- CommonCLI::handleCommand() always
+    // echoes it back as "password now: <value>" (see src/helpers/CommonCLI.cpp),
+    // truncation and all, so parsing that confirms the exact value now
+    // required to log back in. Without this, our saved password goes stale
+    // the instant this command succeeds, guaranteeing the next login attempt
+    // fails (see the LOGIN-phase timeout fix above for what that used to look
+    // like: a permanent "Logging in..." hang with a stale saved password).
+    static const char PW_ECHO_PREFIX[] = "password now: ";
+    if (!strncmp(text, PW_ECHO_PREFIX, sizeof(PW_ECHO_PREFIX) - 1)) {
+      char newpw[32];
+      strncpy(newpw, text + sizeof(PW_ECHO_PREFIX) - 1, sizeof(newpw) - 1);
+      newpw[sizeof(newpw) - 1] = '\0';
+      size_t n = strlen(newpw);
+      while (n > 0 && (newpw[n-1] == '\n' || newpw[n-1] == '\r' || newpw[n-1] == ' ')) newpw[--n] = '\0';
+      the_mesh.saveRoomPassword(_target.id.pub_key, newpw);
+    }
     strncpy(_reply_text, text, sizeof(_reply_text) - 1);
     _reply_text[sizeof(_reply_text) - 1] = '\0';
     _reply_view.begin();
