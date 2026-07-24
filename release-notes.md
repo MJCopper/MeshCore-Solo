@@ -3,6 +3,7 @@
 ### Fixes
 
 - **Tools › Admin login could get stuck on "Logging in..." forever** if the remote node never sent back a reply — most commonly after its admin/room password was changed, since the on-device UI auto-retries the old saved password with no timeout to fall back on. It now gives up after the same estimated-timeout window the rest of Admin's commands use, forgets the stale saved password, and returns you to the picker to try again with the new one.
+- **Changing a remote's admin password from Tools › Admin › System didn't update this device's own saved copy** — the very next login attempt to that node retried the password you'd just replaced, hitting the "stuck on Logging in…" case above. The confirmation the remote echoes back is now saved as the new on-device password to match.
 
 ---
 
