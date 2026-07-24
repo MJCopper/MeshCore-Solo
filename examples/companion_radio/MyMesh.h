@@ -338,6 +338,7 @@ private:
   void tickLocFix();     // ticked every loop() while _loc_fix.active
   void startLocFix(uint8_t dest_type, const uint8_t* pub_key, uint8_t channel_idx);
   void sendLocFixResult(const char* msg);
+  static bool isLocFixReady(LocationProvider* loc);   // HDOP if the provider has it, else satellite count
   bool botTriggerMatches(const char* trigger, const char* body, bool allow_wildcard) const;
   bool botInQuietHours() const;               // true when auto-replies should stay silent
   bool botDmAllowed(const uint8_t* pubkey);   // per-contact DM throttle: ok to reply?
@@ -442,7 +443,11 @@ private:
   // !gps fix state -- one global slot (one physical GPS): botCommandReply()
   // rejects a second request outright while one is active, so this never
   // needs to be an array. See tickLocFix()/startLocFix() in MyMeshBot.h.
-  static const int LOCFIX_MIN_SATS = 8;            // readiness threshold
+  // Readiness: HDOP (tenths, lower=better) when the provider exposes it --
+  // 20 == HDOP 2.0, the usual "good fix" cutoff -- else satellite count as a
+  // cruder fallback (see LocationProvider::getHDOP()'s -1 = "not available").
+  static const int LOCFIX_MAX_HDOP = 20;
+  static const int LOCFIX_MIN_SATS = 8;            // readiness threshold (HDOP-less fallback)
   static const uint32_t LOCFIX_AVERAGE_MS = 10000;  // once ready, keep averaging this long
   static const uint32_t LOCFIX_TIMEOUT_MS = 90000;  // hard stop covering both phases
   enum { LOCFIX_DEST_CONTACT = 0, LOCFIX_DEST_CHANNEL = 1 };  // CONTACT covers DM and room alike (both reply via sendMessage)

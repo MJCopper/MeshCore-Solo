@@ -522,19 +522,27 @@ void MyMesh::startLocFix(uint8_t dest_type, const uint8_t* pub_key, uint8_t chan
 }
 
 // !gps fix state machine, ticked every MyMesh::loop() while _loc_fix.active.
-// Phase 1 (acquire): wait for a valid fix with at least LOCFIX_MIN_SATS
-// satellites. Phase 2 (average): once that's first met, keep summing
-// node_lat/node_lon for LOCFIX_AVERAGE_MS more -- only on ticks where the
-// threshold still holds, so a momentary drop below LOCFIX_MIN_SATS just skips
-// a sample instead of aborting the whole wait. A hard LOCFIX_TIMEOUT_MS
+// Phase 1 (acquire): wait for a valid fix good enough to trust -- HDOP (fix
+// geometry) when the provider exposes it, satellite count as a cruder
+// fallback when it doesn't (see isLocFixReady()). Phase 2 (average): once
+// that's first met, keep summing node_lat/node_lon for LOCFIX_AVERAGE_MS more
+// -- only on ticks where the threshold still holds, so a momentary dip just
+// skips a sample instead of aborting the whole wait. A hard LOCFIX_TIMEOUT_MS
 // deadline covers both phases; on timeout with zero samples collected the
 // result is a plain failure (no stale-cache fallback -- a cached node_lat/lon
 // from long before this request would be actively misleading here).
+bool MyMesh::isLocFixReady(LocationProvider* loc) {
+  if (!loc || !loc->isValid()) return false;
+  long hdop = loc->getHDOP();
+  if (hdop >= 0) return hdop <= LOCFIX_MAX_HDOP;    // preferred: real fix-quality signal
+  return loc->satellitesCount() >= LOCFIX_MIN_SATS; // provider has no HDOP -- cruder fallback
+}
+
 void MyMesh::tickLocFix() {
   if (!_loc_fix.active) return;
 
   LocationProvider* loc = sensors.getLocationProvider();
-  bool ready = loc && loc->isValid() && loc->satellitesCount() >= LOCFIX_MIN_SATS;
+  bool ready = isLocFixReady(loc);
 
   if (_loc_fix.averaging_until_ms == 0 && ready) {
     _loc_fix.averaging_until_ms = futureMillis(LOCFIX_AVERAGE_MS);
