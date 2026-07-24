@@ -708,7 +708,9 @@ public:
   void startRoomLogin(const char* password) {
     strncpy(_login_pw, password, sizeof(_login_pw) - 1);
     _login_pw[sizeof(_login_pw) - 1] = 0;
-    bool sent = the_mesh.sendRoomLogin(_sel_contact, password);
+    uint32_t est_timeout = 0;   // this screen's login isn't a blocking wait (see
+                                // onRoomLoginResult() below), so no deadline needed
+    bool sent = the_mesh.sendRoomLogin(_sel_contact, password, est_timeout);
     _task->showAlert(sent ? "Logging in..." : "Login failed", sent ? 1000 : 1500);
   }
 
