@@ -229,6 +229,19 @@ public:
     return true;
   }
 
+  // Called by a screen that gave up waiting on its own sendRoomLogin() (Cancel
+  // or a timeout) so a reply that arrives after doesn't get misrouted:
+  // UITask::onRoomLoginResult() dispatches by whichever screen is *currently*
+  // showing, not by who actually sent the request, so a late reply landing
+  // after the requester navigated away is delivered to whatever screen the
+  // user is on instead -- which then persists its own unrelated login state
+  // (e.g. a different screen's _login_pw) as if it were that reply's answer.
+  // Pubkey-guarded so this is a no-op if a newer request (this screen retrying,
+  // or a different screen entirely) has since overwritten ui_pending_login.
+  void cancelUiPendingLogin(const uint8_t* pub_key) {
+    if (ui_pending_login && memcmp(&ui_pending_login, pub_key, 4) == 0) ui_pending_login = 0;
+  }
+
   // On-device UI logout: drops the local keep-alive tracking (mirrors the app's
   // CMD_LOGOUT) and forgets the saved password, so the next room open prompts
   // for credentials again instead of silently re-using them. No packet is sent
