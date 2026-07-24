@@ -357,7 +357,16 @@ public:
   // Async result of the on-device login, routed here from UITask::onRoomLoginResult()
   // only while this screen is current (see that routing for why).
   void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
-    if (_phase != LOGIN) return;   // stale/unrelated result
+    // Being in LOGIN phase isn't enough on its own -- this only confirms *some*
+    // login is in flight for *this screen*, not that this particular reply is
+    // for _target. UITask::onRoomLoginResult() dispatches by whichever screen
+    // is current, not by who sent the request, so e.g. a slow MessagesScreen
+    // login reply arriving while the user has since opened Admin on a
+    // *different*, password-less node (still sat at the blank LOGIN keyboard,
+    // so _phase == LOGIN here too) would otherwise be accepted as if it were
+    // this node's own login -- flipping _admin_ok/_phase to COMMAND for
+    // _target without ever actually authenticating with it.
+    if (_phase != LOGIN || memcmp(_target.id.pub_key, pub_key, 4) != 0) return;   // stale/unrelated result
     _login_waiting = false;
     if (success && (permissions & PERM_ACL_ROLE_MASK) == PERM_ACL_ADMIN) {
       memcpy(_admin_ok_prefix, pub_key, 4);

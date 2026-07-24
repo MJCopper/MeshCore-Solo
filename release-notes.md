@@ -5,6 +5,7 @@
 - **Tools › Admin login could get stuck on "Logging in..." forever** if the remote node never sent back a reply — most commonly after its admin/room password was changed, since the on-device UI auto-retries the old saved password with no timeout to fall back on. It now gives up after the same estimated-timeout window the rest of Admin's commands use, forgets the stale saved password, and returns you to the picker to try again with the new one.
 - **Changing a remote's admin password from Tools › Admin › System didn't update this device's own saved copy** — the very next login attempt to that node retried the password you'd just replaced, hitting the "stuck on Logging in…" case above. The confirmation the remote echoes back is now saved as the new on-device password to match.
 - **A slow-to-arrive Admin login reply, after you'd already given up on it (Cancel or the new timeout above), could get delivered to whatever screen you'd since moved to and silently overwrite your saved password for that node with unrelated data.** Giving up on a login now also stops tracking it mesh-side, so a late reply is simply dropped instead of misrouted.
+- **Opening Admin on a second, password-less node while an earlier room/repeater login elsewhere was still in flight could wrongly show you as logged in as admin on the new node** — a reply meant for the earlier login was accepted as this node's own since both merely looked like "a login is pending," without checking it actually named this node. Now checked.
 
 ---
 
