@@ -436,6 +436,11 @@ public:
   void poll() override {
     if (_phase == LOGIN && _login_waiting && (int32_t)(millis() - _login_deadline_ms) >= 0) {
       _login_waiting = false;
+      // Stop tracking this request on the MyMesh side too -- otherwise a reply
+      // that still arrives after we've given up gets misrouted to whatever
+      // screen the user is on by then (see cancelUiPendingLogin()'s comment),
+      // corrupting that screen's unrelated login state with our answer.
+      the_mesh.cancelUiPendingLogin(_target.id.pub_key);
       // No response at all is ambiguous (could be a wrong/stale password, could
       // just be out of range) -- but a saved password that's gone stale (the
       // remote's password changed) is exactly this: silence, not a nack. Treat
@@ -515,7 +520,11 @@ public:
   bool handleInput(char c) override {
     if (_phase == LOGIN) {
       if (_login_waiting) {
-        if (c == KEY_CANCEL) { _login_waiting = false; returnToOrigin(); }
+        if (c == KEY_CANCEL) {
+          _login_waiting = false;
+          the_mesh.cancelUiPendingLogin(_target.id.pub_key);   // see cancelUiPendingLogin()'s comment
+          returnToOrigin();
+        }
         return true;
       }
       auto r = kb().handleInput(c);
