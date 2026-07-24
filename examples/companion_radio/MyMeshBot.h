@@ -270,9 +270,21 @@ bool MyMesh::botCommandReply(const char* cmd, const char* arg, bool actions_allo
   // not by the templating/expandMsg mechanism the queries share.
   if (actions_allowed) {
     if (!strcmp(cmd, "gps")) {
+      // "fix" -- single-shot: turn GPS on (if not already), wait for a
+      // stabilised position, send it, then restore GPS to whatever it was
+      // before. This command can't reply synchronously like every other one
+      // here (a fix takes seconds-to-minutes), so it acks immediately and
+      // sets _locfix_requested; the tryBot*Command() wrapper that called us
+      // knows the destination and starts the actual wait (see MyMesh.h).
+      if (!strcmp(arg, "fix")) {
+        if (_loc_fix.active) { snprintf(out, out_len, "GPS: fix already pending"); return true; }
+        _locfix_requested = true;
+        snprintf(out, out_len, "GPS: acquiring fix...");
+        return true;
+      }
       bool on  = !strcmp(arg, "on");   // arg was lowercased while parsing (see botScanCommands)
       bool off = !strcmp(arg, "off");
-      if (!on && !off) { snprintf(out, out_len, "gps: on|off?"); return true; }
+      if (!on && !off) { snprintf(out, out_len, "gps: on|off|fix?"); return true; }
       if (_ui) _ui->botSetGPS(on);
       snprintf(out, out_len, "GPS: %s", on ? "on" : "off");
       return true;
@@ -347,6 +359,7 @@ bool MyMesh::botCommandReply(const char* cmd, const char* arg, bool actions_allo
 // the read-only queries are always reachable once a target's Commands is on.
 int MyMesh::botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* out, int out_len,
                              const char* sender_name, bool actions_allowed) {
+  _locfix_requested = false;   // set by a "!gps fix" token below; caller checks it after we return
   int oi = 0;
   int matched = 0;
   for (const char* p = body; *p; ) {
@@ -405,7 +418,7 @@ bool MyMesh::tryBotCommand(const ContactInfo& from, const char* text, uint8_t ho
   uint32_t ts = getRTCClock()->getCurrentTime();
   char out[BOT_SCRATCH];
   if (botScanCommands(text, hops, ts, out, sizeof(out), from.name, _prefs.bot_actions_dm != 0) == 0) return false;  // no commands
-  if (!botDmAllowed(from.id.pub_key)) return true;                           // throttled
+  if (!botDmAllowed(from.id.pub_key)) { _locfix_requested = false; return true; }  // throttled
 
   uint32_t expected_ack, est_timeout;
   if (sendMessage(from, ts, 0, out, expected_ack, est_timeout) != MSG_SEND_FAILED) {
@@ -414,7 +427,9 @@ bool MyMesh::tryBotCommand(const ContactInfo& from, const char* text, uint8_t ho
 #ifdef DISPLAY_CLASS
     if (_ui) _ui->addDMMsg(from.id.pub_key, true, out);
 #endif
+    if (_locfix_requested) startLocFix(LOCFIX_DEST_CONTACT, from.id.pub_key, 0);
   }
+  _locfix_requested = false;
   return true;
 }
 
@@ -434,11 +449,11 @@ bool MyMesh::tryBotChannelCommand(uint8_t channel_idx, const char* text, uint8_t
   uint32_t ts = getRTCClock()->getCurrentTime();
   char out[BOT_SCRATCH];
   if (botScanCommands(msg, hops, ts, out, sizeof(out), sender_name, _prefs.bot_actions_ch != 0) == 0) return false;  // no commands
-  if (botInQuietHours()) return true;                                       // quiet hours
-  if (millis() - _bot_last_ch_reply_ms <= BOT_REPLY_COOLDOWN_MS) return true;  // throttled
+  if (botInQuietHours()) { _locfix_requested = false; return true; }                                       // quiet hours
+  if (millis() - _bot_last_ch_reply_ms <= BOT_REPLY_COOLDOWN_MS) { _locfix_requested = false; return true; }  // throttled
 
   ChannelDetails ch;
-  if (!getChannel(channel_idx, ch)) return true;
+  if (!getChannel(channel_idx, ch)) { _locfix_requested = false; return true; }
   int rlen = strlen(out);
   if (sendGroupMessage(ts, ch.channel, _prefs.node_name, out, rlen)) {
     _bot_last_ch_reply_ms = millis();
@@ -450,7 +465,9 @@ bool MyMesh::tryBotChannelCommand(uint8_t channel_idx, const char* text, uint8_t
       _ui->addChannelMsg(channel_idx, with_sender);
     }
 #endif
+    if (_locfix_requested) startLocFix(LOCFIX_DEST_CHANNEL, nullptr, channel_idx);
   }
+  _locfix_requested = false;
   return true;
 }
 
@@ -469,8 +486,8 @@ bool MyMesh::tryBotRoomCommand(const ContactInfo& from, const uint8_t* sender_pr
   uint32_t ts = getRTCClock()->getCurrentTime();
   char out[BOT_SCRATCH];
   if (botScanCommands(text, hops, ts, out, sizeof(out), sender_name, _prefs.bot_actions_room != 0) == 0) return false;  // no commands
-  if (botInQuietHours()) return true;                                          // quiet hours
-  if (millis() - _bot_last_room_reply_ms <= BOT_REPLY_COOLDOWN_MS) return true;   // throttled
+  if (botInQuietHours()) { _locfix_requested = false; return true; }                          // quiet hours
+  if (millis() - _bot_last_room_reply_ms <= BOT_REPLY_COOLDOWN_MS) { _locfix_requested = false; return true; }   // throttled
 
   uint32_t expected_ack, est_timeout;
   if (sendMessage(from, ts, 0, out, expected_ack, est_timeout) != MSG_SEND_FAILED) {
@@ -479,6 +496,107 @@ bool MyMesh::tryBotRoomCommand(const ContactInfo& from, const uint8_t* sender_pr
 #ifdef DISPLAY_CLASS
     if (_ui) _ui->addDMMsg(from.id.pub_key, true, out);
 #endif
+    if (_locfix_requested) startLocFix(LOCFIX_DEST_CONTACT, from.id.pub_key, 0);
   }
+  _locfix_requested = false;
   return true;
+}
+
+// Arms the "!gps fix" wait: turns GPS on (remembering whether it already was,
+// so tickLocFix() restores rather than assumes "off"), and resets the
+// averaging accumulator. pub_key is only read for LOCFIX_DEST_CONTACT (DM or
+// room -- both reply via sendMessage, see sendLocFixResult()); pass nullptr
+// for LOCFIX_DEST_CHANNEL.
+void MyMesh::startLocFix(uint8_t dest_type, const uint8_t* pub_key, uint8_t channel_idx) {
+  _loc_fix.active = true;
+  _loc_fix.dest_type = dest_type;
+  if (pub_key) memcpy(_loc_fix.pub_key, pub_key, PUB_KEY_SIZE);
+  _loc_fix.channel_idx = channel_idx;
+  _loc_fix.sum_lat = 0.0;
+  _loc_fix.sum_lon = 0.0;
+  _loc_fix.sample_count = 0;
+  _loc_fix.averaging_until_ms = 0;
+  _loc_fix.deadline_ms = futureMillis(LOCFIX_TIMEOUT_MS);
+  _loc_fix.gps_was_on = (_prefs.gps_enabled != 0);
+  if (!_loc_fix.gps_was_on && _ui) _ui->botSetGPS(true);
+}
+
+// !gps fix state machine, ticked every MyMesh::loop() while _loc_fix.active.
+// Phase 1 (acquire): wait for a valid fix with at least LOCFIX_MIN_SATS
+// satellites. Phase 2 (average): once that's first met, keep summing
+// node_lat/node_lon for LOCFIX_AVERAGE_MS more -- only on ticks where the
+// threshold still holds, so a momentary drop below LOCFIX_MIN_SATS just skips
+// a sample instead of aborting the whole wait. A hard LOCFIX_TIMEOUT_MS
+// deadline covers both phases; on timeout with zero samples collected the
+// result is a plain failure (no stale-cache fallback -- a cached node_lat/lon
+// from long before this request would be actively misleading here).
+void MyMesh::tickLocFix() {
+  if (!_loc_fix.active) return;
+
+  LocationProvider* loc = sensors.getLocationProvider();
+  bool ready = loc && loc->isValid() && loc->satellitesCount() >= LOCFIX_MIN_SATS;
+
+  if (_loc_fix.averaging_until_ms == 0 && ready) {
+    _loc_fix.averaging_until_ms = futureMillis(LOCFIX_AVERAGE_MS);
+  }
+  if (_loc_fix.averaging_until_ms != 0 && ready) {
+    _loc_fix.sum_lat += sensors.node_lat;
+    _loc_fix.sum_lon += sensors.node_lon;
+    _loc_fix.sample_count++;
+  }
+
+  bool averaging_done = _loc_fix.averaging_until_ms != 0 && millisHasNowPassed(_loc_fix.averaging_until_ms);
+  bool timed_out = millisHasNowPassed(_loc_fix.deadline_ms);
+  if (!averaging_done && !timed_out) return;   // still waiting
+
+  char msg[BOT_SCRATCH];
+  if (_loc_fix.sample_count > 0) {
+    double avg_lat = _loc_fix.sum_lat / _loc_fix.sample_count;
+    double avg_lon = _loc_fix.sum_lon / _loc_fix.sample_count;
+    snprintf(msg, sizeof(msg), averaging_done ? "loc: %.5f,%.5f" : "loc: %.5f,%.5f (partial fix)", avg_lat, avg_lon);
+  } else {
+    snprintf(msg, sizeof(msg), "GPS: no fix (timeout)");
+  }
+  sendLocFixResult(msg);
+
+  if (!_loc_fix.gps_was_on && _ui) _ui->botSetGPS(false);
+  _loc_fix.active = false;
+}
+
+// Delivers tickLocFix()'s result to wherever the original "!gps fix" came
+// from. Not gated by quiet hours/cooldown -- that gate already ran once, on
+// the immediate ack (see the tryBot*Command() wrappers); this is the tail of
+// an already-approved interaction, not a new proactive reply. Still updates
+// the same cooldown timestamps/counters on success so subsequent trigger/
+// command replies stay correctly throttled afterward.
+void MyMesh::sendLocFixResult(const char* msg) {
+  uint32_t ts = getRTCClock()->getCurrentTime();
+  if (_loc_fix.dest_type == LOCFIX_DEST_CHANNEL) {
+    ChannelDetails ch;
+    if (!getChannel(_loc_fix.channel_idx, ch)) return;
+    int mlen = strlen(msg);
+    if (sendGroupMessage(ts, ch.channel, _prefs.node_name, msg, mlen)) {
+      _bot_last_ch_reply_ms = millis();
+      _bot_reply_count++;
+#ifdef DISPLAY_CLASS
+      if (_ui) {
+        char with_sender[240];
+        snprintf(with_sender, sizeof(with_sender), "%s: %s", _prefs.node_name, msg);
+        _ui->addChannelMsg(_loc_fix.channel_idx, with_sender);
+      }
+#endif
+    }
+  } else {   // LOCFIX_DEST_CONTACT -- DM or room, both go through sendMessage
+    ContactInfo* c = lookupContactByPubKey(_loc_fix.pub_key, PUB_KEY_SIZE);
+    if (!c) return;   // contact removed while we were waiting
+    uint32_t expected_ack, est_timeout;
+    if (sendMessage(*c, ts, 0, msg, expected_ack, est_timeout) != MSG_SEND_FAILED) {
+      if (c->type == ADV_TYPE_ROOM) _bot_last_room_reply_ms = millis();
+      else botDmRecord(c->id.pub_key);
+      _bot_reply_count++;
+#ifdef DISPLAY_CLASS
+      if (_ui) _ui->addDMMsg(c->id.pub_key, true, msg);
+#endif
+    }
+  }
 }

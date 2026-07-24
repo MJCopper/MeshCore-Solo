@@ -1550,6 +1550,8 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   memset(_bot_dm_log, 0, sizeof(_bot_dm_log));
   _bot_reply_count = 0;
   _next_auto_advert_ms = 0;
+  _loc_fix.active = false;
+  _locfix_requested = false;
   clearPendingReqs();
   next_ack_idx = 0;
   sign_data = NULL;
@@ -3082,6 +3084,8 @@ void MyMesh::loop() {
       }
     }
   }
+
+  tickLocFix();
 
   if (_cli_rescue) {
     checkCLIRescueCmd();

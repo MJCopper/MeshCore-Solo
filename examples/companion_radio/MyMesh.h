@@ -317,6 +317,14 @@ private:
   bool tryBotRoomCommand(const ContactInfo& from, const uint8_t* sender_prefix, const char* text, uint8_t hops); // room commands
   bool botCommandReply(const char* cmd, const char* arg, bool actions_allowed, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name);  // one command → reply text
   int  botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name, bool actions_allowed); // scan "!word"s → combined reply, returns count
+  // !gps fix -- single-shot "wait for a stabilised GPS fix, then push a follow-up
+  // message" action. botCommandReply() only sets _locfix_requested (it doesn't know
+  // the destination); the tryBot*Command() wrappers call startLocFix() with the
+  // destination they each already have, but only once the immediate ack actually
+  // sent (so a throttled/suppressed ack never starts a fix nobody will hear about).
+  void tickLocFix();     // ticked every loop() while _loc_fix.active
+  void startLocFix(uint8_t dest_type, const uint8_t* pub_key, uint8_t channel_idx);
+  void sendLocFixResult(const char* msg);
   bool botTriggerMatches(const char* trigger, const char* body, bool allow_wildcard) const;
   bool botInQuietHours() const;               // true when auto-replies should stay silent
   bool botDmAllowed(const uint8_t* pubkey);   // per-contact DM throttle: ok to reply?
@@ -417,6 +425,28 @@ private:
   static const int BOT_DM_LOG_SIZE = 8;
   BotReplyLog _bot_dm_log[BOT_DM_LOG_SIZE];
   uint16_t    _bot_reply_count;   // total auto-replies sent since boot
+
+  // !gps fix state -- one global slot (one physical GPS): botCommandReply()
+  // rejects a second request outright while one is active, so this never
+  // needs to be an array. See tickLocFix()/startLocFix() in MyMeshBot.h.
+  static const int LOCFIX_MIN_SATS = 8;            // readiness threshold
+  static const uint32_t LOCFIX_AVERAGE_MS = 10000;  // once ready, keep averaging this long
+  static const uint32_t LOCFIX_TIMEOUT_MS = 90000;  // hard stop covering both phases
+  enum { LOCFIX_DEST_CONTACT = 0, LOCFIX_DEST_CHANNEL = 1 };  // CONTACT covers DM and room alike (both reply via sendMessage)
+  struct PendingLocFix {
+    bool     active;
+    bool     gps_was_on;         // restore to this when done, not unconditionally "off"
+    uint32_t deadline_ms;
+    uint32_t averaging_until_ms; // 0 while still acquiring; set once the sat threshold is first met
+    double   sum_lat, sum_lon;
+    int      sample_count;
+    uint8_t  dest_type;
+    uint8_t  pub_key[PUB_KEY_SIZE];  // dest_type == LOCFIX_DEST_CONTACT
+    uint8_t  channel_idx;            // dest_type == LOCFIX_DEST_CHANNEL
+  };
+  PendingLocFix _loc_fix;
+  bool _locfix_requested;   // transient: set by botCommandReply() when "!gps fix" was
+                            // seen this scan, cleared by the tryBot*Command() wrapper
 
   TransportKey send_scope;
 
