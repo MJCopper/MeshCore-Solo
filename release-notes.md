@@ -1,4 +1,4 @@
-## Unreleased
+## MeshCore Solo Companion Firmware v1.23.1
 
 ### Fixes
 
