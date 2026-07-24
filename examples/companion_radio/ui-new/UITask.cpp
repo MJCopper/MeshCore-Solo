@@ -2146,7 +2146,6 @@ void UITask::pollCardKB() {
     if (_locked) {
       _lock_wake_until = millis() + 2000;
     } else {
-      if (_display && !_display->isOn()) _display->turnOn();
       uint32_t aoff = autoOffMillis();
       if (aoff > 0) _auto_off = millis() + aoff;
     }
@@ -3159,8 +3158,10 @@ static uint16_t readAnalogMv(uint32_t psel) {
 }
 #endif
 
-// Cycle a user GPIO pin's mode (Off/In/Out-low/Out-high), apply it to the
-// actual pin, and persist. Called by GpioScreen on Enter.
+// Set a user GPIO pin to a specific mode (0=Off 1=In 2=Out-low 3=Out-high
+// 4=Analog), apply it to the actual pin, and persist. The Off->In->Out->...
+// cycling itself lives in GpioScreen; the bot's !gpioN on/off and boot
+// restore also route through here.
 void UITask::setGpioMode(int idx, uint8_t mode) {
 #if defined(PIN_GPIO1)
   if (!_node_prefs) return;

@@ -388,6 +388,15 @@ int MyMesh::botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* o
                              const char* sender_name, bool actions_allowed) {
   resetPendingBotActions();   // pending actions/flags below are set by tokens in this scan;
                               // caller applies or clears them once it knows if the reply sent
+  // Reads one space-delimited token at p into buf (lowercased, truncated to
+  // cap-1 chars with any overflow consumed too), leaving p on the space/NUL
+  // that ended it. Shared by the command name and its two optional args.
+  auto readToken = [](const char*& p, char* buf, int cap) {
+    int i = 0;
+    while (*p && *p != ' ' && i < cap - 1) buf[i++] = (char)tolower((uint8_t)*p++);
+    buf[i] = '\0';
+    while (*p && *p != ' ') p++;
+  };
   int oi = 0;
   int matched = 0;
   for (const char* p = body; *p; ) {
@@ -398,11 +407,7 @@ int MyMesh::botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* o
     }
     p++;                                          // step past '!'
     char cmd[16];
-    int ci = 0;
-    while (*p && *p != ' ' && ci < (int)sizeof(cmd) - 1)
-      cmd[ci++] = (char)tolower((uint8_t)*p++);
-    cmd[ci] = '\0';
-    while (*p && *p != ' ') p++;                  // consume any overflow of this token
+    readToken(p, cmd, sizeof(cmd));
     if (!cmd[0]) continue;
 
     // Up to two optional arguments: the next one or two space-delimited
@@ -416,17 +421,9 @@ int MyMesh::botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* o
     while (*p == ' ') p++;
     char arg1[16] = "", arg2[16] = "";
     if (*p && *p != '!') {
-      int ai = 0;
-      while (*p && *p != ' ' && ai < (int)sizeof(arg1) - 1) arg1[ai++] = (char)tolower((uint8_t)*p++);
-      arg1[ai] = '\0';
-      while (*p && *p != ' ') p++;                // consume any overflow of this token
+      readToken(p, arg1, sizeof(arg1));
       while (*p == ' ') p++;
-      if (*p && *p != '!') {
-        int bi = 0;
-        while (*p && *p != ' ' && bi < (int)sizeof(arg2) - 1) arg2[bi++] = (char)tolower((uint8_t)*p++);
-        arg2[bi] = '\0';
-        while (*p && *p != ' ') p++;              // consume any overflow of this token
-      }
+      if (*p && *p != '!') readToken(p, arg2, sizeof(arg2));
     }
 
     char seg[80];
