@@ -256,7 +256,7 @@ void MyMesh::tryBotReplyRoom(const ContactInfo& from, const uint8_t* sender_pref
 // reply without needing a template); the rest expand a static template via
 // expandMsg's placeholders, including {name}/{hops} if the sender wrote them
 // into a custom reply — not used by any of the built-in templates below today.
-bool MyMesh::botCommandReply(const char* cmd, const char* arg, bool actions_allowed,
+bool MyMesh::botCommandReply(const char* cmd, const char* arg, const char* arg2, bool actions_allowed,
                               uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name) {
   if (!strcmp(cmd, "hops")) {
     if (hops == 0) strncpy(out, "direct", out_len);     // heard directly (0 repeaters)
@@ -270,47 +270,74 @@ bool MyMesh::botCommandReply(const char* cmd, const char* arg, bool actions_allo
   // not by the templating/expandMsg mechanism the queries share.
   if (actions_allowed) {
     if (!strcmp(cmd, "gps")) {
-      // "fix" -- single-shot: turn GPS on (if not already), wait for a
-      // stabilised position, send it, then restore GPS to whatever it was
+      // "fix [seconds]" -- single-shot: turn GPS on (if not already), wait for
+      // a stabilised position, send it, then restore GPS to whatever it was
       // before. This command can't reply synchronously like every other one
       // here (a fix takes seconds-to-minutes), so it acks immediately and
       // sets _locfix_requested; the tryBot*Command() wrapper that called us
       // knows the destination and starts the actual wait (see MyMesh.h).
+      // Optional 2nd argument overrides the default LOCFIX_TIMEOUT_MS budget
+      // -- useful under poor sky view, where 90s isn't always enough to reach
+      // isLocFixReady()'s HDOP/satellite bar. Clamped to a sane range: floor
+      // covers LOCFIX_AVERAGE_MS (no point requesting less than one averaging
+      // window), ceiling keeps a forgotten/misfired request from parking GPS
+      // on indefinitely.
       if (!strcmp(arg, "fix")) {
         if (_loc_fix.active) { snprintf(out, out_len, "GPS: fix already pending"); return true; }
+        uint32_t timeout_ms = LOCFIX_TIMEOUT_MS;
+        if (arg2[0]) {
+          int secs = atoi(arg2);
+          if (secs < 15) secs = 15;
+          if (secs > 300) secs = 300;
+          timeout_ms = (uint32_t)secs * 1000;
+        }
         _locfix_requested = true;
+        _locfix_requested_timeout_ms = timeout_ms;
         snprintf(out, out_len, "GPS: acquiring fix...");
         return true;
       }
       bool on  = !strcmp(arg, "on");   // arg was lowercased while parsing (see botScanCommands)
       bool off = !strcmp(arg, "off");
       if (!on && !off) { snprintf(out, out_len, "gps: on|off|fix?"); return true; }
-      if (_ui) _ui->botSetGPS(on);
+      // Deferred: applyPendingBotActions() actually flips the GPS state, once
+      // quiet-hours/cooldown/throttle have passed (see MyMesh.h).
+      _bot_gps_action_pending = true;
+      _bot_gps_action_on = on;
       snprintf(out, out_len, "GPS: %s", on ? "on" : "off");
       return true;
     }
     if (!strcmp(cmd, "buzz")) {
-      int secs = arg[0] ? atoi(arg) : 5;   // UITask::botBuzz() clamps to [1,30]
-      if (_ui) _ui->botBuzz(secs);
+      int secs = arg[0] ? atoi(arg) : 5;
+      if (secs < 1) secs = 5;
+      if (secs > 30) secs = 30;
+      _bot_buzz_action_secs = secs;   // deferred -- see applyPendingBotActions()
       snprintf(out, out_len, "Buzzing");
       return true;
     }
     if (!strcmp(cmd, "advert")) {
-      snprintf(out, out_len, advert() ? "Advert sent" : "Advert failed");
+      // Deferred -- can no longer report advert()'s own success/failure here
+      // (it doesn't run until applyPendingBotActions()), so the ack is just
+      // an acknowledgement, same spirit as !gps fix's "acquiring fix...".
+      _bot_advert_action_pending = true;
+      snprintf(out, out_len, "Advert requested");
       return true;
     }
     // !gpio1..!gpio4 -- user-assignable pins (see UITask::botSetGPIO/
     // botGetGPIO/botGetGPIOAnalog; no-op on boards without them). Bare (no
     // arg) reports current mode+level (millivolts if in Analog mode, GPIO1/
     // GPIO2 only); on/off only takes effect if that pin's Tools > GPIO mode
-    // is currently Output (Analog/Input/Off all reply "not output").
+    // is currently Output (Analog/Input/Off all reply "not output"). The
+    // Output check itself is read-only (botGetGPIO), so it's safe to do now
+    // for an accurate reply; only the actual pin write is deferred.
     if (!strncmp(cmd, "gpio", 4) && cmd[4] >= '1' && cmd[4] <= '4' && cmd[5] == '\0') {
       int idx = cmd[4] - '0';
       if (arg[0]) {
         bool on  = !strcmp(arg, "on");
         bool off = !strcmp(arg, "off");
         if (!on && !off) { snprintf(out, out_len, "gpio%d: on|off?", idx); return true; }
-        if (_ui && _ui->botSetGPIO(idx, on)) {
+        bool is_out = false, val = false;
+        if (_ui && _ui->botGetGPIO(idx, is_out, val) && is_out) {
+          _bot_gpio_action[idx - 1] = on ? 1 : 0;   // deferred -- see applyPendingBotActions()
           snprintf(out, out_len, "gpio%d: %s", idx, on ? "on" : "off");
         } else {
           snprintf(out, out_len, "gpio%d: not output", idx);
@@ -359,7 +386,8 @@ bool MyMesh::botCommandReply(const char* cmd, const char* arg, bool actions_allo
 // the read-only queries are always reachable once a target's Commands is on.
 int MyMesh::botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* out, int out_len,
                              const char* sender_name, bool actions_allowed) {
-  _locfix_requested = false;   // set by a "!gps fix" token below; caller checks it after we return
+  resetPendingBotActions();   // pending actions/flags below are set by tokens in this scan;
+                              // caller applies or clears them once it knows if the reply sent
   int oi = 0;
   int matched = 0;
   for (const char* p = body; *p; ) {
@@ -377,23 +405,32 @@ int MyMesh::botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* o
     while (*p && *p != ' ') p++;                  // consume any overflow of this token
     if (!cmd[0]) continue;
 
-    // Optional argument: the next space-delimited token, unless it's itself
-    // the start of another command ("!"). E.g. "!gps on !batt" -- "on" is
-    // !gps's argument, "!batt" starts the next command. Query commands
-    // ignore arg; a stray word after e.g. "!ping" (no command reads it) is
-    // just consumed here instead of by the "not a command token" branch on
-    // the next iteration -- same net effect, no behaviour change.
+    // Up to two optional arguments: the next one or two space-delimited
+    // tokens, unless a token is itself the start of another command ("!").
+    // E.g. "!gps fix 120 !batt" -- "fix"/"120" are !gps's arguments, "!batt"
+    // starts the next command. Almost every command only reads arg1 (arg2 is
+    // always "" for them) -- a stray second word after e.g. "!gpio1 on foo"
+    // just gets consumed as arg2 and ignored, same net effect as before this
+    // supported two tokens. Only "!gps fix" currently reads arg2 (an optional
+    // timeout override, see botCommandReply).
     while (*p == ' ') p++;
-    char arg[16] = "";
+    char arg1[16] = "", arg2[16] = "";
     if (*p && *p != '!') {
       int ai = 0;
-      while (*p && *p != ' ' && ai < (int)sizeof(arg) - 1) arg[ai++] = (char)tolower((uint8_t)*p++);
-      arg[ai] = '\0';
+      while (*p && *p != ' ' && ai < (int)sizeof(arg1) - 1) arg1[ai++] = (char)tolower((uint8_t)*p++);
+      arg1[ai] = '\0';
       while (*p && *p != ' ') p++;                // consume any overflow of this token
+      while (*p == ' ') p++;
+      if (*p && *p != '!') {
+        int bi = 0;
+        while (*p && *p != ' ' && bi < (int)sizeof(arg2) - 1) arg2[bi++] = (char)tolower((uint8_t)*p++);
+        arg2[bi] = '\0';
+        while (*p && *p != ' ') p++;              // consume any overflow of this token
+      }
     }
 
     char seg[80];
-    if (!botCommandReply(cmd, arg, actions_allowed, hops, ts, seg, sizeof(seg), sender_name)) continue;  // unknown
+    if (!botCommandReply(cmd, arg1, arg2, actions_allowed, hops, ts, seg, sizeof(seg), sender_name)) continue;  // unknown
 
     if (matched > 0 && oi + 3 < out_len) {        // " | " separator
       out[oi++] = ' '; out[oi++] = '|'; out[oi++] = ' ';
@@ -418,7 +455,7 @@ bool MyMesh::tryBotCommand(const ContactInfo& from, const char* text, uint8_t ho
   uint32_t ts = getRTCClock()->getCurrentTime();
   char out[BOT_SCRATCH];
   if (botScanCommands(text, hops, ts, out, sizeof(out), from.name, _prefs.bot_actions_dm != 0) == 0) return false;  // no commands
-  if (!botDmAllowed(from.id.pub_key)) { _locfix_requested = false; return true; }  // throttled
+  if (!botDmAllowed(from.id.pub_key)) { resetPendingBotActions(); return true; }  // throttled
 
   uint32_t expected_ack, est_timeout;
   if (sendMessage(from, ts, 0, out, expected_ack, est_timeout) != MSG_SEND_FAILED) {
@@ -428,8 +465,9 @@ bool MyMesh::tryBotCommand(const ContactInfo& from, const char* text, uint8_t ho
     if (_ui) _ui->addDMMsg(from.id.pub_key, true, out);
 #endif
     if (_locfix_requested) startLocFix(LOCFIX_DEST_CONTACT, from.id.pub_key, 0);
+    applyPendingBotActions();
   }
-  _locfix_requested = false;
+  resetPendingBotActions();
   return true;
 }
 
@@ -449,11 +487,11 @@ bool MyMesh::tryBotChannelCommand(uint8_t channel_idx, const char* text, uint8_t
   uint32_t ts = getRTCClock()->getCurrentTime();
   char out[BOT_SCRATCH];
   if (botScanCommands(msg, hops, ts, out, sizeof(out), sender_name, _prefs.bot_actions_ch != 0) == 0) return false;  // no commands
-  if (botInQuietHours()) { _locfix_requested = false; return true; }                                       // quiet hours
-  if (millis() - _bot_last_ch_reply_ms <= BOT_REPLY_COOLDOWN_MS) { _locfix_requested = false; return true; }  // throttled
+  if (botInQuietHours()) { resetPendingBotActions(); return true; }                                       // quiet hours
+  if (millis() - _bot_last_ch_reply_ms <= BOT_REPLY_COOLDOWN_MS) { resetPendingBotActions(); return true; }  // throttled
 
   ChannelDetails ch;
-  if (!getChannel(channel_idx, ch)) { _locfix_requested = false; return true; }
+  if (!getChannel(channel_idx, ch)) { resetPendingBotActions(); return true; }
   int rlen = strlen(out);
   if (sendGroupMessage(ts, ch.channel, _prefs.node_name, out, rlen)) {
     _bot_last_ch_reply_ms = millis();
@@ -466,8 +504,9 @@ bool MyMesh::tryBotChannelCommand(uint8_t channel_idx, const char* text, uint8_t
     }
 #endif
     if (_locfix_requested) startLocFix(LOCFIX_DEST_CHANNEL, nullptr, channel_idx);
+    applyPendingBotActions();
   }
-  _locfix_requested = false;
+  resetPendingBotActions();
   return true;
 }
 
@@ -486,8 +525,8 @@ bool MyMesh::tryBotRoomCommand(const ContactInfo& from, const uint8_t* sender_pr
   uint32_t ts = getRTCClock()->getCurrentTime();
   char out[BOT_SCRATCH];
   if (botScanCommands(text, hops, ts, out, sizeof(out), sender_name, _prefs.bot_actions_room != 0) == 0) return false;  // no commands
-  if (botInQuietHours()) { _locfix_requested = false; return true; }                          // quiet hours
-  if (millis() - _bot_last_room_reply_ms <= BOT_REPLY_COOLDOWN_MS) { _locfix_requested = false; return true; }   // throttled
+  if (botInQuietHours()) { resetPendingBotActions(); return true; }                          // quiet hours
+  if (millis() - _bot_last_room_reply_ms <= BOT_REPLY_COOLDOWN_MS) { resetPendingBotActions(); return true; }   // throttled
 
   uint32_t expected_ack, est_timeout;
   if (sendMessage(from, ts, 0, out, expected_ack, est_timeout) != MSG_SEND_FAILED) {
@@ -497,9 +536,39 @@ bool MyMesh::tryBotRoomCommand(const ContactInfo& from, const uint8_t* sender_pr
     if (_ui) _ui->addDMMsg(from.id.pub_key, true, out);
 #endif
     if (_locfix_requested) startLocFix(LOCFIX_DEST_CONTACT, from.id.pub_key, 0);
+    applyPendingBotActions();
   }
-  _locfix_requested = false;
+  resetPendingBotActions();
   return true;
+}
+
+// Actually runs the state-changing bot actions botCommandReply() recorded
+// this scan (!gps on|off, !buzz, !advert, !gpio1..4 on|off) -- called by the
+// tryBot*Command() wrappers only after quiet-hours/cooldown/per-contact
+// throttle passed and the ack itself sent, so those gates genuinely block the
+// action, not just the reply text (see the _bot_*_action_* fields in
+// MyMesh.h). !gps fix's startLocFix() is armed separately by the caller (it
+// needs the destination, which this function doesn't have).
+void MyMesh::applyPendingBotActions() {
+  if (_bot_gps_action_pending && _ui) _ui->botSetGPS(_bot_gps_action_on);
+  if (_bot_buzz_action_secs > 0 && _ui) _ui->botBuzz(_bot_buzz_action_secs);
+  if (_bot_advert_action_pending) advert();
+  for (int i = 0; i < 4; i++) {
+    if (_bot_gpio_action[i] >= 0 && _ui) _ui->botSetGPIO(i + 1, _bot_gpio_action[i] != 0);
+  }
+}
+
+// Clears every pending-action flag botCommandReply() may have set this scan,
+// without running them -- used both at scan start and on every throttled/
+// aborted path, so a suppressed reply never leaves a stale action armed for
+// next time.
+void MyMesh::resetPendingBotActions() {
+  _locfix_requested = false;
+  _locfix_requested_timeout_ms = LOCFIX_TIMEOUT_MS;
+  _bot_gps_action_pending = false;
+  _bot_buzz_action_secs = 0;
+  _bot_advert_action_pending = false;
+  for (int i = 0; i < 4; i++) _bot_gpio_action[i] = -1;
 }
 
 // Arms the "!gps fix" wait: turns GPS on (remembering whether it already was,
@@ -516,7 +585,7 @@ void MyMesh::startLocFix(uint8_t dest_type, const uint8_t* pub_key, uint8_t chan
   _loc_fix.sum_lon = 0.0;
   _loc_fix.sample_count = 0;
   _loc_fix.averaging_until_ms = 0;
-  _loc_fix.deadline_ms = futureMillis(LOCFIX_TIMEOUT_MS);
+  _loc_fix.deadline_ms = futureMillis(_locfix_requested_timeout_ms);
   _loc_fix.gps_was_on = (_prefs.gps_enabled != 0);
   if (!_loc_fix.gps_was_on && _ui) _ui->botSetGPS(true);
 }

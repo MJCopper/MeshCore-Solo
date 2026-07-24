@@ -2130,11 +2130,40 @@ void UITask::pollCardKB() {
   } else if (raw == 0x09) {   // plain Tab -- same, but only outside the keyboard
     if (_kb.isVisible()) return;
     key = KEY_CONTEXT_MENU;
+  } else if (raw == 0x80) {
+    // Fn+Esc -- CardKB's lock/unlock gesture: a single press toggles _locked
+    // directly (unlike the physical Hold-Back+3xEnter combo's 3-press
+    // sequence), so it works to unlock a locked device too, where every
+    // other CardKB key is correctly discarded (see the Fn+<letter> branch
+    // below). Esc, not the adjacent Fn+Backspace, on purpose: Fn and
+    // Backspace sit right next to each other on CardKB's layout, making that
+    // combo too easy to hit by accident; Esc is on the opposite side of the
+    // keyboard. One press is enough -- Fn+Esc is already a deliberate
+    // two-key combo, so it doesn't need the physical combo's extra 3x
+    // repetition to guard against accidental triggering.
+    if (_display && !_display->isOn()) _display->turnOn();
+    _locked = !_locked;
+    if (_locked) {
+      _lock_wake_until = millis() + 2000;
+    } else {
+      if (_display && !_display->isOn()) _display->turnOn();
+      uint32_t aoff = autoOffMillis();
+      if (aoff > 0) _auto_off = millis() + aoff;
+    }
+    _next_refresh = 0;
+    return;
   } else if (raw >= 0x80 && raw <= 0xAF) {   // Fn+<letter> -- open its accent popup
     char base = CARDKB_FN_BASE[raw - 0x80];
     if (base == 0) return;   // Fn+digit/symbol/arrow -- not used by this UI
     char woke = checkDisplayOn(base);
-    if (woke) _kb.openAccentFor(base);
+    // Every other key here goes through enqueueKey(), so it's naturally eaten
+    // while locked (see the dequeue-time "if (!_locked && curr)" gate in
+    // loop()). This path calls into the keyboard widget directly instead, so
+    // it needs its own _locked check -- otherwise a stray Fn+letter (e.g. the
+    // keyboard was left open before the device locked, or brushed against in
+    // a pocket) could pop the accent popup while the screen is supposed to
+    // ignore all input.
+    if (woke && !_locked) _kb.openAccentFor(base);
     return;
   } else {
     key = (char)raw;   // plain Enter/arrows/backspace/ASCII -- byte-identical
@@ -2360,8 +2389,13 @@ void UITask::loop() {
       }
       // Hint popup at bottom (like alert style)
       _display->setTextSize(1);
+#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+      const char* hint = _lock_seq_count == 0 ? (_has_cardkb ? "Back+3xEnter/Fn+Esc" : "Hold Back + 3xEnter") :
+                         _lock_seq_count == 1 ? "Enter x2 more..."   : "Enter x1 more...";
+#else
       const char* hint = _lock_seq_count == 0 ? "Hold Back + 3xEnter" :
                          _lock_seq_count == 1 ? "Enter x2 more..."   : "Enter x1 more...";
+#endif
       int p = 3;
       int hy = _display->height() - lk_lh - p * 2;
       int hw = _display->getTextWidth(hint);
