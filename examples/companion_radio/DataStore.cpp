@@ -551,6 +551,12 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.gpio4_mode, sizeof(_prefs.gpio4_mode));
   if (_prefs.gpio4_mode > 3) _prefs.gpio4_mode = 0;
 
+  // → 0xC0DE0023: append the external-keyboard compact-display toggle at the
+  // tail. A pre-0x23 file has no byte here; clamp to 0 (full grid, unchanged
+  // behaviour for upgraders).
+  rd(&_prefs.keyboard_cardkb_compact, sizeof(_prefs.keyboard_cardkb_compact));
+  if (_prefs.keyboard_cardkb_compact > 1) _prefs.keyboard_cardkb_compact = 0;
+
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
   // so we just log it — next savePrefs writes the current sentinel.
@@ -762,6 +768,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.gpio2_mode, sizeof(_prefs.gpio2_mode));
     file.write((uint8_t *)&_prefs.gpio3_mode, sizeof(_prefs.gpio3_mode));
     file.write((uint8_t *)&_prefs.gpio4_mode, sizeof(_prefs.gpio4_mode));
+    file.write((uint8_t *)&_prefs.keyboard_cardkb_compact, sizeof(_prefs.keyboard_cardkb_compact));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good

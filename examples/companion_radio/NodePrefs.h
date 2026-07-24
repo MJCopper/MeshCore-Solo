@@ -422,6 +422,17 @@ struct NodePrefs {  // persisted to file
   uint8_t  gpio3_mode;
   uint8_t  gpio4_mode;
 
+  // Settings > Keyboard's "Ext. KB" row (boards with a second I2C bus for an
+  // optional CardKB, see ENV_PIN_SDA/ENV_PIN_SCL, only). When on, the
+  // on-screen keyboard skips drawing its full letter grid + special-row icons
+  // -- an external-keyboard typist never looks at them -- and shows a compact
+  // one-line status (current script/page, caps) instead; the accent and
+  // placeholder popups still render on top exactly as before (see
+  // KeyboardWidget::render()). Manual toggle rather than auto-detected, so it
+  // stays put even if the module is briefly unplugged. Default 0 (full grid,
+  // unchanged behaviour) on upgrade.
+  uint8_t  keyboard_cardkb_compact;
+
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
   static const uint8_t LOC_SHARE_MOVE_COUNT = 4;
@@ -484,7 +495,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0022;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0023;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -581,7 +592,9 @@ struct NodePrefs {  // persisted to file
 //   3. clamp it on load (an upgrader's file lacks it → stray bytes)
 //   4. bump SCHEMA_SENTINEL's low byte
 // (Padding can also shift sizeof; a "false" trip just means re-check + rebump.)
-// keyboard_main_alphabet (added in the prior bump) landed in existing tail
+// keyboard_cardkb_compact (0xC0DE0023) also landed in existing tail padding --
+// confirmed via a real build -- leaving sizeof unchanged at 2720.
+// keyboard_main_alphabet (added in an earlier bump) landed in existing tail
 // padding -- confirmed via a real build's sizeof() -- so that bump left the
 // size unchanged. bot_actions_dm/ch/room and gpio1..4_mode (the last two
 // bumps, 7 more uint8_t total) added 8 bytes, not 7 -- one byte of tail

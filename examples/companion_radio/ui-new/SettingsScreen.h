@@ -73,6 +73,9 @@ class SettingsScreen : public UIScreen {
     KEYBOARD_TYPE,
     KEYBOARD_MAIN_ALPHABET,
     KEYBOARD_ALPHABET,
+#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+    KEYBOARD_CARDKB_COMPACT,
+#endif
     // Contacts section
     SECTION_CONTACTS, DM_FILTER, CH_FILTER, ROOM_FILTER,
     // Messages section
@@ -574,6 +577,12 @@ class SettingsScreen : public UIScreen {
       display.print("Additional");
       display.setCursor(valCol(display), y);
       display.print(NodePrefs::keyboardAlphabetLabel(p ? p->keyboard_alt_alphabet : 0));
+#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+    } else if (item == KEYBOARD_CARDKB_COMPACT) {
+      display.print("Ext. KB");
+      display.setCursor(valCol(display), y);
+      display.print((p && p->keyboard_cardkb_compact) ? "Compact" : "Full");
+#endif
     } else if (item == BATT_DISPLAY) {
       display.print("BattDisp");
       display.setCursor(valCol(display), y);
@@ -945,6 +954,13 @@ public:
       _dirty = true;
       return true;
     }
+#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+    if (_selected == KEYBOARD_CARDKB_COMPACT && p && (left || right || enter)) {
+      p->keyboard_cardkb_compact ^= 1;
+      _dirty = true;
+      return true;
+    }
+#endif
     if (_selected == DM_RESEND && p) {
       int n = p->dm_resend_count;
       if (right || enter) n = (n + 1) % 6;          // 0..5, wraps
