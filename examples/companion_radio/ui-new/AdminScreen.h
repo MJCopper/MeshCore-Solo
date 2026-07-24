@@ -55,6 +55,12 @@ class AdminScreen : public UIScreen {
   // was submitted. Distinct from the keyboard being open (kb().render()/
   // handleInput() only run while this is false).
   bool _login_waiting = false;
+  // Deadline for _login_waiting, mirroring _cmd_deadline_ms/_waiting in the
+  // COMMAND phase below -- without it, a login reply that never arrives (e.g.
+  // the remote's password changed since it was saved, and it silently drops
+  // instead of nacking) leaves the screen stuck on "Logging in..." forever
+  // with only a manual Cancel to escape. See poll().
+  uint32_t _login_deadline_ms = 0;
 
   // One-slot memo: the last contact successfully admin-logged-into this visit,
   // so re-entering COMMAND for the same target right after doesn't require
@@ -151,9 +157,10 @@ class AdminScreen : public UIScreen {
   void startLoginWithSaved(const char* password) {
     strncpy(_login_pw, password, sizeof(_login_pw) - 1);
     _login_pw[sizeof(_login_pw) - 1] = '\0';
-    bool sent = the_mesh.sendRoomLogin(_target, _login_pw);
+    uint32_t est_timeout = 0;
+    bool sent = the_mesh.sendRoomLogin(_target, _login_pw, est_timeout);
     _task->showAlert(sent ? "Logging in..." : "Login failed", sent ? 1000 : 1500);
-    if (sent) { _login_waiting = true; _phase = LOGIN; }
+    if (sent) { _login_waiting = true; _login_deadline_ms = millis() + est_timeout + 4000; _phase = LOGIN; }
   }
 
   void sendCommand() {
@@ -410,6 +417,18 @@ public:
   }
 
   void poll() override {
+    if (_phase == LOGIN && _login_waiting && (int32_t)(millis() - _login_deadline_ms) >= 0) {
+      _login_waiting = false;
+      // No response at all is ambiguous (could be a wrong/stale password, could
+      // just be out of range) -- but a saved password that's gone stale (the
+      // remote's password changed) is exactly this: silence, not a nack. Treat
+      // it the same as onRoomLoginResult()'s explicit-failure branch: forget it
+      // so the next attempt prompts fresh instead of retrying the same dead
+      // password forever.
+      the_mesh.forgetRoomPassword(_target.id.pub_key);
+      _task->showAlert("Login failed (timeout)", 1400);
+      returnToOrigin();
+    }
     if (_phase == COMMAND && _waiting && (int32_t)(millis() - _cmd_deadline_ms) >= 0) {
       _waiting = false;
       if (_fetch_for_edit)       { fallBackToBlankEdit(); _task->showAlert("Fetch failed - enter value", 1400); }
@@ -488,9 +507,10 @@ public:
       } else if (r == KeyboardWidget::DONE) {
         strncpy(_login_pw, kb().buf, sizeof(_login_pw) - 1);
         _login_pw[sizeof(_login_pw) - 1] = '\0';
-        bool sent = the_mesh.sendRoomLogin(_target, _login_pw);
+        uint32_t est_timeout = 0;
+        bool sent = the_mesh.sendRoomLogin(_target, _login_pw, est_timeout);
         _task->showAlert(sent ? "Logging in..." : "Login failed", sent ? 1000 : 1500);
-        if (sent) _login_waiting = true; else returnToOrigin();
+        if (sent) { _login_waiting = true; _login_deadline_ms = millis() + est_timeout + 4000; } else returnToOrigin();
         // else: stay in LOGIN until onRoomLoginResult() fires above.
       }
       return true;

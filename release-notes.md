@@ -12,6 +12,7 @@
 ### Fixes
 
 - **DM/room replies sometimes didn't show who they were addressed to, and room messages could wrap incorrectly.** The reply-prefix (`@[nick] `) was being stripped at the wrong point for room posts and DMs feeding the fullscreen message view, so a DM reply's "To:" header could go missing while a room reply showed the raw `@[nick] ` marker as literal message text; a related mismatch meant the history list's scrollbar/box-height sizing pass wrapped room messages with their sender name still attached, disagreeing with the actual rendered text.
+- **Tools › Admin login could get stuck on "Logging in..." forever** if the remote node never sent back a reply — most commonly after its admin/room password was changed, since the on-device UI auto-retries the old saved password with no timeout to fall back on. It now gives up after the same estimated-timeout window the rest of Admin's commands use, forgets the stale saved password, and returns you to the picker to try again with the new one.
 
 ---
 

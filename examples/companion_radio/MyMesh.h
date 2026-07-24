@@ -222,8 +222,7 @@ public:
   // command source, so this reuses the same sendLogin() the BLE CMD_SEND_LOGIN
   // path uses; the async result lands in onContactResponse() and is pushed to
   // the UI via AbstractUITask::onRoomLoginResult().
-  bool sendRoomLogin(const ContactInfo& contact, const char* password) {
-    uint32_t est_timeout;
+  bool sendRoomLogin(const ContactInfo& contact, const char* password, uint32_t& est_timeout) {
     if (sendLogin(contact, password, est_timeout) == MSG_SEND_FAILED) return false;
     clearPendingReqs();
     memcpy(&ui_pending_login, contact.id.pub_key, 4); // match this in onContactResponse()
