@@ -35,6 +35,7 @@
 
 #include "icons.h"
 #include "GfxUtils.h"   // gfx::drawLine — connects trail points on the Home map preview
+#include "QuietTime.h"
 
 // Blinking status indicators: on for the first half of a 4 s cycle, but e-ink
 // can't repaint fast enough to blink, so it shows them steadily.
@@ -1809,7 +1810,28 @@ void UITask::showAlert(const char* text, int duration_millis) {
   _alert_expiry = millis() + duration_millis;
 }
 
-void UITask::notify(UIEventType t) {
+bool UITask::isQuietTimeActive() const {
+  return quiettime::active(_node_prefs, rtc_clock.getCurrentTime());
+}
+
+bool UITask::notificationPresentationAllowed(UIEventType event) const {
+  switch (event) {
+    case UIEventType::contactMessage:
+    case UIEventType::channelMessage:
+    case UIEventType::roomMessage:
+    case UIEventType::advertReceivedFlood:
+    case UIEventType::advertReceivedZeroHop:
+      return !isQuietTimeActive();
+    case UIEventType::ack:
+    case UIEventType::none:
+    default:
+      return true;
+  }
+}
+
+void UITask::notify(UIEventType event) {
+  if (!notificationPresentationAllowed(event)) return;
+  UIEventType t = event;
 #if defined(PIN_BUZZER)
 {
   SoundNotifier sn(buzzer, _node_prefs, _notif_mel_buf, sizeof(_notif_mel_buf));
@@ -1877,6 +1899,8 @@ void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, i
       _dm_unread_table[empty_slot].count = 1;
     }
   }
+
+  if (isQuietTimeActive()) return;
 
   char alert_buf[80];
   snprintf(alert_buf, sizeof(alert_buf), "Msg: %.20s", from_name);

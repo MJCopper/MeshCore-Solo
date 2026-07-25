@@ -557,6 +557,27 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.keyboard_cardkb_compact, sizeof(_prefs.keyboard_cardkb_compact));
   if (_prefs.keyboard_cardkb_compact > 1) _prefs.keyboard_cardkb_compact = 0;
 
+  // → 0xC0DE0024: notification Quiet Time. The RTC remains UTC; the policy
+  // applies tz_offset_hours when evaluating this local-time interval.
+  // Detect the old four-byte tail before reading so its sentinel bytes are not
+  // mistaken for settings. Existing devices default to Off, 21:00-07:00.
+  const size_t quiet_tail_size = sizeof(_prefs.quiet_time_enabled) +
+                                 sizeof(_prefs.quiet_time_start_min) +
+                                 sizeof(_prefs.quiet_time_end_min) +
+                                 sizeof(uint32_t);
+  if (file.available() >= (int)quiet_tail_size) {
+    rd(&_prefs.quiet_time_enabled, sizeof(_prefs.quiet_time_enabled));
+    rd(&_prefs.quiet_time_start_min, sizeof(_prefs.quiet_time_start_min));
+    rd(&_prefs.quiet_time_end_min, sizeof(_prefs.quiet_time_end_min));
+  } else {
+    _prefs.quiet_time_enabled = 0;
+    _prefs.quiet_time_start_min = 21 * 60;
+    _prefs.quiet_time_end_min = 7 * 60;
+  }
+  if (_prefs.quiet_time_enabled > 1) _prefs.quiet_time_enabled = 0;
+  if (_prefs.quiet_time_start_min >= 24 * 60) _prefs.quiet_time_start_min = 21 * 60;
+  if (_prefs.quiet_time_end_min >= 24 * 60) _prefs.quiet_time_end_min = 7 * 60;
+
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
   // so we just log it — next savePrefs writes the current sentinel.
@@ -769,6 +790,9 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.gpio3_mode, sizeof(_prefs.gpio3_mode));
     file.write((uint8_t *)&_prefs.gpio4_mode, sizeof(_prefs.gpio4_mode));
     file.write((uint8_t *)&_prefs.keyboard_cardkb_compact, sizeof(_prefs.keyboard_cardkb_compact));
+    file.write((uint8_t *)&_prefs.quiet_time_enabled, sizeof(_prefs.quiet_time_enabled));
+    file.write((uint8_t *)&_prefs.quiet_time_start_min, sizeof(_prefs.quiet_time_start_min));
+    file.write((uint8_t *)&_prefs.quiet_time_end_min, sizeof(_prefs.quiet_time_end_min));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good

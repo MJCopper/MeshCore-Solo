@@ -433,6 +433,10 @@ struct NodePrefs {  // persisted to file
   // unchanged behaviour) on upgrade.
   uint8_t  keyboard_cardkb_compact;
 
+  uint8_t  quiet_time_enabled;       // mute notification presentation during the local-time interval
+  uint16_t quiet_time_start_min;     // local minute-of-day, default 21:00
+  uint16_t quiet_time_end_min;       // local minute-of-day, default 07:00
+
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
   static const uint8_t LOC_SHARE_MOVE_COUNT = 4;
@@ -495,7 +499,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0023;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0024;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -594,13 +598,16 @@ struct NodePrefs {  // persisted to file
 // (Padding can also shift sizeof; a "false" trip just means re-check + rebump.)
 // keyboard_cardkb_compact (0xC0DE0023) also landed in existing tail padding --
 // confirmed via a real build -- leaving sizeof unchanged at 2720.
+// quiet_time_enabled/start_min/end_min (0xC0DE0024) append the local-time
+// notification schedule at the tail and grow the struct by 8 bytes (including
+// alignment padding), confirmed via a real build.
 // keyboard_main_alphabet (added in an earlier bump) landed in existing tail
 // padding -- confirmed via a real build's sizeof() -- so that bump left the
 // size unchanged. bot_actions_dm/ch/room and gpio1..4_mode (the last two
 // bumps, 7 more uint8_t total) added 8 bytes, not 7 -- one byte of tail
 // padding got consumed along the way. 2720 confirmed via a real
 // WioTrackerL1Eink_companion_solo_dual build.
-static_assert(sizeof(NodePrefs) == 2720,
+static_assert(sizeof(NodePrefs) == 2728,
               "NodePrefs layout changed — sync DataStore save/load + clamp, bump "
               "SCHEMA_SENTINEL, then update this size (see steps above).");
 
