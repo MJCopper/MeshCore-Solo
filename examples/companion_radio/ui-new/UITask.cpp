@@ -37,6 +37,7 @@
 #include "GfxUtils.h"   // gfx::drawLine — connects trail points on the Home map preview
 #include "ChildMode.h"
 #include "DigitEditor.h"
+#include "QuietTime.h"
 
 // Blinking status indicators: on for the first half of a 4 s cycle, but e-ink
 // can't repaint fast enough to blink, so it shows them steadily.
@@ -1909,11 +1910,29 @@ bool UITask::notificationAllowed(UIEventType event, uint8_t contact_type,
   return true;
 }
 
+bool UITask::isQuietTimeActive() const {
+  return quiettime::active(_node_prefs, rtc_clock.getCurrentTime());
+}
+
+bool UITask::notificationPresentationAllowed(UIEventType event) const {
+  switch (event) {
+    case UIEventType::contactMessage:
+    case UIEventType::channelMessage:
+    case UIEventType::roomMessage:
+    case UIEventType::advertReceivedFlood:
+    case UIEventType::advertReceivedZeroHop:
+      return !isQuietTimeActive();
+    case UIEventType::ack:
+    case UIEventType::none:
+    default:
+      return true;
+  }
+}
+
 void UITask::notify(UIEventType event) {
-  // Context-free message notification calls are denied while child mode is
-  // locked. Receive paths use incomingMessage(), which supplies the contact or
-  // channel identity needed for the child-mode allow-list decision.
-  if (!notificationAllowed(event)) return;
+  // Context-free message calls cannot satisfy the child allow-list. Receive
+  // paths use incomingMessage(), which supplies the required identity.
+  if (!notificationAllowed(event) || !notificationPresentationAllowed(event)) return;
   presentNotification(event);
 }
 
@@ -1968,15 +1987,18 @@ void UITask::msgRead(int msgcount) {
 }
 
 void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount, uint8_t contact_type, const uint8_t* pub_key) {
-  handleNewMsg(path_len, from_name, text, msgcount, contact_type, pub_key, true);
+  handleNewMsg(path_len, from_name, text, msgcount, contact_type, pub_key,
+               !isQuietTimeActive());
 }
 
 void UITask::incomingMessage(UIEventType event, uint8_t path_len,
                              const char* from_name, const char* text, int msgcount,
                              uint8_t contact_type, const uint8_t* pub_key,
                              int channel_idx) {
-  bool present = notificationAllowed(event, contact_type, pub_key, channel_idx);
-  handleNewMsg(path_len, from_name, text, msgcount, contact_type, pub_key, present);
+  bool allowed = notificationAllowed(event, contact_type, pub_key, channel_idx);
+  bool present = allowed && notificationPresentationAllowed(event);
+  if (allowed)
+    handleNewMsg(path_len, from_name, text, msgcount, contact_type, pub_key, present);
   if (present) {
     presentNotification(event);
   } else {
@@ -1990,7 +2012,6 @@ void UITask::handleNewMsg(uint8_t path_len, const char* from_name, const char* t
                           bool present) {
   (void)path_len;
   (void)text;
-  if (!present) return;
 
   // The mesh queue count includes deliberately silent traffic. Keep the normal
   // exact count outside child mode, but count only allowed messages while locked.
@@ -2015,6 +2036,8 @@ void UITask::handleNewMsg(uint8_t path_len, const char* from_name, const char* t
       _dm_unread_table[empty_slot].count = 1;
     }
   }
+
+  if (!present) return;
 
   char alert_buf[80];
   snprintf(alert_buf, sizeof(alert_buf), "Msg: %.20s", from_name);

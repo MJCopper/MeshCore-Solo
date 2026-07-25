@@ -9,6 +9,8 @@
 #include "AccordionList.h"
 #include "ChildMode.h"
 #include "DigitEditor.h"
+#include "QuietTime.h"
+#include "TimeOfDayEditor.h"
 
 class SettingsScreen : public UIScreen {
   UITask* _task;
@@ -45,6 +47,9 @@ class SettingsScreen : public UIScreen {
     CH_MELODY,
     AD_SOUND,
     AD_SOUND_SCOPE,
+    QUIET_TIME,
+    QUIET_FROM,
+    QUIET_UNTIL,
     // Home pages section
     SECTION_HOME_PAGES,
     HOME_CLOCK, HOME_FAVOURITES, HOME_RADIO, HOME_BT, HOME_ADVERT,
@@ -481,6 +486,24 @@ class SettingsScreen : public UIScreen {
       display.setCursor(valCol(display), y);
       { uint8_t v = p ? p->advert_sound_scope : ADVERT_SOUND_SCOPE_ALL;
         display.print(AD_SCOPE_LABELS[v < AD_SCOPE_COUNT ? v : 0]); }
+    } else if (item == QUIET_TIME) {
+      display.print("Quiet Time");
+      display.setCursor(valCol(display), y);
+      if (!p || !p->quiet_time_enabled) display.print("OFF");
+      else display.print(_task->isQuietTimeActive() ? "ACTIVE" : "ON");
+    } else if (item == QUIET_FROM || item == QUIET_UNTIL) {
+      display.print(item == QUIET_FROM ? "Quiet from" : "Quiet until");
+      int x = valCol(display);
+      if (sel && _quiet_editor.active() && _quiet_edit_item == item) {
+        _quiet_editor.render(display, x, y);
+      } else {
+        char buf[6];
+        quiettime::formatTime(buf, sizeof(buf),
+                              p ? (item == QUIET_FROM ? p->quiet_time_start_min
+                                                     : p->quiet_time_end_min) : 0);
+        display.setCursor(x, y);
+        display.print(buf);
+      }
     } else if (isHomePage(item)) {
       if (p) ensurePageOrderInit(p);
       int pos = homePagePosition(item, p);
@@ -696,6 +719,8 @@ class SettingsScreen : public UIScreen {
   bool _child_pin_confirming = false;
   bool _child_warning_active = false;
   bool _child_warning_enable = false;
+  TimeOfDayEditor _quiet_editor;
+  int _quiet_edit_item = -1;
 
 public:
   SettingsScreen(UITask* task, KeyboardWidget* kb)
@@ -708,6 +733,8 @@ public:
   void onShow() override {
     _dirty = false;
     _edit_name = false;
+    _quiet_edit_item = -1;
+    _quiet_editor.editing = false;
     resetList();
     _editor.freq.active = false;
   }
@@ -804,6 +831,17 @@ public:
       return true;
     }
     NodePrefs* p = _task->getNodePrefs();
+
+    if (_quiet_editor.active()) {
+      TimeOfDayEditor::Result r = _quiet_editor.handleInput(c);
+      if (r == TimeOfDayEditor::DONE && p) {
+        if (_quiet_edit_item == QUIET_FROM) p->quiet_time_start_min = _quiet_editor.value;
+        else if (_quiet_edit_item == QUIET_UNTIL) p->quiet_time_end_min = _quiet_editor.value;
+        _dirty = true;
+      }
+      if (r != TimeOfDayEditor::NONE) _quiet_edit_item = -1;
+      return true;
+    }
 
     // Keyboard editing mode for message slots
     if (_edit_slot >= 0) {
@@ -938,6 +976,16 @@ public:
     if (_selected == AD_SOUND_SCOPE && p && (left || right || enter)) {
       p->advert_sound_scope ^= 1;
       _dirty = true; return true;
+    }
+    if (_selected == QUIET_TIME && p && (left || right || enter)) {
+      p->quiet_time_enabled ^= 1;
+      _dirty = true; return true;
+    }
+    if ((_selected == QUIET_FROM || _selected == QUIET_UNTIL) && p && enter) {
+      _quiet_edit_item = _selected;
+      _quiet_editor.begin(_selected == QUIET_FROM ? p->quiet_time_start_min
+                                                  : p->quiet_time_end_min);
+      return true;
     }
     if (isHomePage(_selected) && p) {
       if (left || right) {

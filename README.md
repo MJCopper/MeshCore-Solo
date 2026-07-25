@@ -53,6 +53,8 @@ All firmware files are published on the [releases page](https://github.com/Marek
 
 - [Child Mode](./docs/solo_features/child_mode/child_mode.md) — PIN-protected restricted interface with favourite-only messaging, optional pages, and disabled Bluetooth/USB companion access
 
+- [Quiet Time](./docs/solo_features/quiet_time/quiet_time.md) — silence incoming notification presentation on a daily local-time schedule while retaining messages and unread counts
+
 - [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) — GPS trail & waypoints, compass, nearby nodes (with ping & navigate), ringtone editor, remote bot, auto-advert, live location sharing, locator, diagnostics, repeater, remote admin
 
 - **Battery saving (radio)** — two optional, independent toggles under Settings › Radio:
@@ -102,6 +104,7 @@ Updating to a newer version usually does not require erasing flash unless the re
 | [Settings Screen](./docs/solo_features/settings_screen/settings_screen.md) | All settings sections with values and interactions                    |
 | [Screen Lock](./docs/solo_features/screen_lock/screen_lock.md)             | Lock/unlock sequence, lock screen, auto-lock                          |
 | [Child Mode](./docs/solo_features/child_mode/child_mode.md)                 | Parent PIN, allowed conversations and pages, transport restrictions, recovery |
+| [Quiet Time](./docs/solo_features/quiet_time/quiet_time.md)                 | Daily local-time notification schedule with retained unread state |
 | [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md)          | GPS trail & waypoints, compass, navigation, nearby nodes, ringtone editor, remote bot, auto-advert, live location sharing, locator, diagnostics, repeater, remote admin |
 | [Solo UI framework](./docs/design/solo_ui_framework.md)                    | **Developer guide** — the reusable building blocks (screens, lists, popups, mini-icons, geo/persistence helpers) and how to add a new feature |
 

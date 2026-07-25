@@ -368,6 +368,8 @@ public:
   void handleNewMsg(uint8_t path_len, const char* from_name, const char* text,
                     int msgcount, uint8_t contact_type, const uint8_t* pub_key,
                     bool present);
+  bool notificationPresentationAllowed(UIEventType event) const;
+  bool isQuietTimeActive() const;
   void addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp = 0) override;
   void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) override;
   void onMsgAck(uint32_t ack_crc) override;

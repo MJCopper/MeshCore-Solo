@@ -442,6 +442,10 @@ struct NodePrefs {  // persisted to file
   uint16_t child_visible_pages;
   uint8_t  child_channels_enabled;  // show favourited private channels while child mode is locked
 
+  uint8_t  quiet_time_enabled;       // mute notification presentation during the local-time interval
+  uint16_t quiet_time_start_min;     // local minute-of-day, default 21:00
+  uint16_t quiet_time_end_min;       // local minute-of-day, default 07:00
+
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
   static const uint8_t LOC_SHARE_MOVE_COUNT = 4;
@@ -504,7 +508,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0025;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0026;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -605,6 +609,8 @@ struct NodePrefs {  // persisted to file
 // confirmed via a real build -- leaving sizeof unchanged at 2720.
 // Child Mode fields through child_channels_enabled (0xC0DE0024/25) grow the
 // struct by 16 bytes including alignment padding, confirmed via a real build.
+// Quiet Time (0xC0DE0026) fits into the resulting tail padding, confirmed via
+// a real build, so the combined layout remains the same size.
 // keyboard_main_alphabet (added in an earlier bump) landed in existing tail
 // padding -- confirmed via a real build's sizeof() -- so that bump left the
 // size unchanged. bot_actions_dm/ch/room and gpio1..4_mode (the last two
