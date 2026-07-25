@@ -328,8 +328,17 @@ private:
   bool tryBotCommand(const ContactInfo& from, const char* text, uint8_t hops);          // DM commands
   bool tryBotChannelCommand(uint8_t channel_idx, const char* text, uint8_t hops);       // channel commands
   bool tryBotRoomCommand(const ContactInfo& from, const uint8_t* sender_prefix, const char* text, uint8_t hops); // room commands
-  bool botCommandReply(const char* cmd, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name);  // one command → reply text
-  int  botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name); // scan "!word"s → combined reply, returns count
+  bool botCommandReply(const char* cmd, const char* arg, const char* arg2, bool actions_allowed, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name);  // one command → reply text
+  int  botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* out, int out_len, const char* sender_name, bool actions_allowed); // scan "!word"s → combined reply, returns count
+  // !gps fix -- single-shot "wait for a stabilised GPS fix, then push a follow-up
+  // message" action. botCommandReply() only sets _locfix_requested (it doesn't know
+  // the destination); the tryBot*Command() wrappers call startLocFix() with the
+  // destination they each already have, but only once the immediate ack actually
+  // sent (so a throttled/suppressed ack never starts a fix nobody will hear about).
+  void tickLocFix();     // ticked every loop() while _loc_fix.active
+  void startLocFix(uint8_t dest_type, const uint8_t* pub_key, uint8_t channel_idx);
+  void sendLocFixResult(const char* msg);
+  static bool isLocFixReady(LocationProvider* loc);   // HDOP if the provider has it, else satellite count
   bool botTriggerMatches(const char* trigger, const char* body, bool allow_wildcard) const;
   bool botInQuietHours() const;               // true when auto-replies should stay silent
   bool botDmAllowed(const uint8_t* pubkey);   // per-contact DM throttle: ok to reply?
@@ -430,6 +439,52 @@ private:
   static const int BOT_DM_LOG_SIZE = 8;
   BotReplyLog _bot_dm_log[BOT_DM_LOG_SIZE];
   uint16_t    _bot_reply_count;   // total auto-replies sent since boot
+
+  // !gps fix state -- one global slot (one physical GPS): botCommandReply()
+  // rejects a second request outright while one is active, so this never
+  // needs to be an array. See tickLocFix()/startLocFix() in MyMeshBot.h.
+  // Readiness: HDOP (tenths, lower=better) when the provider exposes it --
+  // 20 == HDOP 2.0, the usual "good fix" cutoff -- else satellite count as a
+  // cruder fallback (see LocationProvider::getHDOP()'s -1 = "not available").
+  static const int LOCFIX_MAX_HDOP = 20;
+  static const int LOCFIX_MIN_SATS = 8;            // readiness threshold (HDOP-less fallback)
+  static const uint32_t LOCFIX_AVERAGE_MS = 10000;  // once ready, keep averaging this long
+  static const uint32_t LOCFIX_TIMEOUT_MS = 90000;  // hard stop covering both phases
+  enum { LOCFIX_DEST_CONTACT = 0, LOCFIX_DEST_CHANNEL = 1 };  // CONTACT covers DM and room alike (both reply via sendMessage)
+  struct PendingLocFix {
+    bool     active;
+    bool     gps_was_on;         // restore to this when done, not unconditionally "off"
+    uint32_t deadline_ms;
+    uint32_t averaging_until_ms; // 0 while still acquiring; set once the sat threshold is first met
+    double   sum_lat, sum_lon;
+    int      sample_count;
+    uint8_t  dest_type;
+    uint8_t  pub_key[PUB_KEY_SIZE];  // dest_type == LOCFIX_DEST_CONTACT
+    uint8_t  channel_idx;            // dest_type == LOCFIX_DEST_CHANNEL
+  };
+  PendingLocFix _loc_fix;
+  bool _locfix_requested;   // transient: set by botCommandReply() when "!gps fix" was
+                            // seen this scan, cleared by the tryBot*Command() wrapper
+  uint32_t _locfix_requested_timeout_ms;  // "!gps fix [seconds]" override, see startLocFix()
+
+  // Deferred bot actions (!gps on|off, !buzz, !advert, !gpio1..4 on|off) --
+  // botCommandReply() only records what was requested; the actual hardware/
+  // radio side effect happens in applyPendingBotActions(), called by the
+  // tryBot*Command() wrappers only once quiet-hours/cooldown/per-contact
+  // throttle have passed and the ack actually sent. Otherwise those gates
+  // would only suppress the reply text while the action fired unconditionally
+  // on every matching message (e.g. !buzz still buzzing during quiet hours,
+  // or an unthrottled !advert flooding the mesh). Mirrors the _locfix_requested
+  // pattern above; resetPendingBotActions() is the throttled/aborted-path
+  // twin of applyPendingBotActions(), used wherever _locfix_requested used to
+  // be cleared alone.
+  bool _bot_gps_action_pending;
+  bool _bot_gps_action_on;
+  int  _bot_buzz_action_secs;    // 0 = no !buzz requested this scan
+  bool _bot_advert_action_pending;
+  int8_t _bot_gpio_action[4];    // per pin: -1 none requested, 0 off, 1 on
+  void applyPendingBotActions();
+  void resetPendingBotActions();
 
   TransportKey send_scope;
 

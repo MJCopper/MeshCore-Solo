@@ -136,7 +136,10 @@ class MessagesScreen : public UIScreen {
   struct HistScroll { bool need; int reserve; long total_px, scroll_px; int view_px; };
 
   // `getBody(idx)` returns the body text for list item idx (the part that wraps),
-  // or nullptr to fall back to a fixed 2-line box.
+  // or nullptr to fall back to a fixed 2-line box. Must return exactly what the
+  // real per-item render pass wraps (sender split off, reply prefix stripped) --
+  // this function doesn't reprocess it, so a mismatch here just means this sizing
+  // pass and the real render disagree on line count.
   template <class GetBody>
   HistScroll computeHistScroll(DisplayDriver& display, bool portrait, int count, int scroll,
                                int hist_start_y, int cby, int lh, GetBody getBody) {
@@ -161,7 +164,7 @@ class MessagesScreen : public UIScreen {
     auto boxH = [&](int idx, int rsv) -> int {
       const char* body = getBody(idx);
       if (!body) return fixed_bh;
-      display.translateUTF8ToBlocks(s_wrap_trans, skipReplyPrefix(body), sizeof(s_wrap_trans));
+      display.translateUTF8ToBlocks(s_wrap_trans, body, sizeof(s_wrap_trans));
       int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - rsv, s_wrap_lines, 8);
       return (1 + (nl > 0 ? nl : 1)) * lh + 1;
     };
@@ -191,9 +194,20 @@ class MessagesScreen : public UIScreen {
   // stored "Sender: text" (MyMesh::queueMessage); split that off so each line is
   // attributed to its guest. Outgoing → "Me"; plain DMs (or no separator) keep
   // the contact name and the text unchanged.
+  //
+  // Does NOT strip a leading "@[nick] " reply prefix — that's the caller's call,
+  // and it must be made exactly once: FullscreenMsgView::render() parses it
+  // itself (for the "To:" header), so callers feeding it must pass this
+  // function's result straight through; the compact list view has no such
+  // parsing of its own, so those callers must wrap the result in
+  // skipReplyPrefix(). Stripping it in here unconditionally used to double-strip
+  // the DM case (hiding FullscreenMsgView's "To:" header entirely) while never
+  // stripping the room case (the split happens after this used to run), which is
+  // why replies' addressee went undetected inconsistently between DM/room/list/
+  // fullscreen.
   const char* dmDisplayParts(const DmHistEntry& e, bool is_room, const char* contact_name,
                              char* sender_buf, int sender_cap) const {
-    const char* body = skipReplyPrefix(e.text);
+    const char* body = e.text;
     if (e.outgoing) {
       strncpy(sender_buf, "Me", sender_cap - 1);
     } else if (is_room) {
@@ -1033,6 +1047,8 @@ public:
         if (ring_pos >= 0) {
           const DmHistEntry& e = _history.dmAtPos(ring_pos);
           char sender_buf[33];
+          // No skipReplyPrefix() here -- _dm_fs.render() parses "@[nick] " itself
+          // (for the "To:" header); stripping it here first would hide it there.
           const char* body = dmDisplayParts(e, _sel_contact.type == ADV_TYPE_ROOM,
                                             filtered_name, sender_buf, sizeof(sender_buf));
           const char* sender = sender_buf;
@@ -1075,7 +1091,15 @@ public:
           hist_start_y, cby, lh,
           [&](int idx) -> const char* {
             int rp = _history.dmHistEntryForContact(_sel_contact.id.pub_key, idx);
-            return rp >= 0 ? _history.dmAtPos(rp).text : nullptr;
+            if (rp < 0) return nullptr;
+            // Must match the per-item body extraction below (dmDisplayParts +
+            // skipReplyPrefix) exactly, or this sizing pass and the real render
+            // pass disagree on wrapped line count for room posts -- previously
+            // this returned the raw "Sender: text" unsplit, wrapping the sender
+            // name in with the body and mis-sizing the box.
+            char tmp_sender[33];
+            return skipReplyPrefix(dmDisplayParts(_history.dmAtPos(rp), is_room, filtered_name,
+                                                    tmp_sender, sizeof(tmp_sender)));
           });
       int reserve = hs.reserve;
       {
@@ -1093,7 +1117,7 @@ public:
             int rp = _history.dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_scroll + ii);
             if (rp >= 0) {
               char hsb[33];
-              const char* hbody = dmDisplayParts(_history.dmAtPos(rp), is_room, filtered_name, hsb, sizeof(hsb));
+              const char* hbody = skipReplyPrefix(dmDisplayParts(_history.dmAtPos(rp), is_room, filtered_name, hsb, sizeof(hsb)));
               display.translateUTF8ToBlocks(s_wrap_trans, hbody, sizeof(s_wrap_trans));
               int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 8);
               bh = (1 + (nl > 0 ? nl : 1)) * lh + 1;
@@ -1117,7 +1141,7 @@ public:
 
         const DmHistEntry& e = _history.dmAtPos(ring_pos);
         char sender_buf[33];
-        const char* body = dmDisplayParts(e, is_room, filtered_name, sender_buf, sizeof(sender_buf));
+        const char* body = skipReplyPrefix(dmDisplayParts(e, is_room, filtered_name, sender_buf, sizeof(sender_buf)));
         const char* sender = sender_buf;
 
         char age[6]; geo::fmtAgeShort(age, sizeof(age), now_ts, e.timestamp);
@@ -1235,7 +1259,7 @@ public:
             if (rp < 0) return nullptr;
             const char* t = _history.chAtPos(rp).text;
             const char* s = strstr(t, ": ");
-            return s ? s + 2 : t;
+            return skipReplyPrefix(s ? s + 2 : t);
           });
       int reserve = hs.reserve;
       {

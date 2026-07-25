@@ -16,15 +16,17 @@ Screen lock prevents accidental keypresses. While locked the display turns off a
 
 **Hold Back** and press **Enter** three times within 3 seconds. The sequence works in both directions — the same combination locks and unlocks.
 
-If the display is off when the sequence begins, it turns on automatically so the hint is visible. Each press in the sequence extends the display-on timer by 5 seconds.
+On boards with an optional CardKB (I2C keyboard) attached, a single **Fn+Esc** does the same thing, in either direction — no repetition needed, since Fn+Esc is already a deliberate two-key combo. Esc rather than the adjacent Backspace, since Fn and Backspace sit right next to each other on CardKB's layout and would be too easy to hit by accident.
 
-The hint popup at the bottom of the lock screen guides through the sequence:
+If the display is off when the sequence begins, it turns on automatically so the hint is visible. Each press in the physical sequence extends the display-on timer by 5 seconds.
 
-| Step           | Hint                  |
-| -------------- | --------------------- |
-| Not started    | _Hold Back + 3×Enter_ |
-| 1 press done   | _Enter ×2 more…_      |
-| 2 presses done | _Enter ×1 more…_      |
+The hint popup at the bottom of the lock screen guides through the physical sequence:
+
+| Step           | Hint                                                        |
+| -------------- | ------------------------------------------------------------ |
+| Not started    | _Hold Back + 3×Enter_ (_Back+3xEnter/Fn+Esc_ with CardKB attached) |
+| 1 press done   | _Enter ×2 more…_                                              |
+| 2 presses done | _Enter ×1 more…_                                              |
 
 If no press is made for 3 seconds, the counter resets.
 

@@ -8,7 +8,7 @@
 | :-----------------------: | :-----------------------: |
 | ![](./overview_oled.png) | ![](./overview_eink.png) |
 
-The Tools screen is a hub for GPS trail recording, nearby node browsing, ringtone editing, auto-reply bot, auto-advert, live location sharing, locator, compass, clock tools (alarm / timer / stopwatch), device diagnostics, repeater mode, and remote admin. Tools are grouped into collapsible **Location** / **Comms** / **System** sections — the same fold-in-place model as Settings; Tools always opens folded back to the section list. Navigate with **UP/DOWN**, press **Enter** on a section header to expand or collapse it, or on a tool to open it.
+The Tools screen is a hub for GPS trail recording, nearby node browsing, ringtone editing, the remote bot, auto-advert, live location sharing, locator, compass, clock tools (alarm / timer / stopwatch), device diagnostics, repeater mode, and remote admin. Tools are grouped into collapsible **Location** / **Comms** / **System** sections — the same fold-in-place model as Settings; Tools always opens folded back to the section list. Navigate with **UP/DOWN**, press **Enter** on a section header to expand or collapse it, or on a tool to open it.
 
 ---
 
@@ -359,7 +359,7 @@ Melodies can be assigned in **Settings › Sound** (global default) or overridde
 
 ---
 
-## Auto-Reply Bot
+## Remote Bot
 
 |           OLED            |           E-Ink           |
 | :-----------------------: | :-----------------------: |
@@ -367,7 +367,7 @@ Melodies can be assigned in **Settings › Sound** (global default) or overridde
 
 <!-- screenshots pending: these predate the tab-carousel layout below (still show the old flat grouped list) -->
 
-Automatically replies to incoming messages that contain a configured trigger word (case-insensitive, contains match). The bot has three independent targets — **DM**, a monitored **Channel**, and a monitored **Room** — each with its own trigger/reply pair.
+Automatically replies to incoming messages that contain a configured trigger word (case-insensitive, contains match). Multiple trigger phrases can be packed into one Trigger field, comma-separated (e.g. `hi,hello there,yo`) — matching any one of them is enough; spaces around each phrase are trimmed, so `hi, hello there` and `hi,hello there` behave the same. The bot has three independent targets — **DM**, a monitored **Channel**, and a monitored **Room** — each with its own trigger/reply pair.
 
 The screen is a **circular tab carousel**, the same style as Tools › Nearby Nodes' filter tabs: **LEFT/RIGHT** switches between the **Channel** / **Room** / **Direct** / **Other** tabs (opens on Channel), **UP/DOWN** moves between the rows within the active tab, and **Enter** acts on the selected row (LEFT/RIGHT is reserved entirely for tab-switching, so every row's value is changed via Enter, not by cycling it in place).
 
@@ -443,6 +443,21 @@ Several commands can be combined in one message — `!batt !time !hops` is answe
 
 Each target's Commands toggle is independent — e.g. answer `!ping` in DMs but stay quiet on a busy public channel. Channel and room replies are broadcast/posted to everyone there, so unlike DM commands they respect quiet hours and use their own shared cooldown. DM commands use the per-contact throttle and the **DM allow** scope above.
 
+### Actions
+
+A separate **Actions** toggle, nested under Commands (Commands must be ON for Actions to do anything) — these commands change the device's own behaviour, not just report on it, so they default OFF and are kept independent of the read-only Commands toggle:
+
+| Command          | Effect                                                              |
+| ----------------- | -------------------------------------------------------------------- |
+| `!buzz [seconds]` | Sounds the buzzer as a find-me signal — default 5s, capped at 30s. Sounds even if the buzzer is muted in Settings (that's the point of a find-me signal). |
+| `!gps on` / `!gps off` | Enables/disables GPS, same effect as the Home page's GPS toggle.  |
+| `!gps fix [seconds]` | Single-shot location: turns GPS on if it wasn't already, waits for a stabilised fix (HDOP ≤ 2.0, or ≥8 satellites on GPS hardware that doesn't report HDOP, averaged over 10s), sends the position, then restores GPS to whatever state it was in before. Replies in two parts — an immediate `GPS: acquiring fix...` ack, then the position (or `GPS: no fix (timeout)` / a partial fix) as a follow-up message up to `seconds` later (default 90s, clamped to 15-300s) — raise it under poor sky view, where 90s isn't always enough to reach the HDOP/satellite bar. Only one `!gps fix` can be in flight at a time; a second one gets `GPS: fix already pending`. |
+| `!advert`         | Sends an advert immediately, same as the Home page's manual advert action. |
+
+Actions combine with Commands and each other in one message the same way — `!batt !gps on` answers with `4.10V | GPS: on` in a single reply. With Actions OFF for a target, `!buzz`/`!gps`/`!gps fix`/`!advert` are silently ignored (no reply, no effect) exactly like any other unrecognised command, and `!help`'s reply doesn't mention them.
+
+On boards with user GPIO (see **GPIO** under System tools below), the same Actions gate also covers `!gpio1`..`!gpio4`.
+
 ---
 
 ## Diagnostics
@@ -453,7 +468,7 @@ Each target's Commands toggle is independent — e.g. answer `!ping` in DMs but 
 
 <!-- screenshot pending: Diagnostics — live device/mesh stats rows (uptime, rx/tx counters, heap, RSSI/SNR, queue, errors) -->
 
-A circular tab carousel of live device and mesh stats, refreshed once a second (same tab idiom as Auto-Reply Bot / Nodes). **LEFT/RIGHT** switches tab; **UP/DOWN** scrolls within it on a small OLED — on a larger e-ink display a tab's rows all fit at once.
+A circular tab carousel of live device and mesh stats, refreshed once a second (same tab idiom as Remote Bot / Nodes). **LEFT/RIGHT** switches tab; **UP/DOWN** scrolls within it on a small OLED — on a larger e-ink display a tab's rows all fit at once.
 
 | Tab | Shows |
 | --- | ----- |
@@ -483,6 +498,20 @@ A circular tab carousel of live device and mesh stats, refreshed once a second (
 The packet counters, **Forwarded** and **Errors** are cumulative since boot. On the **Live** tab, **Hold Enter** opens a one-item *Reset counters* menu (Back dismisses it); the live readings (noise, RSSI/SNR, pool, queue, uptime) are not affected. **Cancel/Back** returns to the Tools list.
 
 The counters make the repeater behaviour observable: **Forwarded** confirms the node is actually relaying (not just configured to), and **Pool free** / **Queue** show whether forwarding is exhausting the packet pool. See **Tools › Repeater** for the relaying options.
+
+---
+
+## GPIO
+
+*Board-specific — currently Wio Tracker L1 only.* Four otherwise-unused pins (GPIO1-GPIO4) are exposed for general-purpose use. Each pin gets its own row showing its current mode; **Enter** (or LEFT/RIGHT) cycles it through **Off → Input → Output** and back to Off — GPIO1 and GPIO2 additionally step through **Analog** between Output and Off (GPIO3/GPIO4 have no ADC channel, so their cycle skips it). Switching a pin's mode shows a brief confirmation (`GPIO1: Input`, `GPIO1: Output`, …).
+
+Once a pin is set to **Output**, a second **State** row appears right underneath it — **Enter** toggles it **ON**/**OFF**, with its own confirmation. The direction (Mode row) and the on/off state (State row) are deliberately separate: changing one never surprises you by also changing the other.
+
+- **Input** shows its live level inline on the Mode row: `Input (High)` / `Input (Low)`, refreshed continuously.
+- **Analog** (GPIO1/GPIO2 only) shows a live millivolt reading inline instead: e.g. `1650mV`. Has no State row — it's read-only.
+- **Output** shows just `Output` on the Mode row; the actual ON/OFF value lives on the State row below it.
+
+The same 4 pins are reachable remotely via the Remote Bot's `!gpio1`..`!gpio4` commands (see **Actions** under Remote Bot below) — both paths read/write the same underlying state, so the Tools screen and the bot never disagree. A bare `!gpio1` reports the pin's current mode and reading (`gpio1: out on`, `gpio1: in on`, or `gpio1: 1650mV` in Analog mode); `!gpio1 on`/`!gpio1 off` only takes effect if that pin is currently set to Output here (otherwise the bot replies "not output", including when the pin is in Analog mode).
 
 ---
 
@@ -529,7 +558,7 @@ Send commands to a **repeater/room server you have admin permission on** — the
 
 1. **Select a node** — opening **Tools › Admin** goes straight to **Tools › Nodes** (the same screen, filters, sort and live scan as browsing it normally) so picking a node for Admin looks exactly like using Nodes for anything else; **Enter** on a repeater/room row hands it to Admin, **Cancel** returns to Tools. Admin is also reachable directly from a node's own **Hold Enter** menu in Nodes.
 2. **Log in** — type the node's **admin password** (the same login handshake Messages uses for room servers; a repeater's admin password is set with the `password` CLI command). If a password was already saved for this node from an earlier successful login, it retries silently instead of prompting. Only a login that comes back with **admin**-level permission unlocks the next step — anything less shows "Not admin on this node".
-3. **Pick a category and a field** — a tab carousel (**LEFT/RIGHT** to switch category, **UP/DOWN** to move within it, same as Auto-Reply Bot's tabs), so common settings don't need the CLI grammar memorised:
+3. **Pick a category and a field** — a tab carousel (**LEFT/RIGHT** to switch category, **UP/DOWN** to move within it, same as Remote Bot's tabs), so common settings don't need the CLI grammar memorised:
 
    | Tab | Rows |
    | --- | ---- |

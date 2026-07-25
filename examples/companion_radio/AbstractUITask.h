@@ -54,6 +54,22 @@ public:
   // Text reply to an on-device-UI-triggered MyMesh::sendAdminCommand() arrived
   // (see AdminScreen). pub_key is the contact's key prefix (>=4 bytes valid).
   virtual void onAdminReply(const uint8_t* pub_key, const char* text) { (void)pub_key; (void)text; }
+  // Bot action commands (!gps/!buzz, see MyMesh::botCommandReply) -- device
+  // state changes triggered remotely, gated by the bot_actions_* prefs.
+  // Default no-op so UI variants that don't wire these up just ignore them.
+  virtual void botSetGPS(bool on) { (void)on; }
+  virtual void botBuzz(int seconds) { (void)seconds; }
+  // !gpio1..!gpio4 (idx 1-4). botSetGPIO returns false if the pin isn't
+  // currently configured as an Output (or the board has none) -- lets the
+  // bot reply distinguish "set" from "ignored". botGetGPIO returns false if
+  // the pin is Off/unsupported; on true, fills is_output (current direction)
+  // and value (live level).
+  virtual bool botSetGPIO(int idx, bool on) { (void)idx; (void)on; return false; }
+  virtual bool botGetGPIO(int idx, bool& is_output, bool& value) { (void)idx; (void)is_output; (void)value; return false; }
+  // Analog read for pins that support it (GPIO1/GPIO2 on Wio Tracker L1 --
+  // the nRF52840's AIN0/AIN5). Returns false if the pin isn't in Analog mode
+  // or doesn't support it; on true, fills millivolts with the reading.
+  virtual bool botGetGPIOAnalog(int idx, int& millivolts) { (void)idx; (void)millivolts; return false; }
   // True only when a BLE central is actually bonded/connected. On a dual
   // (BLE+USB) interface hasConnection() is always true (USB counts), so use
   // this for BLE-specific UI like the pairing-PIN prompt.

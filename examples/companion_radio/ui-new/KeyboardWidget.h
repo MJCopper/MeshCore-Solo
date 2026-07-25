@@ -526,81 +526,106 @@ struct KeyboardWidget {
       return 50;
     }
 
-    // character grid
-    if (isT9()) {
-      for (int r = 0; r < rows; r++) {
-        int y = chars_y + r * cell_h;
-        for (int c = 0; c < cols; c++) {
-          bool sel = (row == r && col == c);
-          int cell = r * cols + c;
-          // Label the cell "<digit><group>" so it reads like a phone keypad. The
-          // digit is what the multi-tap cycle lands on after the letters (see
-          // handleInput: '1'+cell). No separator space — the widest group
-          // (Cyrillic "деёжз"/"шщъыь", 5 letters x up to 2 UTF-8 bytes) + digit
-          // still fits with room to spare.
-          char group_shown[12];
-          kbApplyCapsUtf8(t9GroupStr(cell), caps, group_shown, sizeof(group_shown));
-          char label[14];
-          snprintf(label, sizeof(label), "%c%s", (char)('1' + cell), group_shown);
-          int cx = c * cell_w;
-          display.drawSelectionRow(cx, y - 1, cell_w - 1, cell_h, sel);
-          int tw = display.getTextWidth(label);
-          display.setCursor(cx + (cell_w - tw) / 2, y);
-          display.print(label);
-        }
-      }
-    } else {
-      for (int r = 0; r < rows; r++) {
-        int y = chars_y + r * cell_h;
-        for (int c = 0; c < cols; c++) {
-          bool sel = (row == r && col == c);
-          char ch_buf[3];
-          kbApplyCapsUtf8(cellStr(r, c), caps, ch_buf, sizeof(ch_buf));
-          if (ch_buf[0] == ' ' && ch_buf[1] == '\0') ch_buf[0] = '_';
-          int cx = c * cell_w;
-          display.drawSelectionRow(cx, y - 1, cell_w - 1, cell_h, sel);
-          int tw = display.getTextWidth(ch_buf);
-          display.setCursor(cx + (cell_w - tw) / 2, y);
-          display.print(ch_buf);
-        }
-      }
-    }
-
-    // special row: caps ⇧ · space ⎵ · delete ⌫ · placeholders {} (text) · OK ✓
-    const int s   = miniIconScale(display);
-    const int icy = spec_y + (cell_h - lh) / 2;   // centre icons within the cell
-    for (int i = 0; i < KB_SPECIAL; i++) {
-      bool sel    = (row == rows && col == i);
-      bool active = (i == 0 && caps);
-      int sx = i * spec_w;
-      display.drawSelectionRow(sx, spec_y - 1, spec_w - 1, cell_h, sel || active);
-      if (i == 3 || i == 4) {               // text keys: {} picker, page toggle
-        // Shows what pressing it lands on next, same "reads as the
-        // destination" convention as the original 2-page abc<->#@ toggle,
-        // generalized to however many pages are in the cycle right now.
-        const char* lbl;
-        if (i == 3) {
-          lbl = "{}";
-        } else {
-          int next = (page + 1) % totalPages();
-          lbl = pageIsSymbols(next) ? "#@" : scriptHint(scriptAt(next));
-        }
-        int tw = display.getTextWidth(lbl);
-        display.setCursor(sx + (spec_w - tw) / 2, spec_y);
-        display.print(lbl);
-      } else if (i == 1) {                  // space ⎵ — two halves side by side
-        int icw = (ICON_SPACE_L.w + ICON_SPACE_R.w) * s;
-        int ix  = sx + (spec_w - icw) / 2;
-        miniIconDraw(display, ix, icy, ICON_SPACE_L);
-        miniIconDraw(display, ix + ICON_SPACE_L.w * s, icy, ICON_SPACE_R);
-      } else {
-        const MiniIcon& ic = (i == 0) ? ICON_SHIFT
-                           : (i == 2) ? ICON_BACKSPACE
-                                      : ICON_CHECK;   // i == 5 → OK
-        int ix = sx + (spec_w - ic.w * s) / 2;
-        miniIconDraw(display, ix, icy, ic);
-      }
+    // Compact mode (Settings > Keyboard's "Ext. KB" row): an external-keyboard
+    // typist never looks at the letter grid or special-row icons, so skip
+    // drawing them and show a one-line status (current script/page, caps)
+    // instead. row/col/page keep updating exactly as before even while this
+    // is on (arrows and Fn+letter both still work; the accent popup below
+    // still anchors on `row`), so nothing breaks if physical buttons get used
+    // meanwhile -- it just won't be visible which cell is selected.
+    if (prefs && prefs->keyboard_cardkb_compact) {
+      const int hh = lh + 2;
       display.setColor(DisplayDriver::LIGHT);
+      display.fillRect(0, chars_y, display.width(), hh);
+      display.setColor(DisplayDriver::DARK);
+      const char* script_name = pageIsSymbols(page) ? "Symbols"
+                               : (scriptAt(page) == NodePrefs::KB_ALPHABET_CYRILLIC) ? "Cyrillic"
+                               : (scriptAt(page) == NodePrefs::KB_ALPHABET_GREEK)    ? "Greek"
+                                                                                     : "Latin";
+      char status[32];
+      if (pageIsSymbols(page)) snprintf(status, sizeof(status), "%s%s", script_name, caps ? " CAPS" : "");
+      else snprintf(status, sizeof(status), "%s %s%s", script_name, isT9() ? "T9" : "ABC", caps ? " CAPS" : "");
+      display.drawTextCentered(display.width() / 2, chars_y + 1, status);
+      display.setColor(DisplayDriver::LIGHT);
+      display.drawTextCentered(display.width() / 2, chars_y + hh + 2, "Fn+Tab menu");
+      display.drawTextCentered(display.width() / 2, chars_y + hh + 2 + lh, "Fn+letter accent");
+    } else {
+      // character grid
+      if (isT9()) {
+        for (int r = 0; r < rows; r++) {
+          int y = chars_y + r * cell_h;
+          for (int c = 0; c < cols; c++) {
+            bool sel = (row == r && col == c);
+            int cell = r * cols + c;
+            // Label the cell "<digit><group>" so it reads like a phone keypad. The
+            // digit is what the multi-tap cycle lands on after the letters (see
+            // handleInput: '1'+cell). No separator space — the widest group
+            // (Cyrillic "деёжз"/"шщъыь", 5 letters x up to 2 UTF-8 bytes) + digit
+            // still fits with room to spare.
+            char group_shown[12];
+            kbApplyCapsUtf8(t9GroupStr(cell), caps, group_shown, sizeof(group_shown));
+            char label[14];
+            snprintf(label, sizeof(label), "%c%s", (char)('1' + cell), group_shown);
+            int cx = c * cell_w;
+            display.drawSelectionRow(cx, y - 1, cell_w - 1, cell_h, sel);
+            int tw = display.getTextWidth(label);
+            display.setCursor(cx + (cell_w - tw) / 2, y);
+            display.print(label);
+          }
+        }
+      } else {
+        for (int r = 0; r < rows; r++) {
+          int y = chars_y + r * cell_h;
+          for (int c = 0; c < cols; c++) {
+            bool sel = (row == r && col == c);
+            char ch_buf[3];
+            kbApplyCapsUtf8(cellStr(r, c), caps, ch_buf, sizeof(ch_buf));
+            if (ch_buf[0] == ' ' && ch_buf[1] == '\0') ch_buf[0] = '_';
+            int cx = c * cell_w;
+            display.drawSelectionRow(cx, y - 1, cell_w - 1, cell_h, sel);
+            int tw = display.getTextWidth(ch_buf);
+            display.setCursor(cx + (cell_w - tw) / 2, y);
+            display.print(ch_buf);
+          }
+        }
+      }
+
+      // special row: caps ⇧ · space ⎵ · delete ⌫ · placeholders {} (text) · OK ✓
+      const int s   = miniIconScale(display);
+      const int icy = spec_y + (cell_h - lh) / 2;   // centre icons within the cell
+      for (int i = 0; i < KB_SPECIAL; i++) {
+        bool sel    = (row == rows && col == i);
+        bool active = (i == 0 && caps);
+        int sx = i * spec_w;
+        display.drawSelectionRow(sx, spec_y - 1, spec_w - 1, cell_h, sel || active);
+        if (i == 3 || i == 4) {               // text keys: {} picker, page toggle
+          // Shows what pressing it lands on next, same "reads as the
+          // destination" convention as the original 2-page abc<->#@ toggle,
+          // generalized to however many pages are in the cycle right now.
+          const char* lbl;
+          if (i == 3) {
+            lbl = "{}";
+          } else {
+            int next = (page + 1) % totalPages();
+            lbl = pageIsSymbols(next) ? "#@" : scriptHint(scriptAt(next));
+          }
+          int tw = display.getTextWidth(lbl);
+          display.setCursor(sx + (spec_w - tw) / 2, spec_y);
+          display.print(lbl);
+        } else if (i == 1) {                  // space ⎵ — two halves side by side
+          int icw = (ICON_SPACE_L.w + ICON_SPACE_R.w) * s;
+          int ix  = sx + (spec_w - icw) / 2;
+          miniIconDraw(display, ix, icy, ICON_SPACE_L);
+          miniIconDraw(display, ix + ICON_SPACE_L.w * s, icy, ICON_SPACE_R);
+        } else {
+          const MiniIcon& ic = (i == 0) ? ICON_SHIFT
+                             : (i == 2) ? ICON_BACKSPACE
+                                        : ICON_CHECK;   // i == 5 → OK
+          int ix = sx + (spec_w - ic.w * s) / 2;
+          miniIconDraw(display, ix, icy, ic);
+        }
+        display.setColor(DisplayDriver::LIGHT);
+      }
     }
 
     // Accent popup: floats over the still-visible grid (same idea as the
@@ -643,6 +668,27 @@ struct KeyboardWidget {
     // placeholder picker overlay (drawn on top of keyboard)
     if (_ph_menu.active) _ph_menu.render(display);
     return 50;
+  }
+
+  // CardKB's Fn+letter ("alt") gesture, see UITask::pollCardKB(): open the
+  // accent popup for this base Latin letter directly, skipping the
+  // arrow-hunt to find its cell first. `base` always comes from CardKB's own
+  // physical QWERTY layout, so this only makes sense -- same gating as the
+  // physical Hold-Enter-on-a-letter-cell path just below -- while the
+  // keyboard is idle on its plain Latin page: on T9, symbols, or a non-Latin
+  // main/alt script (Cyrillic, Greek, ...), the on-screen grid isn't showing
+  // Latin letters at all, so it's a no-op rather than inserting a stray
+  // Latin accent into unrelated text.
+  bool openAccentFor(char base) {
+    if (!isVisible() || _ph_menu.active || cursor_mode || accent_active) return false;
+    if (isT9() || pageIsSymbols(page) || scriptAt(page) != NodePrefs::KB_ALPHABET_LATIN_ONLY) return false;
+    int gi = findAccentGroup(base);
+    if (gi < 0) return false;
+    accent_active = true;
+    accent_group = gi;
+    accent_sel = 0;
+    t9_cell = -1;
+    return true;
   }
 
   Result handleInput(char c) {
@@ -721,6 +767,31 @@ struct KeyboardWidget {
 
     if (c == KEY_CANCEL) return CANCELLED;
 
+    // Direct-typing passthrough (CardKB or similar literal-ASCII input
+    // source, see UITask::pollCardKB()). Printable characters insert
+    // straight at the cursor, bypassing the on-screen grid entirely -- no
+    // caps re-application, the source already sends the correct case.
+    // Backspace deletes the previous character. KEY_KB_ENTER (only ever
+    // emitted for CardKB's Fn+Enter, see pollCardKB()) submits the field
+    // directly -- plain Enter (byte-identical to a physical button's
+    // KEY_ENTER) always acts on the grid instead, same as a physical-button
+    // user, so there's no ambiguity to resolve here.
+    if (c == KEY_KB_ENTER) return DONE;
+    if (c == 0x08) {
+      if (cursor_pos > 0) {
+        int n = kbUtf8LastCharBytes(buf, cursor_pos);
+        memmove(buf + cursor_pos - n, buf + cursor_pos, len - cursor_pos);
+        len -= n; cursor_pos -= n;
+        buf[len] = '\0';
+      }
+      return NONE;
+    }
+    if (c >= 0x20 && c <= 0x7E) {
+      char one[2] = { c, '\0' };
+      insertGlyph(one, false);
+      return NONE;
+    }
+
     const int rows = gridRows();
     const int cols = gridCols();
 
@@ -798,6 +869,10 @@ struct KeyboardWidget {
       return NONE;
     }
     if (c == KEY_ENTER) {
+      // Plain Enter always acts on the grid (repeat a letter, cycle T9,
+      // switch page/script, reach the special row's DONE cell) -- same as a
+      // physical button. CardKB submits via the separate KEY_KB_ENTER
+      // (Fn+Enter, see pollCardKB()) instead, so there's no ambiguity here.
       if (row < rows && isT9()) {
         int cell = row * cols + col;
         const char* group = t9GroupStr(cell);

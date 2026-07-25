@@ -45,6 +45,10 @@ class UITask : public AbstractUITask {
   bool _lock_seq_used;             // true = suppress next back_btn CLICK (post-sequence release)
   char _alert[80];
   char _notif_mel_buf[220];  // persistent RTTTL buffer for custom notification melodies
+  // Persistent RTTTL buffer for the bot !buzz command (see botBuzz()) -- sized
+  // for the full 30s cap: "Buzz:b=120:" (11B) + up to 60 "8c,8p," pairs (6B
+  // each) + NUL = 372B, rounded up with margin.
+  char _bot_buzz_buf[400];
   KeyboardWidget _kb;        // shared across all screens — only one active at a time
   unsigned long _alert_expiry;
   int _msgcount;
@@ -91,6 +95,9 @@ class UITask : public AbstractUITask {
   UIScreen* diag_screen = nullptr;
   UIScreen* repeater_screen = nullptr;
   UIScreen* clock_tools = nullptr;
+#if defined(PIN_GPIO1)
+  UIScreen* gpio_screen = nullptr;
+#endif
   UIScreen* curr = nullptr;
   CayenneLPP _dash_lpp;
   TrailStore _trail;
@@ -185,6 +192,21 @@ class UITask : public AbstractUITask {
   uint8_t _kq_head = 0, _kq_tail = 0;
   void enqueueKey(char c);
   bool dequeueKey(char& c);
+
+  // Optional M5Stack CardKB (I2C keyboard, addr 0x5F) on the Grove/Wire1 bus
+  // -- reuses ENV_PIN_SDA/ENV_PIN_SCL (already brought up for
+  // EnvironmentSensorManager) as the "this board has a second I2C bus" gate,
+  // rather than a new board-specific pin define. No-op entirely on boards
+  // without that bus, or when nothing ACKs 0x5F at boot.
+#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+  bool     _has_cardkb = false;
+  // CardKB is level-triggered, not edge-triggered -- it keeps returning the
+  // same byte for as long as the physical key is held, not just once. Track
+  // the last raw byte seen so a held key enqueues exactly one press instead
+  // of one per poll tick.
+  uint8_t  _cardkb_last_raw = 0;
+#endif
+  void pollCardKB();
 
   void setCurrScreen(UIScreen* c);
 
@@ -287,6 +309,7 @@ public:
   void gotoCompassScreen();
   void gotoDiagnosticsScreen();
   void gotoRepeaterScreen();
+  void gotoGpioScreen();   // no-op on boards without user GPIO pins (see PIN_GPIO1)
   void gotoClockTools();   // Alarm / Timer / Stopwatch (from the home Clock page)
   // Wake the display for an alarm/timer ring (force an immediate refresh).
   void wakeForAlarm();
@@ -410,6 +433,17 @@ public:
   bool getGPSState();
   bool hasGPS();   // true if this board exposes a toggleable GPS (distinct from GPS being off)
   void toggleGPS();
+  void applyGpsState(bool on);   // shared by toggleGPS() and botSetGPS()
+  void botSetGPS(bool on) override;
+  void botBuzz(int seconds) override;
+  // User GPIO (!gpio1..!gpio4 + Tools > GPIO screen). idx is 1-4. Bodies are
+  // no-ops / return false on boards without PIN_GPIO1 defined.
+  bool botSetGPIO(int idx, bool on) override;
+  bool botGetGPIO(int idx, bool& is_output, bool& value) override;
+  bool botGetGPIOAnalog(int idx, int& millivolts) override;
+  bool gpioSupportsAnalog(int idx) const;    // true only for GPIO1/GPIO2 (AIN0/AIN5)
+  void setGpioMode(int idx, uint8_t mode);   // 0=Off 1=In 2=Out-low 3=Out-high 4=Analog; applies + persists
+  void applyAllGpioModes();                  // boot-time restore from NodePrefs, called from begin()
   void applyBrightness();
   void setBrightnessLevel(uint8_t level);
   uint8_t getBrightnessLevel() const { return _node_prefs ? _node_prefs->display_brightness : 2; }
