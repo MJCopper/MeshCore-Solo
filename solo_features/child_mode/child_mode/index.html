@@ -1703,6 +1703,14 @@ There is no forgotten-PIN recovery menu. If you forget the PIN, the device must 
 <td>Contact, room, and channel editing actions are blocked; channels cannot be added or favourited</td>
 </tr>
 <tr>
+<td>Notifications</td>
+<td>Favourited contacts and rooms notify normally; enabled, favourited private channels also notify normally</td>
+</tr>
+<tr>
+<td>Other messages</td>
+<td>Still received and stored, but do not alert, wake, sound, vibrate, or add to child-visible unread counts</td>
+</tr>
+<tr>
 <td>Radio</td>
 <td>Page hidden; the configured radio settings continue to operate</td>
 </tr>
@@ -1712,7 +1720,7 @@ There is no forgotten-PIN recovery menu. If you forget the PIN, the device must 
 </tr>
 <tr>
 <td>Advert</td>
-<td>Manual Advert page hidden; received adverts continue to be processed without advert sound or vibration</td>
+<td>Manual Advert page hidden; received adverts are processed without alerts, sound, vibration, or display wake</td>
 </tr>
 <tr>
 <td>GPS and mapping</td>
@@ -1732,7 +1740,8 @@ There is no forgotten-PIN recovery menu. If you forget the PIN, the device must 
 </tr>
 </tbody>
 </table>
-<p>Child Mode does not delete or rewrite the hidden settings. A parent can unlock Settings and adjust them normally.</p>
+<p>Child Mode does not delete or rewrite the hidden settings. A parent can unlock Settings and adjust them normally.
+Notification filtering is active only while the child interface is locked, so a parent can test normal notifications during an unlocked Settings session. It does not reject mesh packets or alter routing, acknowledgements, or the companion offline queue.</p>
 <hr />
 <h3 id="parent-access-and-relocking">Parent access and relocking</h3>
 <p>Select <strong>Settings</strong> and enter the six-digit PIN to start a parent session. This temporarily restores the full home-page set and enables Bluetooth and USB companion access.</p>
