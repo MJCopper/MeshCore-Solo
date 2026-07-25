@@ -482,6 +482,22 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.trail_autosave_lowbatt, sizeof(_prefs.trail_autosave_lowbatt));
   if (_prefs.trail_autosave_lowbatt > 1) _prefs.trail_autosave_lowbatt = 0;
 
+  // The original Child Mode fork also used schema 0x1C, before upstream used
+  // that revision for alarm_repeat_mask. Its tail is uniquely seven bytes of
+  // Child Mode data followed by the four-byte sentinel, so distinguish it by
+  // length and migrate it without interpreting the PIN bytes as newer fields.
+  const size_t tail_remaining = file.size() - file.position();
+  const bool legacy_child_schema = tail_remaining ==
+      sizeof(_prefs.child_mode_enabled) + sizeof(_prefs.child_mode_pin_hash) +
+      sizeof(_prefs.child_visible_pages) + sizeof(uint32_t);
+
+  if (legacy_child_schema) {
+    rd(&_prefs.child_mode_enabled, sizeof(_prefs.child_mode_enabled));
+    rd(&_prefs.child_mode_pin_hash, sizeof(_prefs.child_mode_pin_hash));
+    rd(&_prefs.child_visible_pages, sizeof(_prefs.child_visible_pages));
+    // Old Child Mode records end here; the zero-initialised default keeps
+    // Channels hidden until a parent explicitly enables them.
+  } else {
   // → 0xC0DE001C: append alarm_repeat_mask at the tail. A pre-0x1C file has the
   // old sentinel bytes / EOF here; any value that isn't one of the four presets
   // clamps to 0 (no repeat / one-shot), matching the original alarm behaviour
@@ -557,12 +573,16 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.keyboard_cardkb_compact, sizeof(_prefs.keyboard_cardkb_compact));
   if (_prefs.keyboard_cardkb_compact > 1) _prefs.keyboard_cardkb_compact = 0;
 
-  // → 0xC0DE0024: child-mode UI lock. All optional pages default hidden.
-  rd(&_prefs.child_mode_enabled, sizeof(_prefs.child_mode_enabled));
-  rd(&_prefs.child_mode_pin_hash, sizeof(_prefs.child_mode_pin_hash));
-  rd(&_prefs.child_visible_pages, sizeof(_prefs.child_visible_pages));
+    // → 0xC0DE0024: child-mode UI lock.
+    rd(&_prefs.child_mode_enabled, sizeof(_prefs.child_mode_enabled));
+    rd(&_prefs.child_mode_pin_hash, sizeof(_prefs.child_mode_pin_hash));
+    rd(&_prefs.child_visible_pages, sizeof(_prefs.child_visible_pages));
+    // → 0xC0DE0025: allow the child to open favourited private channels.
+    rd(&_prefs.child_channels_enabled, sizeof(_prefs.child_channels_enabled));
+  }
   if (_prefs.child_mode_enabled > 1) _prefs.child_mode_enabled = 0;
-  _prefs.child_visible_pages &= NodePrefs::HP_RECENT | NodePrefs::HP_FAVOURITES |
+  if (_prefs.child_channels_enabled > 1) _prefs.child_channels_enabled = 0;
+  _prefs.child_visible_pages &= NodePrefs::HP_FAVOURITES |
                                 NodePrefs::HP_MAP | NodePrefs::HP_SENSORS | NodePrefs::HP_SHUTDOWN;
 
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
@@ -780,6 +800,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.child_mode_enabled, sizeof(_prefs.child_mode_enabled));
     file.write((uint8_t *)&_prefs.child_mode_pin_hash, sizeof(_prefs.child_mode_pin_hash));
     file.write((uint8_t *)&_prefs.child_visible_pages, sizeof(_prefs.child_visible_pages));
+    file.write((uint8_t *)&_prefs.child_channels_enabled, sizeof(_prefs.child_channels_enabled));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good

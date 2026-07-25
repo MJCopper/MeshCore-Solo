@@ -81,7 +81,7 @@ class SettingsScreen : public UIScreen {
     // Contacts section
     SECTION_CONTACTS, DM_FILTER, CH_FILTER, ROOM_FILTER,
     // Child mode section
-    SECTION_CHILD, CHILD_ENABLED, CHILD_PIN, CHILD_RECENT, CHILD_FAVOURITES,
+    SECTION_CHILD, CHILD_ENABLED, CHILD_PIN, CHILD_CHANNELS, CHILD_FAVOURITES,
     CHILD_MAP, CHILD_SENSORS, CHILD_SHUTDOWN,
     // Messages section
     SECTION_MESSAGES,
@@ -648,15 +648,16 @@ class SettingsScreen : public UIScreen {
       display.print((p && p->child_mode_enabled) ? "ON" : "OFF");
     } else if (item == CHILD_PIN) {
       display.print("Set PIN"); display.setCursor(valCol(display), y); display.print("******");
-    } else if (item == CHILD_RECENT || item == CHILD_FAVOURITES || item == CHILD_MAP ||
+    } else if (item == CHILD_CHANNELS) {
+      display.print("Channels"); display.setCursor(valCol(display), y);
+      display.print((p && p->child_channels_enabled) ? "ON" : "OFF");
+    } else if (item == CHILD_FAVOURITES || item == CHILD_MAP ||
                item == CHILD_SENSORS || item == CHILD_SHUTDOWN) {
-      uint16_t bit = item == CHILD_RECENT ? NodePrefs::HP_RECENT :
-                     (item == CHILD_FAVOURITES ? NodePrefs::HP_FAVOURITES :
+      uint16_t bit = item == CHILD_FAVOURITES ? NodePrefs::HP_FAVOURITES :
                      (item == CHILD_MAP ? NodePrefs::HP_MAP :
-                     (item == CHILD_SENSORS ? NodePrefs::HP_SENSORS : NodePrefs::HP_SHUTDOWN)));
-      display.print(item == CHILD_RECENT ? "Recent" :
-                    (item == CHILD_FAVOURITES ? "Favourites" :
-                    (item == CHILD_MAP ? "Map" : (item == CHILD_SENSORS ? "Sensors" : "Shutdown"))));
+                     (item == CHILD_SENSORS ? NodePrefs::HP_SENSORS : NodePrefs::HP_SHUTDOWN));
+      display.print(item == CHILD_FAVOURITES ? "Favourites" :
+                    (item == CHILD_MAP ? "Map" : (item == CHILD_SENSORS ? "Sensors" : "Shutdown")));
       display.setCursor(valCol(display), y);
       display.print((p && (p->child_visible_pages & bit)) ? "ON" : "OFF");
     } else if (item == DM_RESEND) {
@@ -1149,6 +1150,11 @@ public:
                      (_selected == CHILD_MAP ? NodePrefs::HP_MAP :
                      (_selected == CHILD_SENSORS ? NodePrefs::HP_SENSORS : NodePrefs::HP_SHUTDOWN)));
       p->child_visible_pages ^= bit;
+      _dirty = true;
+      return true;
+    }
+    if (_selected == CHILD_CHANNELS && p && (left || right || enter)) {
+      p->child_channels_enabled ^= 1;
       _dirty = true;
       return true;
     }

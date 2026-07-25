@@ -450,6 +450,8 @@ class MessagesScreen : public UIScreen {
     if (_sending_to_channel) {
       ChannelDetails ch;
       if (!the_mesh.getChannel(_sel_channel_idx, ch)) return false;
+      if (_task->isChildModeLocked() &&
+          !channelAllowedForChild((uint8_t)_sel_channel_idx, ch)) return false;
       return the_mesh.sendGroupMessage(rtc_clock.getCurrentTime(), ch.channel,
                                        the_mesh.getNodeName(), msg, strlen(msg));
     } else {
@@ -506,14 +508,39 @@ class MessagesScreen : public UIScreen {
     }
   }
 
+  bool channelAllowedForChild(uint8_t index, const ChannelDetails& ch) const {
+    return childmode::channelAllowed(_task->getNodePrefs(), index, ch.name, ch.channel.secret);
+  }
+
+  bool channelAllowedForChild(uint8_t index) const {
+    ChannelDetails ch;
+    return the_mesh.getChannel(index, ch) && channelAllowedForChild(index, ch);
+  }
+
+  bool channelsModeVisible() const {
+    NodePrefs* p = _task->getNodePrefs();
+    return !_task->isChildModeLocked() || (p && p->child_channels_enabled);
+  }
+
+  int modeOptionCount() const { return channelsModeVisible() ? 3 : 2; }
+  int modeAtPosition(int pos) const {
+    return channelsModeVisible() ? pos : (pos == 0 ? 0 : 2);
+  }
+  int modePosition() const {
+    if (channelsModeVisible()) return _mode_sel;
+    return _mode_sel == 2 ? 1 : 0;
+  }
+
   void buildChannelList() {
     NodePrefs* p = _task->getNodePrefs();
-    bool fav_only = (p && (p->ch_fav_only || _task->isChildModeLocked()));
+    bool child_locked = _task->isChildModeLocked();
+    bool fav_only = (p && (p->ch_fav_only || child_locked));
     _num_channels = 0;
     for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
       ChannelDetails ch;
       if (!the_mesh.getChannel(i, ch) || ch.name[0] == '\0') continue;
       if (fav_only && !(p->ch_fav_bitmask & (1ULL << i))) continue;
+      if (child_locked && !channelAllowedForChild((uint8_t)i, ch)) continue;
       _channel_indices[_num_channels++] = (uint8_t)i;
     }
   }
@@ -638,7 +665,9 @@ public:
 
   // CHANNEL_PICK row count including the synthetic "+ Add channel" row
   // (suppressed while picking a channel for the bot).
-  int channelPickTotal() const { return _num_channels + (_pick_bot_channel ? 0 : 1); }
+  int channelPickTotal() const {
+    return _num_channels + ((_pick_bot_channel || _task->isChildModeLocked()) ? 0 : 1);
+  }
 
   // Public entry points (routed from MyMesh / the bot via UITask) — thin
   // forwarders to the history store. addChannelMsg computes the "viewing" flag
@@ -972,14 +1001,16 @@ public:
         _task->getChannelUnreadCount(),
         _task->getRoomUnreadCount()
       };
-      for (int i = 0; i < 3; i++) {
-        int y = start_y + i * item_h;
-        bool sel = (i == _mode_sel);
+      int option_count = modeOptionCount();
+      for (int pos = 0; pos < option_count; pos++) {
+        int mode = modeAtPosition(pos);
+        int y = start_y + pos * item_h;
+        bool sel = (mode == _mode_sel);
         display.drawSelectionRow(0, y - 1, display.width(), item_h - 1, sel);
         display.setCursor(2, y);
-        display.print(opts[i]);
-        if (badges[i] > 0)
-          display.drawUnreadBadge(display.width() - 1, y, badges[i], sel);
+        display.print(opts[mode]);
+        if (badges[mode] > 0)
+          display.drawUnreadBadge(display.width() - 1, y, badges[mode], sel);
       }
       display.setColor(DisplayDriver::LIGHT);
       if (_ctx_menu.active) _ctx_menu.render(display);
@@ -1017,7 +1048,7 @@ public:
 
       // "+ Add channel" is a synthetic trailing row — suppressed while picking
       // a channel for the bot, so that picker's list stays unchanged.
-      bool show_add = !_pick_bot_channel;
+      bool show_add = !_pick_bot_channel && !_task->isChildModeLocked();
       int total = _num_channels + (show_add ? 1 : 0);
 
       if (total == 0) {
@@ -1454,8 +1485,14 @@ public:
         return true;
       }
       if (c == KEY_CANCEL) { _task->gotoHomeScreen(); return true; }
-      if (c == KEY_UP)   { _mode_sel = (_mode_sel > 0) ? _mode_sel - 1 : 2; return true; }
-      if (c == KEY_DOWN) { _mode_sel = (_mode_sel < 2) ? _mode_sel + 1 : 0; return true; }
+      if (c == KEY_UP || c == KEY_DOWN) {
+        int count = modeOptionCount();
+        int pos = modePosition();
+        pos = c == KEY_UP ? (pos > 0 ? pos - 1 : count - 1)
+                          : (pos < count - 1 ? pos + 1 : 0);
+        _mode_sel = modeAtPosition(pos);
+        return true;
+      }
       if (c == KEY_CONTEXT_MENU && !_task->isChildModeLocked()) {
         // PopupMenu stores the title pointer verbatim — use static strings.
         static const char* MODE_TITLES[] = { "DM options", "Channel options", "Room options" };
@@ -1465,6 +1502,9 @@ public:
       }
       if (c == KEY_ENTER) {
         if (_mode_sel == 1) {
+          if (!channelsModeVisible()) return true;
+          buildChannelList();
+          _channel_sel = _channel_scroll = 0;
           _phase = CHANNEL_PICK;
         } else {
           _room_mode = (_mode_sel == 2);
@@ -1757,6 +1797,7 @@ public:
         if (c == KEY_DOWN && total > 0) { _channel_sel = (_channel_sel < total - 1) ? _channel_sel + 1 : 0; return true; }
       }
       if (c == KEY_ENTER && _channel_sel == _num_channels && !_pick_bot_channel) {
+        if (_task->isChildModeLocked()) return true;
         int idx = findFreeChannelSlot();
         if (idx < 0) _task->showAlert("Channels full", 1200);
         else         _ch_view.openAdd(idx);
@@ -1764,6 +1805,13 @@ public:
       }
       if (c == KEY_ENTER && _num_channels > 0 && _channel_sel < _num_channels) {
         _sel_channel_idx = _channel_indices[_channel_sel];
+        if (_task->isChildModeLocked() &&
+            !channelAllowedForChild((uint8_t)_sel_channel_idx)) {
+          buildChannelList();
+          _channel_sel = _channel_scroll = 0;
+          _task->showAlert("Parent only", 800);
+          return true;
+        }
         if (_pick_target) { commitPickTargetChannel(_sel_channel_idx); return true; }
         if (_pick_bot_channel) { commitPickBotChannel(_sel_channel_idx); return true; }
         int hc = _history.histCountForChannel(_sel_channel_idx);

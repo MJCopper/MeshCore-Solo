@@ -440,6 +440,7 @@ struct NodePrefs {  // persisted to file
   uint8_t  child_mode_enabled;
   uint32_t child_mode_pin_hash;
   uint16_t child_visible_pages;
+  uint8_t  child_channels_enabled;  // show favourited private channels while child mode is locked
 
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
@@ -503,7 +504,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0024;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0025;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage

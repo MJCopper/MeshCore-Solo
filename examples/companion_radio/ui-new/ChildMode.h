@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../NodePrefs.h"
+#include <Utils.h>
 #include <helpers/ContactInfo.h>
 #include <helpers/ui/DisplayDriver.h>
 #include "DigitEditor.h"
@@ -47,9 +48,34 @@ static inline bool contactAllowed(const NodePrefs* prefs, const ContactInfo& con
   return !prefs || !prefs->child_mode_enabled || (contact.flags & 0x01);
 }
 
-static inline bool channelAllowed(const NodePrefs* prefs, uint8_t index) {
-  return !prefs || !prefs->child_mode_enabled ||
-         (index < 64 && (prefs->ch_fav_bitmask & (1ULL << index)) != 0);
+static inline bool privateChannel(const char* name, const uint8_t* secret) {
+  static const uint8_t PUBLIC_SECRET[16] = {
+    0x8b, 0x33, 0x87, 0xe9, 0xc5, 0xcd, 0xea, 0x6a,
+    0xc9, 0xe5, 0xed, 0xba, 0xa1, 0x15, 0xcd, 0x72
+  };
+  if (!name || !secret || memcmp(secret, PUBLIC_SECRET, sizeof(PUBLIC_SECRET)) == 0) return false;
+
+  bool all_zero = true;
+  for (int i = 0; i < 16 && all_zero; i++) all_zero = secret[i] == 0;
+  if (all_zero) return false;
+
+  // A hashtag channel is public only when both its conventional name and
+  // derived key match. A private channel may legitimately use a leading '#'
+  // with a separately shared secret and remains private.
+  if (name[0] == '#') {
+    uint8_t digest[32];
+    mesh::Utils::sha256(digest, sizeof(digest), (const uint8_t*)name, strlen(name));
+    if (memcmp(secret, digest, 16) == 0) return false;
+  }
+  return true;
+}
+
+static inline bool channelAllowed(const NodePrefs* prefs, uint8_t index,
+                                  const char* name, const uint8_t* secret) {
+  if (!prefs || !prefs->child_mode_enabled) return true;
+  return prefs->child_channels_enabled && index < 64 &&
+         (prefs->ch_fav_bitmask & (1ULL << index)) != 0 &&
+         privateChannel(name, secret);
 }
 
 } // namespace childmode

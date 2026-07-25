@@ -125,7 +125,7 @@ European Latin-diacritic letters (Polish, Czech, Slovak, German, French, Spanish
 | ---------- | -------- | ------------------------------------------------------------------------ |
 | Enabled    | ON / OFF | Enables the restricted interface; requires a saved PIN and confirmation  |
 | Set PIN    | 000000–999999 | Enter the six-digit parent PIN twice; the saved value is not displayed |
-| Recent     | ON / OFF | Allows the Recent page; default OFF                                      |
+| Channels   | ON / OFF | Shows favourited private channels in Messages; Public and # channels remain hidden; default OFF |
 | Favourites | ON / OFF | Allows the Favourites Dial; default ON                                   |
 | Map        | ON / OFF | Allows a read-only Map page; default OFF                                 |
 | Sensors    | ON / OFF | Allows the Sensors page; default OFF                                     |

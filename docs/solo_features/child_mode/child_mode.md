@@ -35,7 +35,7 @@ The PIN is not displayed on the Settings screen after it is saved.
 | ---------- | ------- | ------------------------------------------------------------------ |
 | Enabled    | Off     | Enables the restrictions after the warning is accepted             |
 | Set PIN    | —       | Sets or replaces the six-digit parent PIN; it must be entered twice |
-| Recent     | Off     | Shows the Recent activity page                                      |
+| Channels   | Off     | Shows favourited private channels; Public and # channels stay hidden |
 | Favourites | On      | Shows the Favourites Dial                                           |
 | Map        | Off     | Shows a read-only map                                               |
 | Sensors    | Off     | Shows sensor readings                                               |
@@ -49,9 +49,9 @@ The Clock, Messages, and Settings entries remain available. Opening Settings whi
 
 | Area                 | Behaviour                                                                                               |
 | -------------------- | ------------------------------------------------------------------------------------------------------- |
-| Messages             | Lists only upstream-starred contacts and rooms, plus favourited channels                                |
+| Messages             | Lists only upstream-starred contacts and rooms; optional Channels lists favourited private channels only |
 | Favourites Dial      | Opens the contacts already pinned to its six slots; adding, moving, and removing pins is blocked        |
-| Message context menus | Contact, room, and channel editing actions are blocked                                                  |
+| Message context menus | Contact, room, and channel editing actions are blocked; channels cannot be added or favourited          |
 | Radio                | Page hidden; the configured radio settings continue to operate                                          |
 | Bluetooth / USB      | Both companion protocol transports are disabled; USB power and charging are unaffected                  |
 | Advert               | Manual Advert page hidden; received adverts continue to be processed without advert sound or vibration  |
