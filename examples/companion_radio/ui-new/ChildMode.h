@@ -78,4 +78,15 @@ static inline bool channelAllowed(const NodePrefs* prefs, uint8_t index,
          privateChannel(name, secret);
 }
 
+static inline bool contactNotificationAllowed(bool locked, const NodePrefs* prefs,
+                                              const ContactInfo* contact) {
+  return !locked || (contact && contactAllowed(prefs, *contact));
+}
+
+static inline bool channelNotificationAllowed(bool locked, const NodePrefs* prefs,
+                                              uint8_t index, const char* name,
+                                              const uint8_t* secret) {
+  return !locked || channelAllowed(prefs, index, name, secret);
+}
+
 } // namespace childmode

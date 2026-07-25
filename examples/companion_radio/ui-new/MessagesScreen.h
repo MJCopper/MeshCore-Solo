@@ -673,8 +673,9 @@ public:
   // forwarders to the history store. addChannelMsg computes the "viewing" flag
   // (a phase-machine fact the store can't see) and returns the ring position so
   // the outgoing path can attach a relay seq to that exact entry.
-  int addChannelMsg(uint8_t ch_idx, const char* text, uint32_t timestamp = 0) {
-    bool viewing = (_phase == CHANNEL_HIST && _sel_channel_idx == (int)ch_idx);
+  int addChannelMsg(uint8_t ch_idx, const char* text, uint32_t timestamp = 0,
+                    bool count_unread = true) {
+    bool viewing = !count_unread || (_phase == CHANNEL_HIST && _sel_channel_idx == (int)ch_idx);
     int pos = _history.addChannelMsg(ch_idx, text, viewing, timestamp);
     // Ring entries are numbered newest-first (0 == newest), so a new insert
     // shifts every older message's index up by one. If the user has scrolled
@@ -804,7 +805,15 @@ public:
     return _task->getDMUnreadTotal();
   }
 
-  int getTotalChannelUnread() const { return _history.getTotalChannelUnread(); }
+  int getTotalChannelUnread(bool child_visible_only = false) const {
+    if (!child_visible_only) return _history.getTotalChannelUnread();
+    int total = 0;
+    for (int i = 0; i < MAX_GROUP_CHANNELS; i++) {
+      if (_history.chUnread(i) && channelAllowedForChild((uint8_t)i))
+        total += _history.chUnread(i);
+    }
+    return total;
+  }
 
   // How many DM ring entries this contact/room currently holds -- lets UITask
   // clamp its separate _dm_unread_table counters to what the shared 32-slot DM

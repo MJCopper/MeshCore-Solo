@@ -40,6 +40,7 @@ class UITask : public AbstractUITask {
   NodePrefs* _node_prefs;
   bool _locked;
   bool _child_admin_unlocked;
+  bool _child_was_locked = false;
   unsigned long _lock_wake_until;  // when to blank screen again after locked wake (5s)
   int  _lock_seq_count;            // Enter presses while Back held (lock/unlock sequence)
   unsigned long _lock_seq_ms;      // millis() of last lock-sequence press (for timeout)
@@ -361,6 +362,12 @@ public:
   void stopMelody();
   bool isMelodyPlaying();
   void showAlert(const char* text, int duration_millis);
+  bool notificationAllowed(UIEventType event, uint8_t contact_type = 0,
+                           const uint8_t* pub_key = nullptr, int channel_idx = -1) const;
+  void presentNotification(UIEventType event);
+  void handleNewMsg(uint8_t path_len, const char* from_name, const char* text,
+                    int msgcount, uint8_t contact_type, const uint8_t* pub_key,
+                    bool present);
   void addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp = 0) override;
   void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) override;
   void onMsgAck(uint32_t ack_crc) override;
@@ -480,6 +487,10 @@ public:
   // from AbstractUITask
   void msgRead(int msgcount) override;
   void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount, uint8_t contact_type = 0, const uint8_t* pub_key = nullptr) override;
+  void incomingMessage(UIEventType event, uint8_t path_len,
+                       const char* from_name, const char* text, int msgcount,
+                       uint8_t contact_type = 0, const uint8_t* pub_key = nullptr,
+                       int channel_idx = -1) override;
   void notify(UIEventType t = UIEventType::none) override;
   void onSharedLocation(const uint8_t* pub_key, const char* name,
                         int32_t lat_1e6, int32_t lon_1e6,

@@ -1544,7 +1544,17 @@ void UITask::setChildAdminUnlocked(bool unlocked) {
 }
 void UITask::applyChildMode() {
   if (!_serial) return;
-  if (isChildModeLocked()) _serial->disable();
+  bool child_locked = isChildModeLocked();
+  if (child_locked && !_child_was_locked) {
+    // Counts accumulated before the restricted session cannot be attributed
+    // safely to an allowed sender (room count is aggregate), so start the
+    // child-visible notification state clean. Message history is untouched.
+    _msgcount = _room_unread = 0;
+    memset(_dm_unread_table, 0, sizeof(_dm_unread_table));
+    _alert_expiry = 0;
+  }
+  _child_was_locked = child_locked;
+  if (child_locked) _serial->disable();
   else _serial->enable();
   _next_refresh = 0;
 }
@@ -1801,12 +1811,13 @@ int UITask::getRecentDMContacts(uint8_t out[][NodePrefs::FAVOURITE_PREFIX_LEN], 
 }
 
 void UITask::addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp) {
-  _last_notif_ch_idx = (int)channel_idx;
-  ((MessagesScreen*)messages_screen)->addChannelMsg(channel_idx, text, timestamp);
+  bool present = notificationAllowed(UIEventType::channelMessage, 0, nullptr, channel_idx);
+  _last_notif_ch_idx = present ? (int)channel_idx : -1;
+  ((MessagesScreen*)messages_screen)->addChannelMsg(channel_idx, text, timestamp, present);
 }
 
 int UITask::getChannelUnreadCount() const {
-  return ((MessagesScreen*)messages_screen)->getTotalChannelUnread();
+  return ((MessagesScreen*)messages_screen)->getTotalChannelUnread(isChildModeLocked());
 }
 
 void UITask::onMsgAck(uint32_t ack_crc) {
@@ -1872,12 +1883,41 @@ void UITask::showAlert(const char* text, int duration_millis) {
   _alert_expiry = millis() + duration_millis;
 }
 
-void UITask::notify(UIEventType t) {
-  // Child mode still accepts and processes adverts in the background, but they
-  // do not make sound or vibrate. Do not mutate the parent's saved advert sound
-  // preference; it resumes automatically after unlock.
-  if (isChildModeLocked() &&
-      (t == UIEventType::advertReceivedFlood || t == UIEventType::advertReceivedZeroHop)) return;
+bool UITask::notificationAllowed(UIEventType event, uint8_t contact_type,
+                                 const uint8_t* pub_key, int channel_idx) const {
+  if (!isChildModeLocked()) return true;
+
+  if (event == UIEventType::advertReceivedFlood ||
+      event == UIEventType::advertReceivedZeroHop) return false;
+
+  if (event == UIEventType::contactMessage || event == UIEventType::roomMessage) {
+    if (!pub_key) return false;
+    ContactInfo* contact = the_mesh.lookupContactByPubKey(pub_key, 4);
+    uint8_t expected_type = event == UIEventType::roomMessage ? ADV_TYPE_ROOM : ADV_TYPE_CHAT;
+    return contact && contact_type == expected_type &&
+           childmode::contactNotificationAllowed(true, _node_prefs, contact);
+  }
+
+  if (event == UIEventType::channelMessage) {
+    if (channel_idx < 0 || channel_idx >= MAX_GROUP_CHANNELS) return false;
+    ChannelDetails channel;
+    return the_mesh.getChannel(channel_idx, channel) &&
+           childmode::channelNotificationAllowed(true, _node_prefs, channel_idx,
+                                                 channel.name, channel.channel.secret);
+  }
+
+  return true;
+}
+
+void UITask::notify(UIEventType event) {
+  // Context-free message notification calls are denied while child mode is
+  // locked. Receive paths use incomingMessage(), which supplies the contact or
+  // channel identity needed for the child-mode allow-list decision.
+  if (!notificationAllowed(event)) return;
+  presentNotification(event);
+}
+
+void UITask::presentNotification(UIEventType t) {
 #if defined(PIN_BUZZER)
 {
   SoundNotifier sn(buzzer, _node_prefs, _notif_mel_buf, sizeof(_notif_mel_buf));
@@ -1928,7 +1968,37 @@ void UITask::msgRead(int msgcount) {
 }
 
 void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount, uint8_t contact_type, const uint8_t* pub_key) {
-  _msgcount = msgcount;
+  handleNewMsg(path_len, from_name, text, msgcount, contact_type, pub_key, true);
+}
+
+void UITask::incomingMessage(UIEventType event, uint8_t path_len,
+                             const char* from_name, const char* text, int msgcount,
+                             uint8_t contact_type, const uint8_t* pub_key,
+                             int channel_idx) {
+  bool present = notificationAllowed(event, contact_type, pub_key, channel_idx);
+  handleNewMsg(path_len, from_name, text, msgcount, contact_type, pub_key, present);
+  if (present) {
+    presentNotification(event);
+  } else {
+    _last_notif_dm_valid = false;
+    _last_notif_ch_idx = -1;
+  }
+}
+
+void UITask::handleNewMsg(uint8_t path_len, const char* from_name, const char* text,
+                          int msgcount, uint8_t contact_type, const uint8_t* pub_key,
+                          bool present) {
+  (void)path_len;
+  (void)text;
+  if (!present) return;
+
+  // The mesh queue count includes deliberately silent traffic. Keep the normal
+  // exact count outside child mode, but count only allowed messages while locked.
+  if (isChildModeLocked()) {
+    if (_msgcount < 999) _msgcount++;
+  } else {
+    _msgcount = msgcount;
+  }
   if (contact_type == ADV_TYPE_ROOM && _room_unread < _msgcount) _room_unread++;
   if (contact_type == ADV_TYPE_CHAT && pub_key != nullptr) {
     memcpy(_last_notif_dm_prefix, pub_key, 4);

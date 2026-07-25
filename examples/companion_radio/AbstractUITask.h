@@ -84,6 +84,17 @@ public:
   virtual void msgRead(int msgcount) = 0;
   virtual void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount, uint8_t contact_type = 0, const uint8_t* pub_key = nullptr) = 0;
   virtual void notify(UIEventType t = UIEventType::none) = 0;
+  // Context-rich receive hook. The default preserves the legacy UI behaviour;
+  // richer UIs can make one policy decision for alerts, sound, vibration and
+  // wake without pushing UI concerns into the mesh receive/ACK path.
+  virtual void incomingMessage(UIEventType event, uint8_t path_len,
+                               const char* from_name, const char* text, int msgcount,
+                               uint8_t contact_type = 0, const uint8_t* pub_key = nullptr,
+                               int channel_idx = -1) {
+    (void)channel_idx;
+    newMsg(path_len, from_name, text, msgcount, contact_type, pub_key);
+    notify(event);
+  }
   virtual void addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp = 0) {}
   virtual void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) {}
   // A node shared its current position via a [LOC] message. pub_key is the

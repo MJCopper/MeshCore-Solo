@@ -527,8 +527,8 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
   // we only want to show text messages on display, not cli data
   bool should_display = txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN;
   if (should_display && _ui) {
-    _ui->newMsg(path_len, from.name, text, offline_queue_len, from.type, from.id.pub_key);
-    _ui->notify(from.type == ADV_TYPE_ROOM ? UIEventType::roomMessage : UIEventType::contactMessage);
+    _ui->incomingMessage(from.type == ADV_TYPE_ROOM ? UIEventType::roomMessage : UIEventType::contactMessage,
+                         path_len, from.name, text, offline_queue_len, from.type, from.id.pub_key);
     // Add to the on-device conversation history. Room servers (ADV_TYPE_ROOM) are
     // viewed through the same history list as chat contacts (keyed by the server's
     // pubkey), so their posts must be stored too — otherwise an incoming room
@@ -781,13 +781,13 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   }
 #ifdef DISPLAY_CLASS
   if (_ui) _ui->addChannelMsg(channel_idx, text, timestamp);
-  if (_ui) _ui->notify(UIEventType::channelMessage);
   const char *channel_name = "Unknown";
   ChannelDetails channel_details;
   if (getChannel(channel_idx, channel_details)) {
     channel_name = channel_details.name;
   }
-  if (_ui) _ui->newMsg(path_len, channel_name, text, offline_queue_len, 0);
+  if (_ui) _ui->incomingMessage(UIEventType::channelMessage, path_len, channel_name,
+                                text, offline_queue_len, 0, nullptr, channel_idx);
 
   // Live position share on a channel. The sender's identity here is only the
   // unsigned "name: msg" prefix (no pubkey), so track it by name — best-effort
