@@ -1,0 +1,2263 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Documentation for the open source MeshCore firmware">
+      
+      
+      
+        <link rel="canonical" href="https://meshcore-dev.github.io/meshcore/design/solo_ui_framework/">
+      
+      
+        <link rel="prev" href="../nearby_redesign/">
+      
+      
+        <link rel="next" href="../trail_redesign/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Solo UI framework — a guide for adding features - MeshCore Docs</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../_stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#solo-ui-framework-a-guide-for-adding-features" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="MeshCore Docs" class="md-header__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
+      
+  <img src="../../_assets/meshcore.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MeshCore Docs
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Solo UI framework — a guide for adding features
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/meshcore-dev/meshcore/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    meshcore-dev/meshcore
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="MeshCore Docs" class="md-nav__button md-logo" aria-label="MeshCore Docs" data-md-component="logo">
+      
+  <img src="../../_assets/meshcore.svg" alt="logo">
+
+    </a>
+    MeshCore Docs
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/meshcore-dev/meshcore/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    meshcore-dev/meshcore
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli_commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../companion_protocol/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Companion Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../docs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Local Documentation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Frequently Asked Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../kiss_modem_protocol/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MeshCore KISS Modem Protocol
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nrf52_power_management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    nRF52 Power Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../number_allocations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Number Allocations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packet_format/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packet Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../payloads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Payload Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../qr_codes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QR Codes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../stats_binary_frames/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stats Binary Frame Structures
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../terminal_chat_cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Terminal Chat CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_14" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_14" id="__nav_14_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_14_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_14">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nearby_redesign/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Nearby Nodes — analiza i propozycja uporządkowania
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Solo UI framework — a guide for adding features
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Solo UI framework — a guide for adding features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-screen-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The screen model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. The screen model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wiring-a-screen-into-uitask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wiring a screen into UITask
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-layout-metrics-text-displaydriver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Layout metrics &amp; text (DisplayDriver)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-lists-drawlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Lists — drawList
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-reusable-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Reusable components
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-domain-helpers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Domain helpers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-mini-icons-the-status-bar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Mini-icons &amp; the status bar
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Input
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Input">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#from-hardware-to-handleinput" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From hardware to handleInput
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Persistence
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Persistence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#child-mode-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Child Mode policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-conventions-gotchas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Conventions &amp; gotchas
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-worked-example-a-new-tools-screen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Worked example — a new Tools screen
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../trail_redesign/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Trail (Tools › Trail) — analiza i propozycja uporządkowania
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_15" >
+        
+          
+          <label class="md-nav__link" for="__nav_15" id="__nav_15_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Solo features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_15_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_15">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Solo features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_15_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_15_1" id="__nav_15_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Child mode
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_15_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_15_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Child mode
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../solo_features/child_mode/child_mode/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Child mode
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_15_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_15_2" id="__nav_15_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clock screen
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_15_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_15_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Clock screen
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../solo_features/clock_screen/clock_screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clock screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_15_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_15_3" id="__nav_15_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Favourites dial
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_15_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_15_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Favourites dial
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../solo_features/favourites_dial/favourites_dial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Favourites dial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_15_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_15_4" id="__nav_15_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Message screen
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_15_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_15_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Message screen
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../solo_features/message_screen/message_screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Message screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_15_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_15_5" id="__nav_15_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Screen lock
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_15_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_15_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Screen lock
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../solo_features/screen_lock/screen_lock/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Screen lock
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_15_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_15_6" id="__nav_15_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings screen
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_15_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_15_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Settings screen
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../solo_features/settings_screen/settings_screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_15_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_15_7" id="__nav_15_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools screen
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_15_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_15_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tools screen
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../solo_features/tools_screen/tools_screen/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools screen
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-the-screen-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. The screen model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. The screen model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#wiring-a-screen-into-uitask" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wiring a screen into UITask
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-layout-metrics-text-displaydriver" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Layout metrics &amp; text (DisplayDriver)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-lists-drawlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Lists — drawList
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-reusable-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Reusable components
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-domain-helpers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Domain helpers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-mini-icons-the-status-bar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Mini-icons &amp; the status bar
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-input" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Input
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Input">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#from-hardware-to-handleinput" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From hardware to handleInput
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Persistence
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Persistence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#child-mode-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Child Mode policy
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-conventions-gotchas" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Conventions &amp; gotchas
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-worked-example-a-new-tools-screen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Worked example — a new Tools screen
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+    <a href="https://github.com/meshcore-dev/meshcore/edit/main/docs/design/solo_ui_framework.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
+    </a>
+  
+  
+
+
+<h1 id="solo-ui-framework-a-guide-for-adding-features">Solo UI framework — a guide for adding features</h1>
+<p><a href="../../README.md">Go back</a></p>
+<p>This is a developer guide to the reusable building blocks behind the
+<code>companion_radio</code> <strong>solo</strong> firmware UI (the <code>ui-new</code> screens). It is not a
+user manual — for what each screen <em>does</em>, see <a href="../solo_features/">solo_features</a>.
+The goal here is so that adding a new screen or feature means <em>wiring together
+existing helpers</em>, not reinventing list scrolling, text wrapping, or persistence.</p>
+<p>Everything below lives under <code>examples/companion_radio/</code> unless a path says
+otherwise. The screen fragments (<code>ui-new/*.h</code>) are all <code>#include</code>d, in order,
+into one translation unit (<code>ui-new/UITask.cpp</code>) — so a <code>static inline</code> helper in
+an earlier header is visible to later ones. Header-include order in <code>UITask.cpp</code>
+therefore matters; new screens go near the others.</p>
+<blockquote>
+<p><strong>Single-TU only.</strong> These fragments compile <em>only</em> as part of <code>UITask.cpp</code>.
+Some define external-linkage symbols at file scope (e.g.
+<code>NearbyScreen::FILTER_LABELS</code>), so including a fragment from a second <code>.cpp</code>
+is a duplicate-symbol link error. Anything genuinely shared across TUs must
+live in a real header (<code>icons.h</code>, <code>GeoUtils.h</code>, <code>DisplayDriver.h</code>), not a
+screen fragment.</p>
+</blockquote>
+<hr />
+<h2 id="1-the-screen-model">1. The screen model</h2>
+<p>Every screen implements <code>UIScreen</code> (<code>src/helpers/ui/UIScreen.h</code>):</p>
+<pre><code class="language-cpp">class UIScreen {
+public:
+  virtual int  render(DisplayDriver&amp; display) = 0;  // returns ms until the next render
+  virtual bool handleInput(char c) { return false; }
+  virtual void poll() { }
+  virtual void onShow() { }                         // reset per-visit state
+};
+</code></pre>
+<ul>
+<li><strong><code>render()</code></strong> draws one frame and returns <em>how long until it wants to be
+  drawn again</em>, in milliseconds. Return a big number (<code>2000</code>) for a static
+  screen, a small one (<code>50</code>–<code>200</code>) while something animates or a popup is open.
+  This return value is the main lever for the e-ink cost/latency trade-off — see
+  §9. <code>UITask</code> owns <code>startFrame()</code>/<code>endFrame()</code>; <strong><code>render()</code> must not call them.</strong></li>
+<li><strong><code>handleInput(c)</code></strong> gets one key (<code>KEY_*</code>, see §7). Return <code>true</code> if consumed.</li>
+<li><strong><code>poll()</code></strong> runs every loop tick regardless of focus — rare, for background
+  housekeeping (e.g. the shutdown button).</li>
+<li><strong><code>onShow()</code></strong> is called by <code>setCurrScreen()</code> every time the screen becomes
+  current — override it to reset per-visit state (<code>_sel = 0</code>, <code>_dirty = false</code>,
+  sub-views). Default no-op for screens that keep state across visits. Because
+  it's invoked centrally, a navigator can't forget to reset on show.</li>
+</ul>
+<h3 id="wiring-a-screen-into-uitask">Wiring a screen into UITask</h3>
+<ol>
+<li>Add a <code>UIScreen* my_screen;</code> member in <code>UITask.h</code> (near the others).</li>
+<li>Construct it in <code>UITask::begin()</code> (<code>UITask.cpp</code>):
+   <code>my_screen = new MyScreen(this, …);</code></li>
+<li>Add a navigator — usually just the one line (the cast-free <code>onShow()</code> runs
+   inside <code>setCurrScreen</code>):
+   <code>cpp
+   void UITask::gotoMyScreen() { setCurrScreen(my_screen); }</code>
+   Only screens needing a <em>parameter</em> at entry add a typed call after it (e.g.
+   <code>gotoRingtoneEditor</code> → <code>selectSlot(slot)</code>, <code>gotoMapScreen</code> → <code>showMapView()</code>).</li>
+<li>Reach it from somewhere — usually a row in <code>ToolsScreen.h</code> (add an <code>Action</code>
+   enum value, a row in the right section table, and a <code>dispatch()</code> case).</li>
+</ol>
+<p>That's the whole contract. Steps 1, 3 and 4 are compiler-checked (a mismatch
+won't link); only a forgotten step 2 can slip through — every screen pointer is
+nullptr-initialised in <code>UITask.h</code> and <code>setCurrScreen()</code> bails on null, so a
+missed <code>new</code> is an inert no-op rather than a null deref.</p>
+<p>The constructor takes <code>UITask* task</code> plus whatever it needs (<code>NodePrefs*</code>,
+<code>KeyboardWidget*</code>, …); the task back-pointer is how a screen calls shared
+services (<code>_task-&gt;showAlert(...)</code>, <code>_task-&gt;waypoints()</code>, …).</p>
+<hr />
+<h2 id="2-layout-metrics-text-displaydriver">2. Layout metrics &amp; text (DisplayDriver)</h2>
+<p><code>DisplayDriver</code> (<code>src/helpers/ui/DisplayDriver.h</code>) abstracts OLED vs e-ink and,
+crucially, font scale: landscape e-ink renders text at 2×, so <strong>never hard-code
+pixel sizes</strong> — derive everything from these:</p>
+<table>
+<thead>
+<tr>
+<th>Call</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>getLineHeight()</code></td>
+<td>pixel rows per text line (8 at 1×, 16 at 2×)</td>
+</tr>
+<tr>
+<td><code>lineStep()</code></td>
+<td>row pitch = line height + gap; use for row <code>y</code> stepping</td>
+</tr>
+<tr>
+<td><code>getCharWidth()</code> / <code>getTextWidth(s)</code></td>
+<td>advance width; <code>getTextWidth</code> is font-accurate</td>
+</tr>
+<tr>
+<td><code>headerH()</code> / <code>listStart()</code></td>
+<td>title-bar height / first content row <code>y</code></td>
+</tr>
+<tr>
+<td><code>listVisible(itemH)</code></td>
+<td>how many rows fit below the header</td>
+</tr>
+<tr>
+<td><code>valCol()</code></td>
+<td>conventional x for a right-hand value column</td>
+</tr>
+<tr>
+<td><code>width()</code> / <code>height()</code></td>
+<td>panel size in px</td>
+</tr>
+<tr>
+<td><code>isEink()</code></td>
+<td>true only on landscape e-ink; branch on this, not on pixel counts</td>
+</tr>
+</tbody>
+</table>
+<p>Drawing helpers (all clip/measure for you):</p>
+<ul>
+<li><code>drawCenteredHeader(title, menu_hint=false, menu_open=false)</code> — plain centered
+  title + separator.</li>
+<li><code>drawInvertedHeader(label, menu_hint=false, menu_open=false)</code> — filled title
+  bar (used by detail views).</li>
+<li>Both take an optional <code>menu_hint</code>: pass <code>true</code> on a screen with a Hold-Enter
+  context menu to reserve a <code>≡</code> glyph (<code>menuHintWidth()</code>/<code>drawContextMenuHint()</code>)
+  in the header, so the menu is discoverable without already knowing the
+  shortcut; <code>menu_open</code> highlights it while the menu is actually up.</li>
+<li><code>drawSelectionRow(x, y, w, h, sel)</code> — the highlight bar behind a list row.</li>
+<li><code>drawTextEllipsized(x, y, max_w, str)</code> — truncates with <code>…</code>; <strong>use this for
+  any user string</strong> (names, labels) so long/UTF-8 text can't overrun.</li>
+<li><code>drawTextCentered(mid_x, y, str)</code>.</li>
+<li><code>translateUTF8ToBlocks(dst, src, n)</code> — map UTF-8 to the panel's glyph set for
+  <em>display only</em>. Never run text through it before sending it over the air or
+  storing it (it is lossy) — see the reply-prefix note in §5.</li>
+</ul>
+<hr />
+<h2 id="3-lists-drawlist">3. Lists — <code>drawList</code></h2>
+<p><code>drawList</code> (<code>ui-new/icons.h</code>) is the workhorse for any scrolling list. It
+computes the visible window from font metrics, keeps <code>sel</code> in view, reserves the
+scrollbar column, draws each visible row through your callback, and draws the
+indicator:</p>
+<pre><code class="language-cpp">drawList(display, count, _sel, _scroll, [&amp;](int idx, int y, bool sel, int reserve) {
+  drawRowSelection(display, y, sel, reserve);   // canonical highlight bar
+  display.drawTextEllipsized(2, y, display.width() - reserve - 4, items[idx].name);
+});
+</code></pre>
+<p><code>reserve</code> is the width the scrollbar took (0 when the list fits) — subtract it
+from any right-aligned content so nothing slides under the indicator. The row
+callback owns its own selection bar: <code>drawRowSelection(d, y, sel, reserve)</code>
+(<code>ui-new/icons.h</code>) draws the standard one (full row minus reserve, one pixel
+short); call <code>display.drawSelectionRow()</code> directly only when a row needs a
+non-standard geometry (full-width, custom height). For the
+fold-in-place pattern (sections that expand/collapse) use <code>AccordionList</code>
+instead (<code>ui-new/AccordionList.h</code>) — same idea, two callbacks (header + item).</p>
+<p>Standalone scroll indicators (<code>drawScrollIndicator</code>, <code>…Px</code>) and the reserve
+calculator (<code>scrollIndicatorReserve</code>) are exposed for hand-laid lists.</p>
+<hr />
+<h2 id="4-reusable-components">4. Reusable components</h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Header</th>
+<th>Use for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PopupMenu</code></td>
+<td><code>PopupMenu.h</code></td>
+<td>a modal action menu over any screen</td>
+</tr>
+<tr>
+<td><code>AccordionList</code></td>
+<td><code>AccordionList.h</code></td>
+<td>collapsible sectioned lists (Tools, Settings)</td>
+</tr>
+<tr>
+<td><code>KeyboardWidget</code></td>
+<td><code>KeyboardWidget.h</code></td>
+<td>on-screen text entry</td>
+</tr>
+<tr>
+<td><code>DigitEditor</code></td>
+<td><code>DigitEditor.h</code></td>
+<td>scroll-edit one number, digit by digit</td>
+</tr>
+<tr>
+<td><code>FullscreenMsgView</code></td>
+<td><code>FullscreenMsgView.h</code></td>
+<td>scrollable full-message reader + word wrap</td>
+</tr>
+<tr>
+<td><code>NavView</code></td>
+<td><code>NavView.h</code></td>
+<td>bearing/distance/ETA "navigate to a point" view</td>
+</tr>
+</tbody>
+</table>
+<p>All follow the same shape: a <code>begin(...)</code> to open, an <code>active</code> flag, a
+<code>handleInput(c)</code> returning a small <code>Result</code> enum, and a <code>render()</code>/<code>draw()</code>.
+Typical embedding:</p>
+<pre><code class="language-cpp">if (_menu.active) {                       // popup eats input while open
+  auto r = _menu.handleInput(c);
+  if (r == PopupMenu::SELECTED) runAction(_menu.selectedIndex());
+  return true;
+}
+...
+_menu.begin(&quot;Options&quot;, 6);                // open it
+_menu.addItem(&quot;Navigate&quot;); _menu.addItem(&quot;Ping&quot;);
+_menu.active = true;
+</code></pre>
+<p><code>KeyboardWidget</code> additionally supports <strong>placeholders</strong> (<code>{loc}</code>, <code>{time}</code>,
+sensor tokens) via <code>addPlaceholder()</code> / <code>clearPlaceholders()</code>; the shared
+<code>kbAddSensorPlaceholders()</code> (<code>ui-new/SensorPlaceholders.h</code>) adds only the tokens
+the board's sensors actually provide. Expand them with <code>expandMsg()</code> at send time.</p>
+<p>Two layouts share every grid: <strong>ABC</strong> (one key per letter) and <strong>T9</strong>
+(phone-keypad multi-tap — repeated Enter within <code>KB_T9_TIMEOUT_MS</code> cycles a
+cell's letter group, then its digit). Page 0 is no longer hardcoded to Latin:
+<code>NodePrefs::keyboard_main_alphabet</code>/<code>keyboard_alt_alphabet</code> (Settings &gt;
+Keyboard's Main/Additional rows) each pick a script — Latin, Cyrillic, or
+Greek — for page 0 and page 1 respectively (<code>KeyboardWidget::mainScript()</code>/
+<code>altScript()</code>); equal values collapse to a single script + Symbols (2 pages
+instead of 3, see <code>hasAltAlphabet()</code>). <code>scriptCellStr()</code>/<code>scriptT9GroupStr()</code>
+dispatch each script to its own ABC grid (<code>KB_CHARS</code>/<code>KB_CYRILLIC_CHARS</code>/
+<code>KB_GREEK_CHARS</code>) and T9 group table (<code>KB_T9_GROUPS</code>/<code>KB_T9_GROUPS_CYRILLIC</code>/
+<code>_GREEK</code>) so the two layouts always offer the same letters regardless of which
+page they're on. Latin-diacritic letters (Polish, Czech, German, etc.) aren't
+alt-alphabet pages — they're reached by Hold-Enter on whichever page currently
+shows Latin instead (see <code>KB_ACCENT_VARIANTS</code> below).
+Shift is one-shot by default (capitalises the next letter, including whichever
+candidate a T9 multi-tap cycle settles on) or Hold-Enter to toggle caps-lock;
+Hold-Clear erases the whole field. <strong>UP from the top letter row</strong> enters
+<strong>cursor mode</strong> (LEFT/RIGHT move the insertion point; UP/DOWN jump to
+start/end, then — pressed again once already at that boundary — continue on
+to the special row / letter grid, the same destinations the plain grid wrap
+used to reach directly) so edits/inserts can target any point in the typed
+text, not just the end; Enter/Cancel exit immediately from anywhere.
+Hold-Enter on a Latin-page letter cell with accented variants instead opens
+the <strong>accent popup</strong>: one horizontal row of <code>KB_ACCENT_VARIANTS[group]</code>
+(a UTF-8 string per base letter, same shape as a T9 group string), LEFT/RIGHT
+to pick, Enter to insert via the shared <code>insertGlyph()</code> helper, Cancel to
+dismiss. Holding a letter with no variants, or any T9/alt-alphabet/symbols
+cell, is a no-op.</p>
+<p><code>FullscreenMsgView::wrapLines()</code> is a standalone pixel-accurate word-wrapper
+(O(n), variable-width-font aware) reusable by any multi-line layout; it writes
+into the shared <code>s_wrap_trans</code> / <code>s_wrap_lines</code> scratch (single-threaded render,
+never held across a yield — see §9).</p>
+<hr />
+<h2 id="5-domain-helpers">5. Domain helpers</h2>
+<p><strong>Geo (<code>GeoUtils.h</code>, namespace <code>geo</code>, all pure/header-inline):</strong></p>
+<ul>
+<li><code>haversineKm(lat1,lon1,lat2,lon2)</code>, <code>bearingDeg(...)</code>, <code>bearingCardinal(deg)</code>.</li>
+<li><code>fmtDist(buf,n,km,imperial)</code> — "850m"/"2.3km" or feet/miles.</li>
+<li><code>fmtAgeShort(buf,n,now,ts)</code> — compact "12s"/"5m"/"3h"/"2d" tag, "" for unknown.
+  <strong>This is the one age formatter</strong> — don't reimplement the s/m/h ladder.</li>
+<li><code>parseLatLon(text, lat, lon, label?, n?)</code> — pull a <code>lat,lon</code> out of message
+  text; reads the <code>[WAY]</code> label if tagged.</li>
+<li><code>parseLocShare(text, lat, lon)</code> — true only for an explicit <code>[LOC]</code> share.</li>
+</ul>
+<p>Coordinates are <strong>int32 degrees × 1e6</strong> everywhere (GPS, contacts, trail,
+prefs). The message tags are <code>LOCATION_MSG_TAG</code> (<code>[LOC]</code>, the sender's own live
+position) and <code>WAYPOINT_MSG_TAG</code> (<code>[WAY]</code>, a saved point to share); both stay
+human-readable on clients that don't know them.</p>
+<p><strong>State stores:</strong> <code>TrailStore</code> (<code>Trail.h</code>, GPS breadcrumb ring + GPX export),
+<code>LiveTrackStore</code> (<code>LiveTrack.h</code>, RAM table of others' <code>[LOC]</code> positions, expiring),
+<code>WaypointStore</code> (<code>Waypoint.h</code>, persisted saved points). Reach them via the task
+(<code>_task-&gt;trail()</code>, <code>_task-&gt;liveTrack()</code>, <code>_task-&gt;waypoints()</code>).</p>
+<p><strong>Message reply prefix:</strong> <code>msgReplyBody(text, nick?, n?)</code> (<code>FullscreenMsgView.h</code>)
+parses a leading <code>@[nick]</code> reply marker, returning the body and optionally the
+addressee. Use it instead of re-scanning for <code>@[</code>. The stored/sent prefix is raw
+UTF-8 (it goes over the air) — never transliterate it.</p>
+<hr />
+<h2 id="6-mini-icons-the-status-bar">6. Mini-icons &amp; the status bar</h2>
+<p>Small glyphs are authored as ASCII art and packed at compile time
+(<code>ui-new/icons.h</code>):</p>
+<pre><code class="language-cpp">MINI_ICON(ICON_FOO, 5,
+  packRow(&quot;..#..&quot;),
+  packRow(&quot;.###.&quot;),
+  packRow(&quot;#####&quot;));
+</code></pre>
+<p>Draw with <code>miniIconDraw(display, x, topY, ICON_FOO)</code> (auto-scaled &amp; centered),
+<code>miniIconDrawTop</code> (exact placement), or the boxed/slot variants
+(<code>drawBoxedIcon</code> = lit when active, <code>drawSlotIcon</code> = plain). Bigger page glyphs
+use <code>BIG_ICON</code> / <code>bigIconDraw</code>. The home status bar composes these right-to-left
+with a <code>blinkOn()</code> cadence for "leave it on and forget" broadcasts (auto-advert,
+Live Share, trail, repeater) — follow that pattern when adding an indicator:
+always shown on e-ink, blinking on OLED.</p>
+<p>Icons are drawn from a fixed priority-ordered table (<code>HomeScreen::renderBatteryIndicator()</code>,
+<code>UITask.cpp</code>); once the row runs out of horizontal space the loop just stops,
+so the lowest-priority icons silently drop first rather than the whole bar
+crushing the node name. A blinking icon still reserves its width on the
+off-phase of its blink, so the row's layout can't visibly shift width as icons
+blink in and out.</p>
+<p>Screens with a Hold-Enter context menu (Nodes, Bot, Admin, Diagnostics, …) pass
+<code>menu_hint=true</code> to their header call (see §2) so a <code>≡</code> glyph advertises the
+menu; <code>KEY_CONTEXT_MENU</code> (Hold-Enter) opens it.</p>
+<hr />
+<h2 id="7-input">7. Input</h2>
+<p>Keys arrive as the <code>KEY_*</code> codes in <code>UIScreen.h</code>: <code>KEY_UP/DOWN/LEFT/RIGHT</code>,
+<code>KEY_ENTER</code>, <code>KEY_CANCEL</code>, <code>KEY_CONTEXT_MENU</code> (the "Hold Enter" menu key).</p>
+<p>Use the <strong>prev/next convention</strong> for value changes so the rotary encoder and the
+D-pad agree: <code>keyIsPrev(c)</code> (LEFT or encoder-prev) and <code>keyIsNext(c)</code> (RIGHT or
+encoder-next). <code>KEY_CANCEL</code> and <code>KEY_CONTEXT_MENU</code> stay screen-specific. Joystick
+rotation is handled upstream (<code>rotateJoystickKey</code>) — screens see already-rotated
+keys.</p>
+<h3 id="from-hardware-to-handleinput">From hardware to <code>handleInput</code></h3>
+<p>Each physical button is a <code>MomentaryButton</code> (<code>src/helpers/ui/MomentaryButton.h</code>);
+<code>UITask::begin()</code> must call <code>begin()</code> on <strong>every</strong> one (the joystick directions
+and Back included, not just the user button) — that sets <code>pinMode</code> and, where
+enabled, claims the interrupt. <code>UITask::loop()</code> polls each button, maps its event
+to a <code>KEY_*</code> code, and dispatches it to the current screen.</p>
+<p>Two mechanisms keep input responsive when <strong><code>endFrame()</code> blocks the loop</strong> for a
+slow e-ink refresh:</p>
+<ul>
+<li><strong>IRQ edge capture</strong> (<code>-D BUTTON_USE_INTERRUPTS</code>, e-ink boards). A GPIO
+  interrupt latches each press/release edge into a per-button ring buffer with
+  its own timestamp, so taps that land <em>during</em> a refresh aren't lost; <code>check()</code>
+  replays them afterwards. The nRF52 has only 8 GPIOTE channels (the radio takes
+  one) — if none is free a button silently falls back to polling, so it still
+  works, just without mid-refresh capture.</li>
+<li><strong>Key queue + coalesced redraw.</strong> <code>loop()</code> drains <em>all</em> pending events from the
+  buttons into a small key FIFO, applies the whole burst (<code>handleInput</code> per key),
+  then redraws <strong>once</strong>. So three joystick flicks captured during one refresh move
+  the selection three steps for the cost of a single panel update, instead of
+  collapsing into an ignored multi-click or one-step-per-refresh. Buttons created
+  with <code>multiclick=false</code> therefore emit one discrete <code>CLICK</code> per release;
+  <code>multiclick=true</code> buttons still report double/triple-click.</li>
+</ul>
+<hr />
+<h2 id="8-persistence">8. Persistence</h2>
+<p>Device settings live in one <code>NodePrefs</code> struct (<code>NodePrefs.h</code>), saved via
+<code>the_mesh.savePrefs()</code> and loaded by <code>DataStore.cpp</code>. Rules when adding a field:</p>
+<ul>
+<li><strong>Append only</strong>, and bump <code>NodePrefs::SCHEMA_SENTINEL</code>. Serialization is
+  binary-positional, so order is the on-disk format; never insert in the middle.</li>
+<li>Add a matching <code>rd(...)</code> in <code>DataStore::loadPrefsInt()</code> and a <code>file.write(...)</code>
+  in <code>savePrefs()</code>, in the same position, and <strong>clamp on load</strong> (an upgrader's
+  file lacks the field and reads stray bytes — clamp to a sane default). Saves
+  are atomic (temp-file + rename), so a crash mid-save can't corrupt settings.</li>
+</ul>
+<p><strong>The <code>_dirty</code> convention:</strong> a multi-field editor screen mutates <code>_node_prefs</code>
+live for instant feedback but only persists once, on exit, gated by a <code>_dirty</code>
+flag — so LEFT/RIGHT value-cycling doesn't thrash flash. Set <code>_dirty = true</code> at
+each edit site, then on the exit path call <code>_task-&gt;savePrefsIfDirty(_dirty)</code>
+(<code>UITask</code>) — it saves once <em>iff</em> dirty and clears the flag, so every screen's
+save-on-exit reads the same and the "did we touch flash?" decision lives in one
+place. A one-shot action from a popup (no exit hook) calls <code>the_mesh.savePrefs()</code>
+immediately. Follow whichever matches your screen.</p>
+<p><strong>The shared "active target"</strong> (Locator/Nav destination) is set through
+<code>UITask::setTarget()</code> (defines it), <code>setTargetNow()</code> (defines + saves + toast),
+or <code>clearTarget()</code> — one definition used by the Locator screen, the map, and the
+Nearby/Waypoints "Set as target" actions. Resolve a person's current position
+with <code>resolvePersonPos()</code> (live <code>[LOC]</code> share, else last-advertised fix).</p>
+<h3 id="child-mode-policy">Child Mode policy</h3>
+<p>Child Mode is deliberately kept as a thin policy layer so upstream screen
+changes remain easy to merge. Shared PIN rendering and allow-list predicates
+live in <code>ui-new/ChildMode.h</code>; session state and transport enforcement live in
+<code>UITask</code>. Screens should query <code>UITask::isChildModeLocked()</code> rather than reading
+the preference directly, because a verified parent session temporarily lifts
+the restrictions while leaving the persisted mode enabled.</p>
+<p>The persisted configuration appends <code>child_mode_enabled</code>,
+<code>child_mode_pin_hash</code>, and <code>child_visible_pages</code> to <code>NodePrefs</code>. Optional pages
+use the existing <code>HomePageBit</code> positions, avoiding a second navigation model.
+Keep the policy at existing boundaries when extending it:</p>
+<ul>
+<li>filter home pages in the central page-visibility predicate;</li>
+<li>filter message destinations where conversation lists are built;</li>
+<li>suppress mutation at the context-menu input boundary;</li>
+<li>use <code>UITask::applyChildMode()</code> for companion transport state; and</li>
+<li>suppress advert notification effects without dropping background advert
+  processing.</li>
+</ul>
+<p>The stored PIN hash is only an on-device UI check and is intentionally not a
+cryptographic security boundary. Physical erase/reflash access remains a
+recovery and bypass path.</p>
+<hr />
+<h2 id="9-conventions-gotchas">9. Conventions &amp; gotchas</h2>
+<ul>
+<li><strong>Single-threaded render.</strong> Rendering and input run on one thread, so shared
+  static scratch (<code>s_wrap_*</code>) is safe <em>as long as it's never held across a
+  yield</em>. Don't add scratch that outlives one <code>render()</code>.</li>
+<li><strong>e-ink blocks.</strong> <code>endFrame()</code> on e-ink stalls the main loop for hundreds of
+  ms. Keep <code>render()</code>'s return value honest so the panel isn't redrawn more than
+  needed, and don't depend on <code>loop()</code> cadence for timing that must be exact
+  (the ringtone player moved to a hardware timer for this reason).</li>
+<li><strong>Reference cleanup.</strong> Anything that remembers a contact by pubkey (favourite
+  slot, Locator/Live-Share target, per-contact mute/melody) or a channel by
+  index must drop that reference when the entity goes away — hook
+  <code>UITask::onContactRemoved()</code> / <code>onChannelRemoved()</code>. New per-contact or
+  per-channel state should clear there too.</li>
+<li><strong>Toasts:</strong> <code>_task-&gt;showAlert("msg", duration_ms)</code> overlays a transient banner
+  over any screen; no redraw plumbing needed.</li>
+<li><strong>Strings:</strong> always <code>strncpy</code>+NUL or <code>snprintf</code>; treat every name/label as
+  untrusted-length and render through <code>drawTextEllipsized</code>.</li>
+</ul>
+<hr />
+<h2 id="10-worked-example-a-new-tools-screen">10. Worked example — a new Tools screen</h2>
+<pre><code class="language-cpp">// ui-new/MyToolScreen.h  — included by UITask.cpp near the other screens
+#pragma once
+#include &quot;icons.h&quot;          // drawList + mini-icons
+#include &quot;../NodePrefs.h&quot;
+
+class MyToolScreen : public UIScreen {
+  UITask*    _task;
+  NodePrefs* _prefs;
+  int        _sel = 0, _scroll = 0;
+  bool       _dirty = false;
+  static const int ROWS = 3;
+public:
+  MyToolScreen(UITask* t, NodePrefs* p) : _task(t), _prefs(p) {}
+  void onShow() override { _sel = 0; _scroll = 0; _dirty = false; }
+
+  int render(DisplayDriver&amp; d) override {
+    d.setTextSize(1);
+    d.drawCenteredHeader(&quot;MY TOOL&quot;);
+    drawList(d, ROWS, _sel, _scroll, [&amp;](int i, int y, bool sel, int reserve) {
+      drawRowSelection(d, y, sel, reserve);
+      d.setCursor(4, y);
+      d.print(i == 0 ? &quot;Alpha&quot; : i == 1 ? &quot;Bravo&quot; : &quot;Charlie&quot;);
+    });
+    return 500;
+  }
+
+  bool handleInput(char c) override {
+    if (c == KEY_CANCEL) {
+      _task-&gt;savePrefsIfDirty(_dirty);   // saves once iff dirty, then clears
+      _task-&gt;gotoToolsScreen();
+      return true;
+    }
+    if (c == KEY_UP)   { _sel = (_sel + ROWS - 1) % ROWS; return true; }
+    if (c == KEY_DOWN) { _sel = (_sel + 1) % ROWS;        return true; }
+    if (keyIsPrev(c) || keyIsNext(c) || c == KEY_ENTER) {
+      /* mutate _prefs…, set _dirty = true */ return true;
+    }
+    return false;
+  }
+};
+</code></pre>
+<p>Then: <code>#include "MyToolScreen.h"</code> in <code>UITask.cpp</code>, add the member + constructor +
+<code>gotoMyToolScreen()</code> (§1), and add a row in <code>ToolsScreen.h</code>. Done — scrolling,
+the scrollbar, font scaling, e-ink pacing and persistence batching all come from
+the framework.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.action.edit", "content.code.copy", "search.highlight", "search.suggest"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
