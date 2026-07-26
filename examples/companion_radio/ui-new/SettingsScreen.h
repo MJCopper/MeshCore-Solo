@@ -1142,13 +1142,12 @@ public:
       // The parent remains in this settings session. Leaving Settings locks it.
       return true;
     }
-    if ((_selected == CHILD_RECENT || _selected == CHILD_FAVOURITES || _selected == CHILD_MAP ||
+    if ((_selected == CHILD_FAVOURITES || _selected == CHILD_MAP ||
          _selected == CHILD_SENSORS || _selected == CHILD_SHUTDOWN) &&
         p && (left || right || enter)) {
-      uint16_t bit = _selected == CHILD_RECENT ? NodePrefs::HP_RECENT :
-                     (_selected == CHILD_FAVOURITES ? NodePrefs::HP_FAVOURITES :
+      uint16_t bit = _selected == CHILD_FAVOURITES ? NodePrefs::HP_FAVOURITES :
                      (_selected == CHILD_MAP ? NodePrefs::HP_MAP :
-                     (_selected == CHILD_SENSORS ? NodePrefs::HP_SENSORS : NodePrefs::HP_SHUTDOWN)));
+                     (_selected == CHILD_SENSORS ? NodePrefs::HP_SENSORS : NodePrefs::HP_SHUTDOWN));
       p->child_visible_pages ^= bit;
       _dirty = true;
       return true;

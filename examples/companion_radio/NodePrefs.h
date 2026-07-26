@@ -603,13 +603,15 @@ struct NodePrefs {  // persisted to file
 // (Padding can also shift sizeof; a "false" trip just means re-check + rebump.)
 // keyboard_cardkb_compact (0xC0DE0023) also landed in existing tail padding --
 // confirmed via a real build -- leaving sizeof unchanged at 2720.
+// Child Mode fields through child_channels_enabled (0xC0DE0024/25) grow the
+// struct by 16 bytes including alignment padding, confirmed via a real build.
 // keyboard_main_alphabet (added in an earlier bump) landed in existing tail
 // padding -- confirmed via a real build's sizeof() -- so that bump left the
 // size unchanged. bot_actions_dm/ch/room and gpio1..4_mode (the last two
 // bumps, 7 more uint8_t total) added 8 bytes, not 7 -- one byte of tail
 // padding got consumed along the way. 2720 confirmed via a real
 // WioTrackerL1Eink_companion_solo_dual build.
-static_assert(sizeof(NodePrefs) == 2728,
+static_assert(sizeof(NodePrefs) == 2736,
               "NodePrefs layout changed — sync DataStore save/load + clamp, bump "
               "SCHEMA_SENTINEL, then update this size (see steps above).");
 
