@@ -4,6 +4,7 @@ Welcome to the MeshCore documentation.
 
 Below are a few quick start guides.
 
+- [CardKB](./solo_features/cardkb/cardkb.md)
 - [Frequently Asked Questions](./faq.md)
 - [CLI Commands](./cli_commands.md)
 - [Companion Protocol](./companion_protocol.md)
