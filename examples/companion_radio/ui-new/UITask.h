@@ -26,6 +26,9 @@
 #include "../Waypoint.h"
 #include "../LiveTrack.h"
 #include "KeyboardWidget.h"
+#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+  #include <helpers/ui/CardKBInput.h>
+#endif
 
 class UITask : public AbstractUITask {
   DisplayDriver* _display;
@@ -202,7 +205,7 @@ class UITask : public AbstractUITask {
   // rather than a new board-specific pin define. No-op entirely on boards
   // without that bus, or when nothing ACKs 0x5F at boot.
 #if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
-  bool     _has_cardkb = false;
+  CardKBInput _cardkb;
   // CardKB is level-triggered, not edge-triggered -- it keeps returning the
   // same byte for as long as the physical key is held, not just once. Track
   // the last raw byte seen so a held key enqueues exactly one press instead
@@ -245,6 +248,11 @@ public:
   }
   void setChildAdminUnlocked(bool unlocked);
   void applyChildMode();
+#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+  bool isCardKBConnected() const { return _cardkb.isPresent(); }
+#else
+  bool isCardKBConnected() const { return false; }
+#endif
   // Global metric/imperial preference for distance/speed display.
   bool useImperial() const { return _node_prefs && _node_prefs->units_imperial; }
   uint16_t getBattMilliVolts() const { return _batt_mv > 0 ? _batt_mv : AbstractUITask::getBattMilliVolts(); }

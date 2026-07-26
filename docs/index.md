@@ -9,6 +9,7 @@ Below are a few quick start guides.
 - [Solo feature overview](../README.md#feature-highlights)
 - [Child Mode](./solo_features/child_mode/child_mode.md)
 - [Quiet Time](./solo_features/quiet_time/quiet_time.md)
+- [CardKB](./solo_features/cardkb/cardkb.md)
 - [Settings Screen](./solo_features/settings_screen/settings_screen.md)
 - [Messages Screen](./solo_features/message_screen/message_screen.md)
 - [Solo UI framework](./design/solo_ui_framework.md)

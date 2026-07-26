@@ -107,10 +107,14 @@ The **repeater** mode and its flood filters live on their own screen — see **T
 | Layout   | ABC / T9   | On-screen keyboard style. **ABC**: an a-b-c…z grid, one key per letter (the original layout). **T9**: phone-keypad multi-tap — each key is labelled with its **digit** and a letter group (e.g. `2abc`); repeated **Enter** presses cycle through the letters and then the digit itself. Applies to whichever script page is active (see Main/Additional below), not just Latin. |
 | Main | Latin / Cyrillic / Greek | Which script the keyboard **opens on by default**. **Latin** (default) matches earlier releases; pick **Cyrillic** or **Greek** here instead to make that script the one you land on every time, with Latin becoming the one reached via cycling (see Additional below) instead of the other way round. |
 | Additional | Latin / Cyrillic / Greek | The second script added to the same **#@/abc** key's cycle (Main → Additional → Symbols → Main) — no separate key to switch scripts. Setting Additional to the **same** script as Main drops the cycle back to just that script plus Symbols (no second script page at all). **Greek** covers the 24-letter alphabet plus final sigma (`ς`) but not the tonos stress accents used in proper Modern Greek spelling. Every script's letters render natively — the display font (a single unified Unicode font used everywhere on-screen) covers all of them, no separate toggle needed. |
+| CardKB | Found / Missing | Read-only boot detection and connection status for an optional Grove CardKB |
+| Ext. KB | Full / Compact | Keep the full on-screen keyboard grid or replace it with a compact external-keyboard status view |
 
 Applies to every on-screen text field (messages, waypoint labels, room passwords, preset names). Earlier releases labelled the grid *QWERTY*; the layout has always been alphabetical, so it is now named **ABC**.
 
 European Latin-diacritic letters (Polish, Czech, Slovak, German, French, Spanish, Portuguese, Nordic, etc.) aren't separate alphabet pages — instead, **Hold Enter** on a plain Latin letter that has accented variants (`a c d e i l n o r s t u y z`) opens a one-row popup of its accents (e.g. holding `a` offers `á à â ã ä å ą`); **LEFT/RIGHT** picks, **Enter** inserts it, **Cancel** dismisses with no change. Holding a letter with no accented variants (e.g. `b`) does nothing. Works on whichever page is currently showing Latin, whether that's Main or Additional.
+
+See [CardKB](../cardkb/cardkb.md) for connection, controls and polling behaviour.
 
 ---
 

@@ -81,6 +81,7 @@ class SettingsScreen : public UIScreen {
     KEYBOARD_MAIN_ALPHABET,
     KEYBOARD_ALPHABET,
 #if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+    KEYBOARD_CARDKB_STATUS,
     KEYBOARD_CARDKB_COMPACT,
 #endif
     // Contacts section
@@ -614,6 +615,10 @@ class SettingsScreen : public UIScreen {
       display.setCursor(valCol(display), y);
       display.print(NodePrefs::keyboardAlphabetLabel(p ? p->keyboard_alt_alphabet : 0));
 #if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+    } else if (item == KEYBOARD_CARDKB_STATUS) {
+      display.print("CardKB");
+      display.setCursor(valCol(display), y);
+      display.print(_task->isCardKBConnected() ? "Found" : "Missing");
     } else if (item == KEYBOARD_CARDKB_COMPACT) {
       display.print("Ext. KB");
       display.setCursor(valCol(display), y);

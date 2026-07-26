@@ -1439,10 +1439,9 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _auto_off = millis() + (aoff > 0 ? aoff : AUTO_OFF_MILLIS);
 
 #if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
-  // Wire1 is already brought up by sensors.begin() (EnvironmentSensorManager),
-  // which runs before this -- just probe for a CardKB sitting on it.
-  Wire1.beginTransmission(0x5F);
-  _has_cardkb = (Wire1.endTransmission() == 0);
+  // Wire1 is already brought up by sensors.begin() (EnvironmentSensorManager).
+  // CardKBInput performs one boot probe and does not retry an absent accessory.
+  _cardkb.begin(Wire1);
 #endif
 
 #if defined(PIN_USER_BTN)
@@ -2293,19 +2292,12 @@ static const char CARDKB_FN_BASE[48] = {
 // keypress, same as a MomentaryButton's CLICK event.
 void UITask::pollCardKB() {
 #if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
-  if (!_has_cardkb) return;
-  // No artificial throttle: unlike a MomentaryButton (BUTTON_USE_INTERRUPTS
-  // latches every edge in an ISR ring buffer, so it survives a blocking e-ink
-  // refresh untouched), CardKB is plain I2C polling with no interrupt line on
-  // the Grove cable and no onboard queue -- it only ever reports "what's held
-  // right now". A press that starts and fully releases while curr->render()
-  // is blocked is physically unobservable, no software fix can recover it.
-  // Polling every loop() iteration (same as a digital button's check(), which
-  // has no throttle either) just shrinks that miss window down to exactly the
-  // render() duration instead of render()+30ms.
-  Wire1.requestFrom(0x5F, 1);
-  if (!Wire1.available()) return;
-  uint8_t raw = Wire1.read();
+  // The Tracker controls wake the display. Suspending CardKB I2C traffic while
+  // it is off avoids a permanent accessory-input cost during normal idle time.
+  if (!_display || !_display->isOn()) return;
+
+  uint8_t raw;
+  if (!_cardkb.poll(raw)) return;
   if (raw == _cardkb_last_raw) return;   // still held (or still released) -- no new edge
   _cardkb_last_raw = raw;
   if (raw == 0) return;   // key just released, nothing to enqueue
@@ -2342,15 +2334,15 @@ void UITask::pollCardKB() {
   } else if (raw == 0x80) {
     // Fn+Esc -- CardKB's lock/unlock gesture: a single press toggles _locked
     // directly (unlike the physical Hold-Back+3xEnter combo's 3-press
-    // sequence), so it works to unlock a locked device too, where every
-    // other CardKB key is correctly discarded (see the Fn+<letter> branch
-    // below). Esc, not the adjacent Fn+Backspace, on purpose: Fn and
+    // sequence), so it works to unlock a locked device after a Tracker button
+    // has woken the display. Every other CardKB key is correctly discarded
+    // while locked (see the Fn+<letter> branch below). Esc, not the adjacent
+    // Fn+Backspace, on purpose: Fn and
     // Backspace sit right next to each other on CardKB's layout, making that
     // combo too easy to hit by accident; Esc is on the opposite side of the
     // keyboard. One press is enough -- Fn+Esc is already a deliberate
     // two-key combo, so it doesn't need the physical combo's extra 3x
     // repetition to guard against accidental triggering.
-    if (_display && !_display->isOn()) _display->turnOn();
     _locked = !_locked;
     if (_locked) {
       _lock_wake_until = millis() + 2000;
@@ -2602,7 +2594,7 @@ void UITask::loop() {
       // Hint popup at bottom (like alert style)
       _display->setTextSize(1);
 #if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
-      const char* hint = _lock_seq_count == 0 ? (_has_cardkb ? "Back+3xEnter/Fn+Esc" : "Hold Back + 3xEnter") :
+      const char* hint = _lock_seq_count == 0 ? (isCardKBConnected() ? "Back+3xEnter/Fn+Esc" : "Hold Back + 3xEnter") :
                          _lock_seq_count == 1 ? "Enter x2 more..."   : "Enter x1 more...";
 #else
       const char* hint = _lock_seq_count == 0 ? "Hold Back + 3xEnter" :
