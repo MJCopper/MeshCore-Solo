@@ -2109,16 +2109,23 @@ static const char CARDKB_FN_BASE[48] = {
 // translation at all: CardKB's own arrow/Enter/Esc byte codes are already
 // identical to this UI's KEY_LEFT/UP/DOWN/RIGHT/ENTER/CANCEL (0xB4-0xB7, 13,
 // 27), and Backspace (0x08) / printable ASCII (0x20-0x7E) collide with
-// nothing that existed before. Plain Enter now always acts like the physical
-// centre button (commit/repeat a grid cell) -- no more ambiguity to resolve,
-// since Fn gives two clean, stateless modifiers instead:
-//  - Fn+Enter (0xA3) submits the field (KEY_KB_ENTER) from anywhere, without
-//    needing to navigate to the special row's DONE cell.
-//  - Fn+Tab (0x8C) opens the Hold-Enter equivalent (shift-lock, clear-all,
-//    accent popup on whatever cell is selected) -- plain Tab (otherwise
-//    unused) still does this for the ~30 non-keyboard Hold-Enter menus
-//    (message reply/navigate, Bot/Admin/Repeater, ...) but is inert while the
-//    on-screen keyboard itself is showing, where Fn+Tab/Fn+letter cover it.
+// nothing that existed before. Plain Enter/arrows act like the physical
+// centre button/joystick (grid commit/navigate) -- except in Compact mode's
+// plain grid state (see below), which is designed to need no joystick at all.
+// Tab (0x09, otherwise unused) is the Hold-Enter equivalent everywhere,
+// including the ~30 non-keyboard Hold-Enter menus (message reply/navigate,
+// Bot/Admin/Repeater, ...) and inside the on-screen keyboard itself (shift-
+// lock, clear-all, accent popup on whatever cell is selected) -- it used to
+// need a separate Fn+Tab for the latter, but that was pure redundancy: plain
+// Tab already covered every case Fn+Tab did, just not while the keyboard was
+// showing, so the carve-out was dropped instead of the shortcut. In Compact
+// mode's plain grid state Tab means something more useful instead (opens the
+// placeholder picker directly -- see below). Fn still gives two other clean,
+// stateless modifiers:
+//  - Fn+Enter (0xA3) submits the field (KEY_KB_ENTER) without needing to
+//    navigate to the special row's DONE cell. The placeholder/accent popups
+//    are modal and consume it first (dismiss them with Enter/Esc), same as
+//    they consume every other key.
 //  - Fn+<letter> opens the accent popup for that base letter directly
 //    (KeyboardWidget::openAccentFor()) -- no arrow-hunting across the grid.
 // CardKB is level-triggered (it keeps returning the held key's byte, not just
@@ -2143,13 +2150,34 @@ void UITask::pollCardKB() {
   _cardkb_last_raw = raw;
   if (raw == 0) return;   // key just released, nothing to enqueue
 
+  // Compact mode (Settings > Keyboard's "Ext. KB" row) hides the letter grid
+  // entirely, and is meant to guarantee joystick-free operation: while it's
+  // the active surface (KeyboardWidget::inPlainGridState() -- showing, no
+  // popup open, not already mid cursor-move) arrows drive the text cursor
+  // directly instead of a grid selection nobody could see anyway, and plain
+  // Tab opens the placeholder picker directly instead of the row/col-dependent
+  // Hold-Enter dispatch (which would be meaningless here -- row/col are never
+  // deliberately navigated to in this mode). Cursor mode / the accent /
+  // placeholder popups all render their own visible feedback regardless of
+  // Compact, so none of this applies once inPlainGridState() is false --
+  // arrows/Tab fall through to their normal meaning there (e.g. arrows drive
+  // the placeholder/accent popup's own selection).
+  bool compact_grid = _node_prefs && _node_prefs->keyboard_cardkb_compact && _kb.inPlainGridState();
+
   char key;
   if (raw == 0xA3) {          // Fn+Enter -- submit the field
     key = KEY_KB_ENTER;
-  } else if (raw == 0x8C) {   // Fn+Tab -- Hold-Enter equivalent, unconditionally
-    key = KEY_CONTEXT_MENU;
-  } else if (raw == 0x09) {   // plain Tab -- same, but only outside the keyboard
-    if (_kb.isVisible()) return;
+  } else if (compact_grid && (raw == (uint8_t)KEY_LEFT || raw == (uint8_t)KEY_UP ||
+                              raw == (uint8_t)KEY_DOWN || raw == (uint8_t)KEY_RIGHT)) {
+    char woke = checkDisplayOn((char)raw);   // already sets _next_refresh=0 when the display was on
+    if (woke && !_locked) _kb.moveCursorDirect((char)raw);
+    return;
+  } else if (raw == 0x09) {   // Tab -- Hold-Enter equivalent, always (single shortcut: there used to
+    if (compact_grid) {       // also be a separate Fn+Tab for this, but plain Tab already covers every
+      char woke = checkDisplayOn((char)raw);   // case Fn+Tab did -- outside the keyboard, and now inside it
+      if (woke && !_locked) _kb.openPlaceholders();   // too -- so the modifier was pure redundancy)
+      return;
+    }
     key = KEY_CONTEXT_MENU;
   } else if (raw == 0x80) {
     // Fn+Esc -- CardKB's lock/unlock gesture: a single press toggles _locked
@@ -2186,8 +2214,11 @@ void UITask::pollCardKB() {
     if (woke && !_locked) _kb.openAccentFor(base);
     return;
   } else {
-    key = (char)raw;   // plain Enter/arrows/backspace/ASCII -- byte-identical
-                        // to a physical keystroke, no CardKB-specific state
+    // Plain Enter would otherwise commit whatever grid cell row/col happen to
+    // be frozen at (there's no grid navigation to have deliberately landed on
+    // one in Compact) -- submit instead, same as Fn+Enter. Backspace/ASCII
+    // passthrough is unaffected by Compact either way.
+    key = (compact_grid && raw == (uint8_t)KEY_ENTER) ? KEY_KB_ENTER : (char)raw;
   }
   enqueueKey(checkDisplayOn(key));
 #endif

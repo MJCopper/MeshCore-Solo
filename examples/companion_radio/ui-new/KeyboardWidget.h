@@ -296,6 +296,14 @@ struct KeyboardWidget {
   void beginFrame() { _visible = false; }
   bool isVisible() const { return _visible; }
 
+  // True while the plain letter/symbol grid is the active input surface --
+  // showing, no placeholder/accent popup open, not mid cursor-reposition.
+  // Used by CardKB's Compact-mode handling (UITask::pollCardKB()) to tell
+  // "grid navigation" apart from every other state arrows/Enter already mean
+  // something else in (those all render their own visible feedback, so they
+  // don't need Compact's special-casing).
+  bool inPlainGridState() const { return isVisible() && !_ph_menu.active && !cursor_mode && !accent_active; }
+
   char _ph_buf[KB_PH_MAX][KB_PH_LEN];
   int  _ph_count;
   PopupMenu _ph_menu;
@@ -443,6 +451,29 @@ struct KeyboardWidget {
     }
   }
 
+  // Insert one character typed literally on an external keyboard (CardKB or
+  // similar), as opposed to committed off the on-screen grid. The source
+  // already sends the correct case, so no Shift/caps-lock is re-applied.
+  //
+  // This is the single translation point for external-keyboard input: today
+  // it's the identity mapping (CardKB is a Latin QWERTY, so what it sends is
+  // what gets typed, regardless of the on-screen grid's script/T9 settings --
+  // those only govern grid navigation). To support relabelled keycaps
+  // (Cyrillic/Greek/...) later, map `c` to that layout's codepoint here and
+  // hand the resulting UTF-8 to insertGlyph() -- everything downstream already
+  // works in codepoints, not bytes. Such a layout belongs on its own setting,
+  // not on keyboard_main_alphabet: it describes the physical keycaps, which
+  // are independent of what the on-screen grid shows. Digits/punctuation
+  // should keep passing through unmapped, and Fn+letter accents
+  // (openAccentFor()) stay Latin-only -- they're meaningless under non-Latin
+  // keycaps.
+  void insertTyped(char c) {
+    t9_cell = -1;   // otherwise a same-cell T9 tap within KB_T9_TIMEOUT_MS would
+                    // overwrite this character instead of inserting a new one
+    char one[2] = { c, '\0' };
+    insertGlyph(one, false);
+  }
+
   void clearPlaceholders() { _ph_count = 0; }
 
   void addPlaceholder(const char* ph) {
@@ -451,6 +482,36 @@ struct KeyboardWidget {
       _ph_buf[_ph_count][KB_PH_LEN - 1] = '\0';
       _ph_count++;
     }
+  }
+
+  // Opens the placeholder picker directly -- same as navigating the grid to
+  // the special row's {} cell and pressing Enter (see handleInput's KEY_ENTER
+  // special-row case 3, which now calls this too). Used by CardKB's Compact
+  // mode (UITask::pollCardKB(), plain Tab) so a placeholder is reachable
+  // without ever seeing or navigating the grid.
+  void openPlaceholders() {
+    t9_cell = -1;   // finalize any pending multi-tap cycle -- the pick below moves the
+                    // cursor, so a later same-cell tap must not "continue" onto it
+    if (_ph_refresh) _ph_refresh(*this, _ph_refresh_ctx);   // contextual repopulate, if wired up
+    _ph_menu.begin(_ph_title, KB_PH_VISIBLE);
+    for (int i = 0; i < _ph_count; i++) _ph_menu.addItem(_ph_buf[i]);
+  }
+
+  // Moves the text cursor directly (LEFT/RIGHT one codepoint, UP/DOWN to
+  // start/end) without engaging cursor_mode's grid-boundary wrap (continuing
+  // into the special row / row 0 once already at an end) -- that wrap exists
+  // so a physical-button user can see where they land back on the grid, which
+  // doesn't apply here: CardKB's Compact mode never navigates the grid at
+  // all, so there's no grid position to wrap into. See pollCardKB().
+  void moveCursorDirect(char key) {
+    t9_cell = -1;   // same invariant every other cursor-moving path keeps: a pending
+                    // multi-tap cycle must not resume against a moved cursor and
+                    // overwrite an unrelated character. (cursor_mode gets this for
+                    // free -- its KEY_UP entry point already clears t9_cell.)
+    if (key == KEY_LEFT)       { if (cursor_pos > 0)   cursor_pos -= kbUtf8LastCharBytes(buf, cursor_pos); }
+    else if (key == KEY_RIGHT) { if (cursor_pos < len) cursor_pos += kbUtf8CharBytesAt(buf, cursor_pos, len); }
+    else if (key == KEY_UP)    { cursor_pos = 0; }
+    else if (key == KEY_DOWN)  { cursor_pos = len; }
   }
 
   int render(DisplayDriver& display) {
@@ -470,8 +531,15 @@ struct KeyboardWidget {
     const int lh      = display.getLineHeight();
     const int cw      = display.getCharWidth();
     const int cell_w  = display.width() / cols;
-    // compact: don't stretch cells beyond lh; freed vertical space goes to preview lines
-    const int kb_h      = (rows + 1) * lh;
+    bool compact_ui = prefs && prefs->keyboard_cardkb_compact;
+    // compact: don't stretch cells beyond lh; freed vertical space goes to preview lines.
+    // Compact mode only ever draws 2 short hint lines (no grid, no status line
+    // -- see below), but reserves at least as much height as the smallest real
+    // grid (T9's 3 rows) would need, rather than shrinking to just those 2
+    // lines: cursor_mode's own 3-line hint (drawn in this same region,
+    // regardless of Compact, for a physical-button user) already relies on
+    // that floor and would otherwise get clipped.
+    const int kb_h      = compact_ui ? (KB_T9_ROWS + 1) * lh : (rows + 1) * lh;
     const int preview_h = display.height() - kb_h - display.sepH();
     const int prev_lines = (preview_h / lh) > 1 ? (preview_h / lh) : 1;
     const int sep_y   = prev_lines * lh;
@@ -535,27 +603,21 @@ struct KeyboardWidget {
 
     // Compact mode (Settings > Keyboard's "Ext. KB" row): an external-keyboard
     // typist never looks at the letter grid or special-row icons, so skip
-    // drawing them and show a one-line status (current script/page, caps)
-    // instead. row/col/page keep updating exactly as before even while this
-    // is on (arrows and Fn+letter both still work; the accent popup below
-    // still anchors on `row`), so nothing breaks if physical buttons get used
-    // meanwhile -- it just won't be visible which cell is selected.
-    if (prefs && prefs->keyboard_cardkb_compact) {
-      const int hh = lh + 2;
+    // drawing them entirely -- no status line either, since nothing it could
+    // show (script/page, T9-vs-ABC, caps) is actually actionable from CardKB:
+    // typing is always plain Latin ASCII regardless of Main/Additional
+    // alphabet or keyboard_type (direct-typing passthrough, see
+    // UITask::pollCardKB()), Fn+letter's accent popup now works the same way
+    // regardless of them too (see openAccentFor()), and caps-lock has no
+    // CardKB gesture to toggle it at all. Just the two shortcuts that still do
+    // something here (arrows/Enter are self-explanatory -- cursor movement and
+    // submit -- so they get no hint of their own). Physical buttons (if used
+    // instead of/alongside CardKB) still drive row/col/page as normal; it
+    // just won't be visible on this screen which cell is selected.
+    if (compact_ui) {
       display.setColor(DisplayDriver::LIGHT);
-      display.fillRect(0, chars_y, display.width(), hh);
-      display.setColor(DisplayDriver::DARK);
-      const char* script_name = pageIsSymbols(page) ? "Symbols"
-                               : (scriptAt(page) == NodePrefs::KB_ALPHABET_CYRILLIC) ? "Cyrillic"
-                               : (scriptAt(page) == NodePrefs::KB_ALPHABET_GREEK)    ? "Greek"
-                                                                                     : "Latin";
-      char status[32];
-      if (pageIsSymbols(page)) snprintf(status, sizeof(status), "%s%s", script_name, caps ? " CAPS" : "");
-      else snprintf(status, sizeof(status), "%s %s%s", script_name, isT9() ? "T9" : "ABC", caps ? " CAPS" : "");
-      display.drawTextCentered(display.width() / 2, chars_y + 1, status);
-      display.setColor(DisplayDriver::LIGHT);
-      display.drawTextCentered(display.width() / 2, chars_y + hh + 2, "Fn+Tab menu");
-      display.drawTextCentered(display.width() / 2, chars_y + hh + 2 + lh, "Fn+letter accent");
+      display.drawTextCentered(display.width() / 2, chars_y, "Tab: placeholders");
+      display.drawTextCentered(display.width() / 2, chars_y + lh, "Fn+letter: accent");
     } else {
       // character grid
       if (isT9()) {
@@ -639,6 +701,10 @@ struct KeyboardWidget {
     // placeholder overlay just below), anchored on the held letter's own row
     // so it reads as "popping out of" that key instead of taking over the
     // whole keyboard. LEFT/RIGHT picks, Enter commits, Cancel dismisses.
+    // In Compact there's no grid drawn and `row` was never deliberately
+    // navigated to, so anchoring on it would just park the popup at an
+    // arbitrary height (and possibly over a hint line) -- it gets a fixed slot
+    // under the two hints instead.
     if (accent_active) {
       const char* group = KB_ACCENT_VARIANTS[accent_group];
       int n = kbUtf8Len(group);
@@ -648,8 +714,8 @@ struct KeyboardWidget {
       int max_bw = display.width() - 4;
       if (bw > max_bw) { bw = max_bw; seg_w = bw / n; }
       int bx = (display.width() - bw) / 2;
-      int by = chars_y + row * cell_h - 1;
-      int bh = cell_h + 1;
+      int by = compact_ui ? (chars_y + 2 * lh + 2) : (chars_y + row * cell_h - 1);
+      int bh = compact_ui ? (lh + 2) : (cell_h + 1);
       display.setColor(DisplayDriver::DARK);
       display.fillRect(bx, by, bw, bh);
       display.setColor(DisplayDriver::LIGHT);
@@ -680,15 +746,18 @@ struct KeyboardWidget {
   // CardKB's Fn+letter ("alt") gesture, see UITask::pollCardKB(): open the
   // accent popup for this base Latin letter directly, skipping the
   // arrow-hunt to find its cell first. `base` always comes from CardKB's own
-  // physical QWERTY layout, so this only makes sense -- same gating as the
-  // physical Hold-Enter-on-a-letter-cell path just below -- while the
-  // keyboard is idle on its plain Latin page: on T9, symbols, or a non-Latin
-  // main/alt script (Cyrillic, Greek, ...), the on-screen grid isn't showing
-  // Latin letters at all, so it's a no-op rather than inserting a stray
-  // Latin accent into unrelated text.
+  // physical QWERTY layout -- CardKB is a Latin keyboard, so it always types
+  // plain ASCII regardless of the on-screen grid's current page/script/T9
+  // setting (those only govern what the *grid* shows for physical-button
+  // navigation, a completely separate input path with its own copy of this
+  // same gate at the Hold-Enter-on-a-letter-cell site in handleInput()).
+  // Gating this one on the grid's page/script/T9 state would make Fn+letter
+  // silently stop working whenever Main alphabet is set to Cyrillic/Greek or
+  // keyboard_type to T9, even though CardKB is still typing plain Latin text
+  // just fine -- so this only checks that no other exclusive input mode
+  // (popup/cursor-move) is already in progress, same as inPlainGridState().
   bool openAccentFor(char base) {
     if (!isVisible() || _ph_menu.active || cursor_mode || accent_active) return false;
-    if (isT9() || pageIsSymbols(page) || scriptAt(page) != NodePrefs::KB_ALPHABET_LATIN_ONLY) return false;
     int gi = findAccentGroup(base);
     if (gi < 0) return false;
     accent_active = true;
@@ -752,7 +821,11 @@ struct KeyboardWidget {
         row = 0;
         return NONE;
       }
-      if (c == KEY_ENTER || c == KEY_CANCEL) { cursor_mode = false; return NONE; }
+      // KEY_KB_ENTER (external keyboard's Fn+Enter) leaves the mode too rather
+      // than being silently eaten -- it's the one key an external-keyboard
+      // typist would reach for here, and cursor mode is only ever entered from
+      // a physical button, so without this it looks like a dead key.
+      if (c == KEY_ENTER || c == KEY_CANCEL || c == KEY_KB_ENTER) { cursor_mode = false; return NONE; }
       return NONE;
     }
 
@@ -778,11 +851,13 @@ struct KeyboardWidget {
     // source, see UITask::pollCardKB()). Printable characters insert
     // straight at the cursor, bypassing the on-screen grid entirely -- no
     // caps re-application, the source already sends the correct case.
-    // Backspace deletes the previous character. KEY_KB_ENTER (only ever
-    // emitted for CardKB's Fn+Enter, see pollCardKB()) submits the field
-    // directly -- plain Enter (byte-identical to a physical button's
-    // KEY_ENTER) always acts on the grid instead, same as a physical-button
-    // user, so there's no ambiguity to resolve here.
+    // Backspace deletes the previous character. KEY_KB_ENTER submits the
+    // field directly -- pollCardKB() emits it for Fn+Enter always, and for
+    // plain Enter too when Compact mode's plain grid state applies (there's
+    // no grid cell to commit there). Every other plain Enter (Full mode, or
+    // Compact but mid popup/cursor-move) arrives here as ordinary KEY_ENTER
+    // and falls through to the grid dispatch below instead, so there's still
+    // no ambiguity to resolve at this layer -- pollCardKB() already decided.
     if (c == KEY_KB_ENTER) return DONE;
     if (c == 0x08) {
       t9_cell = -1;   // invalidate any pending T9 cycle -- see the grid paths below
@@ -795,10 +870,7 @@ struct KeyboardWidget {
       return NONE;
     }
     if (c >= 0x20 && c <= 0x7E) {
-      t9_cell = -1;   // otherwise a same-cell T9 tap within KB_T9_TIMEOUT_MS would
-                      // overwrite this character instead of inserting a new one
-      char one[2] = { c, '\0' };
-      insertGlyph(one, false);
+      insertTyped(c);
       return NONE;
     }
 
@@ -879,10 +951,11 @@ struct KeyboardWidget {
       return NONE;
     }
     if (c == KEY_ENTER) {
-      // Plain Enter always acts on the grid (repeat a letter, cycle T9,
-      // switch page/script, reach the special row's DONE cell) -- same as a
-      // physical button. CardKB submits via the separate KEY_KB_ENTER
-      // (Fn+Enter, see pollCardKB()) instead, so there's no ambiguity here.
+      // By the time a plain KEY_ENTER reaches here, it's a real grid
+      // interaction -- repeat a letter, cycle T9, switch page/script, reach
+      // the special row's DONE cell -- same as a physical button. CardKB's
+      // own Enter is only ever KEY_ENTER when that's true (see pollCardKB()'s
+      // KEY_KB_ENTER cases just above), so there's no ambiguity here.
       if (row < rows && isT9()) {
         int cell = row * cols + col;
         const char* group = t9GroupStr(cell);
@@ -955,9 +1028,7 @@ struct KeyboardWidget {
             }
             break;
           case 3:
-            if (_ph_refresh) _ph_refresh(*this, _ph_refresh_ctx);   // contextual repopulate, if wired up
-            _ph_menu.begin(_ph_title, KB_PH_VISIBLE);
-            for (int i = 0; i < _ph_count; i++) _ph_menu.addItem(_ph_buf[i]);
+            openPlaceholders();
             break;
           case 4:
             page = (page + 1) % totalPages();   // cycle letters -> [alt alphabet] -> symbols
