@@ -77,9 +77,14 @@ public:
     } else {
       pos = _hist_head;
       // Evicting the oldest entry — drop its share of the unread counter so
-      // the badge can't claim a message the ring no longer holds.
+      // the badge can't claim a message the ring no longer holds. The counter
+      // refers to the channel's NEWEST unread messages, so losing the oldest
+      // entry only costs an unread one when everything the ring still holds
+      // for that channel is unread; otherwise the evicted entry was already
+      // read and decrementing would undercount the newer unread ones.
       uint8_t evicted = _hist[pos].ch_idx;
-      if (evicted < MAX_GROUP_CHANNELS && _ch_unread[evicted] > 0) {
+      if (evicted < MAX_GROUP_CHANNELS && _ch_unread[evicted] > 0 &&
+          _ch_unread[evicted] >= histCountForChannel(evicted)) {
         _ch_unread[evicted]--;
       }
       _hist_head = (_hist_head + 1) % CH_HIST_MAX;
@@ -142,16 +147,34 @@ public:
   const ChHistEntry& chAtPos(int pos) const { return _hist[pos]; }
 
   // ── Per-channel unread counters ─────────────────────────────────────────────
+  // Always clamped to what the ring still holds for that channel. The raw
+  // counter and the ring can drift apart — MessagesScreen's viewing-session
+  // bookkeeping re-applies the unread snapshot taken when the channel was
+  // opened, so entries evicted mid-session would otherwise leave the badge
+  // promising messages the history list can no longer show (badge says 7,
+  // opening the channel shows an empty list). Capping on read keeps the badge
+  // honest whatever the raw counter says.
   uint8_t chUnread(int ch) const {
-    return (ch >= 0 && ch < MAX_GROUP_CHANNELS) ? _ch_unread[ch] : 0;
+    if (ch < 0 || ch >= MAX_GROUP_CHANNELS) return 0;
+    int held = histCountForChannel(ch);
+    return _ch_unread[ch] < held ? _ch_unread[ch] : (uint8_t)held;
   }
   void setChUnread(int ch, uint8_t v) {
     if (ch >= 0 && ch < MAX_GROUP_CHANNELS) _ch_unread[ch] = v;
   }
   void clearAllChannelUnread() { memset(_ch_unread, 0, sizeof(_ch_unread)); }
   int  getTotalChannelUnread() const {
+    // Same clamp as chUnread(), but counting ring occupancy for every channel
+    // in one pass instead of re-walking the ring once per channel.
+    uint8_t held[MAX_GROUP_CHANNELS];
+    memset(held, 0, sizeof(held));
+    for (int i = 0; i < _hist_count; i++) {
+      uint8_t ch = _hist[(_hist_head + i) % CH_HIST_MAX].ch_idx;
+      if (ch < MAX_GROUP_CHANNELS && held[ch] < 255) held[ch]++;
+    }
     int total = 0;
-    for (int i = 0; i < MAX_GROUP_CHANNELS; i++) total += _ch_unread[i];
+    for (int i = 0; i < MAX_GROUP_CHANNELS; i++)
+      total += (_ch_unread[i] < held[i]) ? _ch_unread[i] : held[i];
     return total;
   }
 
