@@ -101,9 +101,15 @@ static const char* const KB_T9_GROUPS_GREEK[9] = {
 // field passes its own smaller max to begin() where its store is smaller.
 static const int KB_MAX_LEN    = 160;
 
-// Longest preview line we render per row. Caps the per-line stack buffers so a
-// very wide display (small font → many chars per line) can't overrun them.
+// Longest preview line we render per row, in CHARACTERS. Caps the per-line
+// stack buffers so a very wide display (small font → many chars per line)
+// can't overrun them.
 static const int KB_PREVIEW_CAP = 46;
+// The same cap in BYTES. Every alphabet this keyboard can produce fits the
+// misc-fixed font's U+0020-04FF range, i.e. at most 2 UTF-8 bytes per
+// codepoint -- so a full line of Cyrillic/Greek/accented text is twice as
+// many bytes as it is characters.
+static const int KB_PREVIEW_BYTES = KB_PREVIEW_CAP * 2;
 
 // ── UTF-8 helpers for the alt-alphabet pages ─────────────────────────────────
 // KB_CHARS/KB_T9_GROUPS content is ASCII (1 byte/char); KB_CYRILLIC_CHARS and
@@ -393,10 +399,9 @@ struct KeyboardWidget {
   }
 
   // Compact ASCII hint for the #@/abc key when it's about to switch to
-  // `script`'s page. Deliberately ASCII (not the script's own glyphs) so it
-  // renders correctly even when Lemon isn't the user's current font choice —
-  // unlike a script's own grid, this hint is visible from every page,
-  // where render() doesn't force Lemon on (see render()).
+  // `script`'s page. Deliberately ASCII (not the script's own glyphs): it's
+  // two characters wide in a one-sixth-of-the-screen cell, and "CY"/"GR" name
+  // the destination more legibly at that size than a sample glyph would.
   static const char* scriptHint(uint8_t script) {
     switch (script) {
       case NodePrefs::KB_ALPHABET_CYRILLIC: return "CY";
@@ -552,36 +557,50 @@ struct KeyboardWidget {
     // i.e. the end — so this is identical to the old "always the last line"
     // behaviour until cursor mode moves cursor_pos elsewhere, at which point
     // the preview scrolls to keep the repositioned cursor in view).
+    // Line breaks are counted in CODEPOINTS, not bytes: cpl is how many
+    // characters physically fit, so dividing byte offsets by it would count a
+    // 2-byte Cyrillic/Greek/accented character as two -- halving the usable
+    // line width and, worse, letting a break land inside a codepoint, which
+    // reaches print() as a truncated sequence and draws as garbage (both
+    // display drivers are permanently single-font, so translateUTF8ToBlocks()
+    // passes UTF-8 straight through). Everything else in this widget already
+    // works in codepoints via the kbUtf8*() helpers; this was the last
+    // byte-based holdout.
     int cpl = display.width() / cw;  // chars per preview line
     if (cpl < 1) cpl = 1;
     if (cpl > KB_PREVIEW_CAP) cpl = KB_PREVIEW_CAP;  // never overrun linebuf below
-    int cursor_line = cursor_pos / cpl;
+    // Which preview line the cursor sits on = how many whole codepoints precede it.
+    int cursor_chars = 0;
+    for (int p = 0; p < cursor_pos; ) { p += kbUtf8CharBytesAt(buf, p, len); cursor_chars++; }
+    int cursor_line = cursor_chars / cpl;
     int first_line  = (cursor_line >= prev_lines) ? (cursor_line - prev_lines + 1) : 0;
-    int start = first_line * cpl;
+    // ...and the byte offset that line starts at.
+    int ps = 0;
+    for (int n = first_line * cpl; n > 0 && ps < len; n--) ps += kbUtf8CharBytesAt(buf, ps, len);
     for (int pl = 0; pl < prev_lines; pl++) {
-      int ps = start + pl * cpl;
-      int pe = ps + cpl;
+      int pe = ps;   // byte offset cpl codepoints further along (or end of text)
+      for (int k = 0; k < cpl && pe < len; k++) pe += kbUtf8CharBytesAt(buf, pe, len);
       bool cursor_here = (ps <= cursor_pos && (cursor_pos < pe || pl == prev_lines - 1));
-      char linebuf[KB_PREVIEW_CAP + 2];   // cpl chars + cursor '_' + NUL
+      int line_end = (len < pe) ? len : pe;
+      char linebuf[KB_PREVIEW_BYTES + 2];   // cpl codepoints + cursor '_' + NUL
       if (cursor_here) {
         // Cursor drawn as an inserted '_' between whatever text precedes and
         // follows it on this line -- reduces to the old "text + trailing _"
         // when cursor_pos == len (after_n is always 0 in that case).
-        int before_n = cursor_pos - ps; if (before_n < 0) before_n = 0; if (before_n > cpl) before_n = cpl;
-        int line_text_end = (len < pe) ? len : pe;
-        int after_n = line_text_end - cursor_pos; if (after_n < 0) after_n = 0;
-        if (before_n + after_n > cpl) after_n = cpl - before_n;
+        int before_n = cursor_pos - ps;        if (before_n < 0) before_n = 0;
+        if (before_n > line_end - ps) before_n = line_end - ps;
+        int after_n  = line_end - cursor_pos;  if (after_n < 0) after_n = 0;
         snprintf(linebuf, sizeof(linebuf), "%.*s_%.*s", before_n, buf + ps, after_n, buf + ps + before_n);
       } else if (len > ps) {
-        int nc = (len < pe) ? (len - ps) : cpl;
-        snprintf(linebuf, sizeof(linebuf), "%.*s", nc, buf + ps);
+        snprintf(linebuf, sizeof(linebuf), "%.*s", line_end - ps, buf + ps);
       } else {
         linebuf[0] = '\0';
       }
-      char linebuf_t[KB_PREVIEW_CAP + 2];
+      char linebuf_t[KB_PREVIEW_BYTES + 2];
       display.translateUTF8ToBlocks(linebuf_t, linebuf, sizeof(linebuf_t));
       display.setCursor(0, pl * lh);
       display.print(linebuf_t);
+      ps = pe;
     }
     display.fillRect(0, sep_y, display.width(), display.sepH());
 
@@ -692,6 +711,13 @@ struct KeyboardWidget {
                                         : ICON_CHECK;   // i == 5 → OK
           int ix = sx + (spec_w - ic.w * s) / 2;
           miniIconDraw(display, ix, icy, ic);
+          // Underline the ⇧ icon while caps_lock is held. Without it the two
+          // Shift states are indistinguishable -- caps_lock sets caps too, so
+          // the highlight above is identical -- even though they behave
+          // completely differently (one letter vs. every following letter).
+          // caps_lock implies the cell is filled, so the current (inverted)
+          // ink colour is the one that shows against it.
+          if (i == 0 && caps_lock) display.fillRect(sx + 2, spec_y + cell_h - 3, spec_w - 5, 1);
         }
         display.setColor(DisplayDriver::LIGHT);
       }

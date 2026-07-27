@@ -1477,7 +1477,6 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   gpio_screen        = new GpioScreen(this, node_prefs);
 #endif
   applyBrightness();
-  applyFont();
   applyRotation();
   applyFullRefreshInterval();
   applyAllGpioModes();   // restore persisted pin modes to hardware before any UI/bot use
@@ -3336,13 +3335,6 @@ void UITask::applyRadioParams() {
 void UITask::applyBrightness() {
   if (_display != NULL && _node_prefs != NULL) {
     _display->setBrightness(_node_prefs->display_brightness);
-  }
-}
-
-void UITask::applyFont() {
-  if (_display != NULL && _node_prefs != NULL) {
-    _display->setSingleFont(_node_prefs->use_lemon_font != 0);
-    _next_refresh = 0;
   }
 }
 

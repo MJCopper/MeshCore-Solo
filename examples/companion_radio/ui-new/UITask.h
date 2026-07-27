@@ -460,7 +460,6 @@ public:
   // (some used to leave the flag set, relying on onShow() to reset it) and keeps
   // the "did we touch flash?" answer in one place. Returns whether it saved.
   bool savePrefsIfDirty(bool& dirty);
-  void applyFont();
   void applyRotation();
   void applyFullRefreshInterval();
   uint32_t autoOffMillis() const {
