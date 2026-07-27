@@ -126,11 +126,12 @@ static const int KB_PREVIEW_CAP = 46;
 //    special-cased before the range rule.
 //  - Latin Extended-A (ą/č/ĺ/œ/etc., U+0100-017F): NOT a flat offset like
 //    Latin-1 — this block alternates even=uppercase/odd=lowercase in adjacent
-//    pairs, so lowercase - 1 = uppercase. Verified true (against Python's own
-//    str.upper()) for every character actually used across the Polish/Czech/
-//    Slovak/French keyboards below; NOT a universal rule for the whole block
-//    (it has a handful of unpaired/irregular codepoints elsewhere) — recheck
-//    before adding more from it.
+//    pairs, so lowercase - 1 = uppercase. But the parity flips around the
+//    unpaired codepoints ĸ (U+0138), ŉ (U+0149) and Ÿ (U+0178), so a single
+//    "odd=lower" rule is wrong for U+0139-0148 and U+0179-017E (this broke
+//    ł ń ź ż among others). Verified exhaustively over the whole
+//    U+0100-U+017F block — see the four sub-ranges below; ı and ſ are the
+//    only remaining exceptions and appear in no keyboard table here.
 //  - Greek α-ω (U+03B1-03C9): flat -0x20 offset, same shape as Cyrillic/ASCII.
 //    Final sigma ς (U+03C2) is the one exception — it has no uppercase of its
 //    own; -0x20 would land on U+03A2, which is unassigned. It capitalizes to
@@ -149,7 +150,13 @@ static void kbApplyCapsUtf8(const char* in, bool caps, char* out, size_t out_siz
       else if (cp >= 0x0430 && cp <= 0x044F)                cp -= 0x20;   // а-я -> А-Я
       else if (cp >= 0x03B1 && cp <= 0x03C9)                cp -= 0x20;   // α-ω -> Α-Ω
       else if (cp >= 0x00E0 && cp <= 0x00FE && cp != 0x00F7) cp -= 0x20;  // à-þ -> À-Þ
-      else if (cp >= 0x0100 && cp < 0x0180 && (cp & 1) == 1) cp -= 1;     // ą-ż (odd=lower) -> Ą-Ż
+      // ą-ż (Latin Extended-A): pairing parity flips around the unpaired
+      // codepoints ĸ (U+0138), ŉ (U+0149), Ÿ (U+0178) -- verified exhaustively
+      // over the whole U+0100-U+017F block, resolves ł ń ź ż + ĺ ľ ň ž too.
+      else if (cp >= 0x0100 && cp <= 0x0137 && (cp & 1) == 1) cp -= 1;     // odd=lower
+      else if (cp >= 0x0139 && cp <= 0x0148 && (cp & 1) == 0) cp -= 1;     // even=lower
+      else if (cp >= 0x014A && cp <= 0x0177 && (cp & 1) == 1) cp -= 1;     // odd=lower
+      else if (cp >= 0x0179 && cp <= 0x017E && (cp & 1) == 0) cp -= 1;     // even=lower
       else if (cp >= 'a' && cp <= 'z')                      cp -= 0x20;   // a-z -> A-Z
     }
     if (cp < 0x80) {
@@ -778,6 +785,7 @@ struct KeyboardWidget {
     // user, so there's no ambiguity to resolve here.
     if (c == KEY_KB_ENTER) return DONE;
     if (c == 0x08) {
+      t9_cell = -1;   // invalidate any pending T9 cycle -- see the grid paths below
       if (cursor_pos > 0) {
         int n = kbUtf8LastCharBytes(buf, cursor_pos);
         memmove(buf + cursor_pos - n, buf + cursor_pos, len - cursor_pos);
@@ -787,6 +795,8 @@ struct KeyboardWidget {
       return NONE;
     }
     if (c >= 0x20 && c <= 0x7E) {
+      t9_cell = -1;   // otherwise a same-cell T9 tap within KB_T9_TIMEOUT_MS would
+                      // overwrite this character instead of inserting a new one
       char one[2] = { c, '\0' };
       insertGlyph(one, false);
       return NONE;

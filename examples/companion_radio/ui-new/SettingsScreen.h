@@ -323,9 +323,16 @@ class SettingsScreen : public UIScreen {
           // PAGE_ORDER_LEN so there's room; only a pathologically full order would
           // drop its last entry, which buildVisibleOrder's fallback re-appends.
           int insert_at = clock_at + 1;
-          int tail = (len < NodePrefs::PAGE_ORDER_LEN) ? len : NodePrefs::PAGE_ORDER_LEN - 1;
-          for (int i = tail; i > insert_at; i--) p->page_order[i] = p->page_order[i - 1];
-          p->page_order[insert_at] = NodePrefs::HPB_FAVOURITES + 1;
+          // Guard against a saved order with all PAGE_ORDER_LEN slots already
+          // valid and CLOCK in the last one: insert_at would be PAGE_ORDER_LEN,
+          // one past the array, and the shift loop below wouldn't run (tail is
+          // clamped to the last index) to catch it -- the write would land one
+          // byte past page_order, into whatever NodePrefs field follows.
+          if (insert_at < NodePrefs::PAGE_ORDER_LEN) {
+            int tail = (len < NodePrefs::PAGE_ORDER_LEN) ? len : NodePrefs::PAGE_ORDER_LEN - 1;
+            for (int i = tail; i > insert_at; i--) p->page_order[i] = p->page_order[i - 1];
+            p->page_order[insert_at] = NodePrefs::HPB_FAVOURITES + 1;
+          }
         }
         // Append any pages that are absent from the saved order (e.g. added by a
         // later firmware version). Recount first since the block above may have

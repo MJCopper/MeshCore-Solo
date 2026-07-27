@@ -483,7 +483,10 @@ class MessagesScreen : public UIScreen {
     } else {
       bool show_all = (p && p->dm_show_all);
       // Build _sorted and counts[] in one pass — avoids a second getContactByIdx loop.
-      int counts[MAX_CONTACTS];
+      // uint8_t, not int: values are bounded by MessageHistory::DM_HIST_MAX (32), and
+      // this array is 1400 B at this build's MAX_CONTACTS=350 as an int[] -- a sizeable
+      // slice of the 4 KB loop() task stack for one local array.
+      uint8_t counts[MAX_CONTACTS];
       for (int i = 0; i < total; i++) {
         if (!the_mesh.getContactByIdx(i, c) || c.type != ADV_TYPE_CHAT) continue;
         if (!show_all && !(c.flags & 0x01)) continue;
@@ -773,6 +776,11 @@ public:
   }
 
   int getTotalChannelUnread() const { return _history.getTotalChannelUnread(); }
+
+  // How many DM ring entries this contact/room currently holds -- lets UITask
+  // clamp its separate _dm_unread_table counters to what the shared 32-slot DM
+  // ring actually still has, the same self-healing shape as the channel fix.
+  int dmHistCountForContact(const uint8_t* pub_key) const { return _history.dmHistCountForContact(pub_key); }
 
   void markReadAlert(int n) {
     char msg[32];

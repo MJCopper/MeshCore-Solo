@@ -462,8 +462,15 @@ void MyMesh::onContactPathUpdated(const ContactInfo &contact) {
 }
 
 ContactInfo*  MyMesh::processAck(const uint8_t *data) {
+  // 0 marks an empty/cleared table slot, not a real ACK -- a bare memcmp below
+  // would otherwise match the first free slot against an all-zero `data` (which
+  // *is* remotely reachable, ack_crc comes off the air) and misattribute the
+  // ACK to whatever contact that slot last belonged to.
+  static const uint8_t zero_ack[4] = {0, 0, 0, 0};
+  if (memcmp(data, zero_ack, 4) == 0) return checkConnectionsAck(data);
   // see if matches any in a table
   for (int i = 0; i < EXPECTED_ACK_TABLE_SIZE; i++) {
+    if (expected_ack_table[i].ack == 0) continue;   // empty slot
     if (memcmp(data, &expected_ack_table[i].ack, 4) == 0) { // got an ACK from recipient
       out_frame[0] = PUSH_CODE_SEND_CONFIRMED;
       memcpy(&out_frame[1], data, 4);
@@ -471,9 +478,11 @@ ContactInfo*  MyMesh::processAck(const uint8_t *data) {
       memcpy(&out_frame[5], &trip_time, 4);
       _serial->writeFrame(out_frame, 9);
 
+      ContactInfo* contact = expected_ack_table[i].contact;
       // NOTE: the same ACK can be received multiple times!
-      expected_ack_table[i].ack = 0; // clear expected hash, now that we have received ACK
-      return expected_ack_table[i].contact;
+      expected_ack_table[i].ack = 0;            // clear expected hash, now that we have received ACK
+      expected_ack_table[i].contact = nullptr;  // and the stale pointer along with it
+      return contact;
     }
   }
   return checkConnectionsAck(data);

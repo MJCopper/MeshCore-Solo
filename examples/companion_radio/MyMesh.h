@@ -298,8 +298,9 @@ public:
   void applyRepeaterRadio();
 
   bool isAckPending(uint32_t expected_ack) const {
+    if (expected_ack == 0) return false;   // 0 marks an empty/cleared slot, not a real ACK
     for (int i = 0; i < EXPECTED_ACK_TABLE_SIZE; i++)
-      if (expected_ack_table[i].ack == expected_ack) return true;
+      if (expected_ack_table[i].ack != 0 && expected_ack_table[i].ack == expected_ack) return true;
     return false;
   }
 

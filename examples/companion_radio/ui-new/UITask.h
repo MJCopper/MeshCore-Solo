@@ -363,18 +363,20 @@ public:
   int  getChannelUnreadCount() const;
   int  getRoomUnreadCount() const { return _room_unread; }
   void clearRoomUnread() { _room_unread = 0; }
-  uint8_t getDMUnread(const uint8_t* pub_key) const {
-    for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++)
-      if (_dm_unread_table[i].count > 0 && memcmp(_dm_unread_table[i].prefix, pub_key, 4) == 0)
-        return _dm_unread_table[i].count;
-    return 0;
-  }
+  // Clamped to the DM ring's actual occupancy for this contact -- defined in
+  // UITask.cpp (needs MessagesScreen to be a complete type). Same self-healing
+  // shape as MessageHistory::chUnread() for channels.
+  uint8_t getDMUnread(const uint8_t* pub_key) const;
   void clearDMUnread(const uint8_t* pub_key) {
     for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++)
       if (_dm_unread_table[i].count > 0 && memcmp(_dm_unread_table[i].prefix, pub_key, 4) == 0)
         { _dm_unread_table[i].count = 0; return; }
   }
   void clearAllDMUnread() { memset(_dm_unread_table, 0, sizeof(_dm_unread_table)); }
+  // Frees any table slot whose ring occupancy has dropped to zero (evicted or
+  // deduped-away messages) so a genuinely new sender isn't starved once the
+  // fixed 16-slot table fills with stale entries. Called once per loop().
+  void reconcileDMUnread();
   bool hasDisplay() const { return _display != NULL; }
   DisplayDriver* getDisplay() const { return _display; }
 

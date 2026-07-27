@@ -107,9 +107,11 @@ void MyMesh::botDmRecord(const uint8_t* pubkey) {
   for (int i = 0; i < BOT_DM_LOG_SIZE; i++)
     if (!_bot_dm_log[i].used) { target = i; break; }
   if (target < 0) {                            // ...or evict the oldest
-    target = 0;
-    for (int i = 1; i < BOT_DM_LOG_SIZE; i++)
-      if (_bot_dm_log[i].t_ms < _bot_dm_log[target].t_ms) target = i;
+    target = 0;                                // compare by elapsed-since-now (wraparound-safe),
+    for (int i = 1; i < BOT_DM_LOG_SIZE; i++)   // not raw t_ms -- a bare '<' picks the wrong slot
+      if ((int32_t)(now - _bot_dm_log[i].t_ms) >   // right after millis() rolls over (new entries
+          (int32_t)(now - _bot_dm_log[target].t_ms)) // then have small raw values, not large ones)
+        target = i;
   }
   memcpy(_bot_dm_log[target].key, pubkey, 4);
   _bot_dm_log[target].t_ms = now;

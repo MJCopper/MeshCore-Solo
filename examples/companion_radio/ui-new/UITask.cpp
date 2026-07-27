@@ -1779,9 +1779,30 @@ void UITask::addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, u
 
 int UITask::getDMUnreadTotal() const {
   int total = 0;
-  for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++)
-    total += _dm_unread_table[i].count;
+  for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++) {
+    if (_dm_unread_table[i].count == 0) continue;
+    int held = ((MessagesScreen*)messages_screen)->dmHistCountForContact(_dm_unread_table[i].prefix);
+    total += (_dm_unread_table[i].count < held) ? _dm_unread_table[i].count : held;
+  }
   return total;
+}
+
+uint8_t UITask::getDMUnread(const uint8_t* pub_key) const {
+  for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++) {
+    if (_dm_unread_table[i].count > 0 && memcmp(_dm_unread_table[i].prefix, pub_key, 4) == 0) {
+      int held = ((MessagesScreen*)messages_screen)->dmHistCountForContact(pub_key);
+      return _dm_unread_table[i].count < held ? _dm_unread_table[i].count : (uint8_t)held;
+    }
+  }
+  return 0;
+}
+
+void UITask::reconcileDMUnread() {
+  for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++) {
+    if (_dm_unread_table[i].count == 0) continue;
+    if (((MessagesScreen*)messages_screen)->dmHistCountForContact(_dm_unread_table[i].prefix) == 0)
+      _dm_unread_table[i].count = 0;   // ring no longer holds anything for this sender -- free the slot
+  }
 }
 
 void UITask::showAlert(const char* text, int duration_millis) {
@@ -2176,6 +2197,7 @@ void UITask::loop() {
   // Background delivery: resend pending on-device DMs whose ACK timed out, and
   // finalise the ✗ marker — runs regardless of which screen is active.
   ((MessagesScreen*)messages_screen)->tickDmResends();
+  reconcileDMUnread();
 #if UI_HAS_JOYSTICK
   uint8_t joy_rot = _node_prefs ? _node_prefs->joystick_rotation : JOYSTICK_ROTATION;
   int ev = user_btn.check();
@@ -2250,7 +2272,7 @@ void UITask::loop() {
   } else if (ev == BUTTON_EVENT_DOUBLE_CLICK) {
     enqueueKey(handleDoubleClick(KEY_PREV));
   } else if (ev == BUTTON_EVENT_TRIPLE_CLICK) {
-    enqueueKey(handleTripleClick(KEY_SELECT));
+    if (!_locked) enqueueKey(handleTripleClick(KEY_SELECT));
   }
 #endif
 #if defined(PIN_USER_BTN_ANA)
@@ -2263,14 +2285,14 @@ void UITask::loop() {
     } else if (ev == BUTTON_EVENT_DOUBLE_CLICK) {
       enqueueKey(handleDoubleClick(KEY_PREV));
     } else if (ev == BUTTON_EVENT_TRIPLE_CLICK) {
-      enqueueKey(handleTripleClick(KEY_SELECT));
+      if (!_locked) enqueueKey(handleTripleClick(KEY_SELECT));
     }
     _analogue_pin_read_millis = millis();
   }
 #endif
   pollCardKB();
 #if defined(BACKLIGHT_BTN)
-  if (millis() > next_backlight_btn_check) {
+  if ((int32_t)(millis() - next_backlight_btn_check) >= 0) {
     bool touch_state = digitalRead(PIN_BUTTON2);
 #if defined(DISP_BACKLIGHT)
     digitalWrite(DISP_BACKLIGHT, !touch_state);
@@ -2330,7 +2352,7 @@ void UITask::loop() {
   tickClockTools();
 
   if (_display != NULL && _display->isOn()) {
-    if (_locked && millis() > _lock_wake_until) {
+    if (_locked && (int32_t)(millis() - _lock_wake_until) >= 0) {
       _display->turnOff();
     } else if (_locked && millis() >= _next_refresh) {
       _display->startFrame();
@@ -2442,7 +2464,7 @@ void UITask::loop() {
       _auto_off = millis() + AUTO_OFF_MILLIS;
     }
 #endif
-    if (!_locked && autoOffMillis() > 0 && millis() > _auto_off && !isRinging()) {
+    if (!_locked && autoOffMillis() > 0 && (int32_t)(millis() - _auto_off) >= 0 && !isRinging()) {
       _display->turnOff();
 #ifdef PIN_LED
       digitalWrite(PIN_LED, LOW);  // turn off status LED with display to save power
@@ -2459,7 +2481,7 @@ void UITask::loop() {
   vibration.loop();
 #endif
 
-  if (millis() > next_batt_chck) {
+  if ((int32_t)(millis() - next_batt_chck) >= 0) {
     uint16_t raw = AbstractUITask::getBattMilliVolts();
     if (raw > 0) {
       // EMA filter: alpha=0.2 (80% old, 20% new) — smooths ADC noise from uneven load
@@ -2706,11 +2728,16 @@ void UITask::clearTargetIfWaypoint(int32_t lat_1e6, int32_t lon_1e6) {
 // cleared here, so a removed contact can't leave a dangling reference. If you
 // add such a field, add its cleanup below (and mark the field in NodePrefs.h).
 // Currently covered: favourite_contacts, locator_key, loc_share_dm_prefix,
-// dm_notif[], dm_melody[]. Called for both explicit removal and silent
-// auto-eviction (see MyMesh CMD_REMOVE_CONTACT / onContactOverwrite).
+// dm_notif[], dm_melody[]. Also clears _dm_unread_table (RAM-only, not a
+// NodePrefs field, so no savePrefs() needed for it) -- same 4-byte-prefix
+// shape and same 16-slot starvation risk as dm_notif/dm_melody above. Called
+// for both explicit removal and silent auto-eviction (see MyMesh
+// CMD_REMOVE_CONTACT / onContactOverwrite).
 void UITask::onContactRemoved(const uint8_t* pub_key) {
   if (!_node_prefs || !pub_key) return;
   bool changed = false;
+
+  clearDMUnread(pub_key);
 
   int slot = findFavouriteSlot(pub_key);
   if (slot >= 0) { clearFavouriteSlot(slot); changed = true; }
@@ -2977,6 +3004,13 @@ char UITask::checkDisplayOn(char c) {
 }
 
 char UITask::handleLongPress(char c) {
+  // Same checkDisplayOn() gate every other input path goes through (see
+  // pollCardKB()'s Fn+letter handling for the same shape) -- without it, a long
+  // press while the display is off neither wakes it nor extends auto-off, and
+  // while unlocked it delivers KEY_CONTEXT_MENU to the invisible screen (found
+  // already open at the next wake instead of the press being consumed as a wake).
+  c = checkDisplayOn(c);
+  if (c == 0) return 0;
   if (millis() - ui_started_at < 8000) {   // long press in first 8 seconds since startup -> CLI/rescue
     the_mesh.enterCLIRescue();
     return 0;
