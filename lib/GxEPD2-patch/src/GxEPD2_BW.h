@@ -235,6 +235,15 @@ class GxEPD2_BW : public GxEPD2_GFX_BASE_CLASS
     const uint8_t* getBuffer() { return _buffer; }
     uint16_t getBufferSize() { return sizeof(_buffer); }
 #endif
+    // Prime the controller's "previous image" RAM with the inverse of the frame
+    // display(true) is about to send, so that update drives every pixel instead
+    // of only the changed ones. Rationale in GxEPDDisplay::endFrame(); it lives
+    // here because it needs _buffer and _page_height. Same patched-copy note as
+    // above.
+    void writeInverseForRedrive()
+    {
+      epd2.writeImageAgain(_buffer, 0, 0, GxEPD2_Type::WIDTH, _page_height, true);
+    }
 #if ENABLE_GxEPD2_GFX
     GxEPD2_BW(GxEPD2_Type epd2_instance) : GxEPD2_GFX_BASE_CLASS(epd2, GxEPD2_Type::WIDTH_VISIBLE, GxEPD2_Type::HEIGHT), epd2(epd2_instance)
 #else

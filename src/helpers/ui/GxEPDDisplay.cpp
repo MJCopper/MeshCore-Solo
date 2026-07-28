@@ -279,6 +279,23 @@ void GxEPDDisplay::endFrame() {
       partial = false;
       _partial_count = 0;
     }
+    // Drive every pixel, not just the ones that changed since the last frame.
+    // A partial update is differential — it drives only what differs from the
+    // controller's "previous image" RAM and leaves the rest to hold its own
+    // charge, which this panel doesn't do well: text went grey a few updates
+    // after it was drawn while whatever had just changed stayed crisp. Priming
+    // that RAM with the inverse of the incoming frame makes every pixel a
+    // difference, so all of them get driven to their target.
+    //
+    // It must be the inverse and not a flat white — white makes only
+    // white->black a difference, so ink gets re-driven but never erased and
+    // every screen ever shown accumulates as a ghost.
+    //
+    // Costs one extra full-screen RAM write (a few ms of SPI); the refresh
+    // itself takes the same time either way, as the waveform clocks the whole
+    // panel regardless of how many pixels it actually drives. Clearing ghosts
+    // is a separate job and stays with the periodic full refresh above.
+    if (partial) display.writeInverseForRedrive();
     display.display(partial);
     last_display_crc_value = crc;
   }

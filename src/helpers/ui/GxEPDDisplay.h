@@ -5,15 +5,14 @@
 
 #define ENABLE_GxEPD2_GFX 0
 
-// When ENABLE_SCREENSHOT is active, use the patched copy of GxEPD2_BW.h from
-// lib/GxEPD2-patch/src/ that exposes getBuffer()/getBufferSize().  The include
-// guard (_GxEPD2_BW_H_) then prevents the installed library version from
-// being compiled again.  Non-screenshot builds use the installed library as-is.
-#ifdef ENABLE_SCREENSHOT
+// Always use the patched copy of GxEPD2_BW.h from lib/GxEPD2-patch/src/: it
+// adds writeInverseForRedrive() (needed by every e-ink build, see endFrame())
+// and, under ENABLE_SCREENSHOT, getBuffer()/getBufferSize().  Both need the
+// class's private framebuffer, so they have to live in the header itself.  The
+// include guard (_GxEPD2_BW_H_) prevents the installed library version from
+// being compiled as well; the copy tracks the 1.6.2 pin every e-ink variant's
+// lib_deps uses.
 #include "../../../lib/GxEPD2-patch/src/GxEPD2_BW.h"
-#else
-#include <GxEPD2_BW.h>
-#endif
 #include <GxEPD2_3C.h>
 #include <GxEPD2_4C.h>
 #include <GxEPD2_7C.h>
