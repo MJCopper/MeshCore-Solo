@@ -22,6 +22,7 @@
 - **Typing on CardKB right after cycling a T9 letter, then tapping that same T9 cell again quickly, could overwrite an unrelated character.** None of CardKB's direct actions — typing, moving the cursor with the arrows, or opening the placeholder picker with Tab — were invalidating the pending T9 cycle the way every on-screen keypress already does, so the next tap "continued" the cycle against a moved cursor.
 - **The keyboard's text preview could split a Cyrillic, Greek or accented character in half at the end of a line**, drawing garbage on both sides of the break, and fitted only half as much text per line as it had room for. Line breaks in the preview were counted in bytes rather than characters — every other part of the keyboard already counted characters.
 - **Caps-lock and one-shot Shift looked identical on the keyboard's ⇧ key**, so there was no way to tell whether the next letter alone or every following letter would be capitalised. Caps-lock is now marked with an underline on the key.
+- **A message containing a line break drew two words on top of each other.** Newlines the sender typed were treated as ordinary characters — measured as a blank 6px cell, then handed to the display, which moved back to the left edge one row down mid-line and drew the rest of it over the following line. Line breaks now end the line properly (blank lines included) in the fullscreen message view and the history list, and fold into a space in the one-line message previews.
 
 ---
 

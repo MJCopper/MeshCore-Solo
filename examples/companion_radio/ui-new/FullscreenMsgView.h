@@ -51,10 +51,10 @@ struct FullscreenMsgView {
   void begin() { scroll = 0; active = true; }
 
   // Pixel-accurate word-wrap: breaks at last space that fits within max_px,
-  // hard-breaks long words. Walks the string codepoint-by-codepoint, summing
-  // per-codepoint widths via DisplayDriver::getCodepointWidth — O(n) instead
-  // of O(n²) substring re-measurement. Works for both fixed- and
-  // variable-width fonts.
+  // hard-breaks long words, and honours newlines the sender put in the text.
+  // Walks the string codepoint-by-codepoint, summing per-codepoint widths via
+  // DisplayDriver::getCodepointWidth — O(n) instead of O(n²) substring
+  // re-measurement. Works for both fixed- and variable-width fonts.
   static int wrapLines(DisplayDriver& display, const char* text, int max_px,
                        char out[][FS_CHARS_MAX], int max_lines) {
     int count = 0;
@@ -63,12 +63,21 @@ struct FullscreenMsgView {
       const uint8_t* p        = seg;
       const uint8_t* last_sp  = nullptr;       // pointer to space byte (cut here, drop the space)
       const uint8_t* last_fit = seg;           // farthest point that still fits
+      const uint8_t* brk      = nullptr;       // explicit newline that ends this line
       int width = 0;
 
       while (*p && (p - seg) < FS_CHARS_MAX - 1) {
         const uint8_t* cp_start = p;
         uint32_t cp = DisplayDriver::decodeCodepoint(p);
         if ((p - seg) >= FS_CHARS_MAX) { p = cp_start; break; }
+        // A newline in the message ends the line right here, and is consumed
+        // rather than copied out. Letting one through was drawing two words on
+        // top of each other: both display drivers' print() acts on '\n' by
+        // resetting the cursor to x=0 and stepping down one row, so the rest of
+        // this wrapped line landed on the following one. Measuring it is just
+        // as wrong — it has no ink, but glyphXAdvance() reports a full 6px cell
+        // for it (it's below the font's first codepoint), so it also ate width.
+        if (cp == '\n' || cp == '\r') { brk = cp_start; break; }
         uint16_t cw = display.getCodepointWidth(cp);
         if (width + cw > max_px && cp_start > seg) { p = cp_start; break; }
         if (cp == ' ') last_sp = cp_start;
@@ -78,7 +87,11 @@ struct FullscreenMsgView {
 
       const uint8_t* end;
       const uint8_t* next_seg;
-      if (!*p) {
+      if (brk) {
+        end = brk;
+        next_seg = brk + 1;
+        if (*brk == '\r' && *next_seg == '\n') next_seg++;   // CRLF is one break, not two
+      } else if (!*p) {
         end = p; next_seg = p;
       } else if (last_sp && last_sp > seg) {
         end = last_sp; next_seg = last_sp + 1;
@@ -87,7 +100,10 @@ struct FullscreenMsgView {
       }
 
       int len = (int)(end - seg);
-      if (len <= 0) { seg = *seg ? seg + 1 : seg; continue; }
+      // An empty line is only emitted for a real newline (a blank line the
+      // sender typed); an empty wrap segment would loop forever, so skip it.
+      if (len <= 0 && !brk) { seg = *seg ? seg + 1 : seg; continue; }
+      if (len < 0) len = 0;
       if (len > FS_CHARS_MAX - 1) len = FS_CHARS_MAX - 1;
       memcpy(out[count], seg, len);
       out[count][len] = '\0';

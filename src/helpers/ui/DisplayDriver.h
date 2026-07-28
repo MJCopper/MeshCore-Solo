@@ -324,7 +324,15 @@ public:
   virtual void drawTextEllipsized(int x, int y, int max_width, const char* str) {
     char temp_str[256];  // reasonable buffer size
     translateUTF8ToBlocks(temp_str, str, sizeof(temp_str));
-    
+
+    // Fold newlines into spaces: this draws ONE line clipped to max_width, but
+    // print() acts on '\n' by returning to x=0 one row down, which would spill
+    // the tail onto whatever is drawn below. Message bodies (the compact
+    // one-line previews in the history list) are the texts that carry them;
+    // for labels and names this is a no-op. A space keeps the words apart and
+    // measures the same, so the width/ellipsis maths below is unaffected.
+    for (char* q = temp_str; *q; q++) if (*q == '\n' || *q == '\r') *q = ' ';
+
     if (getTextWidth(temp_str) <= max_width) {
       setCursor(x, y);
       print(temp_str);
