@@ -31,7 +31,8 @@ class SH1106Display : public DisplayDriver
   bool     _force_redraw = true;
 
   bool i2c_probe(TwoWire &wire, uint8_t addr);
-  int16_t drawGlyph(int16_t x, int16_t y, uint32_t cp);
+  // Thin wrapper over the shared misc-fixed renderer (MiscFixedRenderer.h), kept
+  // out of this header so the font tables land in one translation unit only.
   uint8_t glyphXAdvance(uint32_t cp);
 
 public:
