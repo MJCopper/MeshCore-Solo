@@ -17,7 +17,7 @@ class UITask;
 
 // Versioning: vX.Y = upstream base, solo.N = fork revision
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.23.1c1"
+#define FIRMWARE_VERSION "v1.24.1c1"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
