@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "DataStore.h"
+#include "SoloPrefsMigration.h"
 #include "Features.h"   // FEAT_JOYSTICK_ROTATION_SETTING (else `#if !FEAT_…` is always true)
 #include <target.h>     // radio_driver — repeater-profile freq bounds (getFreqBounds)
 
@@ -490,21 +491,10 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   // that revision for alarm_repeat_mask. Its tail is uniquely seven bytes of
   // Child Mode data followed by the four-byte sentinel, so distinguish it by
   // length and migrate it without interpreting the PIN bytes as newer fields.
-  const size_t tail_remaining = file.size() - file.position();
-  const bool legacy_child_schema = tail_remaining ==
-      sizeof(_prefs.child_mode_enabled) + sizeof(_prefs.child_mode_pin_hash) +
-      sizeof(_prefs.child_visible_pages) + sizeof(uint32_t);
-  const size_t legacy_combined_tail_size =
-      sizeof(_prefs.alarm_repeat_mask) + sizeof(_prefs.keyboard_alt_alphabet) +
-      sizeof(_prefs.bot_dm_scope) + sizeof(_prefs.bot_room_enabled) +
-      sizeof(_prefs.bot_room_prefix) + sizeof(_prefs.bot_trigger_room) +
-      sizeof(_prefs.bot_reply_room) + sizeof(_prefs.bot_commands_ch) +
-      sizeof(_prefs.bot_commands_room) + sizeof(_prefs.keyboard_main_alphabet) +
-      sizeof(_prefs.child_mode_enabled) + sizeof(_prefs.child_mode_pin_hash) +
-      sizeof(_prefs.child_visible_pages) + sizeof(_prefs.child_channels_enabled) +
-      sizeof(_prefs.quiet_time_enabled) + sizeof(_prefs.quiet_time_start_min) +
-      sizeof(_prefs.quiet_time_end_min) + sizeof(uint32_t);
-  const bool legacy_combined_schema = tail_remaining == legacy_combined_tail_size;
+  const soloprefs::InitialTail initial_tail =
+      soloprefs::classifyInitialTail(file.size() - file.position());
+  const bool legacy_child_schema = initial_tail == soloprefs::InitialTail::LEGACY_CHILD;
+  const bool legacy_combined_schema = initial_tail == soloprefs::InitialTail::LEGACY_COMBINED;
 
   if (legacy_child_schema) {
     rd(&_prefs.child_mode_enabled, sizeof(_prefs.child_mode_enabled));
@@ -592,12 +582,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     // Rewind over the bytes just consumed from its Child Mode tail, then keep
     // the newer upstream options at their safe defaults.
     if (legacy_combined_schema) {
-      const size_t newer_upstream_tail_size =
-          sizeof(_prefs.bot_actions_dm) + sizeof(_prefs.bot_actions_ch) +
-          sizeof(_prefs.bot_actions_room) + sizeof(_prefs.gpio1_mode) +
-          sizeof(_prefs.gpio2_mode) + sizeof(_prefs.gpio3_mode) +
-          sizeof(_prefs.gpio4_mode) + sizeof(_prefs.keyboard_cardkb_compact);
-      file.seek(file.position() - newer_upstream_tail_size);
+      file.seek(file.position() - soloprefs::NEWER_UPSTREAM_TAIL_BYTES);
       _prefs.bot_actions_dm = _prefs.bot_actions_ch = _prefs.bot_actions_room = 0;
       _prefs.gpio1_mode = _prefs.gpio2_mode = _prefs.gpio3_mode = _prefs.gpio4_mode = 0;
       _prefs.keyboard_cardkb_compact = 0;
@@ -605,19 +590,12 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
 
     // The standalone Quiet Time branch has only its five data bytes here.
     // Do not interpret those bytes as Child Mode fields when migrating it.
-    const size_t child_tail_size = sizeof(_prefs.child_mode_enabled) +
-                                   sizeof(_prefs.child_mode_pin_hash) +
-                                   sizeof(_prefs.child_visible_pages) +
-                                   sizeof(_prefs.child_channels_enabled) +
-                                   sizeof(uint32_t);
-    const size_t quiet_tail_size = sizeof(_prefs.quiet_time_enabled) +
-                                   sizeof(_prefs.quiet_time_start_min) +
-                                   sizeof(_prefs.quiet_time_end_min) +
-                                   sizeof(uint32_t);
-    const bool standalone_quiet_schema = file.available() == (int)quiet_tail_size;
+    const bool standalone_quiet_schema =
+        soloprefs::isStandaloneQuietTail((size_t)file.available());
 
     // → 0xC0DE0024/25: Child Mode and its private-channel option.
-    if (!standalone_quiet_schema && file.available() >= (int)child_tail_size) {
+    if (!standalone_quiet_schema &&
+        soloprefs::hasCompleteTail((size_t)file.available(), soloprefs::CHILD_TAIL_BYTES)) {
       rd(&_prefs.child_mode_enabled, sizeof(_prefs.child_mode_enabled));
       rd(&_prefs.child_mode_pin_hash, sizeof(_prefs.child_mode_pin_hash));
       rd(&_prefs.child_visible_pages, sizeof(_prefs.child_visible_pages));
@@ -626,7 +604,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
 
     // → 0xC0DE0026: Quiet Time follows Child Mode in Solo Plus. This also
     // consumes a standalone Quiet Time tail when no Child Mode tail preceded it.
-    if (file.available() >= (int)quiet_tail_size) {
+    if (soloprefs::hasCompleteTail((size_t)file.available(), soloprefs::QUIET_TAIL_BYTES)) {
       rd(&_prefs.quiet_time_enabled, sizeof(_prefs.quiet_time_enabled));
       rd(&_prefs.quiet_time_start_min, sizeof(_prefs.quiet_time_start_min));
       rd(&_prefs.quiet_time_end_min, sizeof(_prefs.quiet_time_end_min));
