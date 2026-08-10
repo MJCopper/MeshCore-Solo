@@ -1892,9 +1892,9 @@ bool UITask::notificationAllowed(UIEventType event, uint8_t contact_type,
 
   if (event == UIEventType::contactMessage || event == UIEventType::roomMessage) {
     if (!pub_key) return false;
-    ContactInfo* contact = the_mesh.lookupContactByPubKey(pub_key, 4);
+    ContactInfo* contact = the_mesh.lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
     uint8_t expected_type = event == UIEventType::roomMessage ? ADV_TYPE_ROOM : ADV_TYPE_CHAT;
-    return contact && contact_type == expected_type &&
+    return contact && contact->type == expected_type && contact_type == expected_type &&
            childmode::contactNotificationAllowed(true, _node_prefs, contact);
   }
 
