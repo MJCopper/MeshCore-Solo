@@ -7,7 +7,9 @@
 // Wraps BLE + USB serial interfaces: BLE takes priority when connected,
 // USB is the fallback while companion access is enabled.
 // enable()/disable() control both companion transports. USB power/charging is
-// unaffected; disabling only stops the framed companion protocol.
+// unaffected; disabling only stops the framed companion protocol. This legacy
+// adapter is retained as defence-in-depth for downstream builds that still use it;
+// current companion firmware uses MultiSerialInterface.
 // BLE state machine is only pumped when BLE is enabled; USB is not read while BLE is connected.
 class DualSerialInterface : public BaseSerialInterface {
   SerialBLEInterface _ble;
