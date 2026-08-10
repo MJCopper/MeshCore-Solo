@@ -31,3 +31,8 @@ TEST(SoloPrefsMigration, RejectsTruncatedFeatureTails) {
   EXPECT_TRUE(soloprefs::hasCompleteTail(soloprefs::CHILD_TAIL_BYTES,
                                          soloprefs::CHILD_TAIL_BYTES));
 }
+
+int main(int argc, char** argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}
