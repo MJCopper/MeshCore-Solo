@@ -511,7 +511,10 @@ void UITask::msgRead(int msgcount) {
   }
 }
 
-void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount) {
+void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount,
+                    uint8_t contact_type, const uint8_t* pub_key) {
+  (void)contact_type;
+  (void)pub_key;
   _msgcount = msgcount;
 
   if (_display != NULL) {
