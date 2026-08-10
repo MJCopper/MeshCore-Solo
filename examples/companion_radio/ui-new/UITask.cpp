@@ -1440,7 +1440,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 
 #if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
   // Wire1 is already brought up by sensors.begin() (EnvironmentSensorManager).
-  // CardKBInput performs one boot probe and does not retry an absent accessory.
+  // The controller performs one boot probe and does not retry an absent accessory.
   _cardkb.begin(Wire1, CARDKB_ADDRESS);
 #endif
 
@@ -1467,7 +1467,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 #endif
 
   if (_display != NULL) {
-    _display->turnOn();
+    turnDisplayOn();
   }
 
 #ifdef PIN_BUZZER
@@ -1598,7 +1598,7 @@ static const uint32_t CLOCK_RING_MS            = 60000;
 static const uint32_t CLOCK_ALARM_CATCHUP_SECS = 6 * 3600;  // fire late up to 6 h, else reschedule
 
 void UITask::wakeForAlarm() {
-  if (_display != NULL) _display->turnOn();
+  if (_display != NULL) turnDisplayOn();
   // Locked: the lock-screen blanking check (loop()) turns the display straight
   // back off once _lock_wake_until is in the past — which it always is by the
   // time an alarm fires. Hold the wake window open for the whole ring so the
@@ -2053,7 +2053,7 @@ void UITask::handleNewMsg(uint8_t path_len, const char* from_name, const char* t
 
   if (_display != NULL && !_locked) {
     if (!_display->isOn() && !isClientConnected()) {   // wake for the msg unless an app (BLE/USB) is already showing it
-      _display->turnOn();
+      turnDisplayOn();
     }
     if (_display->isOn()) {
       uint32_t aoff = autoOffMillis();
@@ -2161,7 +2161,7 @@ void UITask::shutdown(bool restart){
   if (restart) {
     _board->reboot();
   } else {
-    _display->turnOff();
+    turnDisplayOff();
     radio_driver.powerOff();
     // Power GPS down through its provider before SYSTEMOFF — GPIO pins retain
     // state in NRF52 SYSTEMOFF, so otherwise the module keeps draining the
@@ -2244,33 +2244,53 @@ static void formatDashVal(uint8_t field, char* val, int val_len, uint16_t batt_m
   }
 }
 
-void UITask::enqueueKey(char c) {
+void UITask::enqueueKey(char c, bool cardkb) {
   if (c == 0) return;
   uint8_t next = (_kq_head + 1) % KEY_QUEUE_SIZE;
   if (next == _kq_tail) return;  // full: drop newest rather than clobber unprocessed keys
-  _key_queue[_kq_head] = c;
+  _key_queue[_kq_head] = { c, cardkb };
   _kq_head = next;
 }
 
 bool UITask::dequeueKey(char& c) {
   if (_kq_tail == _kq_head) return false;
-  c = _key_queue[_kq_tail];
+  c = _key_queue[_kq_tail].key;
   _kq_tail = (_kq_tail + 1) % KEY_QUEUE_SIZE;
   return true;
 }
 
+void UITask::discardCardKBKeys() {
+  QueuedKey kept[KEY_QUEUE_SIZE];
+  uint8_t count = 0;
+  while (_kq_tail != _kq_head) {
+    QueuedKey event = _key_queue[_kq_tail];
+    _kq_tail = (_kq_tail + 1) % KEY_QUEUE_SIZE;
+    if (!event.cardkb) kept[count++] = event;
+  }
+  _kq_head = _kq_tail = 0;
+  for (uint8_t i = 0; i < count; i++) {
+    _key_queue[_kq_head] = kept[i];
+    _kq_head = (_kq_head + 1) % KEY_QUEUE_SIZE;
+  }
+}
+
+void UITask::turnDisplayOn() {
+  if (!_display) return;
+  bool was_on = _display->isOn();
+  _display->turnOn();
 #if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
-// CardKB's "fn" column (key_map in M5Stack's unit_CardKB.cpp): Fn+<physical
-// key> sends 0x80 + that key's row index, entirely disjoint from every other
-// code this UI recognises. Indexed by (raw - 0x80); non-letter slots (digits,
-// arrows, enter, tab, bs, space -- handled separately or unused) are 0.
-static const char CARDKB_FN_BASE[48] = {
-  0,0,0,0,0,0,0,0,0,0,0,0,0,                                     // esc,1-0,bs,tab
-  'q','w','e','r','t','y','u','i','o','p', 0, 0,0,                // q-p, (unused), LEFT,UP
-  'a','s','d','f','g','h','j','k','l', 0, 0,0,                    // a-l, enter, DOWN,RIGHT
-  'z','x','c','v','b','n','m', 0,0,0,                             // z-m, comma,period,space
-};
+  if (!was_on) _cardkb.resume();
 #endif
+}
+
+void UITask::turnDisplayOff() {
+  if (!_display) return;
+#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
+  _cardkb.suspend();
+  discardCardKBKeys();
+#endif
+  _display->turnOff();
+}
 
 // Poll an optional CardKB (I2C keyboard, addr 0x5F) on Wire1/Grove, feeding
 // the same key queue as every physical button. Most of its output needs no
@@ -2296,22 +2316,19 @@ static const char CARDKB_FN_BASE[48] = {
 //    they consume every other key.
 //  - Fn+<letter> opens the accent popup for that base letter directly
 //    (KeyboardWidget::openAccentFor()) -- no arrow-hunting across the grid.
-// CardKB is level-triggered (it keeps returning the held key's byte, not just
-// once), so _cardkb_last_raw debounces it into one press per physical
-// keypress, same as a MomentaryButton's CLICK event.
+// Transport, debounce, Fn decoding and suspend/resume state live in
+// CardKBController; this function only applies UI-context-specific behaviour.
 void UITask::pollCardKB() {
 #if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
   // The Tracker controls wake the display. Suspending CardKB I2C traffic while
   // it is off avoids a permanent accessory-input cost during normal idle time.
   if (!_display || !_display->isOn()) return;
 
-  uint8_t raw;
-  if (!_cardkb.poll(raw)) return;
-  if (raw == _cardkb_last_raw) return;   // still held (or still released) -- no new edge
-  _cardkb_last_raw = raw;
-  if (raw == 0) return;   // key just released, nothing to enqueue
+  CardKBController::Event event;
+  if (!_cardkb.poll(event)) return;
+  char raw = event.key;
 
-  // Compact mode (Settings > Keyboard's "Ext. KB" row) hides the letter grid
+  // Compact mode (Settings > Keyboard's "Virtual KB" row) hides the letter grid
   // entirely, and is meant to guarantee joystick-free operation: while it's
   // the active surface (KeyboardWidget::inPlainGridState() -- showing, no
   // popup open, not already mid cursor-move) arrows drive the text cursor
@@ -2326,21 +2343,21 @@ void UITask::pollCardKB() {
   bool compact_grid = _node_prefs && _node_prefs->keyboard_cardkb_compact && _kb.inPlainGridState();
 
   char key;
-  if (raw == 0xA3) {          // Fn+Enter -- submit the field
+  if (event.type == CardKBController::SUBMIT) {
     key = KEY_KB_ENTER;
-  } else if (compact_grid && (raw == (uint8_t)KEY_LEFT || raw == (uint8_t)KEY_UP ||
-                              raw == (uint8_t)KEY_DOWN || raw == (uint8_t)KEY_RIGHT)) {
+  } else if (event.type == CardKBController::KEY && compact_grid &&
+             (raw == KEY_LEFT || raw == KEY_UP || raw == KEY_DOWN || raw == KEY_RIGHT)) {
     char woke = checkDisplayOn((char)raw);   // already sets _next_refresh=0 when the display was on
     if (woke && !_locked) _kb.moveCursorDirect((char)raw);
     return;
-  } else if (raw == 0x09) {   // Tab -- Hold-Enter equivalent, always (single shortcut: there used to
-    if (compact_grid) {       // also be a separate Fn+Tab for this, but plain Tab already covers every
-      char woke = checkDisplayOn((char)raw);   // case Fn+Tab did -- outside the keyboard, and now inside it
-      if (woke && !_locked) _kb.openPlaceholders();   // too -- so the modifier was pure redundancy)
+  } else if (event.type == CardKBController::HOLD) {
+    if (compact_grid) {
+      char woke = checkDisplayOn(KEY_CONTEXT_MENU);
+      if (woke && !_locked) _kb.openPlaceholders();
       return;
     }
     key = KEY_CONTEXT_MENU;
-  } else if (raw == 0x80) {
+  } else if (event.type == CardKBController::LOCK_TOGGLE) {
     // Fn+Esc -- CardKB's lock/unlock gesture: a single press toggles _locked
     // directly (unlike the physical Hold-Back+3xEnter combo's 3-press
     // sequence), so it works to unlock a locked device after a Tracker button
@@ -2361,9 +2378,8 @@ void UITask::pollCardKB() {
     }
     _next_refresh = 0;
     return;
-  } else if (raw >= 0x80 && raw <= 0xAF) {   // Fn+<letter> -- open its accent popup
-    char base = CARDKB_FN_BASE[raw - 0x80];
-    if (base == 0) return;   // Fn+digit/symbol/arrow -- not used by this UI
+  } else if (event.type == CardKBController::ACCENT) {
+    char base = event.key;
     char woke = checkDisplayOn(base);
     // Every other key here goes through enqueueKey(), so it's naturally eaten
     // while locked (see the dequeue-time "if (!_locked && curr)" gate in
@@ -2379,9 +2395,9 @@ void UITask::pollCardKB() {
     // be frozen at (there's no grid navigation to have deliberately landed on
     // one in Compact) -- submit instead, same as Fn+Enter. Backspace/ASCII
     // passthrough is unaffected by Compact either way.
-    key = (compact_grid && raw == (uint8_t)KEY_ENTER) ? KEY_KB_ENTER : (char)raw;
+    key = (compact_grid && raw == KEY_ENTER) ? KEY_KB_ENTER : raw;
   }
-  enqueueKey(checkDisplayOn(key));
+  enqueueKey(checkDisplayOn(key), true);
 #endif
 }
 
@@ -2397,7 +2413,7 @@ void UITask::loop() {
     if (back_btn.isPressed()) {
       // Enter clicked while Back is held — lock/unlock sequence
       if (_display && !_display->isOn()) {
-        _display->turnOn();  // turn on display so hints are visible
+        turnDisplayOn();  // turn on display so hints are visible
       }
       _lock_wake_until = millis() + 5000;  // keep display on during sequence
       if (millis() - _lock_seq_ms > 3000) _lock_seq_count = 0;  // timeout reset
@@ -2411,7 +2427,7 @@ void UITask::loop() {
         if (_locked) {
           _lock_wake_until = millis() + 2000;
         } else {
-          if (_display && !_display->isOn()) _display->turnOn();
+          if (_display && !_display->isOn()) turnDisplayOn();
           uint32_t aoff = autoOffMillis();
           if (aoff > 0) _auto_off = millis() + aoff;
         }
@@ -2545,7 +2561,7 @@ void UITask::loop() {
 
   if (_display != NULL && _display->isOn()) {
     if (_locked && (int32_t)(millis() - _lock_wake_until) >= 0) {
-      _display->turnOff();
+      turnDisplayOff();
     } else if (_locked && millis() >= _next_refresh) {
       _display->startFrame();
       // Lock screen: clock + unlock hint popup
@@ -2657,7 +2673,7 @@ void UITask::loop() {
     }
 #endif
     if (!_locked && autoOffMillis() > 0 && (int32_t)(millis() - _auto_off) >= 0 && !isRinging()) {
-      _display->turnOff();
+      turnDisplayOff();
 #ifdef PIN_LED
       digitalWrite(PIN_LED, LOW);  // turn off status LED with display to save power
 #endif
@@ -3183,7 +3199,7 @@ bool UITask::addWaypoint(int32_t lat, int32_t lon, const char* label) {
 char UITask::checkDisplayOn(char c) {
   if (_display != NULL) {
     if (!_display->isOn()) {
-      _display->turnOn();
+      turnDisplayOn();
 #ifdef PIN_LED
       digitalWrite(PIN_LED, LOW);  // ensure LED is off when waking display (userLedHandler takes over)
 #endif

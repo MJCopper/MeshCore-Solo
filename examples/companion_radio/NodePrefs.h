@@ -422,7 +422,7 @@ struct NodePrefs {  // persisted to file
   uint8_t  gpio3_mode;
   uint8_t  gpio4_mode;
 
-  // Settings > Keyboard's "Ext. KB" row (boards with a second I2C bus for an
+  // Settings > Keyboard's "Virtual KB" row (boards with a second I2C bus for an
   // optional CardKB, see ENV_PIN_SDA/ENV_PIN_SCL, only). When on, the
   // on-screen keyboard skips drawing its full letter grid + special-row icons
   // -- an external-keyboard typist never looks at them -- and shows a compact

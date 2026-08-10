@@ -632,7 +632,7 @@ class SettingsScreen : public UIScreen {
       display.setCursor(valCol(display), y);
       display.print(_task->isCardKBConnected() ? "Found" : "Missing");
     } else if (item == KEYBOARD_CARDKB_COMPACT) {
-      display.print("Ext. KB");
+      display.print("Virtual KB");
       display.setCursor(valCol(display), y);
       display.print((p && p->keyboard_cardkb_compact) ? "Compact" : "Full");
 #endif

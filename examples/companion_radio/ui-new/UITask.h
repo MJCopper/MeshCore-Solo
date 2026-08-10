@@ -28,7 +28,7 @@
 #include "../solo/SoloRuntime.h"
 #include "KeyboardWidget.h"
 #if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
-  #include <helpers/ui/CardKBInput.h>
+  #include <helpers/ui/CardKBController.h>
 #endif
 
 class UITask : public AbstractUITask {
@@ -194,23 +194,22 @@ class UITask : public AbstractUITask {
   // slow refresh each. Also fixes losing a key when two buttons fire in the
   // same loop iteration.
   static const uint8_t KEY_QUEUE_SIZE = 16;
-  char _key_queue[KEY_QUEUE_SIZE];
+  struct QueuedKey { char key; bool cardkb; };
+  QueuedKey _key_queue[KEY_QUEUE_SIZE];
   uint8_t _kq_head = 0, _kq_tail = 0;
-  void enqueueKey(char c);
+  void enqueueKey(char c, bool cardkb = false);
   bool dequeueKey(char& c);
+  void discardCardKBKeys();
 
   // Optional M5Stack CardKB on the Grove/Wire1 bus. CARDKB_ADDRESS is an
   // explicit board/build opt-in so an unrelated sensor at 0x5F cannot silently
   // enable keyboard polling on other targets.
 #if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
-  CardKBInput _cardkb;
-  // CardKB is level-triggered, not edge-triggered -- it keeps returning the
-  // same byte for as long as the physical key is held, not just once. Track
-  // the last raw byte seen so a held key enqueues exactly one press instead
-  // of one per poll tick.
-  uint8_t  _cardkb_last_raw = 0;
+  CardKBController _cardkb;
 #endif
   void pollCardKB();
+  void turnDisplayOn();
+  void turnDisplayOff();
 
   void setCurrScreen(UIScreen* c);
 

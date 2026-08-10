@@ -620,7 +620,7 @@ struct KeyboardWidget {
       return 50;
     }
 
-    // Compact mode (Settings > Keyboard's "Ext. KB" row): an external-keyboard
+    // Compact mode (Settings > Keyboard's "Virtual KB" row): an external-keyboard
     // typist never looks at the letter grid or special-row icons, so skip
     // drawing them entirely -- no status line either, since nothing it could
     // show (script/page, T9-vs-ABC, caps) is actually actionable from CardKB:

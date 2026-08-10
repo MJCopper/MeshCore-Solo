@@ -24,6 +24,12 @@ To minimise battery use, CardKB is polled at most once every 20 ms and only whil
 the display is on. Wake the display with a Tracker button before using the
 keyboard. Polling stops after three consecutive I2C read failures.
 
+Display shutdown suspends the CardKB controller before the panel is turned off
+and removes any queued CardKB input. After a Tracker-button wake, input remains
+blocked until the controller observes that all CardKB keys have been released.
+This prevents a key pressed or held across the sleep boundary from operating the
+previously visible screen.
+
 CardKB shares the external Grove I2C bus with supported sensors and uses address
 `0x5F`. Multiple devices require a suitable I2C hub or splitter and distinct
 addresses.
@@ -57,7 +63,7 @@ Under **Settings › Keyboard**:
 | Setting | Values | Description |
 | ------- | ------ | ----------- |
 | CardKB | Found / Missing | Current boot detection or connection state |
-| Ext. KB | Full / Compact | Show the full on-screen grid or a compact external-keyboard status view |
+| Virtual KB | Full / Compact | Show the full on-screen grid or a compact external-keyboard status view |
 
 The CardKB status is informational and is not stored as a preference.
 
