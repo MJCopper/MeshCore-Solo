@@ -276,6 +276,9 @@ struct KeyboardWidget;
 // that don't set this (the common case -- {loc}/{time} etc.) keep the
 // original static-list, append-only behaviour untouched.
 typedef void (*PlaceholderRefreshFn)(KeyboardWidget& kb, void* ctx);
+typedef bool (*CompletionPreviewFn)(const KeyboardWidget& kb, void* ctx,
+                                    char* word, size_t word_size,
+                                    char* suffix, size_t suffix_size);
 
 struct KeyboardWidget {
   char buf[KB_MAX_LEN + 1];
@@ -316,8 +319,22 @@ struct KeyboardWidget {
   PlaceholderRefreshFn _ph_refresh = nullptr;
   void* _ph_refresh_ctx = nullptr;
   const char* _ph_title = "Placeholder:";   // popup title -- overridable so e.g. AdminScreen can say "Commands:"
+  int _ph_replace_start = 0;
+  int _ph_replace_end = 0;
+  bool _ph_range_set = false;
+  CompletionPreviewFn _completion_preview = nullptr;
+  void* _completion_preview_ctx = nullptr;
   void setPlaceholderRefresh(PlaceholderRefreshFn fn, void* ctx, const char* title = "Placeholder:") {
     _ph_refresh = fn; _ph_refresh_ctx = ctx; _ph_title = title;
+  }
+  void setCompletionRange(int start, int end) {
+    _ph_replace_start = start < 0 ? 0 : (start > len ? len : start);
+    _ph_replace_end = end < _ph_replace_start ? _ph_replace_start : (end > len ? len : end);
+    _ph_range_set = true;
+  }
+  void setCompletionPreview(CompletionPreviewFn fn, void* ctx) {
+    _completion_preview = fn;
+    _completion_preview_ctx = ctx;
   }
 
   // Live setting lookup — set once by UITask::begin(). NULL only in tests/tools
@@ -432,6 +449,10 @@ struct KeyboardWidget {
     _ph_refresh = nullptr;      // opt-in per session -- the owning screen re-sets it if it wants
     _ph_refresh_ctx = nullptr;  // contextual autocomplete right after this begin()
     _ph_title = "Placeholder:";
+    _ph_replace_start = _ph_replace_end = cursor_pos;
+    _ph_range_set = false;
+    _completion_preview = nullptr;
+    _completion_preview_ctx = nullptr;
     // default placeholders — always available
     _ph_count = 0;
     addPlaceholder("{loc}");
@@ -494,12 +515,15 @@ struct KeyboardWidget {
   // special-row case 3, which now calls this too). Used by CardKB's Compact
   // mode (UITask::pollCardKB(), plain Tab) so a placeholder is reachable
   // without ever seeing or navigating the grid.
-  void openPlaceholders() {
+  bool openPlaceholders() {
+    if (!inPlainGridState()) return false;
     t9_cell = -1;   // finalize any pending multi-tap cycle -- the pick below moves the
                     // cursor, so a later same-cell tap must not "continue" onto it
+    _ph_range_set = false;
     if (_ph_refresh) _ph_refresh(*this, _ph_refresh_ctx);   // contextual repopulate, if wired up
     _ph_menu.begin(_ph_title, KB_PH_VISIBLE);
     for (int i = 0; i < _ph_count; i++) _ph_menu.addItem(_ph_buf[i]);
+    return true;
   }
 
   // Moves the text cursor directly (LEFT/RIGHT one codepoint, UP/DOWN to
@@ -553,6 +577,13 @@ struct KeyboardWidget {
     const int spec_y  = chars_y + rows * cell_h;
     const int spec_w  = display.width() / KB_SPECIAL;
 
+    char completion_word[16] = "";
+    char completion_suffix[16] = "";
+    bool has_completion = _completion_preview &&
+        _completion_preview(*this, _completion_preview_ctx,
+                            completion_word, sizeof(completion_word),
+                            completion_suffix, sizeof(completion_suffix));
+
     // Multi-line text preview: the view follows cursor_pos (normally == len,
     // i.e. the end — so this is identical to the old "always the last line"
     // behaviour until cursor mode moves cursor_pos elsewhere, at which point
@@ -577,10 +608,21 @@ struct KeyboardWidget {
     // ...and the byte offset that line starts at.
     int ps = 0;
     for (int n = first_line * cpl; n > 0 && ps < len; n--) ps += kbUtf8CharBytesAt(buf, ps, len);
+    bool cursor_drawn = false;
     for (int pl = 0; pl < prev_lines; pl++) {
       int pe = ps;   // byte offset cpl codepoints further along (or end of text)
-      for (int k = 0; k < cpl && pe < len; k++) pe += kbUtf8CharBytesAt(buf, pe, len);
-      bool cursor_here = (ps <= cursor_pos && (cursor_pos < pe || pl == prev_lines - 1));
+      int line_chars = 0;
+      while (line_chars < cpl && pe < len) {
+        pe += kbUtf8CharBytesAt(buf, pe, len);
+        line_chars++;
+      }
+      // End-of-text belongs on the current row while it still has room. Only
+      // move the cursor to the following row when this one is exactly full.
+      bool cursor_here = !cursor_drawn && ps <= cursor_pos &&
+          (cursor_pos < pe ||
+           (cursor_pos == pe && pe == len && line_chars < cpl) ||
+           (pl == prev_lines - 1 && cursor_pos >= pe));
+      if (cursor_here) cursor_drawn = true;
       int line_end = (len < pe) ? len : pe;
       char linebuf[KB_PREVIEW_BYTES + 2];   // cpl codepoints + cursor '_' + NUL
       if (cursor_here) {
@@ -600,6 +642,26 @@ struct KeyboardWidget {
       display.translateUTF8ToBlocks(linebuf_t, linebuf, sizeof(linebuf_t));
       display.setCursor(0, pl * lh);
       display.print(linebuf_t);
+      // Show only the untyped remainder after the cursor, preserving every
+      // preview row. The underscore remains the insertion point, so "hel_lo"
+      // reads as typed "hel" plus suggested "lo" without looking committed.
+      if (cursor_here && has_completion && completion_suffix[0]) {
+        char before[KB_PREVIEW_BYTES + 1];
+        int before_n = cursor_pos - ps;
+        if (before_n < 0) before_n = 0;
+        if (before_n > line_end - ps) before_n = line_end - ps;
+        snprintf(before, sizeof(before), "%.*s", before_n, buf + ps);
+        char before_t[KB_PREVIEW_BYTES + 1];
+        display.translateUTF8ToBlocks(before_t, before, sizeof(before_t));
+        int ghost_x = display.getTextWidth(before_t) + cw;
+        int room = (display.width() - ghost_x) / cw;
+        if (room > 0) {
+          char ghost[16];
+          snprintf(ghost, sizeof(ghost), "%.*s", room, completion_suffix);
+          display.setCursor(ghost_x, pl * lh);
+          display.print(ghost);
+        }
+      }
       ps = pe;
     }
     display.fillRect(0, sep_y, display.width(), display.sepH());
@@ -635,7 +697,13 @@ struct KeyboardWidget {
     // just won't be visible on this screen which cell is selected.
     if (compact_ui) {
       display.setColor(DisplayDriver::LIGHT);
-      display.drawTextCentered(display.width() / 2, chars_y, "Tab: placeholders");
+      if (has_completion) {
+        char hint[24];
+        snprintf(hint, sizeof(hint), "Tab: %s", completion_word);
+        display.drawTextCentered(display.width() / 2, chars_y, hint);
+      } else {
+        display.drawTextCentered(display.width() / 2, chars_y, "Tab: placeholders");
+      }
       display.drawTextCentered(display.width() / 2, chars_y + lh, "Fn+letter: accent");
     } else {
       // character grid
@@ -806,16 +874,20 @@ struct KeyboardWidget {
         // appending after it, so picking a match doesn't duplicate what's
         // already been typed. Anything after the cursor (if it's not at the
         // end) shifts along with the insertion, same as a normal keystroke.
-        int base_len = cursor_pos;
+        int replace_start = cursor_pos;
+        int replace_end = cursor_pos;
         if (_ph_refresh) {
-          while (base_len > 0 && buf[base_len - 1] != ' ') base_len--;
+          replace_start = _ph_range_set ? _ph_replace_start : cursor_pos;
+          replace_end = _ph_range_set ? _ph_replace_end : cursor_pos;
+          if (!_ph_range_set)
+            while (replace_start > 0 && buf[replace_start - 1] != ' ') replace_start--;
         }
-        int tail_len = len - cursor_pos;
-        if (base_len + ph_len + tail_len <= max_len) {
-          memmove(buf + base_len + ph_len, buf + cursor_pos, tail_len);
-          memcpy(buf + base_len, ph, ph_len);
-          len = base_len + ph_len + tail_len;
-          cursor_pos = base_len + ph_len;
+        int tail_len = len - replace_end;
+        if (replace_start + ph_len + tail_len <= max_len) {
+          memmove(buf + replace_start + ph_len, buf + replace_end, tail_len);
+          memcpy(buf + replace_start, ph, ph_len);
+          len = replace_start + ph_len + tail_len;
+          cursor_pos = replace_start + ph_len;
           buf[len] = '\0';
         }
       }

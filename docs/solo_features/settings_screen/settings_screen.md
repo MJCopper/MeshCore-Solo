@@ -112,6 +112,18 @@ The **repeater** mode and its flood filters live on their own screen — see **T
 
 Applies to every on-screen text field (messages, waypoint labels, room passwords, preset names). Earlier releases labelled the grid *QWERTY*; the layout has always been alphabetical, so it is now named **ABC**.
 
+Message composition also provides a small common-word completion dictionary.
+In the Full editor, the best match is shown as uncommitted text after the
+underscore cursor (for example, `hel_lo`). In Compact CardKB mode the first hint
+shows the complete candidate, such as `Tab: hello`.
+Type the beginning of a word, then open the `{}` picker (or press **Tab** on
+CardKB) to see up to three matches under **Complete:**. Selecting one replaces
+the whole word at the cursor. Completion is deliberately limited to message
+text; passwords, names and configuration fields are never suggested or
+modified. The dictionary contains 600 frequency-ranked conversational words,
+curated from the SUBTLEX-US spoken-English corpus. Proper names, corpus
+fragments, profanity and explicit adult or violent terms are excluded.
+
 European Latin-diacritic letters (Polish, Czech, Slovak, German, French, Spanish, Portuguese, Nordic, etc.) aren't separate alphabet pages — instead, **Hold Enter** on a plain Latin letter that has accented variants (`a c d e i l n o r s t u y z`) opens a one-row popup of its accents (e.g. holding `a` offers `á à â ã ä å ą`); **LEFT/RIGHT** picks, **Enter** inserts it, **Cancel** dismisses with no change. Holding a letter with no accented variants (e.g. `b`) does nothing. Works on whichever page is currently showing Latin, whether that's Main or Additional.
 
 See [CardKB](../cardkb/cardkb.md) for connection, controls and polling behaviour.

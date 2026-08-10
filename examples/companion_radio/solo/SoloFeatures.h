@@ -33,6 +33,9 @@
 #ifndef SOLO_FEAT_GPIO
   #define SOLO_FEAT_GPIO SOLO_FEATURE_DEFAULT
 #endif
+#ifndef SOLO_FEAT_AUTOCOMPLETE
+  #define SOLO_FEAT_AUTOCOMPLETE SOLO_FEATURE_DEFAULT
+#endif
 
 #if defined(EINK_DISPLAY_MODEL)
   #define SOLO_CAP_EINK              1
@@ -68,6 +71,7 @@ struct Features {
   static constexpr bool REMOTE_BOT = SOLO_FEAT_REMOTE_BOT;
   static constexpr bool REPEATER = SOLO_FEAT_REPEATER;
   static constexpr bool GPIO = SOLO_FEAT_GPIO && SOLO_CAP_USER_GPIO;
+  static constexpr bool AUTOCOMPLETE = SOLO_FEAT_AUTOCOMPLETE;
 };
 
 struct Capabilities {

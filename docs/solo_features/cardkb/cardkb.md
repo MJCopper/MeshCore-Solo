@@ -45,7 +45,7 @@ addresses.
 | Fn + Enter | Submit the current text field |
 | Esc | Cancel / Back |
 | Backspace | Delete the previous character |
-| Fn + Tab | Open the Hold Enter context action |
+| Tab | Open message word completion/placeholders, or the Hold Enter context action elsewhere |
 | Fn + letter | Open the accent choices for that Latin letter |
 | Fn + Esc | Lock or unlock after the display has been woken |
 | Shift / Sym | Enter uppercase letters and symbols using CardKB's own modes |

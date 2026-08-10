@@ -2351,9 +2351,10 @@ void UITask::pollCardKB() {
     if (woke && !_locked) _kb.moveCursorDirect((char)raw);
     return;
   } else if (event.type == CardKBController::HOLD) {
-    if (compact_grid) {
-      char woke = checkDisplayOn(KEY_CONTEXT_MENU);
-      if (woke && !_locked) _kb.openPlaceholders();
+    // While either virtual-keyboard layout is active, Tab opens its completion
+    // picker directly. Elsewhere it remains the normal Hold-Enter action.
+    if (!_locked && _kb.openPlaceholders()) {
+      checkDisplayOn(KEY_CONTEXT_MENU);
       return;
     }
     key = KEY_CONTEXT_MENU;

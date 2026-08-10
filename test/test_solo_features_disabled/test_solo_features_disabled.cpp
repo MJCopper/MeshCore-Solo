@@ -8,6 +8,7 @@
 #define SOLO_FEAT_REMOTE_BOT 0
 #define SOLO_FEAT_REPEATER 0
 #define SOLO_FEAT_GPIO 0
+#define SOLO_FEAT_AUTOCOMPLETE 0
 #include "../../examples/companion_radio/solo/SoloPrefsCodec.h"
 
 TEST(SoloFeaturesDisabled, SidecarDoesNotPersistDisabledFeatureRecords) {

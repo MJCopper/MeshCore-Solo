@@ -5,6 +5,9 @@
 #include "NavView.h"   // navigate to a location shared inside a message
 #include "icons.h"     // scalable mini-icons (delivery markers)
 #include "ChannelsView.h"  // on-device channel add/edit form (Channels tab)
+#if SOLO_FEAT_AUTOCOMPLETE
+#include "../solo/WordCompleter.h"
+#endif
 
 class MessagesScreen : public UIScreen {
   UITask* _task;
@@ -50,6 +53,54 @@ class MessagesScreen : public UIScreen {
 
   // KEYBOARD
   KeyboardWidget* _kb;
+
+#if SOLO_FEAT_AUTOCOMPLETE
+  static void refreshWordCompletions(KeyboardWidget& kb, void* ctx) {
+    (void)ctx;
+    solo::WordCompleter::WordRange word = solo::WordCompleter::currentWord(
+        kb.buf, (size_t)kb.len, (size_t)kb.cursor_pos);
+    kb.clearPlaceholders();
+    kb.setCompletionRange((int)word.start, (int)word.end);
+    char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
+    uint8_t count = solo::WordCompleter::suggest(
+        kb.buf + word.start, (size_t)kb.cursor_pos - word.start,
+        matches, solo::WordCompleter::MAX_SUGGESTIONS);
+    for (uint8_t i = 0; i < count; i++) kb.addPlaceholder(matches[i]);
+    kb.addPlaceholder("{loc}");
+    kb.addPlaceholder("{time}");
+    kbAddSensorPlaceholders(kb, &sensors);
+  }
+
+  static bool previewWordCompletion(const KeyboardWidget& kb, void* ctx,
+                                    char* word, size_t word_size,
+                                    char* suffix, size_t suffix_size) {
+    (void)ctx;
+    if (!word || !suffix || word_size == 0 || suffix_size == 0) return false;
+    word[0] = suffix[0] = '\0';
+    // Keep the inline preview unambiguous: only suggest while appending at the
+    // end. The popup still supports replacing a word around a moved cursor.
+    if (kb.cursor_pos != kb.len) return false;
+    solo::WordCompleter::WordRange range = solo::WordCompleter::currentWord(
+        kb.buf, (size_t)kb.len, (size_t)kb.cursor_pos);
+    size_t prefix_len = (size_t)kb.cursor_pos - range.start;
+    if (prefix_len == 0) return false;
+    char match[1][solo::WordCompleter::MAX_WORD_LEN];
+    if (solo::WordCompleter::suggest(kb.buf + range.start, prefix_len, match, 1) != 1)
+      return false;
+    size_t match_len = strlen(match[0]);
+    if (match_len <= prefix_len) return false;
+    snprintf(word, word_size, "%s", match[0]);
+    snprintf(suffix, suffix_size, "%s", match[0] + prefix_len);
+    return true;
+  }
+
+  void enableWordCompletion() {
+    _kb->setPlaceholderRefresh(refreshWordCompletions, this, "Complete:");
+    _kb->setCompletionPreview(previewWordCompletion, this);
+  }
+#else
+  void enableWordCompletion() { }
+#endif
 
   // Context menu (opened by KEY_CONTEXT_MENU in CHANNEL_PICK / CONTACT_PICK / histories)
   PopupMenu _ctx_menu;
@@ -264,6 +315,8 @@ class MessagesScreen : public UIScreen {
     _sending_to_channel = channel;
     _reply_mode = false;
     _kb->begin(_share_text);
+    kbAddSensorPlaceholders(*_kb, &sensors);
+    enableWordCompletion();
     _phase = KEYBOARD;
   }
 
@@ -2074,6 +2127,7 @@ public:
         if (_msg_sel == 0) {
           _kb->begin(_reply_mode ? _reply_prefix : "");
           kbAddSensorPlaceholders(*_kb, &sensors);
+          enableWordCompletion();
           _phase = KEYBOARD;
           return true;
         }
