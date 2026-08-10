@@ -36,6 +36,7 @@ void RadioLibWrapper::begin() {
 
   _noise_floor = 0;
   _threshold = 0;
+  _cad_enabled = false;
 
   // start average out some samples
   _num_floor_samples = 0;
@@ -47,7 +48,6 @@ uint32_t RadioLibWrapper::getRngSeed() {
 }
 
 void RadioLibWrapper::setTxPower(int8_t dbm) {
-  _tx_dbm = dbm;
   _radio->setOutputPower(dbm);
 }
 
@@ -85,17 +85,6 @@ void RadioLibWrapper::resetAGC() {
 }
 
 void RadioLibWrapper::loop() {
-  // Power-save toggled vs the currently-armed RX mode: re-arm into the other mode
-  // once the radio is idle (don't interrupt an in-flight TX or an unread RX-done).
-  if (_power_save != _ps_active) {
-    if (state != STATE_TX_WAIT && !(state & STATE_INT_READY) && !isReceivingPacket()) armRecv();
-    return;
-  }
-  // In power-save the SX126x hardware duty-cycles RX on its own — nothing to poll
-  // here, and noise-floor sampling (used only by the disabled interference check)
-  // would read a chip that is asleep most of the time.
-  if (_power_save) return;
-
   if (state == STATE_RX && _num_floor_samples < NUM_NOISE_FLOOR_SAMPLES) {
     if (!isReceivingPacket()) {
       int rssi = getCurrentRSSI();
@@ -116,21 +105,9 @@ void RadioLibWrapper::loop() {
 }
 
 void RadioLibWrapper::startRecv() {
-  armRecv();
-}
-
-// Arm the receiver. In power-save mode this starts the SX126x hardware RX
-// duty-cycle (the chip cycles RX↔sleep and latches a preamble on its own);
-// otherwise a continuous RX. Falls back to continuous RX if the modem doesn't
-// support duty-cycle (base startPowerSaveRecv() returns UNSUPPORTED).
-void RadioLibWrapper::armRecv() {
-  if (_power_save) {
-    int16_t e = startPowerSaveRecv();
-    if (e == RADIOLIB_ERR_NONE) { state = STATE_RX; _ps_active = true; return; }
-    MESH_DEBUG_PRINTLN("RadioLibWrapper: RX duty-cycle unsupported (%d) — power-save off", (int)e);
-    _power_save = false;
-  }
-  _ps_active = false;
+  #if defined(USE_LR2021)
+  _radio->standby(); // without this LR2021 can throw -706 when calling startReceive after hardware CAD when side detectors are enabled
+  #endif
   int err = _radio->startReceive();
   if (err == RADIOLIB_ERR_NONE) {
     state = STATE_RX;
@@ -159,11 +136,20 @@ int RadioLibWrapper::recvRaw(uint8_t* bytes, int sz) {
         n_recv++;
       }
     }
+    #if defined(USE_LR2021)
+    state = STATE_RX;     // LR2021 stays in Rx after readData, calling startReceive while still in Rx throws -706 errors
+    #else
     state = STATE_IDLE;   // need another startReceive()
+    #endif
   }
 
   if (state != STATE_RX) {
-    armRecv();   // continuous RX, or re-arm the duty-cycle in power-save mode
+    int err = _radio->startReceive();
+    if (err == RADIOLIB_ERR_NONE) {
+      state = STATE_RX;
+    } else {
+      MESH_DEBUG_PRINTLN("RadioLibWrapper: error: startReceive(%d)", err);
+    }
   }
   return len;
 }
@@ -200,10 +186,26 @@ void RadioLibWrapper::onSendFinished() {
   state = STATE_IDLE;
 }
 
+int16_t RadioLibWrapper::performChannelScan() {
+  return _radio->scanChannel();
+}
+
 bool RadioLibWrapper::isChannelActive() {
-  return _threshold == 0 
-          ? false    // interference check is disabled
-          : getCurrentRSSI() > _noise_floor + _threshold;
+  // int.thresh: RSSI-based interference detection (relative to noise floor)
+  if (_threshold != 0 && getCurrentRSSI() > _noise_floor + _threshold) return true;
+
+  // cad: hardware channel activity detection
+  if (_cad_enabled) {
+    int16_t result = performChannelScan();
+    // scanChannel() triggers DIO interrupt (CAD done) which sets STATE_INT_READY
+    // via setFlag() ISR. Clear it before restarting RX so recvRaw() doesn't
+    // try to read a non-existent packet and count a spurious recv error.
+    state = STATE_IDLE;
+    startRecv();
+    if (result != RADIOLIB_CHANNEL_FREE) return true;
+  }
+
+  return false;
 }
 
 float RadioLibWrapper::getLastRSSI() const {
@@ -213,14 +215,41 @@ float RadioLibWrapper::getLastSNR() const {
   return _radio->getSNR();
 }
 
+// Approximate SNR threshold per SF for successful reception (based on Semtech datasheets)
+static float snr_threshold[] = {
+    -7.5,  // SF7 needs at least -7.5 dB SNR
+    -10,   // SF8 needs at least -10 dB SNR
+    -12.5, // SF9 needs at least -12.5 dB SNR
+    -15,  // SF10 needs at least -15 dB SNR
+    -17.5,// SF11 needs at least -17.5 dB SNR
+    -20   // SF12 needs at least -20 dB SNR
+};
+  
 float RadioLibWrapper::packetScoreInt(float snr, int sf, int packet_len) {
   if (sf < 7) return 0.0f;
+  
+  if (snr < snr_threshold[sf - 7]) return 0.0f;    // Below threshold, no chance of success
 
-  float floor = snrFloorForSF(sf);                 // min SNR for a chance of success
-  if (snr < floor) return 0.0f;                    // below the demod floor → no chance
-
-  auto success_rate_based_on_snr = (snr - floor) / 10.0;
+  auto success_rate_based_on_snr = (snr - snr_threshold[sf - 7]) / 10.0;
   auto collision_penalty = 1 - (packet_len / 256.0);   // Assuming max packet of 256 bytes
 
   return max(0.0, min(1.0, success_rate_based_on_snr * collision_penalty));
+}
+
+PacketMillis RadioLibWrapper::calcMaxPacketMillis(uint8_t sf, float bw, uint8_t cr, uint8_t preambleSymbols) {
+  // based on RadioLib's calculateTimeOnAir()
+  uint32_t tsym_us = ((uint32_t)10000 << sf) / (bw * 10);
+  uint32_t sfCoeff1_x4 = (sf == 5 || sf == 6) ? 25 : 17; // 6.25 : 4.25, semtech magic numbers to account for sync word + sfd
+
+  // preamble + syncword + sfd + header
+  uint32_t preamble_us = (((preambleSymbols + 8) * 4 + sfCoeff1_x4) * tsym_us) / 4;
+  
+  // airtime for max packet at current radio settings
+  uint32_t total_us   = _radio->getTimeOnAir(MAX_TRANS_UNIT);
+  // airtime for payload only (no preamble, header or SOF)
+  uint32_t payload_us = total_us > preamble_us ? total_us - preamble_us : 4000 - preamble_us; // fallback to 4 secs at worst case
+  // rescale payload_us for max possible CR
+  if (cr >= 5 && cr < 8) { payload_us = (payload_us * 8) / cr; }
+
+  return PacketMillis {(preamble_us + 999) / 1000, (payload_us + 999) / 1000};
 }

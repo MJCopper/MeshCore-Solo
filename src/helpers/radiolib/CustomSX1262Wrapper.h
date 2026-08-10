@@ -18,10 +18,10 @@ public:
     ((CustomSX1262 *)_radio)->setBandwidth(bw);
     ((CustomSX1262 *)_radio)->setCodingRate(cr);
     updatePreamble(sf);
+    PacketMillis pm = calcMaxPacketMillis(sf, bw, cr, preambleLengthForSF(sf));
+    ((CustomSX1262 *)_radio)->setPreambleMillis(pm.preambleMillis);
+    ((CustomSX1262 *)_radio)->setMaxPayloadMillis(pm.payloadMillis);
   }
-
-  // From RadioLib's SX1262::setFrequency(): RADIOLIB_CHECK_RANGE(freq, 150.0f, 960.0f, ...).
-  void getFreqBounds(float& min_mhz, float& max_mhz) const override { min_mhz = 150.0f; max_mhz = 960.0f; }
 
   bool isReceivingPacket() override { 
     return ((CustomSX1262 *)_radio)->isReceiving();
@@ -43,19 +43,8 @@ public:
 
   void doResetAGC() override { sx126xResetAGC((SX126x *)_radio); }
 
-  // Power-save RX = hardware RX duty-cycle (SX126x SetRxDutyCycle, datasheet
-  // 13.1.7). The chip's sequencer cycles RX↔sleep on its own, latches a preamble
-  // of the configured length and then stays in RX to receive the packet, raising
-  // RX_DONE on DIO1 — handled by the normal recvRaw() path, no MCU polling.
-  // minSymbols=8 is the reliable preamble-latch count for SF7-12. If the
-  // configured preamble is too short for a real duty-cycle (senderPreamble <
-  // 2*minSymbols+1), RadioLib transparently falls back to a continuous receive.
-  int16_t startPowerSaveRecv() override {
-    return ((SX126x *)_radio)->startReceiveDutyCycleAuto(preambleLengthForSF(_preamble_sf), 8);
-  }
-
-  void setRxBoostedGainMode(bool en) override {
-    ((CustomSX1262 *)_radio)->setRxBoostedGainMode(en);
+  bool setRxBoostedGainMode(bool en) override {
+    return ((CustomSX1262 *)_radio)->setRxBoostedGainMode(en) == RADIOLIB_ERR_NONE;
   }
   bool getRxBoostedGainMode() const override {
     return ((CustomSX1262 *)_radio)->getRxBoostedGainMode();
