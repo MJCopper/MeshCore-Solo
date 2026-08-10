@@ -1386,10 +1386,10 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   uint32_t aoff = autoOffMillis();
   _auto_off = millis() + (aoff > 0 ? aoff : AUTO_OFF_MILLIS);
 
-#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+#if defined(CARDKB_ADDRESS)
   // Wire1 is already brought up by sensors.begin() (EnvironmentSensorManager).
   // CardKBInput performs one boot probe and does not retry an absent accessory.
-  _cardkb.begin(Wire1);
+  _cardkb.begin(Wire1, CARDKB_ADDRESS);
 #endif
 
 #if defined(PIN_USER_BTN)
@@ -2089,7 +2089,7 @@ bool UITask::dequeueKey(char& c) {
   return true;
 }
 
-#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+#if defined(CARDKB_ADDRESS)
 // CardKB's "fn" column (key_map in M5Stack's unit_CardKB.cpp): Fn+<physical
 // key> sends 0x80 + that key's row index, entirely disjoint from every other
 // code this UI recognises. Indexed by (raw - 0x80); non-letter slots (digits,
@@ -2130,7 +2130,7 @@ static const char CARDKB_FN_BASE[48] = {
 // once), so _cardkb_last_raw debounces it into one press per physical
 // keypress, same as a MomentaryButton's CLICK event.
 void UITask::pollCardKB() {
-#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+#if defined(CARDKB_ADDRESS)
   // The Tracker controls wake the display. Suspending CardKB I2C traffic while
   // it is off avoids a permanent accessory-input cost during normal idle time.
   if (!_display || !_display->isOn()) return;
@@ -2432,7 +2432,7 @@ void UITask::loop() {
       }
       // Hint popup at bottom (like alert style)
       _display->setTextSize(1);
-#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+#if defined(CARDKB_ADDRESS)
       const char* hint = _lock_seq_count == 0 ? (isCardKBConnected() ? "Back+3xEnter/Fn+Esc" : "Hold Back + 3xEnter") :
                          _lock_seq_count == 1 ? "Enter x2 more..."   : "Enter x1 more...";
 #else

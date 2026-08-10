@@ -3,9 +3,11 @@
 #include <Arduino.h>
 #include <Wire.h>
 
-// Low-power transport for an optional M5Stack CardKB. Key interpretation stays
-// in UITask; this adapter owns only boot detection, bounded polling and failure
-// state so the policy can be reused without coupling it to the Solo UI.
+// Low-power transport for an explicitly enabled M5Stack CardKB. Key
+// interpretation stays in UITask; this adapter owns only boot detection,
+// bounded polling and failure state so the policy can be reused without
+// coupling it to the Solo UI. Builds must opt in with CARDKB_ADDRESS; an I2C
+// acknowledgement alone is not treated as permission to probe arbitrary buses.
 class CardKBInput {
   static const uint32_t POLL_INTERVAL_MS = 20;
   static const uint8_t MAX_READ_FAILURES = 3;

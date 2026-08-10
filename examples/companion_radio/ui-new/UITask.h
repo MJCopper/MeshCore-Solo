@@ -26,7 +26,7 @@
 #include "../Waypoint.h"
 #include "../LiveTrack.h"
 #include "KeyboardWidget.h"
-#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+#if defined(CARDKB_ADDRESS)
   #include <helpers/ui/CardKBInput.h>
 #endif
 
@@ -196,12 +196,10 @@ class UITask : public AbstractUITask {
   void enqueueKey(char c);
   bool dequeueKey(char& c);
 
-  // Optional M5Stack CardKB (I2C keyboard, addr 0x5F) on the Grove/Wire1 bus
-  // -- reuses ENV_PIN_SDA/ENV_PIN_SCL (already brought up for
-  // EnvironmentSensorManager) as the "this board has a second I2C bus" gate,
-  // rather than a new board-specific pin define. No-op entirely on boards
-  // without that bus, or when nothing ACKs 0x5F at boot.
-#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+  // Optional M5Stack CardKB on the Grove/Wire1 bus. CARDKB_ADDRESS is an
+  // explicit board/build opt-in so an unrelated sensor at 0x5F cannot silently
+  // enable keyboard polling on other targets.
+#if defined(CARDKB_ADDRESS)
   CardKBInput _cardkb;
   // CardKB is level-triggered, not edge-triggered -- it keeps returning the
   // same byte for as long as the physical key is held, not just once. Track
@@ -239,7 +237,7 @@ public:
   void onBLEDisconnected() override { _next_refresh = 0; }
 
   NodePrefs* getNodePrefs() const { return _node_prefs; }
-#if defined(ENV_PIN_SDA) && defined(ENV_PIN_SCL)
+#if defined(CARDKB_ADDRESS)
   bool isCardKBConnected() const { return _cardkb.isPresent(); }
 #else
   bool isCardKBConnected() const { return false; }
