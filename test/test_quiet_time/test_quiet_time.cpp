@@ -20,3 +20,8 @@ TEST(QuietTime, RejectsDisabledAndInvalidIntervals) {
   EXPECT_FALSE(quiettime::intervalActive(1440, 9 * 60, 17 * 60));
   EXPECT_FALSE(quiettime::intervalActive(12 * 60, 1440, 17 * 60));
 }
+
+int main(int argc, char** argv) {
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
+}
