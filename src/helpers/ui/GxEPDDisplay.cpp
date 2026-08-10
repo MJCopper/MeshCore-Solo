@@ -1,6 +1,18 @@
 #include "GxEPDDisplay.h"
 #include "LemonIcons.h"
 
+// This driver retains the monochrome UI's semantic colour mapping: DARK means
+// white paper/background and LIGHT means black ink/foreground (see setColor).
+ColorVal UIColor::window_bkg = DisplayDriver::DARK;
+ColorVal UIColor::title_bkg = DisplayDriver::DARK;
+ColorVal UIColor::title_txt = DisplayDriver::LIGHT;
+ColorVal UIColor::primary_txt = DisplayDriver::LIGHT;
+ColorVal UIColor::secondary_txt = DisplayDriver::LIGHT;
+ColorVal UIColor::warning_txt = DisplayDriver::LIGHT;
+ColorVal UIColor::popup_bkg = DisplayDriver::DARK;
+ColorVal UIColor::popup_txt = DisplayDriver::LIGHT;
+ColorVal UIColor::corp_blue = DisplayDriver::LIGHT;
+
 #ifdef EXP_PIN_BACKLIGHT
   #include <PCA9557.h>
   extern PCA9557 expander;
@@ -122,7 +134,7 @@ void GxEPDDisplay::clear() {
   display_crc.reset();
 }
 
-void GxEPDDisplay::startFrame(Color bkg) {
+void GxEPDDisplay::startFrame(ColorVal bkg) {
   display.fillScreen(GxEPD_WHITE);
   display.setTextColor(_curr_color = GxEPD_BLACK);
   _text_sz = 1;
@@ -162,8 +174,8 @@ void GxEPDDisplay::setTextSize(int sz) {
   }
 }
 
-void GxEPDDisplay::setColor(Color c) {
-  display_crc.update<Color>(c);
+void GxEPDDisplay::setColor(ColorVal c) {
+  display_crc.update<ColorVal>(c);
   // e-ink: DARK background = white paper, LIGHT foreground = black ink
   if (c == DARK) {
     display.setTextColor(_curr_color = GxEPD_WHITE);

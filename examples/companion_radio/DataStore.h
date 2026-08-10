@@ -20,6 +20,8 @@ class DataStore {
   IdentityStore identity_store;
 
   void loadPrefsInt(const char *filename, NodePrefs& prefs, double& node_lat, double& node_lon);
+  void loadSoloPrefs(NodePrefs& prefs);
+  void saveSoloPrefs(const NodePrefs& prefs);
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   void checkAdvBlobFile();
 #endif

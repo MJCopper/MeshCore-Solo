@@ -47,9 +47,11 @@ class SettingsScreen : public UIScreen {
     CH_MELODY,
     AD_SOUND,
     AD_SOUND_SCOPE,
+#if SOLO_FEAT_QUIET_TIME
     QUIET_TIME,
     QUIET_FROM,
     QUIET_UNTIL,
+#endif
     // Home pages section
     SECTION_HOME_PAGES,
     HOME_CLOCK, HOME_FAVOURITES, HOME_RADIO, HOME_BT, HOME_ADVERT,
@@ -80,15 +82,17 @@ class SettingsScreen : public UIScreen {
     KEYBOARD_TYPE,
     KEYBOARD_MAIN_ALPHABET,
     KEYBOARD_ALPHABET,
-#if defined(CARDKB_ADDRESS)
+#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
     KEYBOARD_CARDKB_STATUS,
     KEYBOARD_CARDKB_COMPACT,
 #endif
     // Contacts section
     SECTION_CONTACTS, DM_FILTER, CH_FILTER, ROOM_FILTER,
     // Child mode section
+#if SOLO_FEAT_CHILD_MODE
     SECTION_CHILD, CHILD_ENABLED, CHILD_PIN, CHILD_CHANNELS, CHILD_FAVOURITES,
     CHILD_MAP, CHILD_SENSORS, CHILD_SHUTDOWN,
+#endif
     // Messages section
     SECTION_MESSAGES,
     DM_RESEND,
@@ -105,7 +109,7 @@ class SettingsScreen : public UIScreen {
   bool _dirty = false;
 
   AccordionList _acc;
-  static const int NUM_SECTIONS = 9;
+  static const int NUM_SECTIONS = 8 + SOLO_FEAT_CHILD_MODE;
   static const int MAX_PER_SEC  = 16;
   uint8_t _sec_items[NUM_SECTIONS][MAX_PER_SEC]; // SettingItem per (section, row)
   uint8_t _sec_count[NUM_SECTIONS];
@@ -189,7 +193,11 @@ class SettingsScreen : public UIScreen {
            item == SECTION_HOME_PAGES ||
            item == SECTION_RADIO   || item == SECTION_SYSTEM ||
            item == SECTION_KEYBOARD ||
-           item == SECTION_CONTACTS || item == SECTION_CHILD || item == SECTION_MESSAGES;
+           item == SECTION_CONTACTS ||
+#if SOLO_FEAT_CHILD_MODE
+           item == SECTION_CHILD ||
+#endif
+           item == SECTION_MESSAGES;
   }
 
   const char* sectionName(int item) const {
@@ -200,7 +208,9 @@ class SettingsScreen : public UIScreen {
     if (item == SECTION_SYSTEM)     return "System";
     if (item == SECTION_KEYBOARD)   return "Keyboard";
     if (item == SECTION_CONTACTS)   return "Contacts";
+#if SOLO_FEAT_CHILD_MODE
     if (item == SECTION_CHILD)      return "Child Mode";
+#endif
     if (item == SECTION_MESSAGES)   return "Messages";
     return "";
   }
@@ -487,6 +497,7 @@ class SettingsScreen : public UIScreen {
       display.setCursor(valCol(display), y);
       { uint8_t v = p ? p->advert_sound_scope : ADVERT_SOUND_SCOPE_ALL;
         display.print(AD_SCOPE_LABELS[v < AD_SCOPE_COUNT ? v : 0]); }
+#if SOLO_FEAT_QUIET_TIME
     } else if (item == QUIET_TIME) {
       display.print("Quiet Time");
       display.setCursor(valCol(display), y);
@@ -505,6 +516,7 @@ class SettingsScreen : public UIScreen {
         display.setCursor(x, y);
         display.print(buf);
       }
+#endif
     } else if (isHomePage(item)) {
       if (p) ensurePageOrderInit(p);
       int pos = homePagePosition(item, p);
@@ -614,7 +626,7 @@ class SettingsScreen : public UIScreen {
       display.print("Additional");
       display.setCursor(valCol(display), y);
       display.print(NodePrefs::keyboardAlphabetLabel(p ? p->keyboard_alt_alphabet : 0));
-#if defined(CARDKB_ADDRESS)
+#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
     } else if (item == KEYBOARD_CARDKB_STATUS) {
       display.print("CardKB");
       display.setCursor(valCol(display), y);
@@ -671,6 +683,7 @@ class SettingsScreen : public UIScreen {
       display.print("Rooms");
       display.setCursor(valCol(display), y);
       display.print((p && p->room_fav_only) ? "fav" : "all");
+#if SOLO_FEAT_CHILD_MODE
     } else if (item == CHILD_ENABLED) {
       display.print("Enabled"); display.setCursor(valCol(display), y);
       display.print((p && p->child_mode_enabled) ? "ON" : "OFF");
@@ -688,6 +701,7 @@ class SettingsScreen : public UIScreen {
                     (item == CHILD_MAP ? "Map" : (item == CHILD_SENSORS ? "Sensors" : "Shutdown")));
       display.setCursor(valCol(display), y);
       display.print((p && (p->child_visible_pages & bit)) ? "ON" : "OFF");
+#endif
     } else if (item == DM_RESEND) {
       display.print("Resend");
       display.setCursor(valCol(display), y);
@@ -837,6 +851,7 @@ public:
     }
     NodePrefs* p = _task->getNodePrefs();
 
+#if SOLO_FEAT_QUIET_TIME
     if (_quiet_editor.active()) {
       TimeOfDayEditor::Result r = _quiet_editor.handleInput(c);
       if (r == TimeOfDayEditor::DONE && p) {
@@ -847,6 +862,7 @@ public:
       if (r != TimeOfDayEditor::NONE) _quiet_edit_item = -1;
       return true;
     }
+#endif
 
     // Keyboard editing mode for message slots
     if (_edit_slot >= 0) {
@@ -982,6 +998,7 @@ public:
       p->advert_sound_scope ^= 1;
       _dirty = true; return true;
     }
+#if SOLO_FEAT_QUIET_TIME
     if (_selected == QUIET_TIME && p && (left || right || enter)) {
       p->quiet_time_enabled ^= 1;
       _dirty = true; return true;
@@ -992,6 +1009,7 @@ public:
                                                   : p->quiet_time_end_min);
       return true;
     }
+#endif
     if (isHomePage(_selected) && p) {
       if (left || right) {
         movePageInOrder(_selected, left ? -1 : 1, p);
@@ -1102,7 +1120,7 @@ public:
       _dirty = true;
       return true;
     }
-#if defined(CARDKB_ADDRESS)
+#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
     if (_selected == KEYBOARD_CARDKB_COMPACT && p && (left || right || enter)) {
       p->keyboard_cardkb_compact ^= 1;
       _dirty = true;
@@ -1174,6 +1192,7 @@ public:
       _dirty = true;
       return true;
     }
+#if SOLO_FEAT_CHILD_MODE
     if (_selected == CHILD_PIN && p && enter) {
       _child_pin_confirming = false;
       _child_pin_first_hash = 0;
@@ -1210,6 +1229,7 @@ public:
       _dirty = true;
       return true;
     }
+#endif
     if (isMsgSlot(_selected) && enter) {
       int slot = msgSlotIndex(_selected);
       _edit_slot = slot;

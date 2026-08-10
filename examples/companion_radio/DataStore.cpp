@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "DataStore.h"
 #include "SoloPrefsMigration.h"
+#include "solo/SoloPrefsCodec.h"
 #include "Features.h"   // FEAT_JOYSTICK_ROTATION_SETTING (else `#if !FEAT_…` is always true)
 #include <target.h>     // radio_driver — repeater-profile freq bounds (getFreqBounds)
 
@@ -216,13 +217,48 @@ bool DataStore::saveMainIdentity(const mesh::LocalIdentity &identity) {
 }
 
 void DataStore::loadPrefs(NodePrefs& prefs, double& node_lat, double& node_lon) {
+  bool loaded_primary = false;
   if (_fs->exists("/new_prefs")) {
     loadPrefsInt("/new_prefs", prefs, node_lat, node_lon); // new filename
+    loaded_primary = true;
   } else if (_fs->exists("/node_prefs")) {
     loadPrefsInt("/node_prefs", prefs, node_lat, node_lon);
     savePrefs(prefs, node_lat, node_lon);                // save to new filename
     _fs->remove("/node_prefs"); // remove old
+    loaded_primary = true;
   }
+  // During the compatibility cycle /new_prefs is authoritative because older
+  // firmware can update that mirror without knowing about /solo_prefs. Use the
+  // sidecar only when no primary record exists; otherwise a stale sidecar after
+  // a downgrade or failed sidecar commit could resurrect an old Child Mode PIN.
+  if (!loaded_primary && (solo::Features::CHILD_MODE || solo::Features::QUIET_TIME))
+    loadSoloPrefs(prefs);
+}
+
+void DataStore::loadSoloPrefs(NodePrefs& prefs) {
+  File file = openRead(_fs, "/solo_prefs");
+  if (!file || file.size() > solo::PrefsCodec::MAX_ENCODED_SIZE) {
+    if (file) file.close();
+    return;
+  }
+  uint8_t data[solo::PrefsCodec::MAX_ENCODED_SIZE];
+  size_t len = (size_t)file.size();
+  bool complete = file.read(data, len) == (int)len;
+  file.close();
+  if (complete) solo::PrefsCodec::decode(prefs, data, len);
+}
+
+void DataStore::saveSoloPrefs(const NodePrefs& prefs) {
+  if (!solo::Features::CHILD_MODE && !solo::Features::QUIET_TIME) return;
+  uint8_t data[solo::PrefsCodec::MAX_ENCODED_SIZE];
+  size_t len = solo::PrefsCodec::encode(prefs, data, sizeof(data));
+  if (!len) return;
+  File file = ::openWrite(_fs, "/solo_prefs.tmp");
+  if (!file) return;
+  bool ok = file.write(data, len) == len;
+  file.close();
+  if (ok && commitTempFile(_fs, "/solo_prefs.tmp", "/solo_prefs")) return;
+  _fs->remove("/solo_prefs.tmp");
 }
 
 void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& node_lat, double& node_lon) {
@@ -846,7 +882,9 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
 
     file.close();
     if (ok) {
-      commitTempFile(_fs, "/new_prefs.tmp", "/new_prefs");
+      if (commitTempFile(_fs, "/new_prefs.tmp", "/new_prefs")) {
+        saveSoloPrefs(_prefs);
+      }
     } else {
       _fs->remove("/new_prefs.tmp");   // keep the previous good /new_prefs
     }

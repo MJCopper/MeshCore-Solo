@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <Mesh.h>
 #include "AbstractUITask.h"
+#include "solo/SoloPolicy.h"
 #include <helpers/ui/DisplayDriver.h>
 
 // Forward declaration for UITask
@@ -12,7 +13,7 @@ class UITask;
 #define FIRMWARE_VER_CODE 13
 
 #ifndef FIRMWARE_BUILD_DATE
-#define FIRMWARE_BUILD_DATE "6 Jun 2026"
+#define FIRMWARE_BUILD_DATE "9 Aug 2026"
 #endif
 
 // Solo release version. The underlying MeshCore protocol/base version is
@@ -150,7 +151,9 @@ protected:
   bool isRepeatLooped(const mesh::Packet* packet) const;
   // Overhear suppression only makes sense while repeating; gated behind its own
   // opt-in pref (Tools > Repeater > Suppress dup).
-  bool wantsOverhearSuppress() const override { return _prefs.client_repeat && _prefs.repeat_suppress_dup; }
+  bool wantsOverhearSuppress() const override {
+    return solo::Features::REPEATER && _prefs.client_repeat && _prefs.repeat_suppress_dup;
+  }
 
   void sendFloodScoped(const TransportKey& scope, mesh::Packet* pkt, uint32_t delay_millis);
   void sendFloodScoped(const ContactInfo& recipient, mesh::Packet* pkt, uint32_t delay_millis=0) override;
@@ -206,6 +209,9 @@ public:
   // outgoing history entry so a heard echo (onChannelRelayed) can match it back.
   uint32_t lastChannelRelaySeq() const { return _last_relay_seq; }
 private:
+  bool childRestrictionsActive() const;
+  bool childAllowsContact(const ContactInfo& contact, uint8_t expected_type) const;
+  bool childAllowsChannel(uint8_t channel_idx);
 
   // DataStoreHost methods
   bool onContactLoaded(const ContactInfo& contact) override { return addContact(contact); }

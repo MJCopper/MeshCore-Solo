@@ -34,6 +34,10 @@ protected:
   }
 
 public:
+  // Restricted-mode state exposed as policy context to mesh-side Solo services.
+  // A UI that does not explicitly expose a parent-unlocked session fails
+  // closed when mesh-side code sees child_mode_enabled in persisted prefs.
+  virtual bool isChildModeRestricted() const { return true; }
   void setHasConnection(bool connected) {
     bool prev = _connected;
     _connected = connected;

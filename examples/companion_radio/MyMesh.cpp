@@ -620,7 +620,7 @@ bool MyMesh::isRepeatLooped(const mesh::Packet* packet) const {
 }
 
 bool MyMesh::allowPacketForward(const mesh::Packet* packet) {
-  if (_prefs.client_repeat == 0) return false;
+  if (!solo::Features::REPEATER || _prefs.client_repeat == 0) return false;
   // Forwarding filters (Tools > Repeater) — all default off, so a plain repeater
   // is unaffected. Flood-only by design: on a direct route this node is the named
   // next hop, so dropping there would kill delivery with no alternate path, while
@@ -682,7 +682,8 @@ void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t 
 
   // Live position share: a verified DM, so key the track by the sender's pubkey.
   int32_t loc_lat, loc_lon;
-  if (_ui && geo::parseLocShare(text, loc_lat, loc_lon)) {
+  if (_ui && childAllowsContact(from, ADV_TYPE_CHAT) &&
+      geo::parseLocShare(text, loc_lat, loc_lon)) {
     _ui->onSharedLocation(from.id.pub_key, from.name, loc_lat, loc_lon, sender_timestamp, true);
   }
 
@@ -721,7 +722,8 @@ void MyMesh::onSignedMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uin
   // resolve that 4-byte prefix to a contact name and track by name. Unverified:
   // we only hold a 4-byte prefix here, not the full pubkey LiveTrack keys on.
   int32_t loc_lat, loc_lon;
-  if (_ui && geo::parseLocShare(text, loc_lat, loc_lon)) {
+  if (_ui && childAllowsContact(from, ADV_TYPE_ROOM) &&
+      geo::parseLocShare(text, loc_lat, loc_lon)) {
     ContactInfo* sc = sender_prefix ? lookupContactByPubKey(sender_prefix, 4) : nullptr;
     const char* who = (sc && sc->name[0]) ? sc->name : from.name;
     _ui->onSharedLocation(nullptr, who, loc_lat, loc_lon, sender_timestamp, false);
@@ -794,7 +796,8 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   // and unverified. parseLocShare requires an explicit [LOC] tag, so ordinary
   // chatter is ignored.
   int32_t loc_lat, loc_lon;
-  if (_ui && geo::parseLocShare(text, loc_lat, loc_lon)) {
+  if (_ui && childAllowsChannel(channel_idx) &&
+      geo::parseLocShare(text, loc_lat, loc_lon)) {
     char sender[32] = {0};
     const char* sep = strstr(text, ": ");
     if (sep && sep > text) {

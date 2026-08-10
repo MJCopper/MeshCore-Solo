@@ -25,8 +25,9 @@
 #include "../Trail.h"
 #include "../Waypoint.h"
 #include "../LiveTrack.h"
+#include "../solo/SoloRuntime.h"
 #include "KeyboardWidget.h"
-#if defined(CARDKB_ADDRESS)
+#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
   #include <helpers/ui/CardKBInput.h>
 #endif
 
@@ -42,8 +43,7 @@ class UITask : public AbstractUITask {
   unsigned long _next_refresh, _auto_off;
   NodePrefs* _node_prefs;
   bool _locked;
-  bool _child_admin_unlocked;
-  bool _child_was_locked = false;
+  solo::Runtime _solo;
   unsigned long _lock_wake_until;  // when to blank screen again after locked wake (5s)
   int  _lock_seq_count;            // Enter presses while Back held (lock/unlock sequence)
   unsigned long _lock_seq_ms;      // millis() of last lock-sequence press (for timeout)
@@ -101,7 +101,7 @@ class UITask : public AbstractUITask {
   UIScreen* diag_screen = nullptr;
   UIScreen* repeater_screen = nullptr;
   UIScreen* clock_tools = nullptr;
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
   UIScreen* gpio_screen = nullptr;
 #endif
   UIScreen* curr = nullptr;
@@ -202,7 +202,7 @@ class UITask : public AbstractUITask {
   // Optional M5Stack CardKB on the Grove/Wire1 bus. CARDKB_ADDRESS is an
   // explicit board/build opt-in so an unrelated sensor at 0x5F cannot silently
   // enable keyboard polling on other targets.
-#if defined(CARDKB_ADDRESS)
+#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
   CardKBInput _cardkb;
   // CardKB is level-triggered, not edge-triggered -- it keeps returning the
   // same byte for as long as the physical key is held, not just once. Track
@@ -228,7 +228,6 @@ public:
     _batt_mv = 0;
     _msgcount = _room_unread = 0;
     _locked = false;
-    _child_admin_unlocked = true;
     _lock_wake_until = 0;
     _lock_seq_count = 0; _lock_seq_ms = 0; _lock_seq_used = false;
     _last_notif_ch_idx = -1;
@@ -241,12 +240,11 @@ public:
   void onBLEDisconnected() override { _next_refresh = 0; }
 
   NodePrefs* getNodePrefs() const { return _node_prefs; }
-  bool isChildModeLocked() const {
-    return _node_prefs && _node_prefs->child_mode_enabled && !_child_admin_unlocked;
-  }
+  bool isChildModeLocked() const { return _solo.childLocked(_node_prefs); }
+  bool isChildModeRestricted() const override { return isChildModeLocked(); }
   void setChildAdminUnlocked(bool unlocked);
   void applyChildMode();
-#if defined(CARDKB_ADDRESS)
+#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
   bool isCardKBConnected() const { return _cardkb.isPresent(); }
 #else
   bool isCardKBConnected() const { return false; }

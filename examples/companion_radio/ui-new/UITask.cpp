@@ -182,7 +182,7 @@ static const int QUICK_MSGS_MAX = 10;
 #include "CompassScreen.h"
 #include "DiagnosticsScreen.h"
 #include "RepeaterScreen.h"
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
 #include "GpioScreen.h"
 #endif
 #include "ToolsScreen.h"
@@ -1432,13 +1432,13 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _display = display;
   _sensors = sensors;
   _node_prefs = node_prefs;
-  _child_admin_unlocked = !_node_prefs || !_node_prefs->child_mode_enabled;
+  _solo.begin(_node_prefs);
   applyChildMode();
   _kb.prefs = node_prefs;
   uint32_t aoff = autoOffMillis();
   _auto_off = millis() + (aoff > 0 ? aoff : AUTO_OFF_MILLIS);
 
-#if defined(CARDKB_ADDRESS)
+#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
   // Wire1 is already brought up by sensors.begin() (EnvironmentSensorManager).
   // CardKBInput performs one boot probe and does not retry an absent accessory.
   _cardkb.begin(Wire1, CARDKB_ADDRESS);
@@ -1513,19 +1513,25 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   child_unlock = new ChildUnlockScreen(this);
   tools_screen  = new ToolsScreen(this);
   ringtone_edit = new RingtoneEditorScreen(this, node_prefs);
+#if SOLO_FEAT_REMOTE_BOT
   bot_screen    = new BotScreen(this, node_prefs, &_kb);
+#endif
   admin_screen  = new AdminScreen(this);
   nearby_screen = new NearbyScreen(this);
   dashboard_config = new DashboardConfigScreen(this, node_prefs);
   auto_advert_screen = new AutoAdvertScreen(this, node_prefs);
+#if SOLO_FEAT_NAVIGATION
   live_share_screen = new LiveShareScreen(this, node_prefs);
   locator_screen  = new LocatorScreen(this, node_prefs);
   trail_screen       = new TrailScreen(this, &_trail);
   compass_screen     = new CompassScreen(this);
+#endif
   diag_screen        = new DiagnosticsScreen(this);
+#if SOLO_FEAT_REPEATER
   repeater_screen    = new RepeaterScreen(this);
+#endif
   clock_tools        = new ClockToolsScreen(this, node_prefs);
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
   gpio_screen        = new GpioScreen(this, node_prefs);
 #endif
   applyBrightness();
@@ -1539,13 +1545,13 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 void UITask::gotoSettingsScreen()  { setCurrScreen(settings); }
 void UITask::gotoChildUnlockScreen() { setCurrScreen(child_unlock); }
 void UITask::setChildAdminUnlocked(bool unlocked) {
-  _child_admin_unlocked = unlocked;
+  _solo.setParentUnlocked(unlocked);
   applyChildMode();
 }
 void UITask::applyChildMode() {
   if (!_interfaceManager) return;
   bool child_locked = isChildModeLocked();
-  if (child_locked && !_child_was_locked) {
+  if (_solo.recordChildLockState(_node_prefs)) {
     // Counts accumulated before the restricted session cannot be attributed
     // safely to an allowed sender (room count is aggregate), so start the
     // child-visible notification state clean. Message history is untouched.
@@ -1553,13 +1559,12 @@ void UITask::applyChildMode() {
     memset(_dm_unread_table, 0, sizeof(_dm_unread_table));
     _alert_expiry = 0;
   }
-  _child_was_locked = child_locked;
   if (child_locked) disableSerial();
   else enableSerial();
   _next_refresh = 0;
 }
 void UITask::gotoToolsScreen()     { setCurrScreen(tools_screen); }
-void UITask::gotoBotScreen()       { setCurrScreen(bot_screen); }
+void UITask::gotoBotScreen()       { if (solo::Features::REMOTE_BOT) setCurrScreen(bot_screen); }
 void UITask::gotoNearbyScreen()    { setCurrScreen(nearby_screen); }
 
 void UITask::pickAdminTarget() {
@@ -1572,17 +1577,17 @@ void UITask::openAdminFor(const ContactInfo& ci, bool from_picker) {
   ((AdminScreen*)admin_screen)->startFor(ci, from_picker);
 }
 void UITask::gotoDashboardConfig() { setCurrScreen(dashboard_config); }
-void UITask::gotoTrailScreen()     { setCurrScreen(trail_screen); }
-void UITask::gotoCompassScreen()   { setCurrScreen(compass_screen); }
+void UITask::gotoTrailScreen()     { if (solo::Features::NAVIGATION) setCurrScreen(trail_screen); }
+void UITask::gotoCompassScreen()   { if (solo::Features::NAVIGATION) setCurrScreen(compass_screen); }
 void UITask::gotoDiagnosticsScreen() { setCurrScreen(diag_screen); }
-void UITask::gotoRepeaterScreen()  { setCurrScreen(repeater_screen); }
+void UITask::gotoRepeaterScreen()  { if (solo::Features::REPEATER) setCurrScreen(repeater_screen); }
 void UITask::gotoClockTools()      { setCurrScreen(clock_tools); }
 void UITask::gotoGpioScreen() {
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
   setCurrScreen(gpio_screen);
 #endif
 }
-void UITask::gotoLiveShareScreen() { setCurrScreen(live_share_screen); }
+void UITask::gotoLiveShareScreen() { if (solo::Features::NAVIGATION) setCurrScreen(live_share_screen); }
 
 // ── Clock tools engine (alarm / countdown / ring) ───────────────────────────
 // Lives here, not in ClockToolsScreen, so it fires regardless of the current
@@ -1696,11 +1701,12 @@ void UITask::gotoRingtoneEditor(int slot) {
 // Map is a sub-view variant of the Trail screen: reset via onShow(), then
 // switch into the map view.
 void UITask::gotoMapScreen() {
+  if (!solo::Features::NAVIGATION) return;
   setCurrScreen(trail_screen);
   ((TrailScreen*)trail_screen)->showMapView();
 }
 
-void UITask::gotoLocatorScreen()    { setCurrScreen(locator_screen); }
+void UITask::gotoLocatorScreen()    { if (solo::Features::NAVIGATION) setCurrScreen(locator_screen); }
 void UITask::gotoAutoAdvertScreen() { setCurrScreen(auto_advert_screen); }
 
 // Public method to handle ping result callback
@@ -1888,7 +1894,8 @@ bool UITask::notificationAllowed(UIEventType event, uint8_t contact_type,
   if (!isChildModeLocked()) return true;
 
   if (event == UIEventType::advertReceivedFlood ||
-      event == UIEventType::advertReceivedZeroHop) return false;
+      event == UIEventType::advertReceivedZeroHop)
+    return solo::Policy::advertNotificationAllowed(true);
 
   if (event == UIEventType::contactMessage || event == UIEventType::roomMessage) {
     if (!pub_key) return false;
@@ -1896,22 +1903,23 @@ bool UITask::notificationAllowed(UIEventType event, uint8_t contact_type,
     uint8_t expected_type = event == UIEventType::roomMessage ? ADV_TYPE_ROOM : ADV_TYPE_CHAT;
     return contact && childmode::contactIdentityMatches(contact->type, contact_type,
                                                         expected_type) &&
-           childmode::contactNotificationAllowed(true, _node_prefs, contact);
+           solo::Policy::contactAllowed(_node_prefs, true, contact, expected_type);
   }
 
   if (event == UIEventType::channelMessage) {
     if (channel_idx < 0 || channel_idx >= MAX_GROUP_CHANNELS) return false;
     ChannelDetails channel;
     return the_mesh.getChannel(channel_idx, channel) &&
-           childmode::channelNotificationAllowed(true, _node_prefs, channel_idx,
-                                                 channel.name, channel.channel.secret);
+           solo::Policy::channelAllowed(_node_prefs, true, channel_idx,
+                                        channel.name, channel.channel.secret);
   }
 
   return true;
 }
 
 bool UITask::isQuietTimeActive() const {
-  return quiettime::active(_node_prefs, rtc_clock.getCurrentTime());
+  return solo::Features::QUIET_TIME &&
+         quiettime::active(_node_prefs, rtc_clock.getCurrentTime());
 }
 
 bool UITask::notificationPresentationAllowed(UIEventType event) const {
@@ -2251,7 +2259,7 @@ bool UITask::dequeueKey(char& c) {
   return true;
 }
 
-#if defined(CARDKB_ADDRESS)
+#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
 // CardKB's "fn" column (key_map in M5Stack's unit_CardKB.cpp): Fn+<physical
 // key> sends 0x80 + that key's row index, entirely disjoint from every other
 // code this UI recognises. Indexed by (raw - 0x80); non-letter slots (digits,
@@ -2292,7 +2300,7 @@ static const char CARDKB_FN_BASE[48] = {
 // once), so _cardkb_last_raw debounces it into one press per physical
 // keypress, same as a MomentaryButton's CLICK event.
 void UITask::pollCardKB() {
-#if defined(CARDKB_ADDRESS)
+#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
   // The Tracker controls wake the display. Suspending CardKB I2C traffic while
   // it is off avoids a permanent accessory-input cost during normal idle time.
   if (!_display || !_display->isOn()) return;
@@ -2594,7 +2602,7 @@ void UITask::loop() {
       }
       // Hint popup at bottom (like alert style)
       _display->setTextSize(1);
-#if defined(CARDKB_ADDRESS)
+#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
       const char* hint = _lock_seq_count == 0 ? (isCardKBConnected() ? "Back+3xEnter/Fn+Esc" : "Hold Back + 3xEnter") :
                          _lock_seq_count == 1 ? "Enter x2 more..."   : "Enter x1 more...";
 #else
@@ -2655,7 +2663,7 @@ void UITask::loop() {
 #endif
       // A parent session never survives display sleep. Child mode then closes
       // both companion transports before the device can be woken by the child.
-      if (_node_prefs && _node_prefs->child_mode_enabled && _child_admin_unlocked)
+      if (_node_prefs && _node_prefs->child_mode_enabled && _solo.parentUnlocked())
         setChildAdminUnlocked(false);
       if (_node_prefs && _node_prefs->auto_lock) {
         _locked = true;
@@ -2740,6 +2748,7 @@ void UITask::loop() {
     _livetrack.expire((uint32_t)rtc_clock.getCurrentTime());
   }
 
+  #if SOLO_FEAT_NAVIGATION
   // Live location sharing — periodically broadcast my [LOC] to the configured
   // target while moving (Map › Live share). Movement-gated so a stationary
   // device stays quiet unless a heartbeat is configured.
@@ -2792,6 +2801,7 @@ void UITask::loop() {
   // Locator proximity beeper — ticks faster the closer to the target. Runs on
   // its own short cadence (the crossing check above is too coarse for this).
   locatorProximityBeeper();
+  #endif
 }
 
 // Evaluate the single geofence against the current GPS fix. Crossing the radius
@@ -3111,6 +3121,9 @@ bool UITask::sendLocationShare(int32_t lat, int32_t lon) {
     snprintf(text, sizeof(text), LOCATION_MSG_TAG "%.5f,%.5f", lat / 1e6, lon / 1e6);
     ChannelDetails ch;
     if (!the_mesh.getChannel(_node_prefs->loc_share_channel_idx, ch)) return false;
+    if (!solo::Policy::channelAllowed(_node_prefs, isChildModeLocked(),
+                                      _node_prefs->loc_share_channel_idx,
+                                      ch.name, ch.channel.secret)) return false;
     return the_mesh.sendGroupMessage(rtc_clock.getCurrentTime(), ch.channel,
                                      the_mesh.getNodeName(), text, strlen(text));
   }
@@ -3119,7 +3132,8 @@ bool UITask::sendLocationShare(int32_t lat, int32_t lon) {
   // coordinate, which parseLocShare ignores on the receiving side).
   ContactInfo* c = the_mesh.lookupContactByPubKey(_node_prefs->loc_share_dm_prefix,
                                                   NodePrefs::FAVOURITE_PREFIX_LEN);
-  if (!c) return false;
+  if (!c || !solo::Policy::contactAllowed(_node_prefs, isChildModeLocked(), c,
+                                           ADV_TYPE_CHAT)) return false;
   snprintf(text, sizeof(text), LOCATION_MSG_TAG "%.5f,%.5f %s",
            lat / 1e6, lon / 1e6, the_mesh.getNodeName());
   uint32_t expected_ack = 0, est_timeout = 0;
@@ -3199,7 +3213,8 @@ char UITask::handleLongPress(char c) {
   // already open at the next wake instead of the press being consumed as a wake).
   c = checkDisplayOn(c);
   if (c == 0) return 0;
-  if (millis() - ui_started_at < 8000) {   // long press in first 8 seconds since startup -> CLI/rescue
+  if (millis() - ui_started_at < 8000 &&
+      solo::Policy::recoveryAllowed(isChildModeLocked())) {   // startup long press -> CLI/rescue
     the_mesh.enterCLIRescue();
     return 0;
   }
@@ -3288,7 +3303,7 @@ void UITask::botBuzz(int seconds) {
 #endif
 }
 
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
 static uint32_t gpioPin(int idx) {   // idx 1..4
   static const uint32_t pins[4] = { PIN_GPIO1, PIN_GPIO2, PIN_GPIO3, PIN_GPIO4 };
   return (idx >= 1 && idx <= 4) ? pins[idx - 1] : 0xFFFFFFFF;
@@ -3385,7 +3400,7 @@ static uint16_t readAnalogMv(uint32_t psel) {
 // cycling itself lives in GpioScreen; the bot's !gpioN on/off and boot
 // restore also route through here.
 void UITask::setGpioMode(int idx, uint8_t mode) {
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
   if (!_node_prefs) return;
   uint8_t* f = gpioModeField(_node_prefs, idx);
   uint32_t pin = gpioPin(idx);
@@ -3406,7 +3421,7 @@ void UITask::setGpioMode(int idx, uint8_t mode) {
 // doesn't call savePrefs() -- nothing changed, just re-applying what's
 // already on disk.
 void UITask::applyAllGpioModes() {
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
   if (!_node_prefs) return;
   for (int i = 1; i <= 4; i++) {
     uint8_t* f = gpioModeField(_node_prefs, i);
@@ -3416,7 +3431,7 @@ void UITask::applyAllGpioModes() {
 }
 
 bool UITask::botSetGPIO(int idx, bool on) {
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
   if (!_node_prefs) return false;
   uint8_t* f = gpioModeField(_node_prefs, idx);
   if (!f || (*f != 2 && *f != 3)) return false;   // not configured as Output
@@ -3429,7 +3444,7 @@ bool UITask::botSetGPIO(int idx, bool on) {
 }
 
 bool UITask::botGetGPIO(int idx, bool& is_output, bool& value) {
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
   if (!_node_prefs) return false;
   uint8_t* f = gpioModeField(_node_prefs, idx);
   uint32_t pin = gpioPin(idx);
@@ -3444,7 +3459,7 @@ bool UITask::botGetGPIO(int idx, bool& is_output, bool& value) {
 }
 
 bool UITask::gpioSupportsAnalog(int idx) const {
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
   return idx == 1 || idx == 2;
 #else
   (void)idx;
@@ -3453,7 +3468,7 @@ bool UITask::gpioSupportsAnalog(int idx) const {
 }
 
 bool UITask::botGetGPIOAnalog(int idx, int& millivolts) {
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
   if (!_node_prefs || !gpioSupportsAnalog(idx)) return false;
   uint8_t* f = gpioModeField(_node_prefs, idx);
   if (!f || *f != 4) return false;   // not in Analog mode

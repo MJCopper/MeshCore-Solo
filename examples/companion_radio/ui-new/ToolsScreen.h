@@ -8,15 +8,26 @@
 // section headers show their cog/marker plus a fold indicator.
 
 #include "AccordionList.h"
+#include "../solo/SoloFeatures.h"
 
 class ToolsScreen : public UIScreen {
   UITask* _task;
 
   enum Action {
-    ACT_NEARBY, ACT_LIVESHARE, ACT_TRAIL, ACT_LOCATOR, ACT_COMPASS,
-    ACT_BOT, ACT_AUTOADVERT, ACT_REPEATER, ACT_ADMIN,
+    ACT_NEARBY,
+#if SOLO_FEAT_NAVIGATION
+    ACT_LIVESHARE, ACT_TRAIL, ACT_LOCATOR, ACT_COMPASS,
+#endif
+#if SOLO_FEAT_REMOTE_BOT
+    ACT_BOT,
+#endif
+    ACT_AUTOADVERT,
+#if SOLO_FEAT_REPEATER
+    ACT_REPEATER,
+#endif
+    ACT_ADMIN,
     ACT_CLOCK, ACT_RINGTONE, ACT_DIAGNOSTICS
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
     , ACT_GPIO
 #endif
   };
@@ -45,18 +56,24 @@ class ToolsScreen : public UIScreen {
   void dispatch(Action a) {
     switch (a) {
       case ACT_NEARBY:      _task->gotoNearbyScreen();      break;
+#if SOLO_FEAT_NAVIGATION
       case ACT_LIVESHARE:   _task->gotoLiveShareScreen();   break;
       case ACT_TRAIL:       _task->gotoTrailScreen();       break;
       case ACT_LOCATOR:     _task->gotoLocatorScreen();     break;
       case ACT_COMPASS:     _task->gotoCompassScreen();     break;
+#endif
+#if SOLO_FEAT_REMOTE_BOT
       case ACT_BOT:         _task->gotoBotScreen();         break;
+#endif
       case ACT_AUTOADVERT:  _task->gotoAutoAdvertScreen();  break;
+#if SOLO_FEAT_REPEATER
       case ACT_REPEATER:    _task->gotoRepeaterScreen();    break;
+#endif
       case ACT_ADMIN:       _task->pickAdminTarget();       break;  // Admin is remote-only: pick a node first
       case ACT_CLOCK:       _task->gotoClockTools();        break;
       case ACT_RINGTONE:    _task->gotoRingtoneEditor();    break;
       case ACT_DIAGNOSTICS: _task->gotoDiagnosticsScreen(); break;
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
       case ACT_GPIO:        _task->gotoGpioScreen();        break;
 #endif
     }
@@ -119,27 +136,33 @@ public:
 
 const ToolsScreen::Tool ToolsScreen::LOCATION_TOOLS[] = {
   { "Nodes", &ICON_MAP_CONTACT,  ACT_NEARBY },
+#if SOLO_FEAT_NAVIGATION
   { "Live Share",   &ICON_GPS,          ACT_LIVESHARE },
   { "Trail",        &ICON_TRAIL,        ACT_TRAIL },
   { "Locator",    &ICON_MAP_WAYPOINT, ACT_LOCATOR },
   { "Compass",      &ICON_MAP_NORTH,    ACT_COMPASS },
+#endif
 };
 const ToolsScreen::Tool ToolsScreen::COMMS_TOOLS[] = {
+#if SOLO_FEAT_REMOTE_BOT
   { "Remote Bot",     &ICON_BOT,      ACT_BOT },
+#endif
   { "Auto-Advert",    &ICON_ADVERT,   ACT_AUTOADVERT },
+#if SOLO_FEAT_REPEATER
   { "Repeater",       &ICON_REPEATER, ACT_REPEATER },
+#endif
   { "Admin",          &ICON_GEAR,     ACT_ADMIN },
 };
 const ToolsScreen::Tool ToolsScreen::SYSTEM_TOOLS[] = {
   { "Clock Tools",     &ICON_ALARM, ACT_CLOCK },
   { "Ringtone Editor", &ICON_NOTE,  ACT_RINGTONE },
   { "Diagnostics",     &ICON_CHART, ACT_DIAGNOSTICS },
-#if defined(PIN_GPIO1)
+#if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
   { "GPIO",            &ICON_GEAR,  ACT_GPIO },
 #endif
 };
 const ToolsScreen::Section ToolsScreen::SECTIONS[] = {
-  { "Location", &ICON_MAP_CONTACT, LOCATION_TOOLS, 5 },
-  { "Comms",    &ICON_ADVERT,      COMMS_TOOLS,    4 },
+  { "Location", &ICON_MAP_CONTACT, LOCATION_TOOLS, (uint8_t)(sizeof(LOCATION_TOOLS)/sizeof(LOCATION_TOOLS[0])) },
+  { "Comms",    &ICON_ADVERT,      COMMS_TOOLS,    (uint8_t)(sizeof(COMMS_TOOLS)/sizeof(COMMS_TOOLS[0])) },
   { "System",   &ICON_GEAR,        SYSTEM_TOOLS,   (uint8_t)(sizeof(SYSTEM_TOOLS)/sizeof(SYSTEM_TOOLS[0])) },
 };

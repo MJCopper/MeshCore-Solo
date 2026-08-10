@@ -2,6 +2,23 @@
 // Bot logic — not part of upstream MyMesh.cpp.
 // Included at the bottom of MyMesh.cpp after all class definitions.
 
+inline bool MyMesh::childRestrictionsActive() const {
+  if (!solo::Features::CHILD_MODE || !_prefs.child_mode_enabled) return false;
+  return !_ui || _ui->isChildModeRestricted();
+}
+
+inline bool MyMesh::childAllowsContact(const ContactInfo& contact, uint8_t expected_type) const {
+  return solo::Policy::contactAllowed(&_prefs, childRestrictionsActive(), &contact, expected_type);
+}
+
+inline bool MyMesh::childAllowsChannel(uint8_t channel_idx) {
+  if (!childRestrictionsActive()) return true;
+  ChannelDetails channel;
+  return getChannel(channel_idx, channel) &&
+         solo::Policy::channelAllowed(&_prefs, true, channel_idx,
+                                      channel.name, channel.channel.secret);
+}
+
 // Minimum gap between two auto-replies to the same contact (DM), on the bot
 // channel, or on the bot room. Guards against floods and, with
 // botTriggerMatches()'s loop check, against bot↔bot ping-pong on a shared
@@ -134,7 +151,9 @@ bool MyMesh::botInQuietHours() const {
 }
 
 void MyMesh::tryBotReplyDM(const ContactInfo& from, const char* text, uint8_t hops) {
+  if (!solo::Features::REMOTE_BOT) return;
   if (from.type != ADV_TYPE_CHAT) return;
+  if (!childAllowsContact(from, ADV_TYPE_CHAT)) return;
   if (!(_prefs.bot_enabled && _prefs.bot_reply_dm[0])) return;
   if (!botDmSenderAllowed(from)) return;
   if (botInQuietHours()) return;
@@ -160,6 +179,8 @@ void MyMesh::tryBotReplyDM(const ContactInfo& from, const char* text, uint8_t ho
 }
 
 void MyMesh::tryBotReplyChannel(uint8_t channel_idx, const char* text, uint8_t hops) {
+  if (!solo::Features::REMOTE_BOT) return;
+  if (!childAllowsChannel(channel_idx)) return;
   // bot_channel_enabled is this target's own on/off switch — independent of
   // bot_enabled (the DM tab's Enable), matching how the commands paths and
   // the tabbed BotScreen UI already treat DM/channel/room as separate targets.
@@ -217,7 +238,9 @@ void MyMesh::tryBotReplyChannel(uint8_t channel_idx, const char* text, uint8_t h
 // NodePrefs::bot_room_prefix's doc comment) — otherwise sendMessage() still
 // "succeeds" locally but the server silently drops the unauthorized post.
 void MyMesh::tryBotReplyRoom(const ContactInfo& from, const uint8_t* sender_prefix, const char* text, uint8_t hops) {
+  if (!solo::Features::REMOTE_BOT) return;
   if (from.type != ADV_TYPE_ROOM) return;
+  if (!childAllowsContact(from, ADV_TYPE_ROOM)) return;
   // bot_room_enabled is this target's own on/off switch — independent of
   // bot_enabled, same reasoning as tryBotReplyChannel above.
   if (!(_prefs.bot_room_enabled && _prefs.bot_reply_room[0] &&
@@ -447,6 +470,8 @@ int MyMesh::botScanCommands(const char* body, uint8_t hops, uint32_t ts, char* o
 // the per-contact throttle still applies. Returns true when at least one command
 // was found (replied or throttled), so the caller skips the trigger-reply path.
 bool MyMesh::tryBotCommand(const ContactInfo& from, const char* text, uint8_t hops) {
+  if (!solo::Features::REMOTE_BOT) return false;
+  if (!childAllowsContact(from, ADV_TYPE_CHAT)) return false;
   if (!_prefs.bot_commands_enabled) return false;
   if (from.type != ADV_TYPE_CHAT) return false;
   if (!botDmSenderAllowed(from)) return false;
@@ -474,6 +499,8 @@ bool MyMesh::tryBotCommand(const ContactInfo& from, const char* text, uint8_t ho
 // broadcast to everyone on the channel, so unlike DM commands it respects quiet
 // hours and uses the global per-channel cooldown (shared with the trigger reply).
 bool MyMesh::tryBotChannelCommand(uint8_t channel_idx, const char* text, uint8_t hops) {
+  if (!solo::Features::REMOTE_BOT) return false;
+  if (!childAllowsChannel(channel_idx)) return false;
   if (!(_prefs.bot_commands_ch && _prefs.bot_channel_enabled &&
         channel_idx == _prefs.bot_channel_idx))
     return false;
@@ -513,6 +540,8 @@ bool MyMesh::tryBotChannelCommand(uint8_t channel_idx, const char* text, uint8_t
 // room (visible to every member), so it respects quiet hours and the shared
 // per-room cooldown, unlike the DM command path's private-pull exemption.
 bool MyMesh::tryBotRoomCommand(const ContactInfo& from, const uint8_t* sender_prefix, const char* text, uint8_t hops) {
+  if (!solo::Features::REMOTE_BOT) return false;
+  if (!childAllowsContact(from, ADV_TYPE_ROOM)) return false;
   if (from.type != ADV_TYPE_ROOM) return false;
   if (!(_prefs.bot_commands_room && _prefs.bot_room_enabled &&
         memcmp(from.id.pub_key, _prefs.bot_room_prefix, NodePrefs::FAVOURITE_PREFIX_LEN) == 0))
