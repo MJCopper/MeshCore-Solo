@@ -1543,7 +1543,7 @@ void UITask::setChildAdminUnlocked(bool unlocked) {
   applyChildMode();
 }
 void UITask::applyChildMode() {
-  if (!_serial) return;
+  if (!_interfaceManager) return;
   bool child_locked = isChildModeLocked();
   if (child_locked && !_child_was_locked) {
     // Counts accumulated before the restricted session cannot be attributed
@@ -1554,8 +1554,8 @@ void UITask::applyChildMode() {
     _alert_expiry = 0;
   }
   _child_was_locked = child_locked;
-  if (child_locked) _serial->disable();
-  else _serial->enable();
+  if (child_locked) disableSerial();
+  else enableSerial();
   _next_refresh = 0;
 }
 void UITask::gotoToolsScreen()     { setCurrScreen(tools_screen); }
