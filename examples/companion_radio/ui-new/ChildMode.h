@@ -5,6 +5,7 @@
 #include <helpers/ContactInfo.h>
 #include <helpers/ui/DisplayDriver.h>
 #include "DigitEditor.h"
+#include "ChildModePolicy.h"
 
 // Small policy helper kept independent of the screens so upstream UI changes
 // only need to call these predicates. This is intentionally a practical UI
@@ -45,7 +46,7 @@ static inline uint32_t pinHash(uint32_t pin) {
 }
 
 static inline bool contactAllowed(const NodePrefs* prefs, const ContactInfo& contact) {
-  return !prefs || !prefs->child_mode_enabled || (contact.flags & 0x01);
+  return !prefs || !prefs->child_mode_enabled || favouriteFlagSet(contact.flags);
 }
 
 static inline bool privateChannel(const char* name, const uint8_t* secret) {
@@ -73,8 +74,8 @@ static inline bool privateChannel(const char* name, const uint8_t* secret) {
 static inline bool channelAllowed(const NodePrefs* prefs, uint8_t index,
                                   const char* name, const uint8_t* secret) {
   if (!prefs || !prefs->child_mode_enabled) return true;
-  return prefs->child_channels_enabled && index < 64 &&
-         (prefs->ch_fav_bitmask & (1ULL << index)) != 0 &&
+  return prefs->child_channels_enabled &&
+         favouriteChannelSet(prefs->ch_fav_bitmask, index) &&
          privateChannel(name, secret);
 }
 
