@@ -1544,7 +1544,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
     // silently drops every incoming packet — DMs and channels included — until a slot
     // frees up.
     : BaseChatMesh(radio, *new ArduinoMillis(), rng, rtc, *new StaticPoolPacketManager(32), tables),
-      _serial(NULL), telemetry(MAX_PACKET_PAYLOAD - 4), _store(&store), _ui(ui) {
+      _serial(NULL), telemetry(MAX_PACKET_PAYLOAD - 4), _store(&store), _ui(ui), _iter(0) {
   _iter_started = false;
   _cli_rescue = false;
   for (int i = 0; i < RELAY_RING; i++) _relay[i].pending = false;
