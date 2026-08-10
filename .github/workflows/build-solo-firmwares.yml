@@ -13,31 +13,13 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-
-  get-solo-envs:
-    runs-on: ubuntu-latest
-    outputs:
-      envs: ${{ steps.list-envs.outputs.envs }}
-    steps:
-
-      - name: Clone Repo
-        uses: actions/checkout@v4
-
-      - name: List solo_dual envs
-        id: list-envs
-        run: |
-          envs=$(grep -rh '^\[env:' platformio.ini variants/ \
-            | sed 's/\[env://;s/\]//' \
-            | grep '_solo_dual$' \
-            | jq -R -s -c 'split("\n") | map(select(length > 0))')
-          echo "envs=$envs" >> $GITHUB_OUTPUT
-
   build:
-    needs: get-solo-envs
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        env: ${{ fromJson(needs.get-solo-envs.outputs.envs) }}
+        env:
+          - WioTrackerL1_companion_solo_dual
+          - WioTrackerL1Eink_companion_solo_dual
     steps:
 
       - name: Clone Repo

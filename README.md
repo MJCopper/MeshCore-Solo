@@ -1,6 +1,6 @@
 # MeshCore Solo Companion Firmware
 
-A fork of the official [MeshCore](https://github.com/meshcore-dev/MeshCore) companion radio firmware with extended features and UI enhancements, targeting a growing set of supported devices.
+A fork of the official [MeshCore](https://github.com/meshcore-dev/MeshCore) companion radio firmware with extended features and UI enhancements for the Seeed Wio Tracker L1.
 
 Join the discussion on the official MeshCore Discord: https://discord.gg/sdhYArU2jr
 
@@ -14,7 +14,6 @@ Solo firmware thread: https://discord.com/channels/1495203904898728149/150529433
 | ------ | ------- | ------------- |
 | Seeed Wio Tracker L1 (OLED) | SSD1306 / SH1106 128 × 64 | `solo-<version>-WioTrackerL1.uf2` |
 | Seeed Wio Tracker L1 (E-ink) | GxEPD2 250 × 122 | `solo-<version>-WioTrackerL1Eink.uf2` |
-| GAT562 30S Mesh Kit | SSD1306 128 × 64 | `solo-<version>-GAT562-30S-Mesh-Kit.uf2` |
 
 All firmware files are published on the [releases page](https://github.com/MarekZegare4/MeshCore-Solo/releases). Each binary supports both BLE and USB serial — there are no separate BLE/USB builds.
 

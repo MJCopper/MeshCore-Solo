@@ -443,8 +443,8 @@ left (PPK2 current measurement, multi-hop APC gating).
 
 ### ✅ Companion repeater + forwarding filters + diagnostics
 
-On-device repeater for the Solo companion, scoped to the SX1262 boards (Wio
-Tracker L1 OLED/e-ink, GAT562 30S). All on `feature/companion-repeater-presets`.
+On-device repeater for the Solo companion, scoped to the Wio Tracker L1
+OLED/e-ink. All on `feature/companion-repeater-presets`.
 
 - **Repeater toggle** (`client_repeat`, Tools › Repeater) — the companion relays
   flood/direct traffic, still working as a normal companion. By default it

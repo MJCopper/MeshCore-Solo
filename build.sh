@@ -239,10 +239,8 @@ build_wio_tracker_l1_firmwares() {
 }
 
 build_solo_firmwares() {
-  # build_firmware "GAT562_30S_Mesh_Kit_solo_dual"
-  # build_firmware "WioTrackerL1_companion_dual"
-  # build_firmware "WioTrackerL1Eink_companion_dual"
-  build_all_firmwares_by_suffix "_solo_dual"
+  build_firmware "WioTrackerL1_companion_solo_dual"
+  build_firmware "WioTrackerL1Eink_companion_solo_dual"
 }
 
 build_room_server_firmwares() {

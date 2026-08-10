@@ -1,7 +1,4 @@
 #include "SSD1306Display.h"
-#ifdef OLED_MISC_FIXED_FONT
-  #include "MiscFixedRenderer.h"
-#endif
 
 bool SSD1306Display::i2c_probe(TwoWire& wire, uint8_t addr) {
   wire.beginTransmission(addr);
@@ -67,8 +64,6 @@ void SSD1306Display::startFrame(ColorVal bkg) {
 }
 
 void SSD1306Display::setTextSize(int sz) {
-  _text_sz = sz;
-  _vw_dirty = true;
   display.setTextSize(sz);
 }
 
@@ -81,18 +76,8 @@ void SSD1306Display::setCursor(int x, int y) {
   display.setCursor(x, y);
 }
 
-#ifdef OLED_MISC_FIXED_FONT
-uint8_t SSD1306Display::glyphXAdvance(uint32_t cp) {
-  return miscFixedXAdvance(cp, _text_sz);
-}
-#endif
-
 void SSD1306Display::print(const char* str) {
-#ifdef OLED_MISC_FIXED_FONT
-  miscFixedPrint(display, str, _text_sz, _color);
-#else
   display.print(str);
-#endif
 }
 
 void SSD1306Display::fillRect(int x, int y, int w, int h) {
@@ -108,14 +93,10 @@ void SSD1306Display::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
 }
 
 uint16_t SSD1306Display::getTextWidth(const char* str) {
-#ifdef OLED_MISC_FIXED_FONT
-  return miscFixedTextWidth(str, _text_sz);
-#else
   int16_t x1, y1;
   uint16_t w, h;
   display.getTextBounds(str, 0, 0, &x1, &y1, &w, &h);
   return w;
-#endif
 }
 
 void SSD1306Display::endFrame() {
