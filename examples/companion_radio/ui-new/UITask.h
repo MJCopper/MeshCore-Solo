@@ -221,7 +221,7 @@ class UITask : public AbstractUITask {
 
 public:
 
-  UITask(mesh::MainBoard* board, BaseSerialInterface* serial) : AbstractUITask(board, serial), _display(NULL), _sensors(NULL), _node_prefs(NULL), _dash_lpp(200) {
+  UITask(mesh::MainBoard* board, MultiSerialInterface* interface_manager) : AbstractUITask(board, interface_manager), _display(NULL), _sensors(NULL), _node_prefs(NULL), _dash_lpp(200) {
     next_batt_chck = _next_refresh = 0;
     ui_started_at = 0;
     _batt_mv = 0;

@@ -4,7 +4,7 @@
 #include <helpers/ui/DisplayDriver.h>
 #include <helpers/ui/UIScreen.h>
 #include <helpers/SensorManager.h>
-#include <helpers/BaseSerialInterface.h>
+#include <helpers/MultiSerialInterface.h>
 #include <Arduino.h>
 
 #ifdef PIN_BUZZER
@@ -26,10 +26,10 @@ enum class UIEventType {
 class AbstractUITask {
 protected:
   mesh::MainBoard* _board;
-  BaseSerialInterface* _serial;
+  MultiSerialInterface* _interfaceManager;
   bool _connected;
 
-  AbstractUITask(mesh::MainBoard* board, BaseSerialInterface* serial) : _board(board), _serial(serial) {
+  AbstractUITask(mesh::MainBoard* board, MultiSerialInterface* interfaceManager) : _board(board), _interfaceManager(interfaceManager) {
     _connected = false;
   }
 
@@ -73,14 +73,19 @@ public:
   // True only when a BLE central is actually bonded/connected. On a dual
   // (BLE+USB) interface hasConnection() is always true (USB counts), so use
   // this for BLE-specific UI like the pairing-PIN prompt.
-  bool isBLEConnected() const { return _serial->isBLEConnected(); }
+  bool isBLEConnected() const { return _interfaceManager->isBluetoothConnected(); }
   // True when a companion app is connected over any transport (BLE bonded or an
   // open USB-CDC port). For app-connected behaviour like Auto buzzer mute.
-  bool isClientConnected() const { return _serial->isClientConnected(); }
+  bool isClientConnected() const { return _interfaceManager->isClientConnected(); }
   uint16_t getBattMilliVolts() const { return _board->getBattMilliVolts(); }
-  bool isSerialEnabled() const { return _serial->isEnabled(); }
-  void enableSerial() { _serial->enable(); }
-  void disableSerial() { _serial->disable(); }
+  bool isBluetoothEnabled() const { return _interfaceManager->isBluetoothEnabled(); }
+  void enableBluetooth() { _interfaceManager->enableBluetooth(); }
+  void disableBluetooth() { _interfaceManager->disableBluetooth(); }
+  // Compatibility names retained for Solo screens and Child Mode. These
+  // control every companion transport, matching the old dual-interface wrapper.
+  bool isSerialEnabled() const { return _interfaceManager->isEnabled(); }
+  void enableSerial() { _interfaceManager->enable(); }
+  void disableSerial() { _interfaceManager->disable(); }
   virtual void msgRead(int msgcount) = 0;
   virtual void newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount, uint8_t contact_type = 0, const uint8_t* pub_key = nullptr) = 0;
   virtual void notify(UIEventType t = UIEventType::none) = 0;
