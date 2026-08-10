@@ -15,9 +15,10 @@ class UITask;
 #define FIRMWARE_BUILD_DATE "6 Jun 2026"
 #endif
 
-// Versioning: vX.Y = upstream base, solo.N = fork revision
+// Solo release version. The underlying MeshCore protocol/base version is
+// reported separately through the MESHCORE_VERSION build flag.
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.16-solo.0"
+#define FIRMWARE_VERSION "v1.24.1"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
