@@ -1,4 +1,5 @@
 #include "MyMesh.h"
+#include "solo/RepeaterTiming.h"
 #include "MsgExpand.h"
 #include "GeoUtils.h"
 #include "Features.h"
@@ -281,12 +282,14 @@ int MyMesh::getInterferenceThreshold() const {
 }
 
 int MyMesh::calcRxDelay(float score, uint32_t air_time) const {
-  if (_prefs.rx_delay_base <= 0.0f) return 0;
-  return (int)((pow(_prefs.rx_delay_base, 0.85f - score) - 1.0) * air_time);
+  const float base = _prefs.client_repeat ? _prefs.repeat_rx_delay_base : _prefs.rx_delay_base;
+  if (base <= 0.0f) return 0;
+  return (int)((pow(base, 0.85f - score) - 1.0) * air_time);
 }
 
 uint32_t MyMesh::getRetransmitDelay(const mesh::Packet *packet) {
-  uint32_t t = (_radio->getEstAirtimeFor(packet->getPathByteLen() + packet->payload_len + 2) * 0.5f);
+  uint32_t airtime = _radio->getEstAirtimeFor(packet->getPathByteLen() + packet->payload_len + 2);
+  uint32_t t = solo::RepeaterTiming::delayWindow(airtime, _prefs.repeat_flood_tx_factor);
   uint32_t d = getRNG()->nextInt(0, 5*t + 1);
   // Yield filter (Tools > Repeater): scale the flood retransmit delay so a
   // mobile companion waits longer and lets better-sited fixed repeaters win the
@@ -295,7 +298,8 @@ uint32_t MyMesh::getRetransmitDelay(const mesh::Packet *packet) {
   return d * (1 + _prefs.repeat_delay_boost);
 }
 uint32_t MyMesh::getDirectRetransmitDelay(const mesh::Packet *packet) {
-  uint32_t t = (_radio->getEstAirtimeFor(packet->getPathByteLen() + packet->payload_len + 2) * 0.2f);
+  uint32_t airtime = _radio->getEstAirtimeFor(packet->getPathByteLen() + packet->payload_len + 2);
+  uint32_t t = solo::RepeaterTiming::delayWindow(airtime, _prefs.repeat_direct_tx_factor);
   return getRNG()->nextInt(0, 5*t + 1);
 }
 
@@ -621,15 +625,10 @@ bool MyMesh::isRepeatLooped(const mesh::Packet* packet) const {
 
 bool MyMesh::allowPacketForward(const mesh::Packet* packet) {
   if (!solo::Features::REPEATER || _prefs.client_repeat == 0) return false;
-  // Forwarding filters (Tools > Repeater) — all default off, so a plain repeater
-  // is unaffected. Flood-only by design: on a direct route this node is the named
-  // next hop, so dropping there would kill delivery with no alternate path, while
-  // dropping a flood copy just trims redundancy other nodes still carry.
+  // Apply only the standard automatic flood-safety limits. User-configurable
+  // advert, global-hop and SNR filters were removed because they could silently
+  // prevent otherwise valid mesh delivery.
   if (packet->isRouteFlood()) {
-    if (_prefs.repeat_min_snr != NodePrefs::REPEAT_SNR_DISABLED
-        && packet->getSNR() < (float)_prefs.repeat_min_snr) return false;
-    if (_prefs.repeat_skip_adverts && packet->getPayloadType() == PAYLOAD_TYPE_ADVERT) return false;
-    if (_prefs.repeat_max_hops > 0 && packet->getPathHashCount() >= _prefs.repeat_max_hops) return false;
     if (packet->getPayloadType() == PAYLOAD_TYPE_ADVERT && packet->getPathHashCount() >= REPEAT_MAX_ADVERT_HOPS) return false;
     if (isRepeatLooped(packet)) return false;
   }
@@ -691,9 +690,11 @@ void MyMesh::onMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t 
   // is the number of repeaters traversed — the same value the mesh uses for flood
   // retransmit priority. 0 = heard directly. (Raw path_len is a size/count
   // bitfield for transport packets, so it must not be used directly.)
+#if SOLO_FEAT_REMOTE_BOT
   uint8_t hops = pkt ? pkt->getPathHashCount() : 0;
   if (!tryBotCommand(from, text, hops))  // commands take priority; fall through to trigger reply
     tryBotReplyDM(from, text, hops);
+#endif
 }
 
 void MyMesh::onCommandDataRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
@@ -704,10 +705,12 @@ void MyMesh::onCommandDataRecv(const ContactInfo &from, mesh::Packet *pkt, uint3
   // terminal), also hand the reply straight to the UI -- queueMessage() above
   // never displays TXT_TYPE_CLI_DATA on-device (see should_display), since that
   // path also serves the app's terminal, which must keep working unaffected.
+#if SOLO_FEAT_ADMIN
   if (_ui && ui_pending_admin_reply && memcmp(&ui_pending_admin_reply, from.id.pub_key, 4) == 0) {
     ui_pending_admin_reply = 0;
     _ui->onAdminReply(from.id.pub_key, text);
   }
+#endif
 }
 
 void MyMesh::onSignedMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uint32_t sender_timestamp,
@@ -732,11 +735,13 @@ void MyMesh::onSignedMessageRecv(const ContactInfo &from, mesh::Packet *pkt, uin
   // Room-server auto-reply bot — only ever fires for the room server contact
   // itself (signed posts are how a room relays its members' messages back to
   // us); a defensive type check lives in tryBotReplyRoom/tryBotRoomCommand too.
+#if SOLO_FEAT_REMOTE_BOT
   if (from.type == ADV_TYPE_ROOM) {
     uint8_t hops = pkt ? pkt->getPathHashCount() : 0;
     if (!tryBotRoomCommand(from, sender_prefix, text, hops))  // commands take priority
       tryBotReplyRoom(from, sender_prefix, text, hops);
   }
+#endif
 }
 
 void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint32_t timestamp,
@@ -811,9 +816,11 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
 #endif
 
   // hop count for !hops (see onMessageRecv); not the wire path_len above.
+#if SOLO_FEAT_REMOTE_BOT
   uint8_t ch_hops = pkt->getPathHashCount();
   if (!tryBotChannelCommand(channel_idx, text, ch_hops))  // commands take priority
     tryBotReplyChannel(channel_idx, text, ch_hops);
+#endif
 }
 
 void MyMesh::onChannelDataRecv(const mesh::GroupChannel &channel, mesh::Packet *pkt, uint16_t data_type,
@@ -1562,6 +1569,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   memset(_bot_dm_log, 0, sizeof(_bot_dm_log));
   _bot_reply_count = 0;
   _next_auto_advert_ms = 0;
+  _advert_indicator_until_ms = 0;
   _loc_fix.active = false;
   _locfix_requested = false;
   _locfix_requested_timeout_ms = LOCFIX_TIMEOUT_MS;
@@ -1597,10 +1605,6 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.bw = LORA_BW;
   _prefs.cr = LORA_CR;
   _prefs.tx_power_dbm = LORA_TX_POWER;
-  // Repeater profile default for a true first boot (no prefs file yet, so
-  // loadPrefs() below is a no-op) — same band-matched seed as the upgrade
-  // path in DataStore.cpp.
-  seedDefaultRepeaterProfile(_prefs);
   _prefs.gps_enabled = 0;       // GPS disabled by default
   _prefs.gps_interval = 0;      // No automatic GPS updates by default
   _prefs.display_brightness = 2; // medium brightness by default
@@ -1614,6 +1618,11 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.child_visible_pages = NodePrefs::HP_FAVOURITES;  // child default: Favourites only
   _prefs.quiet_time_start_min = 21 * 60;
   _prefs.quiet_time_end_min = 7 * 60;
+  _prefs.repeat_rx_delay_base = solo::RepeaterTiming::DEFAULT_RX_DELAY_BASE;
+  _prefs.repeat_flood_tx_factor = solo::RepeaterTiming::DEFAULT_FLOOD_TX_FACTOR;
+  _prefs.repeat_direct_tx_factor = solo::RepeaterTiming::DEFAULT_DIRECT_TX_FACTOR;
+  _prefs.repeat_delay_boost = solo::RepeaterTiming::DEFAULT_YIELD_BOOST;
+  _prefs.repeat_suppress_dup = solo::RepeaterTiming::DEFAULT_SUPPRESS_DUP;
   _prefs.bot_enabled = 0;
   _prefs.bot_channel_enabled = 0;
   _prefs.bot_channel_idx = 0;
@@ -1689,6 +1698,15 @@ void MyMesh::begin(bool has_display) {
   if (isnan(_prefs.rx_delay_base)  || isinf(_prefs.rx_delay_base))  _prefs.rx_delay_base  = 0;
   _prefs.rx_delay_base = constrain(_prefs.rx_delay_base, 0, 20.0f);
   _prefs.airtime_factor = constrain(_prefs.airtime_factor, 0, 9.0f);
+  _prefs.repeat_rx_delay_base = solo::RepeaterTiming::validOrDefault(
+      _prefs.repeat_rx_delay_base, solo::RepeaterTiming::MAX_RX_DELAY_BASE,
+      solo::RepeaterTiming::DEFAULT_RX_DELAY_BASE);
+  _prefs.repeat_flood_tx_factor = solo::RepeaterTiming::validOrDefault(
+      _prefs.repeat_flood_tx_factor, solo::RepeaterTiming::MAX_TX_FACTOR,
+      solo::RepeaterTiming::DEFAULT_FLOOD_TX_FACTOR);
+  _prefs.repeat_direct_tx_factor = solo::RepeaterTiming::validOrDefault(
+      _prefs.repeat_direct_tx_factor, solo::RepeaterTiming::MAX_TX_FACTOR,
+      solo::RepeaterTiming::DEFAULT_DIRECT_TX_FACTOR);
   _prefs.freq = constrain(_prefs.freq, 150.0f, 2500.0f);
   _prefs.bw = constrain(_prefs.bw, 7.8f, 500.0f);
   _prefs.sf = constrain(_prefs.sf, 5, 12);
@@ -1722,7 +1740,7 @@ void MyMesh::begin(bool has_display) {
   addChannel("Public", PUBLIC_GROUP_PSK); // pre-configure Andy's public channel
   _store->loadChannels(this);
 
-  applyRepeaterRadio();   // companion params, or the repeater profile if relaying with one set
+  applyRadioParams();
   applyApc();                                         // sets TX power to the ceiling and arms APC if enabled
   radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain);
   radio_driver.setPowerSaving(_prefs.rx_powersave && !_prefs.client_repeat);   // duty-cycle RX off while repeating (must hear all traffic)
@@ -1730,11 +1748,8 @@ void MyMesh::begin(bool has_display) {
                      radio_driver.getRxBoostedGainMode() ? "Enabled" : "Disabled");
 }
 
-void MyMesh::applyRepeaterRadio() {
-  if (_prefs.client_repeat && _prefs.repeater_use_profile && repeaterProfileValid())
-    radio_driver.setParams(_prefs.repeater_freq, _prefs.repeater_bw, _prefs.repeater_sf, _prefs.repeater_cr);
-  else
-    radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
+void MyMesh::applyRadioParams() {
+  radio_driver.setParams(_prefs.freq, _prefs.bw, _prefs.sf, _prefs.cr);
 }
 
 const char *MyMesh::getNodeName() {
@@ -2036,6 +2051,7 @@ void MyMesh::handleCmdFrame(size_t len) {
       } else {
         sendZeroHop(pkt);
       }
+      noteAdvertQueued();
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_TABLE_FULL);
@@ -2176,7 +2192,7 @@ void MyMesh::handleCmdFrame(size_t len) {
       _prefs.client_repeat = repeat;
       savePrefs();
 
-      applyRepeaterRadio();   // companion params, or the repeater profile if relaying with one set
+      applyRadioParams();
       // Keep the "repeating ⇒ continuous RX, full TX power" invariants when repeat
       // is toggled via the app, mirroring the on-device path (a repeater must hear
       // all traffic and relay at consistent power).
@@ -3105,7 +3121,9 @@ void MyMesh::loop() {
     }
   }
 
+#if SOLO_FEAT_REMOTE_BOT
   tickLocFix();
+#endif
 
   if (_cli_rescue) {
     checkCLIRescueCmd();
@@ -3123,7 +3141,10 @@ void MyMesh::loop() {
     mesh::Packet* pkt = (sensors.node_lat != 0 || sensors.node_lon != 0)
       ? createSelfAdvert(_prefs.node_name, sensors.node_lat, sensors.node_lon)
       : createSelfAdvert(_prefs.node_name);
-    if (pkt) sendZeroHop(pkt);
+    if (pkt) {
+      sendZeroHop(pkt);
+      noteAdvertQueued();
+    }
     _next_auto_advert_ms = futureMillis(_prefs.advert_auto_interval_sec * 1000UL);
   }
 
@@ -3146,10 +3167,23 @@ bool MyMesh::advert() {
   }
   if (pkt) {
     sendZeroHop(pkt);
+    noteAdvertQueued();
     return true;
   } else {
     return false;
   }
+}
+
+// The RF send itself is normally shorter than a UI refresh interval, so expose
+// a brief wrap-safe pulse after an advert is queued. This is presentation state
+// only: it does not alter advert timing, routing, or the outbound queue.
+void MyMesh::noteAdvertQueued() {
+  _advert_indicator_until_ms = futureMillis(5000);
+}
+
+bool MyMesh::advertIndicatorActive() const {
+  return _advert_indicator_until_ms != 0 &&
+         (int32_t)(_advert_indicator_until_ms - millis()) > 0;
 }
 
 // To check if there is pending work

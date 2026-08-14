@@ -195,7 +195,7 @@ public:
     none.kind = 2; none.lat = 0; none.lon = 0; none.ts = 0; none.live = false;
     memset(none.key, 0, 6);
     snprintf(none.name, sizeof(none.name), "(none)");
-    for (int i = 0; i < NodePrefs::FAVOURITES_COUNT; i++) {
+    for (int i = 0; i < NodePrefs::FAVOURITES_DIAL_COUNT; i++) {
       const uint8_t* pre = _prefs->favourite_contacts[i];
       bool empty = true;
       for (int b = 0; b < NodePrefs::FAVOURITE_PREFIX_LEN; b++) if (pre[b]) { empty = false; break; }

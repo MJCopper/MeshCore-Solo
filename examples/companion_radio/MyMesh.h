@@ -19,7 +19,7 @@ class UITask;
 // Solo release version. The underlying MeshCore protocol/base version is
 // reported separately through the MESHCORE_VERSION build flag.
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.24.1p1"
+#define FIRMWARE_VERSION "v1.26"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -107,6 +107,7 @@ public:
   void loop();
   void handleCmdFrame(size_t len);
   bool advert();
+  bool advertIndicatorActive() const;
   void sendNodeDiscoverReq();
   void enterCLIRescue();
 
@@ -292,17 +293,8 @@ public:
   // pins power to the ceiling.
   bool apcActive() const { return _prefs.tx_apc && !_prefs.client_repeat; }
 
-  // True when the optional repeater radio profile is a valid LoRa config for
-  // this radio (freq bounds come from the chip's own validated range).
-  bool repeaterProfileValid() const {
-    float lo, hi; radio_driver.getFreqBounds(lo, hi);
-    return isValidRepeaterProfile(_prefs.repeater_freq, _prefs.repeater_bw, _prefs.repeater_sf, _prefs.repeater_cr, lo, hi);
-  }
-  // Load the radio with the correct params for the current mode: the repeater
-  // profile when relaying with a valid dedicated profile, otherwise the
-  // companion's own params. Single source of truth, used at boot and whenever
-  // the repeater toggle / network / profile changes.
-  void applyRepeaterRadio();
+  // Apply the companion radio parameters. Repeater mode shares this network.
+  void applyRadioParams();
 
   bool isAckPending(uint32_t expected_ack) const {
     if (expected_ack == 0) return false;   // 0 marks an empty/cleared slot, not a real ACK
@@ -440,6 +432,8 @@ private:
   unsigned long _bot_last_ch_reply_ms;
   unsigned long _bot_last_room_reply_ms;
   unsigned long _next_auto_advert_ms;
+  unsigned long _advert_indicator_until_ms;
+  void noteAdvertQueued();
 
   // Per-contact DM reply throttle: a small ring of the most recent recipients so
   // one chatty contact can't be spammed while a different sender is still served.

@@ -410,7 +410,7 @@ class NearbyScreen : public UIScreen {
       _task->showAlert("Unfavourited", 1000);
       return;
     }
-    for (int s = 0; s < NodePrefs::FAVOURITES_COUNT; s++) {
+    for (int s = 0; s < NodePrefs::FAVOURITES_DIAL_COUNT; s++) {
       if (_task->isFavouriteSlotEmpty(s)) {
         _task->setFavouriteSlot(s, pub_key);
         the_mesh.savePrefs();
@@ -563,15 +563,21 @@ class NearbyScreen : public UIScreen {
       _menu_actions[_menu_action_count++] = a;
     };
 
+#if SOLO_FEAT_NAVIGATION
     if (has_gps) add("Navigate",      ACT_NAV);
+#endif
     if (has_key) add("Ping",          ACT_PING);
     if (has_gps) add("Save waypoint", ACT_WAYPOINT);
     // Needs both a position and a stable identity — a person target is keyed
     // by pubkey prefix, so a name-only live-scan/channel row can't offer this.
+#if SOLO_FEAT_LOCATION_TOOLS
     if (has_gps && has_key) add("Set as target", ACT_LOCATOR);
+#endif
     if (can_add)            add("Add contact", ACT_ADD);
     if (is_contact && has_key) add(is_fav ? "Unfavourite" : "Favourite", ACT_FAV);
+#if SOLO_FEAT_ADMIN
     if (is_admin_target)       add("Admin", ACT_ADMIN);
+#endif
     if (is_contact && has_key) add("Delete contact", ACT_DELETE);
     if (stored) add(_sort_label, ACT_SORT);   // sort is meaningless for live-scan rows
     add(stored ? "Discover scan" : "Rescan", ACT_SCAN);

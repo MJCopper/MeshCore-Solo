@@ -8,16 +8,13 @@
 | :------------------------: | :------------------------: |
 | ![](./overview_oled.png) | ![](./overview_eink.png) |
 
-A dedicated home page showing a grid of up to 6 pinned contacts for quick access. The layout adapts to the display orientation:
-
-- **Portrait** (OLED, e-ink portrait) — 2 columns × 3 rows
-- **Landscape** (e-ink landscape) — 3 columns × 2 rows
+A dedicated home page showing four pinned contacts for quick access. Contacts are displayed as a single full-width column with compact vertical spacing on every display orientation.
 
 ---
 
 ### Navigation
 
-Navigate tiles with **UP / DOWN / LEFT / RIGHT**. Pressing a directional key at the edge of the grid switches to the adjacent home page instead of wrapping.
+Navigate entries with **UP / DOWN**. **LEFT / RIGHT** switches to the adjacent home page.
 
 **Enter on a filled tile** — opens that contact's DM directly.
 
@@ -49,7 +46,7 @@ If a pinned contact is removed from the contacts list — explicitly, or auto-ev
 
 Select a contact to pin it to that slot.
 
-**From a DM conversation** — **Hold Enter** › context menu › **Pin to dial**, then choose a slot from the slot picker (Slot 1–6, showing the current occupant name or "empty").
+**From a DM conversation** — **Hold Enter** › context menu › **Pin to dial**, then choose a slot from the slot picker (Slot 1–4, showing the current occupant name or "empty").
 
 If the selected contact is already pinned in another slot, it is moved to the new slot automatically.
 
@@ -69,4 +66,4 @@ The position of the Favourites Dial in the home page navigation sequence can be 
 
 ### Child Mode
 
-The Favourites page is enabled by default in [Child Mode](../child_mode/child_mode.md), but a parent can hide it under **Settings › Child Mode**. While locked, the child can open and message contacts already pinned to the dial, but cannot add, move, or remove pins. Prepare the six slots before enabling Child Mode.
+The Favourites page is enabled by default in [Child Mode](../child_mode/child_mode.md), but a parent can hide it under **Settings › Child Mode**. While locked, the child can open and message contacts already pinned to the dial, but cannot add, move, or remove pins. Prepare the four slots before enabling Child Mode.

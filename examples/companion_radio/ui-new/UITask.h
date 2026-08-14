@@ -26,6 +26,7 @@
 #include "../Waypoint.h"
 #include "../LiveTrack.h"
 #include "../solo/SoloRuntime.h"
+#include "../solo/BootTimeSync.h"
 #include "KeyboardWidget.h"
 #if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
   #include <helpers/ui/CardKBController.h>
@@ -61,7 +62,7 @@ class UITask : public AbstractUITask {
   int _last_notif_ch_idx;
   uint8_t _last_notif_dm_prefix[4];
   bool _last_notif_dm_valid;
-  struct DMUnreadEntry { uint8_t prefix[4]; uint8_t count; };
+  struct DMUnreadEntry { uint8_t prefix[4]; uint8_t count; uint8_t seen; };
   static const int DM_UNREAD_TABLE_SIZE = 16;
   DMUnreadEntry _dm_unread_table[DM_UNREAD_TABLE_SIZE];
   unsigned long ui_started_at, next_batt_chck;
@@ -111,6 +112,10 @@ class UITask : public AbstractUITask {
   LiveTrackStore _livetrack;
   uint32_t _next_trail_sample_ms = 0;
   uint32_t _next_livetrack_expire_ms = 0;
+  solo::BootTimeSync _boot_time_sync;
+  bool _tool_home_entry = false;
+  void beginBootTimeSync();
+  void tickBootTimeSync();
 
   // Live location sharing engine state (auto [LOC] broadcast while moving).
   uint32_t _next_loc_share_check_ms = 0;
@@ -240,6 +245,7 @@ public:
 
   NodePrefs* getNodePrefs() const { return _node_prefs; }
   bool isChildModeLocked() const { return _solo.childLocked(_node_prefs); }
+  bool isTimeSyncPending() const { return _boot_time_sync.pending(); }
   bool isChildModeRestricted() const override { return isChildModeLocked(); }
   void setChildAdminUnlocked(bool unlocked);
   void applyChildMode();
@@ -251,9 +257,13 @@ public:
   // Global metric/imperial preference for distance/speed display.
   bool useImperial() const { return _node_prefs && _node_prefs->units_imperial; }
   uint16_t getBattMilliVolts() const { return _batt_mv > 0 ? _batt_mv : AbstractUITask::getBattMilliVolts(); }
-  void gotoHomeScreen() { setCurrScreen(home); }
+  void gotoHomeScreen() { _tool_home_entry = false; setCurrScreen(home); }
   void gotoSettingsScreen();
+  int getSettingsSectionCount() const;
+  const char* getSettingsSectionLabel(int index) const;
+  void openSettingsSection(int index);
   void gotoMessagesScreen();
+  void gotoMessagesCategory(uint8_t category);
   void gotoChildUnlockScreen();
   void openContactDM(const ContactInfo& ci);
   void shareToMessage(const char* text);   // open Messages pre-loaded to share `text`
@@ -263,6 +273,9 @@ public:
   void pickBotRoomTarget();                // open Messages to choose the auto-reply bot's room
   int  getRecentDMContacts(uint8_t out[][NodePrefs::FAVOURITE_PREFIX_LEN], int max) const;
   void gotoToolsScreen();
+  int getToolsItemCount() const;
+  const char* getToolsItemLabel(int index) const;
+  void openToolsItem(int index);
   void gotoRingtoneEditor(int slot = 0);
   void gotoBotScreen();
   void pickAdminTarget();                  // Admin is remote-only: open Nodes to pick a repeater/room
@@ -383,20 +396,33 @@ public:
   int  getMsgCount() const { return _msgcount; }
   int  getChannelUnreadCount() const;
   int  getRoomUnreadCount() const { return _room_unread; }
+  int  markMessageCategoryRead(uint8_t category);
   void clearRoomUnread() { _room_unread = 0; }
   // Clamped to the DM ring's actual occupancy for this contact -- defined in
   // UITask.cpp (needs MessagesScreen to be a complete type). Same self-healing
   // shape as MessageHistory::chUnread() for channels.
   uint8_t getDMUnread(const uint8_t* pub_key) const;
+  bool hasDirectDMContact(const uint8_t* pub_key) const {
+    for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++)
+      if (_dm_unread_table[i].seen && memcmp(_dm_unread_table[i].prefix, pub_key, 4) == 0)
+        return true;
+    return false;
+  }
   void clearDMUnread(const uint8_t* pub_key) {
     for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++)
-      if (_dm_unread_table[i].count > 0 && memcmp(_dm_unread_table[i].prefix, pub_key, 4) == 0)
+      if (_dm_unread_table[i].seen && memcmp(_dm_unread_table[i].prefix, pub_key, 4) == 0)
         { _dm_unread_table[i].count = 0; return; }
   }
-  void clearAllDMUnread() { memset(_dm_unread_table, 0, sizeof(_dm_unread_table)); }
-  // Frees any table slot whose ring occupancy has dropped to zero (evicted or
-  // deduped-away messages) so a genuinely new sender isn't starved once the
-  // fixed 16-slot table fills with stale entries. Called once per loop().
+  void clearAllDMUnread() {
+    for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++) _dm_unread_table[i].count = 0;
+  }
+  void forgetDMContact(const uint8_t* pub_key) {
+    for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++)
+      if (_dm_unread_table[i].seen && memcmp(_dm_unread_table[i].prefix, pub_key, 4) == 0)
+        { memset(&_dm_unread_table[i], 0, sizeof(_dm_unread_table[i])); return; }
+  }
+  // Frees an unread/sender slot when its conversation has fallen out of the DM
+  // ring. A zero unread count alone retains the proven direct-DM identity.
   void reconcileDMUnread();
   bool hasDisplay() const { return _display != NULL; }
   DisplayDriver* getDisplay() const { return _display; }
@@ -412,10 +438,11 @@ public:
   void clearPing();
   void handlePingResult(uint32_t tag, int16_t snr_out_x4, int16_t snr_back_x4, uint32_t rtt_ms);
 
-  // Favourites dial helpers. Slot index 0..FAVOURITES_COUNT-1.
+  // Favourites dial helpers. Serialized storage retains six legacy slots; the
+  // current UI exposes slots 0..FAVOURITES_DIAL_COUNT-1.
   int findFavouriteSlot(const uint8_t* pub_key) const {
     if (!_node_prefs || !pub_key) return -1;
-    for (int i = 0; i < NodePrefs::FAVOURITES_COUNT; i++) {
+    for (int i = 0; i < NodePrefs::FAVOURITES_DIAL_COUNT; i++) {
       if (memcmp(_node_prefs->favourite_contacts[i], pub_key, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
         // All-zero prefix is "empty" — never matches a real key.
         bool any = false;
@@ -427,13 +454,13 @@ public:
     return -1;
   }
   bool isFavouriteSlotEmpty(int slot) const {
-    if (!_node_prefs || slot < 0 || slot >= NodePrefs::FAVOURITES_COUNT) return true;
+    if (!_node_prefs || slot < 0 || slot >= NodePrefs::FAVOURITES_DIAL_COUNT) return true;
     for (uint8_t b = 0; b < NodePrefs::FAVOURITE_PREFIX_LEN; b++)
       if (_node_prefs->favourite_contacts[slot][b]) return false;
     return true;
   }
   void setFavouriteSlot(int slot, const uint8_t* pub_key) {
-    if (!_node_prefs || slot < 0 || slot >= NodePrefs::FAVOURITES_COUNT || !pub_key) return;
+    if (!_node_prefs || slot < 0 || slot >= NodePrefs::FAVOURITES_DIAL_COUNT || !pub_key) return;
     memcpy(_node_prefs->favourite_contacts[slot], pub_key, NodePrefs::FAVOURITE_PREFIX_LEN);
   }
   void clearFavouriteSlot(int slot) {

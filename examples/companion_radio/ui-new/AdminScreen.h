@@ -147,7 +147,7 @@ class AdminScreen : public UIScreen {
     _login_pw[0] = '\0';
     _login_waiting = false;
     kb().begin("", 15);       // admin password: same max length as room/repeater login
-    kb().clearPlaceholders(); // {loc}/{time} are for messages, not a password
+    kb().clearPlaceholders(); // passwords are literal
     _phase = LOGIN;
   }
 

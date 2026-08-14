@@ -37,9 +37,6 @@ The PIN is not displayed on the Settings screen after it is saved.
 | Set PIN    | —       | Sets or replaces the six-digit parent PIN; it must be entered twice |
 | Channels   | Off     | Shows favourited private channels; Public and # channels stay hidden |
 | Favourites | On      | Shows the Favourites Dial                                           |
-| Map        | Off     | Shows a read-only map                                               |
-| Sensors    | Off     | Shows sensor readings                                               |
-| Shutdown   | Off     | Allows the child to open the Shutdown page                          |
 
 The Clock, Messages, and Settings entries remain available. Opening Settings while locked presents the parent PIN screen.
 
@@ -50,17 +47,15 @@ The Clock, Messages, and Settings entries remain available. Opening Settings whi
 | Area                 | Behaviour                                                                                               |
 | -------------------- | ------------------------------------------------------------------------------------------------------- |
 | Messages             | Lists only upstream-starred contacts and rooms; optional Channels lists favourited private channels only |
-| Favourites Dial      | Opens the contacts already pinned to its six slots; adding, moving, and removing pins is blocked        |
+| Favourites Dial      | Opens the contacts already pinned to its four slots; adding, moving, and removing pins is blocked       |
 | Message context menus | Contact, room, and channel editing actions are blocked; channels cannot be added or favourited          |
 | Notifications        | Favourited contacts and rooms notify normally; enabled, favourited private channels also notify normally |
 | Other messages       | Still received and stored, but do not alert, wake, sound, vibrate, or add to child-visible unread counts |
 | Radio                | Page hidden; the configured radio settings continue to operate                                          |
 | Bluetooth / USB      | Both companion protocol transports are disabled; USB power and charging are unaffected                  |
 | Advert               | Manual Advert page hidden; received adverts are processed without alerts, sound, vibration, or display wake |
-| GPS and mapping      | GPS controls are hidden; configured GPS, telemetry, and ACL behaviour continues; optional Map is read-only |
+| GPS and mapping      | GPS controls are hidden; configured GPS, telemetry, and ACL behaviour continues |
 | Tools                | Page hidden, including GPS and location-sharing configuration                                           |
-| Sensors              | Optional read-only page                                                                                 |
-| Shutdown             | Hidden unless explicitly enabled                                                                        |
 
 Child Mode does not delete or rewrite the hidden settings. A parent can unlock Settings and adjust them normally.
 Notification filtering is active only while the child interface is locked, so a parent can test normal notifications during an unlocked Settings session. It does not reject mesh packets or alter routing, acknowledgements, or the companion offline queue.

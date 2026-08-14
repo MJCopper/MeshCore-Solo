@@ -944,9 +944,12 @@ int BaseChatMesh::findChannelIdx(const mesh::GroupChannel& ch) {
 #endif
 
 bool BaseChatMesh::getContactByIdx(uint32_t idx, ContactInfo& contact) {
-  if (idx >= num_contacts) return false;
+  // Public contact indices are zero-based over real contacts. The first
+  // MAX_ANON_CONTACTS array slots are internal scratch identities for anonymous
+  // requests and must agree with getNumContacts(), which excludes them.
+  if (idx >= (uint32_t)getNumContacts()) return false;
 
-  contact = contacts[idx];
+  contact = contacts[idx + MAX_ANON_CONTACTS];
   return true;
 }
 

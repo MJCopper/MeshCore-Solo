@@ -63,7 +63,6 @@ Under **Settings › Keyboard**:
 | Setting | Values | Description |
 | ------- | ------ | ----------- |
 | CardKB | Found / Missing | Current boot detection or connection state |
-| Virtual KB | Full / Compact | Show the full on-screen grid or a compact external-keyboard status view |
 
 The CardKB status is informational and is not stored as a preference.
 

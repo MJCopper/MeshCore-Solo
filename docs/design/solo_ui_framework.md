@@ -173,20 +173,13 @@ sensor tokens) via `addPlaceholder()` / `clearPlaceholders()`; the shared
 `kbAddSensorPlaceholders()` (`ui-new/SensorPlaceholders.h`) adds only the tokens
 the board's sensors actually provide. Expand them with `expandMsg()` at send time.
 
-Two layouts share every grid: **ABC** (one key per letter) and **T9**
+Two EN-US layouts share the Latin grid: **ABC** (one key per letter) and **T9**
 (phone-keypad multi-tap — repeated Enter within `KB_T9_TIMEOUT_MS` cycles a
-cell's letter group, then its digit). Page 0 is no longer hardcoded to Latin:
-`NodePrefs::keyboard_main_alphabet`/`keyboard_alt_alphabet` (Settings >
-Keyboard's Main/Additional rows) each pick a script — Latin, Cyrillic, or
-Greek — for page 0 and page 1 respectively (`KeyboardWidget::mainScript()`/
-`altScript()`); equal values collapse to a single script + Symbols (2 pages
-instead of 3, see `hasAltAlphabet()`). `scriptCellStr()`/`scriptT9GroupStr()`
-dispatch each script to its own ABC grid (`KB_CHARS`/`KB_CYRILLIC_CHARS`/
-`KB_GREEK_CHARS`) and T9 group table (`KB_T9_GROUPS`/`KB_T9_GROUPS_CYRILLIC`/
-`_GREEK`) so the two layouts always offer the same letters regardless of which
-page they're on. Latin-diacritic letters (Polish, Czech, German, etc.) aren't
-alt-alphabet pages — they're reached by Hold-Enter on whichever page currently
-shows Latin instead (see `KB_ACCENT_VARIANTS` below).
+cell's letter group, then its digit). The page cycle contains Latin and Symbols.
+The historical main/additional-script preference bytes remain serialized for
+configuration compatibility but are no longer exposed or read by the keyboard.
+Latin-diacritic letters (Polish, Czech, German, etc.) are reached by Hold-Enter
+on the corresponding Latin letter (see `KB_ACCENT_VARIANTS` below).
 Shift is one-shot by default (capitalises the next letter, including whichever
 candidate a T9 multi-tap cycle settles on) or Hold-Enter to toggle caps-lock;
 Hold-Clear erases the whole field. **UP from the top letter row** enters
@@ -195,11 +188,11 @@ start/end, then — pressed again once already at that boundary — continue on
 to the special row / letter grid, the same destinations the plain grid wrap
 used to reach directly) so edits/inserts can target any point in the typed
 text, not just the end; Enter/Cancel exit immediately from anywhere.
-Hold-Enter on a Latin-page letter cell with accented variants instead opens
+Hold-Enter on a Latin letter cell with accented variants instead opens
 the **accent popup**: one horizontal row of `KB_ACCENT_VARIANTS[group]`
 (a UTF-8 string per base letter, same shape as a T9 group string), LEFT/RIGHT
 to pick, Enter to insert via the shared `insertGlyph()` helper, Cancel to
-dismiss. Holding a letter with no variants, or any T9/alt-alphabet/symbols
+dismiss. Holding a letter with no variants, or any T9/symbols
 cell, is a no-op.
 
 `FullscreenMsgView::wrapLines()` is a standalone pixel-accurate word-wrapper

@@ -5,6 +5,10 @@
 #include "PopupMenu.h"
 #include "icons.h"   // mini-icons for the special-key row (⇧ ⌫ ⎵ ✓)
 #include "../NodePrefs.h"
+#include "../Features.h"
+#if SOLO_FEAT_AUTOCOMPLETE
+#include "../solo/T9Predictor.h"
+#endif
 
 // Layout constants shared by all keyboard users.
 // Two pages: letters (page 0) and symbols (page 1), toggled by the "#@"/"abc"
@@ -29,12 +33,11 @@ static const int KB_ROWS_CHAR  = 4;
 static const int KB_COLS_CHAR  = 10;
 static const int KB_SPECIAL    = 6;   // ⇧ ⎵ ⌫ {} #@/abc ✓
 
-// T9 multi-tap layout (Settings › Keyboard). A classic phone keypad: 9 cells (keys
-// 1-9) laid out 3x3, each holding a handful of letters/symbols. Repeated Enter
-// presses on the same cell within KB_T9_TIMEOUT_MS cycle through the group, ending
-// on the cell's own digit (computed as '1'+cell, not stored here) before wrapping.
-// Keys 0/*/# aren't part of the grid — space/backspace/etc. already live on the
-// special row below, shared with the ABC layout.
+// T9 layout (Settings › Keyboard). Message fields use predictive input on keys
+// 2-9; key 1, the symbols page, and literal fields retain multi-tap. The page
+// toggle also exposes an `abc` multi-tap fallback for words outside the
+// dictionary. Keys 0/*/# aren't part of the grid — space/backspace/etc. already
+// live on the special row below, shared with the ABC layout.
 static const int KB_T9_ROWS = 3;
 static const int KB_T9_COLS = 3;
 static const uint32_t KB_T9_TIMEOUT_MS = 800;
@@ -43,58 +46,6 @@ static const char* const KB_T9_GROUPS[KB_PAGES][9] = {
   { "@#&", "*()", "-_+", "=/\\", ":;'\"", "<>[]", "{}|~", "^$%`", ",." },  // page 1 — symbols
 };
 
-// Non-Latin keyboard scripts. NodePrefs::keyboard_main_alphabet/
-// keyboard_alt_alphabet (Settings > Keyboard's Main/Additional rows) pick
-// which script occupies page 0 (the keyboard's default/opening page) and
-// which joins it as page 1 -- either can be Latin, Cyrillic, or Greek; the
-// same value in both collapses to a single-script + Symbols cycle (see
-// hasAltAlphabet()). Every alphabet here must fall inside the misc-fixed
-// font's U+0020-04FF range (src/helpers/ui/MiscFixedFont.h) since that's what
-// actually draws these glyphs on-screen.
-//
-// Unlike KB_CHARS (single ASCII byte per cell), these hold UTF-8 strings —
-// Cyrillic is 2 bytes/codepoint — so cells are `const char*`, not `char`.
-// KeyboardWidget's insertion/backspace/T9-cycle logic works in codepoints via
-// the kbUtf8*() helpers below, not raw bytes, to stay correct for either.
-
-// Cyrillic ABC grid: rows 0-2 hold the 30 letters that fit alphabetically
-// (а-э); row 3 holds the remaining 3 (ё, ю, я) plus basic punctuation. No
-// digit row on this page (digits are already reachable via the Symbols page,
-// same as the Latin page's own row 3 duplicates them there).
-static const char* const KB_CYRILLIC_CHARS[4][10] = {
-  { "а","б","в","г","д","е","ж","з","и","й" },
-  { "к","л","м","н","о","п","р","с","т","у" },
-  { "ф","х","ц","ч","ш","щ","ъ","ы","ь","э" },
-  { "ю","я","ё",".",",","!","?","-","'","\"" },
-};
-// Cyrillic T9 groups: the classic Russian phone-keypad distribution. Cell 0
-// (digit '1') is punctuation, matching KB_T9_GROUPS' page-0 convention;
-// cells 1-8 (digits '2'-'9') hold the 33 letters, 3-5 per key.
-static const char* const KB_T9_GROUPS_CYRILLIC[9] = {
-  ".,!?'-", "абвг", "деёжз", "ийкл", "мноп", "рсту", "фхцч", "шщъыь", "эюя"
-};
-
-// Greek ABC grid: the 24-letter modern alphabet plus final sigma (ς, used
-// only at the end of a word — σ is the regular form) = 25 letters, fitting
-// rows 0-2 with 5 basic punctuation marks to spare; row 3 keeps the digit row
-// (unlike Cyrillic or most of the Latin-diacritic alphabets below, Greek has
-// room left over in its own letter rows).
-// NOTE: monotonic Modern Greek normally marks stress with a tonos accent
-// (ά έ ή ί ό ύ ώ) — omitted here to keep this a single, simple page. Fine for
-// informal/transliteration-style typing; flag if proper accented Greek
-// composition turns out to matter and we can add a second Greek page for them.
-static const char* const KB_GREEK_CHARS[4][10] = {
-  { "α","β","γ","δ","ε","ζ","η","θ","ι","κ" },
-  { "λ","μ","ν","ξ","ο","π","ρ","σ","ς","τ" },
-  { "υ","φ","χ","ψ","ω",".",",","!","?","'" },
-  { "1","2","3","4","5","6","7","8","9","0" },
-};
-// Greek T9 groups: cell 0 (digit '1') is punctuation; cells 1-8 (digits
-// '2'-'9') split the 25 letters roughly evenly, final sigma grouped with the
-// regular sigma it's a variant of.
-static const char* const KB_T9_GROUPS_GREEK[9] = {
-  ".,!?'-", "αβγ", "δεζ", "ηθι", "κλμ", "νξο", "πρσς", "τυφ", "χψω"
-};
 
 // Buffer cap for typed text, in bytes. Matches MeshCore's MAX_TEXT_LEN
 // (10*CIPHER_BLOCK_SIZE = 160) so a full-length message can be composed; each
@@ -105,23 +56,17 @@ static const int KB_MAX_LEN    = 160;
 // stack buffers so a very wide display (small font → many chars per line)
 // can't overrun them.
 static const int KB_PREVIEW_CAP = 46;
-// The same cap in BYTES. Every alphabet this keyboard can produce fits the
-// misc-fixed font's U+0020-04FF range, i.e. at most 2 UTF-8 bytes per
-// codepoint -- so a full line of Cyrillic/Greek/accented text is twice as
-// many bytes as it is characters.
+// The same cap in BYTES. Accented input uses two-byte UTF-8 codepoints.
 static const int KB_PREVIEW_BYTES = KB_PREVIEW_CAP * 2;
 
-// ── UTF-8 helpers for the alt-alphabet pages ─────────────────────────────────
-// KB_CHARS/KB_T9_GROUPS content is ASCII (1 byte/char); KB_CYRILLIC_CHARS and
-// KB_T9_GROUPS_CYRILLIC are UTF-8 (2 bytes/char in this range). These helpers
-// let insertion, backspace and T9 cycling work in codepoints for either,
-// instead of assuming 1 byte == 1 character.
+// ── UTF-8 helpers ────────────────────────────────────────────────────────────
+// The EN-US grid is ASCII, but the accent picker and externally supplied text
+// can contain UTF-8. Editing therefore remains codepoint-aware.
 
 // Apply Shift/caps to every codepoint in a UTF-8 string, writing the result
 // (same codepoint count, each independently shifted) into `out`. Every script
 // here pairs lower/uppercase differently, so each gets its own rule:
-//  - ASCII a-z and Cyrillic а-я: flat -0x20 codepoint offset. ё/Ё (U+0451/
-//    U+0401) break the Cyrillic pattern by 0x50 and are special-cased.
+//  - ASCII a-z: flat -0x20 codepoint offset.
 //  - Latin-1 Supplement à-þ (U+00E0-00FE, used by every Latin-diacritic
 //    alphabet below — ö/ü/é/á/etc.): also a flat -0x20 offset, same as ASCII —
 //    the block was designed as parallel case pairs. U+00F7 (÷, division sign)
@@ -138,11 +83,6 @@ static const int KB_PREVIEW_BYTES = KB_PREVIEW_CAP * 2;
 //    ł ń ź ż among others). Verified exhaustively over the whole
 //    U+0100-U+017F block — see the four sub-ranges below; ı and ſ are the
 //    only remaining exceptions and appear in no keyboard table here.
-//  - Greek α-ω (U+03B1-03C9): flat -0x20 offset, same shape as Cyrillic/ASCII.
-//    Final sigma ς (U+03C2) is the one exception — it has no uppercase of its
-//    own; -0x20 would land on U+03A2, which is unassigned. It capitalizes to
-//    regular Σ (U+03A3) instead, same as σ, and is special-cased before the
-//    general range rule (03C2 falls inside 03B1-03C9, so order matters here).
 // Used both for a single cell (one codepoint) and a whole T9 group label/string.
 static void kbApplyCapsUtf8(const char* in, bool caps, char* out, size_t out_size) {
   size_t o = 0;
@@ -150,11 +90,7 @@ static void kbApplyCapsUtf8(const char* in, bool caps, char* out, size_t out_siz
   while (*p && o + 2 < out_size) {
     uint32_t cp = DisplayDriver::decodeCodepoint(p);
     if (caps) {
-      if (cp == 0x0451)                                    cp = 0x0401;  // ё -> Ё
-      else if (cp == 0x03C2)                               cp = 0x03A3;  // ς -> Σ
-      else if (cp == 0x00FF)                               cp = 0x0178;  // ÿ -> Ÿ (French; breaks the à-þ flat -0x20 rule below — Ÿ sits outside Latin-1 Supplement entirely)
-      else if (cp >= 0x0430 && cp <= 0x044F)                cp -= 0x20;   // а-я -> А-Я
-      else if (cp >= 0x03B1 && cp <= 0x03C9)                cp -= 0x20;   // α-ω -> Α-Ω
+      if (cp == 0x00FF)                                    cp = 0x0178;  // ÿ -> Ÿ
       else if (cp >= 0x00E0 && cp <= 0x00FE && cp != 0x00F7) cp -= 0x20;  // à-þ -> À-Þ
       // ą-ż (Latin Extended-A): pairing parity flips around the unpaired
       // codepoints ĸ (U+0138), ŉ (U+0149), Ÿ (U+0178) -- verified exhaustively
@@ -273,12 +209,12 @@ struct KeyboardWidget;
 // command autocomplete, filtered by what's already typed). When set, picking
 // an entry also replaces the in-progress word (the text since the last
 // space) instead of appending it -- true completion, not insertion. Fields
-// that don't set this (the common case -- {loc}/{time} etc.) keep the
-// original static-list, append-only behaviour untouched.
+// that don't set this keep the original static-list, append-only behaviour.
 typedef void (*PlaceholderRefreshFn)(KeyboardWidget& kb, void* ctx);
 typedef bool (*CompletionPreviewFn)(const KeyboardWidget& kb, void* ctx,
                                     char* word, size_t word_size,
-                                    char* suffix, size_t suffix_size);
+                                    char* suffix, size_t suffix_size,
+                                    char* candidates, size_t candidates_size);
 
 struct KeyboardWidget {
   char buf[KB_MAX_LEN + 1];
@@ -290,7 +226,7 @@ struct KeyboardWidget {
   int  accent_group  = -1;      // index into KB_ACCENT_VARIANTS for the held cell's base letter
   int  accent_sel    = 0;       // selected variant within that group
   int  row, col;
-  int  page;        // see totalPages()/scriptAt()/pageIsSymbols() below
+  int  page;        // 0 = letters, 1 = symbols
   bool caps;
   // Shift is one-shot by default (like a phone keyboard: capitalises just the
   // next letter, then reverts) — Hold-Enter on Shift toggles caps_lock, which
@@ -302,8 +238,11 @@ struct KeyboardWidget {
   // message toast) skip drawing over a full-screen keyboard, regardless of
   // which screen (Messages/Bot/Settings/Admin/...) currently owns it.
   bool _visible = false;
+  bool _external_keyboard_connected = false;
   void beginFrame() { _visible = false; }
   bool isVisible() const { return _visible; }
+  void setExternalKeyboardConnected(bool connected) { _external_keyboard_connected = connected; }
+  bool isCompact() const { return _external_keyboard_connected; }
 
   // True while the plain letter/symbol grid is the active input surface --
   // showing, no placeholder/accent popup open, not mid cursor-reposition.
@@ -319,13 +258,18 @@ struct KeyboardWidget {
   PlaceholderRefreshFn _ph_refresh = nullptr;
   void* _ph_refresh_ctx = nullptr;
   const char* _ph_title = "Placeholder:";   // popup title -- overridable so e.g. AdminScreen can say "Commands:"
+  bool _ph_append_space = false;  // word-completion menus may advance ready for the next word
   int _ph_replace_start = 0;
   int _ph_replace_end = 0;
   bool _ph_range_set = false;
   CompletionPreviewFn _completion_preview = nullptr;
   void* _completion_preview_ctx = nullptr;
-  void setPlaceholderRefresh(PlaceholderRefreshFn fn, void* ctx, const char* title = "Placeholder:") {
-    _ph_refresh = fn; _ph_refresh_ctx = ctx; _ph_title = title;
+  void setPlaceholderRefresh(PlaceholderRefreshFn fn, void* ctx,
+                             const char* title = "Placeholder:", bool append_space = false) {
+    _ph_refresh = fn;
+    _ph_refresh_ctx = ctx;
+    _ph_title = title;
+    _ph_append_space = append_space;
   }
   void setCompletionRange(int start, int end) {
     _ph_replace_start = start < 0 ? 0 : (start > len ? len : start);
@@ -339,17 +283,9 @@ struct KeyboardWidget {
 
   // Live setting lookup — set once by UITask::begin(). NULL only in tests/tools
   // that construct a KeyboardWidget standalone, in which case isT9() defaults
-  // to ABC and mainScript()/altScript() default to Latin-only.
+  // to ABC.
   NodePrefs* prefs = nullptr;
   bool isT9() const { return prefs && prefs->keyboard_type == 1; }
-  // Which script occupies page 0 (the keyboard's default/opening page) and
-  // which occupies page 1 (reached by the #@/abc cycle key) -- Settings >
-  // Keyboard's Main/Additional rows. Additional equal to Main collapses to no
-  // second page at all (see hasAltAlphabet), same as the old Latin-hardcoded
-  // design's "alt == Latin means no alt".
-  uint8_t mainScript() const { return prefs ? prefs->keyboard_main_alphabet : NodePrefs::KB_ALPHABET_LATIN_ONLY; }
-  uint8_t altScript()  const { return prefs ? prefs->keyboard_alt_alphabet  : NodePrefs::KB_ALPHABET_LATIN_ONLY; }
-  bool hasAltAlphabet() const { return altScript() != mainScript(); }
 
   // T9 multi-tap state: which grid cell is mid-cycle (-1 = none), its cycle
   // position, and when the last Enter landed on it (for the timeout).
@@ -363,68 +299,123 @@ struct KeyboardWidget {
   // lowercase regardless of Shift.
   bool     t9_caps = false;
 
+#if SOLO_FEAT_AUTOCOMPLETE
+  bool     _predictive_t9_enabled = false; // opted in by message-text fields
+  bool     _t9_literal_mode = false;       // in-editor fallback for names/new words
+  char     _t9_digits[solo::WordCompleter::MAX_WORD_LEN] = {};
+  uint8_t  _t9_digit_count = 0;
+  int      _t9_word_start = 0;
+  int      _t9_word_end = 0;
+  bool     _t9_predict_caps = false;
+
+  bool predictiveT9Ready() const {
+    return _predictive_t9_enabled && isT9() && !isCompact() &&
+           page == 0 && !_t9_literal_mode;
+  }
+  bool predictiveT9Active() const { return predictiveT9Ready() && _t9_digit_count > 0; }
+
+  void commitT9Prediction() {
+    _t9_digit_count = 0;
+    _t9_digits[0] = '\0';
+    _t9_word_start = _t9_word_end = cursor_pos;
+  }
+
+  void formatT9Candidate(const char* word, char* out, size_t out_size) const {
+    if (!out || out_size == 0) return;
+    snprintf(out, out_size, "%s", word ? word : "");
+    if (_t9_predict_caps && out[0] >= 'a' && out[0] <= 'z') out[0] -= 'a' - 'A';
+  }
+
+  uint8_t getT9Candidates(
+      char out[][solo::WordCompleter::MAX_WORD_LEN], uint8_t max_results) const {
+    char raw[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
+    uint8_t count = solo::T9Predictor::suggest(
+        _t9_digits, _t9_digit_count, raw, max_results);
+    for (uint8_t i = 0; i < count; i++)
+      formatT9Candidate(raw[i], out[i], solo::WordCompleter::MAX_WORD_LEN);
+    return count;
+  }
+
+  bool replaceT9Prediction(const char* word) {
+    int word_len = word ? (int)strlen(word) : 0;
+    int tail_len = len - _t9_word_end;
+    int new_len = _t9_word_start + word_len + tail_len;
+    if (new_len > max_len) return false;
+    memmove(buf + _t9_word_start + word_len, buf + _t9_word_end, tail_len);
+    if (word_len) memcpy(buf + _t9_word_start, word, word_len);
+    len = new_len;
+    _t9_word_end = _t9_word_start + word_len;
+    cursor_pos = _t9_word_end;
+    buf[len] = '\0';
+    return true;
+  }
+
+  bool appendT9Digit(char digit) {
+    if (!predictiveT9Ready() || _t9_digit_count + 1 >= sizeof(_t9_digits)) return false;
+    bool starting = _t9_digit_count == 0;
+    if (starting) {
+      _t9_word_start = _t9_word_end = cursor_pos;
+      _t9_predict_caps = caps;
+    }
+    _t9_digits[_t9_digit_count++] = digit;
+    _t9_digits[_t9_digit_count] = '\0';
+    char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
+    uint8_t count = getT9Candidates(matches, solo::WordCompleter::MAX_SUGGESTIONS);
+    if (count == 0 || !replaceT9Prediction(matches[0])) {
+      _t9_digit_count--;
+      _t9_digits[_t9_digit_count] = '\0';
+      if (starting) commitT9Prediction();
+      return false;
+    }
+    if (starting && caps && !caps_lock) caps = false;
+    return true;
+  }
+
+  bool backspaceT9Prediction() {
+    if (!predictiveT9Active()) return false;
+    _t9_digit_count--;
+    _t9_digits[_t9_digit_count] = '\0';
+    if (_t9_digit_count == 0) {
+      replaceT9Prediction("");
+      commitT9Prediction();
+      return true;
+    }
+    char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
+    uint8_t count = getT9Candidates(matches, solo::WordCompleter::MAX_SUGGESTIONS);
+    if (count) replaceT9Prediction(matches[0]);
+    return true;
+  }
+#else
+  bool predictiveT9Ready() const { return false; }
+  bool predictiveT9Active() const { return false; }
+  void commitT9Prediction() { }
+  bool appendT9Digit(char) { return false; }
+  bool backspaceT9Prediction() { return false; }
+#endif
+
+  void setPredictiveT9(bool enabled) {
+#if SOLO_FEAT_AUTOCOMPLETE
+    _predictive_t9_enabled = enabled;
+#else
+    (void)enabled;
+#endif
+  }
+
   int gridRows() const { return isT9() ? KB_T9_ROWS : KB_ROWS_CHAR; }
   int gridCols() const { return isT9() ? KB_T9_COLS : KB_COLS_CHAR; }
 
-  // ── Page model ────────────────────────────────────────────────────────────
-  // Logical page order: 0 = mainScript(), [1 = altScript(), if it differs],
-  // last = symbols. Without a distinct additional script this is exactly the
-  // original 2-page cycle; a distinct one inserts its page in the middle, so
-  // the #@/abc key's existing cycle (case 4 below) reaches it for free.
-  int totalPages() const { return hasAltAlphabet() ? 3 : 2; }
-  bool pageIsSymbols(int pg) const { return pg == totalPages() - 1; }
-  // Which script (Latin/Cyrillic/Greek) the given non-symbols page shows.
-  uint8_t scriptAt(int pg) const { return pg == 0 ? mainScript() : altScript(); }
+  int totalPages() const { return KB_PAGES; }
+  bool pageIsSymbols(int pg) const { return pg == 1; }
 
-  // One script's ABC-grid cell content as a NUL-terminated UTF-8 string (1
-  // codepoint). Latin comes back through a small scratch buffer since
-  // KB_CHARS stores single ASCII bytes, not strings; Cyrillic/Greek cells are
-  // literal string-table entries, returned directly.
-  const char* scriptCellStr(uint8_t script, int r, int c) const {
-    switch (script) {
-      case NodePrefs::KB_ALPHABET_CYRILLIC: return KB_CYRILLIC_CHARS[r][c];
-      case NodePrefs::KB_ALPHABET_GREEK:    return KB_GREEK_CHARS[r][c];
-      default: {
-        static char single[2];
-        single[0] = KB_CHARS[0][r][c];
-        single[1] = '\0';
-        return single;
-      }
-    }
-  }
   const char* cellStr(int r, int c) const {
-    if (pageIsSymbols(page)) {
-      static char single[2];
-      single[0] = KB_CHARS[1][r][c];
-      single[1] = '\0';
-      return single;
-    }
-    return scriptCellStr(scriptAt(page), r, c);
+    static char single[2];
+    single[0] = KB_CHARS[pageIsSymbols(page) ? 1 : 0][r][c];
+    single[1] = '\0';
+    return single;
   }
 
-  // One script's T9 group string (UTF-8) for the given cell (0-8).
-  const char* scriptT9GroupStr(uint8_t script, int cell) const {
-    switch (script) {
-      case NodePrefs::KB_ALPHABET_CYRILLIC: return KB_T9_GROUPS_CYRILLIC[cell];
-      case NodePrefs::KB_ALPHABET_GREEK:    return KB_T9_GROUPS_GREEK[cell];
-      default:                              return KB_T9_GROUPS[0][cell];
-    }
-  }
   const char* t9GroupStr(int cell) const {
-    if (pageIsSymbols(page)) return KB_T9_GROUPS[1][cell];
-    return scriptT9GroupStr(scriptAt(page), cell);
-  }
-
-  // Compact ASCII hint for the #@/abc key when it's about to switch to
-  // `script`'s page. Deliberately ASCII (not the script's own glyphs): it's
-  // two characters wide in a one-sixth-of-the-screen cell, and "CY"/"GR" name
-  // the destination more legibly at that size than a sample glyph would.
-  static const char* scriptHint(uint8_t script) {
-    switch (script) {
-      case NodePrefs::KB_ALPHABET_CYRILLIC: return "CY";
-      case NodePrefs::KB_ALPHABET_GREEK:    return "GR";
-      default:                              return "abc";
-    }
+    return KB_T9_GROUPS[pageIsSymbols(page) ? 1 : 0][cell];
   }
 
   enum Result { NONE, DONE, CANCELLED };
@@ -445,18 +436,23 @@ struct KeyboardWidget {
     caps_lock = false;
     t9_cell = -1;
     t9_cycle = 0;
+#if SOLO_FEAT_AUTOCOMPLETE
+    _predictive_t9_enabled = false;
+    _t9_literal_mode = false;
+    _t9_predict_caps = false;
+    commitT9Prediction();
+#endif
     _ph_menu.active = false;
     _ph_refresh = nullptr;      // opt-in per session -- the owning screen re-sets it if it wants
     _ph_refresh_ctx = nullptr;  // contextual autocomplete right after this begin()
     _ph_title = "Placeholder:";
+    _ph_append_space = false;
     _ph_replace_start = _ph_replace_end = cursor_pos;
     _ph_range_set = false;
     _completion_preview = nullptr;
     _completion_preview_ctx = nullptr;
-    // default placeholders — always available
+    // Placeholders are supplied by the owning screen for the current context.
     _ph_count = 0;
-    addPlaceholder("{loc}");
-    addPlaceholder("{time}");
   }
 
   // Insert one UTF-8 codepoint (a grid cell's own glyph, or a picked accent
@@ -483,13 +479,13 @@ struct KeyboardWidget {
   //
   // This is the single translation point for external-keyboard input: today
   // it's the identity mapping (CardKB is a Latin QWERTY, so what it sends is
-  // what gets typed, regardless of the on-screen grid's script/T9 settings --
-  // those only govern grid navigation). To support relabelled keycaps
-  // (Cyrillic/Greek/...) later, map `c` to that layout's codepoint here and
+  // what gets typed, regardless of the on-screen grid's ABC/T9 setting --
+  // that only governs grid navigation). To support relabelled keycaps later,
+  // map `c` to that layout's codepoint here and
   // hand the resulting UTF-8 to insertGlyph() -- everything downstream already
   // works in codepoints, not bytes. Such a layout belongs on its own setting,
-  // not on keyboard_main_alphabet: it describes the physical keycaps, which
-  // are independent of what the on-screen grid shows. Digits/punctuation
+  // a dedicated physical-layout setting: it describes the keycaps, which are
+  // independent of the on-screen grid. Digits/punctuation
   // should keep passing through unmapped, and Fn+letter accents
   // (openAccentFor()) stay Latin-only -- they're meaningless under non-Latin
   // keycaps.
@@ -520,6 +516,15 @@ struct KeyboardWidget {
     t9_cell = -1;   // finalize any pending multi-tap cycle -- the pick below moves the
                     // cursor, so a later same-cell tap must not "continue" onto it
     _ph_range_set = false;
+#if SOLO_FEAT_AUTOCOMPLETE
+    if (predictiveT9Active()) {
+      clearPlaceholders();
+      setCompletionRange(_t9_word_start, _t9_word_end);
+      char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
+      uint8_t count = getT9Candidates(matches, solo::WordCompleter::MAX_SUGGESTIONS);
+      for (uint8_t i = 0; i < count; i++) addPlaceholder(matches[i]);
+    } else
+#endif
     if (_ph_refresh) _ph_refresh(*this, _ph_refresh_ctx);   // contextual repopulate, if wired up
     _ph_menu.begin(_ph_title, KB_PH_VISIBLE);
     for (int i = 0; i < _ph_count; i++) _ph_menu.addItem(_ph_buf[i]);
@@ -550,8 +555,7 @@ struct KeyboardWidget {
     // on the same cell from being treated as a continued cycle.
     if (t9_cell >= 0 && millis() - t9_last_ms > KB_T9_TIMEOUT_MS) t9_cell = -1;
 
-    // Single UI font (misc-fixed 5x7) covers Latin/Greek/Cyrillic — the keyboard
-    // renders in it directly, no per-render font switching or headroom padding.
+    // The keyboard renders directly in the shared UI font.
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
 
@@ -560,15 +564,14 @@ struct KeyboardWidget {
     const int lh      = display.getLineHeight();
     const int cw      = display.getCharWidth();
     const int cell_w  = display.width() / cols;
-    bool compact_ui = prefs && prefs->keyboard_cardkb_compact;
-    // compact: don't stretch cells beyond lh; freed vertical space goes to preview lines.
-    // Compact mode only ever draws 2 short hint lines (no grid, no status line
-    // -- see below), but reserves at least as much height as the smallest real
-    // grid (T9's 3 rows) would need, rather than shrinking to just those 2
-    // lines: cursor_mode's own 3-line hint (drawn in this same region,
-    // regardless of Compact, for a physical-button user) already relies on
-    // that floor and would otherwise get clipped.
-    const int kb_h      = compact_ui ? (KB_T9_ROWS + 1) * lh : (rows + 1) * lh;
+    bool compact_ui = isCompact();
+    // The normal compact editor needs only the Tab hint row, placing the
+    // separator and hint as low as the display allows.
+    // Cursor and accent modes temporarily restore the old four-line region so
+    // their multi-line controls remain fully visible.
+    const bool compact_modal = cursor_mode || accent_active;
+    const int kb_h = compact_ui ? (compact_modal ? (KB_T9_ROWS + 1) * lh : lh)
+                                : (rows + 1) * lh;
     const int preview_h = display.height() - kb_h - display.sepH();
     const int prev_lines = (preview_h / lh) > 1 ? (preview_h / lh) : 1;
     const int sep_y   = prev_lines * lh;
@@ -579,10 +582,12 @@ struct KeyboardWidget {
 
     char completion_word[16] = "";
     char completion_suffix[16] = "";
-    bool has_completion = _completion_preview &&
+    char completion_candidates[96] = "";
+    bool has_completion = !predictiveT9Active() && _completion_preview &&
         _completion_preview(*this, _completion_preview_ctx,
                             completion_word, sizeof(completion_word),
-                            completion_suffix, sizeof(completion_suffix));
+                            completion_suffix, sizeof(completion_suffix),
+                            completion_candidates, sizeof(completion_candidates));
 
     // Multi-line text preview: the view follows cursor_pos (normally == len,
     // i.e. the end — so this is identical to the old "always the last line"
@@ -590,7 +595,7 @@ struct KeyboardWidget {
     // the preview scrolls to keep the repositioned cursor in view).
     // Line breaks are counted in CODEPOINTS, not bytes: cpl is how many
     // characters physically fit, so dividing byte offsets by it would count a
-    // 2-byte Cyrillic/Greek/accented character as two -- halving the usable
+    // multi-byte accented character as more than one -- reducing the usable
     // line width and, worse, letting a break land inside a codepoint, which
     // reaches print() as a truncated sequence and draws as garbage (both
     // display drivers are permanently single-font, so translateUTF8ToBlocks()
@@ -642,10 +647,10 @@ struct KeyboardWidget {
       display.translateUTF8ToBlocks(linebuf_t, linebuf, sizeof(linebuf_t));
       display.setCursor(0, pl * lh);
       display.print(linebuf_t);
-      // Show only the untyped remainder after the cursor, preserving every
-      // preview row. The underscore remains the insertion point, so "hel_lo"
-      // reads as typed "hel" plus suggested "lo" without looking committed.
-      if (cursor_here && has_completion && completion_suffix[0]) {
+      // The full on-screen keyboard previews the untyped remainder after the
+      // cursor. CardKB's compact editor keeps the text area literal and shows
+      // its completion only in the dedicated Tab hint below.
+      if (!compact_ui && cursor_here && has_completion && completion_suffix[0]) {
         char before[KB_PREVIEW_BYTES + 1];
         int before_n = cursor_pos - ps;
         if (before_n < 0) before_n = 0;
@@ -682,29 +687,36 @@ struct KeyboardWidget {
       return 50;
     }
 
-    // Compact mode (Settings > Keyboard's "Virtual KB" row): an external-keyboard
+    // A connected external keyboard automatically selects the compact view: its
     // typist never looks at the letter grid or special-row icons, so skip
     // drawing them entirely -- no status line either, since nothing it could
     // show (script/page, T9-vs-ABC, caps) is actually actionable from CardKB:
-    // typing is always plain Latin ASCII regardless of Main/Additional
-    // alphabet or keyboard_type (direct-typing passthrough, see
+    // typing is always plain Latin ASCII regardless of keyboard_type
+    // (direct-typing passthrough, see
     // UITask::pollCardKB()), Fn+letter's accent popup now works the same way
     // regardless of them too (see openAccentFor()), and caps-lock has no
     // CardKB gesture to toggle it at all. Just the two shortcuts that still do
     // something here (arrows/Enter are self-explanatory -- cursor movement and
-    // submit -- so they get no hint of their own). Physical buttons (if used
+    // submit -- so they get no hint of their own). The Fn+letter accent
+    // shortcut remains available but is no longer advertised in the editor.
+    // Physical buttons (if used
     // instead of/alongside CardKB) still drive row/col/page as normal; it
     // just won't be visible on this screen which cell is selected.
     if (compact_ui) {
       display.setColor(DisplayDriver::LIGHT);
       if (has_completion) {
-        char hint[24];
-        snprintf(hint, sizeof(hint), "Tab: %s", completion_word);
+        char hint[sizeof(completion_candidates) + 6];
+        snprintf(hint, sizeof(hint), "Tab: %s", completion_candidates);
+        // The compact hint owns one physical row. Clip at the display's
+        // character capacity even when that cuts through the final word: this
+        // exposes more useful candidates than dropping the whole last item.
+        int hint_chars = display.width() / cw;
+        if (hint_chars < 0) hint_chars = 0;
+        if (hint_chars < (int)sizeof(hint)) hint[hint_chars] = '\0';
         display.drawTextCentered(display.width() / 2, chars_y, hint);
       } else {
-        display.drawTextCentered(display.width() / 2, chars_y, "Tab: placeholders");
+        display.drawTextCentered(display.width() / 2, chars_y, "Tab: ----");
       }
-      display.drawTextCentered(display.width() / 2, chars_y + lh, "Fn+letter: accent");
     } else {
       // character grid
       if (isT9()) {
@@ -713,11 +725,8 @@ struct KeyboardWidget {
           for (int c = 0; c < cols; c++) {
             bool sel = (row == r && col == c);
             int cell = r * cols + c;
-            // Label the cell "<digit><group>" so it reads like a phone keypad. The
-            // digit is what the multi-tap cycle lands on after the letters (see
-            // handleInput: '1'+cell). No separator space — the widest group
-            // (Cyrillic "деёжз"/"шщъыь", 5 letters x up to 2 UTF-8 bytes) + digit
-            // still fits with room to spare.
+            // Label the cell "<digit><group>" so it reads like a phone keypad.
+            // The digit is what the multi-tap cycle lands on after the letters.
             char group_shown[12];
             kbApplyCapsUtf8(t9GroupStr(cell), caps, group_shown, sizeof(group_shown));
             char label[14];
@@ -762,8 +771,17 @@ struct KeyboardWidget {
           if (i == 3) {
             lbl = "{}";
           } else {
-            int next = (page + 1) % totalPages();
-            lbl = pageIsSymbols(next) ? "#@" : scriptHint(scriptAt(next));
+#if SOLO_FEAT_AUTOCOMPLETE
+            if (_predictive_t9_enabled && isT9()) {
+              if (page == 0 && !_t9_literal_mode) lbl = "#@";
+              else if (pageIsSymbols(page))      lbl = "abc";
+              else                               lbl = "T9";
+            } else
+#endif
+            {
+              int next = (page + 1) % totalPages();
+              lbl = pageIsSymbols(next) ? "#@" : "abc";
+            }
           }
           int tw = display.getTextWidth(lbl);
           display.setCursor(sx + (spec_w - tw) / 2, spec_y);
@@ -841,13 +859,12 @@ struct KeyboardWidget {
   // accent popup for this base Latin letter directly, skipping the
   // arrow-hunt to find its cell first. `base` always comes from CardKB's own
   // physical QWERTY layout -- CardKB is a Latin keyboard, so it always types
-  // plain ASCII regardless of the on-screen grid's current page/script/T9
-  // setting (those only govern what the *grid* shows for physical-button
+  // plain ASCII regardless of the on-screen grid's current page/ABC/T9
+  // setting (those only govern what the grid shows for physical-button
   // navigation, a completely separate input path with its own copy of this
   // same gate at the Hold-Enter-on-a-letter-cell site in handleInput()).
-  // Gating this one on the grid's page/script/T9 state would make Fn+letter
-  // silently stop working whenever Main alphabet is set to Cyrillic/Greek or
-  // keyboard_type to T9, even though CardKB is still typing plain Latin text
+  // Gating this one on the grid's page/T9 state would make Fn+letter silently
+  // stop working when keyboard_type is T9, even though CardKB types Latin text
   // just fine -- so this only checks that no other exclusive input mode
   // (popup/cursor-move) is already in progress, same as inPlainGridState().
   bool openAccentFor(char base) {
@@ -864,6 +881,7 @@ struct KeyboardWidget {
   Result handleInput(char c) {
     // placeholder overlay consumes all input
     if (_ph_menu.active) {
+      bool selecting_t9_prediction = predictiveT9Active();
       auto res = _ph_menu.handleInput(c);
       if (res == PopupMenu::SELECTED) {
         int idx = _ph_menu.selectedIndex();
@@ -883,13 +901,21 @@ struct KeyboardWidget {
             while (replace_start > 0 && buf[replace_start - 1] != ' ') replace_start--;
         }
         int tail_len = len - replace_end;
-        if (replace_start + ph_len + tail_len <= max_len) {
-          memmove(buf + replace_start + ph_len, buf + replace_end, tail_len);
+        // Message word completions leave the cursor ready for the next word.
+        // Do not duplicate a separator already present after the replaced word,
+        // and do not append spaces to dynamic placeholders such as {loc}.
+        bool append_space = _ph_append_space && ph_len > 0 && ph[0] != '{' &&
+                            (replace_end == len || buf[replace_end] != ' ');
+        int insert_len = ph_len + (append_space ? 1 : 0);
+        if (replace_start + insert_len + tail_len <= max_len) {
+          memmove(buf + replace_start + insert_len, buf + replace_end, tail_len);
           memcpy(buf + replace_start, ph, ph_len);
-          len = replace_start + ph_len + tail_len;
-          cursor_pos = replace_start + ph_len;
+          if (append_space) buf[replace_start + ph_len] = ' ';
+          len = replace_start + insert_len + tail_len;
+          cursor_pos = replace_start + insert_len;
           buf[len] = '\0';
         }
+        if (selecting_t9_prediction) commitT9Prediction();
       }
       return NONE;
     }
@@ -959,6 +985,8 @@ struct KeyboardWidget {
     if (c == KEY_KB_ENTER) return DONE;
     if (c == 0x08) {
       t9_cell = -1;   // invalidate any pending T9 cycle -- see the grid paths below
+      if (backspaceT9Prediction()) return NONE;
+      commitT9Prediction();
       if (cursor_pos > 0) {
         int n = kbUtf8LastCharBytes(buf, cursor_pos);
         memmove(buf + cursor_pos - n, buf + cursor_pos, len - cursor_pos);
@@ -968,6 +996,7 @@ struct KeyboardWidget {
       return NONE;
     }
     if (c >= 0x20 && c <= 0x7E) {
+      commitT9Prediction();
       insertTyped(c);
       return NONE;
     }
@@ -996,10 +1025,11 @@ struct KeyboardWidget {
         len = 0; buf[0] = '\0';
         cursor_pos = 0;
         t9_cell = -1;
+        commitT9Prediction();
         return NONE;
       }
       if (row < rows) {
-        if (!isT9() && !pageIsSymbols(page) && scriptAt(page) == NodePrefs::KB_ALPHABET_LATIN_ONLY) {
+        if (!isT9() && !pageIsSymbols(page)) {
           int gi = findAccentGroup(cellStr(row, col)[0]);
           if (gi >= 0) { accent_active = true; accent_group = gi; accent_sel = 0; t9_cell = -1; return NONE; }
         }
@@ -1019,6 +1049,7 @@ struct KeyboardWidget {
         // continuation above can still reach the special row proportionally.
         cursor_mode = true;
         t9_cell = -1;
+        commitT9Prediction();
         return NONE;
       }
       t9_cell = -1;   // navigating away finalizes any pending multi-tap cycle
@@ -1056,6 +1087,14 @@ struct KeyboardWidget {
       // KEY_KB_ENTER cases just above), so there's no ambiguity here.
       if (row < rows && isT9()) {
         int cell = row * cols + col;
+        // Predictive T9 uses the classic letter keys 2-9. Key 1 remains a
+        // punctuation/digit multi-tap key, as do every key on the symbols page
+        // and the explicit `abc` fallback page.
+        if (predictiveT9Ready() && cell > 0) {
+          appendT9Digit((char)('1' + cell));
+          return NONE;
+        }
+        commitT9Prediction();
         const char* group = t9GroupStr(cell);
         int glen = kbUtf8Len(group);       // codepoint count, not byte length
         int total = glen + 1;   // + the cell's own digit, at the end of the cycle
@@ -1110,6 +1149,7 @@ struct KeyboardWidget {
           // on this key, see handleInput's top), a tap cancels the lock instead.
           case 0: if (caps_lock) { caps = false; caps_lock = false; } else { caps = !caps; } break;
           case 1:
+            commitT9Prediction();
             if (len < max_len) {
               memmove(buf + cursor_pos + 1, buf + cursor_pos, len - cursor_pos);
               buf[cursor_pos] = ' ';
@@ -1118,6 +1158,8 @@ struct KeyboardWidget {
             }
             break;
           case 2:
+            if (backspaceT9Prediction()) break;
+            commitT9Prediction();
             if (cursor_pos > 0) {
               int n = kbUtf8LastCharBytes(buf, cursor_pos);
               memmove(buf + cursor_pos - n, buf + cursor_pos, len - cursor_pos);
@@ -1129,9 +1171,29 @@ struct KeyboardWidget {
             openPlaceholders();
             break;
           case 4:
-            page = (page + 1) % totalPages();   // cycle letters -> [alt alphabet] -> symbols
+            commitT9Prediction();
+#if SOLO_FEAT_AUTOCOMPLETE
+            if (_predictive_t9_enabled && isT9()) {
+              // Predictive letters -> symbols -> literal multi-tap ->
+              // predictive letters. This gives out-of-dictionary words a
+              // local escape hatch without changing the saved keyboard mode.
+              if (page == 0 && !_t9_literal_mode) {
+                page = 1;
+              } else if (pageIsSymbols(page)) {
+                page = 0;
+                _t9_literal_mode = true;
+              } else {
+                page = 0;
+                _t9_literal_mode = false;
+              }
+            } else
+#endif
+            {
+              page = (page + 1) % totalPages();
+            }
             break;
           case 5:
+            commitT9Prediction();
             return DONE;
         }
       }

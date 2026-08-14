@@ -8,7 +8,7 @@
 | :-----------------------: | :-----------------------: |
 | ![](./overview_oled.png) | ![](./overview_eink.png) |
 
-All settings are saved to flash and restored on next boot. Settings are organised into collapsible sections. Press **Enter** on a section header to expand or collapse it — all sections start collapsed for faster navigation. Press **LEFT/RIGHT** to change a value, or **Enter** for toggle items.
+All settings are saved to flash and restored on next boot. The Settings home card lists the available sections directly. Use **UP/DOWN** to select a section and press **Enter** to open its dedicated screen. Only that section's settings are shown; the old collapsible `+`/`-` section list is not used. Press **LEFT/RIGHT** to change a value, or **Enter** for toggle items.
 
 Press **Cancel/Back** to save and return to the home screen.
 
@@ -38,13 +38,17 @@ Press **Cancel/Back** to save and return to the home screen.
 | Volume         | 1–5                            | LEFT/RIGHT; preview tone plays on each change                |
 | DM Melody      | built-in / Melody 1 / Melody 2 / None | Notification sound for incoming private messages. `None` disables the sound for this event. |
 | Channel Melody | built-in / Melody 1 / Melody 2 / None | Notification sound for incoming channel messages. `None` disables the sound for this event. |
-| AD sound       | built-in / Melody 1 / Melody 2 / None | Sound played whenever an **advert** is received from *any* node — pairs with Auto-Advert as an audible "in range" heartbeat (see Tools › Auto-Advert). `None` disables the sound for this event. |
+| AD sound       | built-in / Melody 1 / Melody 2 / None | Sound played whenever an **advert** is received from *any* node — pairs with Auto-Advert as an audible "in range" heartbeat. `None` disables the sound for this event. |
 | AD scope       | All / Zero-hop                | Filters the AD sound so it plays for every advert or only for local zero-hop adverts. |
 | Quiet Time     | Off / On / Active             | Enables the daily schedule; Active means the current local time is inside it |
 | Quiet from     | 21:00                         | Start of Quiet Time in the configured local timezone |
 | Quiet until    | 07:00                         | End of Quiet Time in the configured local timezone |
 
 Melody 1 and Melody 2 are custom sequences editable in **Tools › Ringtone Editor**.
+
+### Auto-Advert
+
+Auto-Advert has its own entry on the Settings home card. It configures periodic zero-hop adverts used by nearby nodes to discover this device. Available intervals are **Off**, **1 hour**, **3 hours**, and **6 hours**.
 
 See [Quiet Time](../quiet_time/quiet_time.md) for schedule behaviour and time editing.
 
@@ -84,7 +88,7 @@ Lists all available home screen pages. For each entry:
 
 <!-- screenshot pending: Radio — preset popup (pick/save/delete) and/or the digit-by-digit frequency editor -->
 
-The **repeater** mode and its flood filters live on their own screen — see **Tools › Repeater**.
+The **repeater** mode and radio timing controls live on their own screen — see **Tools › Repeater**.
 
 ---
 
@@ -95,7 +99,7 @@ The **repeater** mode and its flood filters live on their own screen — see **T
 | Name        | keyboard entry (up to 31 chars)                     | This device's node name, shown to others and in every advert. **Enter** opens the keyboard pre-filled with the current name; applied and saved on submit |
 | Timezone    | −12 h … +14 h                                       | UTC offset in whole hours                                                              |
 | Low battery | off / 3.0 V / 3.1 V / 3.2 V / 3.3 V / 3.4 V / 3.5 V | Auto-shutdown threshold; also sets the 0 % anchor for the battery percentage indicator |
-| Units       | Metric / Imperial                                   | Global unit system for every distance/speed shown in Tools (Nearby Nodes, Trail, navigate-to-point). Metric: m / km, km/h, min/km. Imperial: ft / mi, mph, min/mi |
+| Units       | Metric / Imperial                                   | Unit system for distance values shown by supported screens such as Nearby Nodes. Metric uses m/km; Imperial uses ft/mi. |
 | Reboot      | action (**Enter**)                                  | Restarts this device. Pending setting changes are saved first. Last row, so it isn't the default-selected one |
 
 ---
@@ -104,27 +108,36 @@ The **repeater** mode and its flood filters live on their own screen — see **T
 
 | Setting  | Options    | Notes                                                                                              |
 | -------- | ---------- | -------------------------------------------------------------------------------------------------- |
-| Layout   | ABC / T9   | On-screen keyboard style. **ABC**: an a-b-c…z grid, one key per letter (the original layout). **T9**: phone-keypad multi-tap — each key is labelled with its **digit** and a letter group (e.g. `2abc`); repeated **Enter** presses cycle through the letters and then the digit itself. Applies to whichever script page is active (see Main/Additional below), not just Latin. |
-| Main | Latin / Cyrillic / Greek | Which script the keyboard **opens on by default**. **Latin** (default) matches earlier releases; pick **Cyrillic** or **Greek** here instead to make that script the one you land on every time, with Latin becoming the one reached via cycling (see Additional below) instead of the other way round. |
-| Additional | Latin / Cyrillic / Greek | The second script added to the same **#@/abc** key's cycle (Main → Additional → Symbols → Main) — no separate key to switch scripts. Setting Additional to the **same** script as Main drops the cycle back to just that script plus Symbols (no second script page at all). **Greek** covers the 24-letter alphabet plus final sigma (`ς`) but not the tonos stress accents used in proper Modern Greek spelling. Every script's letters render natively — the display font (a single unified Unicode font used everywhere on-screen) covers all of them, no separate toggle needed. |
+| Layout   | ABC / T9   | English on-screen keyboard style. **ABC** provides one key per letter. In message fields, **T9** predicts words from phone-keypad digit sequences; literal fields retain traditional multi-tap. |
 | CardKB | Found / Missing | Read-only boot detection and connection status for an optional Grove CardKB |
-| Virtual KB | Full / Compact | Keep the full on-screen keyboard grid or replace it with a compact external-keyboard status view |
 
 Applies to every on-screen text field (messages, waypoint labels, room passwords, preset names). Earlier releases labelled the grid *QWERTY*; the layout has always been alphabetical, so it is now named **ABC**.
 
 Message composition also provides a small common-word completion dictionary.
 In the Full editor, the best match is shown as uncommitted text after the
-underscore cursor (for example, `hel_lo`). In Compact CardKB mode the first hint
-shows the complete candidate, such as `Tab: hello`.
+underscore cursor (for example, `hel_lo`). In Compact CardKB mode the hint shows
+comma-separated candidates, clipped at the display edge when the final word
+does not fit.
 Type the beginning of a word, then open the `{}` picker (or press **Tab** on
-CardKB) to see up to three matches under **Complete:**. Selecting one replaces
+CardKB) to see up to eight matches under **Complete:**. Selecting one replaces
 the whole word at the cursor. Completion is deliberately limited to message
 text; passwords, names and configuration fields are never suggested or
-modified. The dictionary contains 600 frequency-ranked conversational words,
-curated from the SUBTLEX-US spoken-English corpus. Proper names, corpus
-fragments, profanity and explicit adult or violent terms are excluded.
+modified. The dictionary contains 2,500 frequency-ranked conversational words,
+based on the SUBTLEX-US spoken-English corpus with a 130-entry Australian
+localisation layer covering spellings and everyday vocabulary. Proper names,
+corpus fragments, profanity and explicit adult or violent terms are excluded.
 
-European Latin-diacritic letters (Polish, Czech, Slovak, German, French, Spanish, Portuguese, Nordic, etc.) aren't separate alphabet pages — instead, **Hold Enter** on a plain Latin letter that has accented variants (`a c d e i l n o r s t u y z`) opens a one-row popup of its accents (e.g. holding `a` offers `á à â ã ä å ą`); **LEFT/RIGHT** picks, **Enter** inserts it, **Cancel** dismisses with no change. Holding a letter with no accented variants (e.g. `b`) does nothing. Works on whichever page is currently showing Latin, whether that's Main or Additional.
+With the full on-screen **T9** layout, pressing keys 2–9 builds a predictive
+digit sequence and displays the highest-ranked matching word immediately. The
+`{}` picker shows up to eight alternatives. Space, Done, cursor movement, a
+page change or choosing an alternative commits the provisional word;
+Backspace removes the latest digit. The page key cycles **T9 → #@ → abc → T9**,
+where `abc` is traditional multi-tap for spelling words outside the dictionary.
+Key 1 and the symbols page also retain multi-tap. Predictive entry is limited
+to message text; names, passwords and other literal fields always use
+multi-tap in T9 layout. CardKB remains direct QWERTY input in either setting.
+
+European Latin-diacritic letters remain available through **Hold Enter** on a plain Latin letter that has accented variants (`a c d e i l n o r s t u y z`). This opens a one-row popup of its accents (e.g. holding `a` offers `á à â ã ä å ą`); **LEFT/RIGHT** picks, **Enter** inserts it, and **Cancel** dismisses it.
 
 See [CardKB](../cardkb/cardkb.md) for connection, controls and polling behaviour.
 
@@ -134,7 +147,7 @@ See [CardKB](../cardkb/cardkb.md) for connection, controls and polling behaviour
 
 | Setting  | Options          | Notes                                                |
 | -------- | ---------------- | ---------------------------------------------------- |
-| DMs      | all / favourites | Show all chat contacts or only upstream-starred ones |
+| DMs      | all / favourites | `all` shows every eligible direct-message contact; `favourites` shows only upstream-starred eligible DM contacts. Rooms and repeaters remain in their own lists |
 | Channels | all / favourites | Show all channels or only favourited ones            |
 | Rooms    | all / favourites | Show all room servers or only favourited ones        |
 
@@ -148,9 +161,6 @@ See [CardKB](../cardkb/cardkb.md) for connection, controls and polling behaviour
 | Set PIN    | 000000–999999 | Enter the six-digit parent PIN twice; the saved value is not displayed |
 | Channels   | ON / OFF | Shows favourited private channels in Messages; Public and # channels remain hidden; default OFF |
 | Favourites | ON / OFF | Allows the Favourites Dial; default ON                                   |
-| Map        | ON / OFF | Allows a read-only Map page; default OFF                                 |
-| Sensors    | ON / OFF | Allows the Sensors page; default OFF                                     |
-| Shutdown   | ON / OFF | Allows the Shutdown page; default OFF                                    |
 
 While Child Mode is locked, selecting Settings opens the parent PIN prompt. A successful PIN entry temporarily restores the full Settings screen and companion access. Leaving Settings or allowing the display to sleep ends the parent session.
 

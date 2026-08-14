@@ -1,13 +1,8 @@
 #pragma once
-// Custom screen — not part of upstream UITask.cpp
-// Included by UITask.cpp just before HomeScreen.
-//
-// The flat 10-item list grew crowded, so tools are grouped into collapsible
-// sections (Location / Comms / System) via the shared AccordionList helper —
-// the same fold-in-place model as Settings. Each row carries a mini-icon;
-// section headers show their cog/marker plus a fold indicator.
+// Custom screen — not part of upstream UITask.cpp.
+// Kept as a flat list: this focused build has few enough tools that category
+// submenus only add an unnecessary navigation step.
 
-#include "AccordionList.h"
 #include "../solo/SoloFeatures.h"
 
 class ToolsScreen : public UIScreen {
@@ -15,48 +10,38 @@ class ToolsScreen : public UIScreen {
 
   enum Action {
     ACT_NEARBY,
-#if SOLO_FEAT_NAVIGATION
+#if SOLO_FEAT_NAVIGATION && SOLO_FEAT_LOCATION_TOOLS
     ACT_LIVESHARE, ACT_TRAIL, ACT_LOCATOR, ACT_COMPASS,
 #endif
 #if SOLO_FEAT_REMOTE_BOT
     ACT_BOT,
 #endif
-    ACT_AUTOADVERT,
 #if SOLO_FEAT_REPEATER
     ACT_REPEATER,
 #endif
+#if SOLO_FEAT_ADMIN
     ACT_ADMIN,
-    ACT_CLOCK, ACT_RINGTONE, ACT_DIAGNOSTICS
+#endif
+#if SOLO_FEAT_CLOCK_TOOLS
+    ACT_CLOCK,
+#endif
+    ACT_RINGTONE, ACT_DIAGNOSTICS
 #if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
     , ACT_GPIO
 #endif
   };
+
   struct Tool { const char* label; const MiniIcon* icon; Action action; };
-  struct Section { const char* name; const MiniIcon* icon; const Tool* tools; uint8_t count; };
+  static const Tool TOOLS[];
+  static const int TOOL_COUNT;
 
-  static const Tool LOCATION_TOOLS[];
-  static const Tool COMMS_TOOLS[];
-  static const Tool SYSTEM_TOOLS[];
-  static const Section SECTIONS[];
-  static const int SECTION_COUNT = 3;
-
-  AccordionList _acc;
-
-  // Fixed icon gutter so labels line up whether or not a row has a glyph. Sized
-  // for the widest icon (the 7px cog) at the current font scale.
-  static int gutter(DisplayDriver& d) { return 7 * miniIconScale(d) + 2; }
-
-  static void drawIcon(DisplayDriver& d, int x, int y, const MiniIcon* ic) {
-    if (!ic) return;
-    const int s = miniIconScale(d);
-    const int top = (y - 1) + ((d.lineStep() - 1) - ic->h * s) / 2;
-    miniIconDrawTop(d, x, top, *ic);
-  }
+  int _sel = 0;
+  int _scroll = 0;
 
   void dispatch(Action a) {
     switch (a) {
       case ACT_NEARBY:      _task->gotoNearbyScreen();      break;
-#if SOLO_FEAT_NAVIGATION
+#if SOLO_FEAT_NAVIGATION && SOLO_FEAT_LOCATION_TOOLS
       case ACT_LIVESHARE:   _task->gotoLiveShareScreen();   break;
       case ACT_TRAIL:       _task->gotoTrailScreen();       break;
       case ACT_LOCATOR:     _task->gotoLocatorScreen();     break;
@@ -65,12 +50,15 @@ class ToolsScreen : public UIScreen {
 #if SOLO_FEAT_REMOTE_BOT
       case ACT_BOT:         _task->gotoBotScreen();         break;
 #endif
-      case ACT_AUTOADVERT:  _task->gotoAutoAdvertScreen();  break;
 #if SOLO_FEAT_REPEATER
       case ACT_REPEATER:    _task->gotoRepeaterScreen();    break;
 #endif
-      case ACT_ADMIN:       _task->pickAdminTarget();       break;  // Admin is remote-only: pick a node first
+#if SOLO_FEAT_ADMIN
+      case ACT_ADMIN:       _task->pickAdminTarget();       break;
+#endif
+#if SOLO_FEAT_CLOCK_TOOLS
       case ACT_CLOCK:       _task->gotoClockTools();        break;
+#endif
       case ACT_RINGTONE:    _task->gotoRingtoneEditor();    break;
       case ACT_DIAGNOSTICS: _task->gotoDiagnosticsScreen(); break;
 #if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
@@ -80,89 +68,76 @@ class ToolsScreen : public UIScreen {
   }
 
 public:
-  ToolsScreen(UITask* task) : _task(task) {}
+  explicit ToolsScreen(UITask* task) : _task(task) {}
 
-  // Open folded at the section list each time Tools is entered from Home.
-  void onShow() override {
-    static uint8_t sizes[SECTION_COUNT];
-    for (int i = 0; i < SECTION_COUNT; i++) sizes[i] = SECTIONS[i].count;
-    _acc.begin(sizes, SECTION_COUNT);
+  static int itemCount() { return TOOL_COUNT; }
+  static const char* itemLabel(int index) {
+    return (index >= 0 && index < TOOL_COUNT) ? TOOLS[index].label : "";
   }
+  void openItem(int index) {
+    if (index >= 0 && index < TOOL_COUNT) dispatch(TOOLS[index].action);
+  }
+
+  void onShow() override { _sel = _scroll = 0; }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
     display.drawCenteredHeader("TOOLS");
 
-    const int cw = display.getCharWidth();
-    const int g  = gutter(display);
-
-    _acc.render(display,
-      // Section header: "[+/-] <icon> Name"
-      [&](int sec, int y, bool sel, int reserve, bool collapsed) {
-        drawRowSelection(display, y, sel, reserve);
-        display.setCursor(2, y);
-        display.print(collapsed ? "+" : "-");
-        const int icon_x = 2 + cw + 2;
-        // drawIcon(display, icon_x, y, SECTIONS[sec].icon); // icons disabled for now, don't fit visually
-        display.setCursor(icon_x + g, y);
-        display.print(SECTIONS[sec].name);
-      },
-      // Item: indented "<icon> Label"
-      [&](int sec, int item, int y, bool sel, int reserve) {
-        drawRowSelection(display, y, sel, reserve);
-        const int icon_x = 2 + cw + 2;   // align item icons under the header icon
-        // drawIcon(display, icon_x, y, SECTIONS[sec].tools[item].icon); // icons disabled for now, don't fit visually
-        display.setCursor(icon_x + g, y);
-        display.print(SECTIONS[sec].tools[item].label);
+    drawList(display, TOOL_COUNT, _sel, _scroll,
+      [&](int idx, int y, bool selected, int reserve) {
+        drawRowSelection(display, y, selected, reserve);
+        display.drawTextEllipsized(2, y, display.width() - 4 - reserve, TOOLS[idx].label);
       });
     return 500;
   }
 
   bool handleInput(char c) override {
-    if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) { _task->gotoHomeScreen(); return true; }
-    switch (_acc.handleInput(c)) {
-      case AccordionList::ACTIVATED: {
-        const AccordionList::Row& r = _acc.selected();
-        dispatch(SECTIONS[r.sec].tools[r.item].action);
-        return true;
-      }
-      case AccordionList::HANDLED:  return true;
-      case AccordionList::IGNORED:  return false;
+    if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
+      _task->gotoHomeScreen();
+      return true;
+    }
+    if (c == KEY_UP && TOOL_COUNT > 0) {
+      _sel = _sel > 0 ? _sel - 1 : TOOL_COUNT - 1;
+      return true;
+    }
+    if (c == KEY_DOWN && TOOL_COUNT > 0) {
+      _sel = _sel < TOOL_COUNT - 1 ? _sel + 1 : 0;
+      return true;
+    }
+    if (c == KEY_ENTER && TOOL_COUNT > 0) {
+      dispatch(TOOLS[_sel].action);
+      return true;
     }
     return false;
   }
 };
 
-const ToolsScreen::Tool ToolsScreen::LOCATION_TOOLS[] = {
-  { "Nodes", &ICON_MAP_CONTACT,  ACT_NEARBY },
-#if SOLO_FEAT_NAVIGATION
-  { "Live Share",   &ICON_GPS,          ACT_LIVESHARE },
-  { "Trail",        &ICON_TRAIL,        ACT_TRAIL },
-  { "Locator",    &ICON_MAP_WAYPOINT, ACT_LOCATOR },
-  { "Compass",      &ICON_MAP_NORTH,    ACT_COMPASS },
+const ToolsScreen::Tool ToolsScreen::TOOLS[] = {
+  { "Nodes",           &ICON_MAP_CONTACT, ACT_NEARBY },
+#if SOLO_FEAT_NAVIGATION && SOLO_FEAT_LOCATION_TOOLS
+  { "Live Share",      &ICON_GPS,          ACT_LIVESHARE },
+  { "Trail",           &ICON_TRAIL,        ACT_TRAIL },
+  { "Locator",         &ICON_MAP_WAYPOINT, ACT_LOCATOR },
+  { "Compass",         &ICON_MAP_NORTH,    ACT_COMPASS },
 #endif
-};
-const ToolsScreen::Tool ToolsScreen::COMMS_TOOLS[] = {
 #if SOLO_FEAT_REMOTE_BOT
-  { "Remote Bot",     &ICON_BOT,      ACT_BOT },
+  { "Remote Bot",      &ICON_BOT,          ACT_BOT },
 #endif
-  { "Auto-Advert",    &ICON_ADVERT,   ACT_AUTOADVERT },
 #if SOLO_FEAT_REPEATER
-  { "Repeater",       &ICON_REPEATER, ACT_REPEATER },
+  { "Repeater",        &ICON_REPEATER,     ACT_REPEATER },
 #endif
-  { "Admin",          &ICON_GEAR,     ACT_ADMIN },
-};
-const ToolsScreen::Tool ToolsScreen::SYSTEM_TOOLS[] = {
-  { "Clock Tools",     &ICON_ALARM, ACT_CLOCK },
-  { "Ringtone Editor", &ICON_NOTE,  ACT_RINGTONE },
-  { "Diagnostics",     &ICON_CHART, ACT_DIAGNOSTICS },
+#if SOLO_FEAT_ADMIN
+  { "Admin",           &ICON_GEAR,         ACT_ADMIN },
+#endif
+#if SOLO_FEAT_CLOCK_TOOLS
+  { "Clock Tools",     &ICON_ALARM,        ACT_CLOCK },
+#endif
+  { "Ringtone Editor", &ICON_NOTE,         ACT_RINGTONE },
+  { "Diagnostics",     &ICON_CHART,        ACT_DIAGNOSTICS },
 #if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
-  { "GPIO",            &ICON_GEAR,  ACT_GPIO },
+  { "GPIO",            &ICON_GEAR,         ACT_GPIO },
 #endif
 };
-const ToolsScreen::Section ToolsScreen::SECTIONS[] = {
-  { "Location", &ICON_MAP_CONTACT, LOCATION_TOOLS, (uint8_t)(sizeof(LOCATION_TOOLS)/sizeof(LOCATION_TOOLS[0])) },
-  { "Comms",    &ICON_ADVERT,      COMMS_TOOLS,    (uint8_t)(sizeof(COMMS_TOOLS)/sizeof(COMMS_TOOLS[0])) },
-  { "System",   &ICON_GEAR,        SYSTEM_TOOLS,   (uint8_t)(sizeof(SYSTEM_TOOLS)/sizeof(SYSTEM_TOOLS[0])) },
-};
+const int ToolsScreen::TOOL_COUNT = sizeof(ToolsScreen::TOOLS) / sizeof(ToolsScreen::TOOLS[0]);

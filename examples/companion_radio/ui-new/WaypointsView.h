@@ -108,8 +108,7 @@ class WaypointsView {
   }
 
   // Open the shared keyboard for a literal field. Waypoint labels and the
-  // lat/lon magnitudes are never placeholder-expanded, so {loc}/{time} are
-  // cleared (same intent as the bot's literal trigger field).
+  // lat/lon magnitudes are literal, so contextual completion is cleared.
   void openKb(const char* initial, int max) {
     KeyboardWidget& kb = _task->keyboard();
     kb.begin(initial, max);

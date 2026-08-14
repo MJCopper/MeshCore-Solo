@@ -53,7 +53,7 @@ class ChannelsView {
 
   void openKb(const char* initial, int max) {
     kb().begin(initial, max);
-    kb().clearPlaceholders();     // literal field — {loc}/{time} make no sense here
+    kb().clearPlaceholders();     // literal field
     _kb_active = true;
   }
 

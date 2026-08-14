@@ -10,7 +10,11 @@
 
 A full-screen clock page on the home screen. Shows the current time and date, with up to three configurable data fields below.
 
-Time is synchronized from GPS or via the companion app. Timezone offset is applied from **Settings › System**.
+When the Clock page is enabled, pressing **Cancel/Back** on any other home
+carousel page returns directly to Clock. Cancel still closes an active popup
+before this shortcut is applied.
+
+Time is synchronized from GPS or via the companion app. While the clock remains unsynchronised, a GPS receiver configured off is temporarily retried once per hour for up to five minutes, then powered down again between attempts. Timezone offset is applied from **Settings › System**.
 
 If no time source is available, the screen shows _"! No time sync"_ with a hint to enable GPS or connect the app.
 
@@ -62,30 +66,19 @@ Sensor fields show `--` when the sensor is not connected or has no data.
 
 ---
 
-### Clock tools — Alarm, Timer, Stopwatch
+### Clock tools
 
-**Press Enter** (short press) on the Clock page to open **Clock Tools**, a small menu with three time utilities. **Cancel** backs out one level (tool → menu → home). The same menu also has an entry under **Tools › System**, so it's reachable without the Clock page.
+Alarm, Timer and Stopwatch are not included in this focused build.
+---
 
-#### Alarm
+## Boot time synchronisation
 
-A wake alarm with an optional repeat. Rows: **Hour**, **Minute**, **Repeat** and **Armed**. **Enter** on Hour or Minute opens the digit editor (LEFT/RIGHT moves between the tens/units, UP/DOWN changes the digit); **Enter** on Repeat cycles **Off → Daily → Weekdays → Weekends → Off**; **Enter** on Armed toggles ON/OFF. The configured time is shown next to the **Alarm** menu row when armed, and the setting persists across reboots.
+After every boot the Clock page shows **SYNC** until an authoritative live time
+update arrives from GPS, a companion connection or another network source. If
+GPS is configured off, the firmware powers it temporarily in the background,
+requests a time update, then powers it off again after synchronisation. A
+five-minute GPS timeout prevents an indoor device from leaving the receiver on
+indefinitely; **SYNC** remains until another source supplies the time.
 
-While an alarm is armed a bell icon signals it in two places: the top-left corner of the **Clock page** itself, and the **top status bar** of the other home pages (the status bar is hidden on the Clock page, which is why the clock face carries its own indicator). The bell is icon-only — the exact alarm time is on the **Alarm** row inside Clock Tools.
-
-The alarm is scheduled as an absolute fire instant, so it is **robust to clock re-syncs** — the mesh (every inbound packet), the companion app, GPS and the CLI can all jump the device clock at any moment. A correction that moves the clock a little still fires at the right wall-clock time; a jump that skips over the alarm time still fires (late). With **Repeat** set to Off (the default) the alarm disarms itself after firing once, same as before; with a repeat pattern set, it stays armed and re-schedules itself for the next matching day instead.
-
-The alarm only fires while the device is **awake** (it keeps running with the display off or locked). It cannot wake the device from a full **Shutdown** (the CPU and RAM are powered down), and needs a valid time source — it stays pending until the clock is synced.
-
-#### Timer (countdown)
-
-A large **HH:MM:SS** readout with one digit underlined. **LEFT/RIGHT** moves the cursor one digit at a time, **Up/Down** changes the digit under it (minute/second tens cap at 5, hours at 23), and **Enter** starts the countdown. While running it shows **H:MM:SS** — **Enter** stops it, **Cancel** returns to the menu and leaves it counting. When it reaches zero the device rings, even if you have navigated to another screen.
-
-#### Stopwatch
-
-**Enter** starts/stops; **Up/Down** resets when stopped; **Cancel** returns to the menu and leaves it running.
-
-#### Ringing
-
-When the alarm or timer fires the device plays a melody (overriding mute) and shows an alert. **Any key** silences it; otherwise it stops on its own after a minute.
-
-> **E-ink note:** the live timer/stopwatch readouts would thrash a slow e-paper panel if redrawn every second, so on e-ink they refresh only coarsely (and immediately on any key press). The underlying timing is exact regardless, and the countdown's buzzer always fires on time.
+Only the clock and date region is replaced by **SYNC**. The horizontal separator
+and all three configured dashboard fields remain visible and continue updating.

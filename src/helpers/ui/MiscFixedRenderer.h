@@ -4,6 +4,7 @@
 #include "DisplayDriver.h"
 #include "MiscFixedFont.h"
 #include "LemonIcons.h"
+#include "EmojiGlyphs.h"
 
 // Shared misc-fixed 6x9 text renderer for the monochrome OLED drivers.
 //
@@ -56,11 +57,7 @@ static inline int16_t miscFixedDrawGlyph(Adafruit_GFX& gfx, int16_t x, int16_t y
   }
 
   if (cp < MiscFixed.first || cp > MiscFixed.last) {
-    // Substitution box for anything the font doesn't cover. Drawn at plain `y`
-    // (not y - 7*sz): `y` is already the ascent top, so the box stays inside
-    // its own row instead of bleeding into the one above.
-    if (cp >= 0x20) gfx.fillRect(x + sz, y, 4*sz, 6*sz, color);
-    return x + 6 * sz;
+    return cp >= 0x20 ? emojiDrawGlyph(gfx, x, y, -1, sz, color) : x + 6 * sz;
   }
 
   const GFXglyph* g = &MiscFixedGlyphs[cp - MiscFixed.first];
@@ -90,7 +87,20 @@ static inline void miscFixedPrint(Adafruit_GFX& gfx, const char* str, int sz, ui
   while (*p) {
     uint32_t cp = DisplayDriver::decodeCodepoint(p);
     if (cp == '\n') { cy += MiscFixed.yAdvance * sz; cx = 0; }
-    else            { cx = miscFixedDrawGlyph(gfx, cx, cy, cp, sz, color); }
+    else if (emojiIsVariation(cp) || emojiIsModifier(cp) || cp == 0x200D) { }
+    else if (emojiConsumeKeycap(p, cp)) {
+      cx = emojiDrawGlyph(gfx, cx, cy, -1, sz, color);
+    }
+    else {
+      int16_t index = emojiGlyphIndex(cp);
+      if (index >= 0 || emojiIsCodepoint(cp)) {
+        if (emojiIsRegionalIndicator(cp)) index = emojiFlagGlyphIndex(cp, p);
+        emojiConsumeSuffix(p, cp);
+        cx = emojiDrawGlyph(gfx, cx, cy, index, sz, color);
+      } else {
+        cx = miscFixedDrawGlyph(gfx, cx, cy, cp, sz, color);
+      }
+    }
   }
   gfx.setCursor(cx, cy);
 }
@@ -98,6 +108,11 @@ static inline void miscFixedPrint(Adafruit_GFX& gfx, const char* str, int sz, ui
 static inline uint16_t miscFixedTextWidth(const char* str, int sz) {
   uint16_t width = 0;
   const uint8_t* p = (const uint8_t*)str;
-  while (*p) width += miscFixedXAdvance(DisplayDriver::decodeCodepoint(p), sz);
+  while (*p) {
+    uint32_t cp = DisplayDriver::decodeCodepoint(p);
+    if (emojiIsVariation(cp) || emojiIsModifier(cp) || cp == 0x200D) continue;
+    if (!emojiConsumeKeycap(p, cp) && emojiIsCodepoint(cp)) emojiConsumeSuffix(p, cp);
+    width += miscFixedXAdvance(cp, sz);
+  }
   return width;
 }

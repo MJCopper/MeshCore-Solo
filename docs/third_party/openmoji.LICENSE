@@ -1,0 +1,16 @@
+OpenMoji attribution
+====================
+
+The monochrome emoji bitmaps in src/helpers/ui/EmojiGlyphData.h are adapted
+from OpenMoji 17.0.0 black artwork.
+
+All emojis designed by OpenMoji -- the open-source emoji and icon project.
+License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA
+4.0).
+
+Project: https://openmoji.org/
+Source: https://github.com/hfg-gmuend/openmoji
+License: https://creativecommons.org/licenses/by-sa/4.0/
+
+The generated 5x8 monochrome adaptations are distributed under the same
+CC BY-SA 4.0 terms. The surrounding firmware remains under its stated licence.

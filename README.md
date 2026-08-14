@@ -25,30 +25,19 @@ All firmware files are published on the [releases page](https://github.com/Marek
 
 ## Feature highlights
 
-- Extended language support with native Unicode rendering and input ([Lemon font](https://github.com/cmvnd/fonts)) alongside the original ASCII mode (Default font with transliteration) — on-screen keyboard alphabets for Cyrillic, Greek, Polish, Czech, Slovak, German, French, Spanish, Portuguese and Nordic (Danish/Norwegian/Swedish), selectable in Settings › Keyboard › Alphabet
+- Native Unicode message rendering with an EN-US on-screen keyboard and Hold-Enter access to common European Latin accents
 
-- Enabled sensor screens with support for onboard sensors (temperature, humidity, pressure, luminosity, CO₂) and GPS data
+- Sensor support for dashboard fields, telemetry, and message placeholders without a standalone Sensors page
 
-- **GPS navigation** — a full navigation suite that needs no extra hardware (details in the [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) docs):
+- [Messages Screen](./docs/solo_features/message_screen/message_screen.md) — view and send messages, open message details, reply with quick messages or custom text, configure per-channel notifications, and add/edit/delete channels on-device
 
-  - **Waypoints** — mark a spot (car, camp, water…) with a short label, see it on the trail map, and get live bearing + distance back to it; the list always offers a one-tap backtrack to where your trail started
-  - **GPS compass** — heading derived from course-over-ground (no magnetometer needed), shown as a clear scrolling heading tape with a large degrees + cardinal readout
-  - **Navigate to anything** — a saved waypoint, a node straight from Nearby Nodes, or a location someone shares with you in a message
-  - **Share & save locations** — send a waypoint to a contact or channel; on the other end, navigate to or save any shared location with one menu
-  - **Live location sharing** — broadcast your position over the mesh as you move (movement-gated, to a channel or contact) and see others who share theirs as pins on the map and live distance/bearing in Nearby
-  - **Locator** — arm a geofence around a target — a saved waypoint *or* a person (their live/last-known position) — and get an alert when you arrive/leave or they get near/far, with an optional homing beeper that ticks faster the closer you get. Set it from the Locator screen or straight from Nearby Nodes / Waypoints, and see the target as a flag on the map
-  - **GPS trail** — background route recording with an auto-fit map (waypoints + live position), summary stats, auto-pause on stops, and [GPX export](#solo-tools)
-  - **Metric or imperial** — one global Units setting drives every distance and speed across the UI
-
-- [Messages Screen](./docs/solo_features/message_screen/message_screen.md) — view and send messages, open message details, reply with quick messages or custom text, navigate to / save locations shared in a message, per-channel notification and melody overrides, add/edit/delete channels on-device
-
-- [Favourites Dial](./docs/solo_features/favourites_dial/favourites_dial.md) — pin up to six contacts for quick access from the home screen
+- [Favourites Dial](./docs/solo_features/favourites_dial/favourites_dial.md) — pin four contacts for quick access from the home screen
 
 - [Settings Screen](./docs/solo_features/settings_screen/settings_screen.md) — configure display, sound, home page order, radio and system settings
 
 - [CardKB](./docs/solo_features/cardkb/cardkb.md) — external Grove keyboard input with boot-only detection and low-power polling
 
-- [Clock Screen](./docs/solo_features/clock_screen/clock_screen.md) — view time and date plus up to three configurable data fields, with built-in clock tools (one-shot alarm, countdown timer, stopwatch)
+- [Clock Screen](./docs/solo_features/clock_screen/clock_screen.md) — view time and date plus up to three configurable data fields
 
 - [Screen Lock](./docs/solo_features/screen_lock/screen_lock.md) — lock the device to prevent accidental keypresses, with a lock screen showing time and sensor data
 
@@ -56,7 +45,7 @@ All firmware files are published on the [releases page](https://github.com/Marek
 
 - [Quiet Time](./docs/solo_features/quiet_time/quiet_time.md) — silence incoming notification presentation on a daily local-time schedule while retaining messages and unread counts
 
-- [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) — GPS trail & waypoints, compass, nearby nodes (with ping & navigate), ringtone editor, remote bot, auto-advert, live location sharing, locator, diagnostics, repeater, remote admin
+- [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) — nearby nodes, ringtone editor, diagnostics, and optional repeater mode
 
 - **Battery saving (radio)** — two optional, independent toggles under Settings › Radio:
   - **Pwr save** — hardware duty-cycle receive (SX126x `SetRxDutyCycle`): the radio cycles RX↔sleep on its own and wakes on a preamble, cutting average RX current with only a little added receive latency
@@ -99,15 +88,15 @@ Updating to a newer version usually does not require erasing flash unless the re
 
 | Document                                                                   | Description                                                           |
 | -------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| [Messages Screen](./docs/solo_features/message_screen/message_screen.md)   | Sending messages, context menus, reply, navigate to / save shared locations, Notif/Melody overrides |
+| [Messages Screen](./docs/solo_features/message_screen/message_screen.md)   | Sending messages, context menus, replies, and notification overrides |
 | [Favourites Dial](./docs/solo_features/favourites_dial/favourites_dial.md) | Pinned contacts grid, unread badges, pin/unpin                        |
-| [Clock Screen](./docs/solo_features/clock_screen/clock_screen.md)          | Clock page, date, configurable data fields, alarm / timer / stopwatch  |
+| [Clock Screen](./docs/solo_features/clock_screen/clock_screen.md)          | Clock page, date and configurable data fields                          |
 | [Settings Screen](./docs/solo_features/settings_screen/settings_screen.md) | All settings sections with values and interactions                    |
 | [CardKB](./docs/solo_features/cardkb/cardkb.md)                             | External keyboard controls, status and low-power polling               |
 | [Screen Lock](./docs/solo_features/screen_lock/screen_lock.md)             | Lock/unlock sequence, lock screen, auto-lock                          |
 | [Child Mode](./docs/solo_features/child_mode/child_mode.md)                 | Parent PIN, allowed conversations and pages, transport restrictions, recovery |
 | [Quiet Time](./docs/solo_features/quiet_time/quiet_time.md)                 | Daily local-time notification schedule with retained unread state |
-| [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md)          | GPS trail & waypoints, compass, navigation, nearby nodes, ringtone editor, remote bot, auto-advert, live location sharing, locator, diagnostics, repeater, remote admin |
+| [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md)          | Nearby nodes, ringtone editor, diagnostics, and repeater mode |
 | [Solo UI framework](./docs/design/solo_ui_framework.md)                    | **Developer guide** — the reusable building blocks (screens, lists, popups, mini-icons, geo/persistence helpers) and how to add a new feature |
 
 ### Upstream MeshCore
@@ -125,20 +114,17 @@ Updating to a newer version usually does not require erasing flash unless the re
 
 ## Solo Tools
 
-All solo builds include screenshot and GPX trail export support out of the box — no special build flags required.
+Solo builds include screenshot capture without requiring special build flags.
 
 ### [Solo Tools Web App](https://marekzegare4.github.io/Solo-tools/) — no install required
 
 Open the link in a browser with Web Serial support (Chromium-based) and click **Connect device**. The web app supports:
 
 - **Screenshot** — capture the current display contents as a PNG
-- **GPX export** — stream the GPS trail and download a timestamped `.gpx` file
-
-Trigger the relevant action on the device (**Tools › Trail › Hold Enter** for GPX export, **S** key for screenshot) after connecting.
+Send the **S** key after connecting to capture the current screen.
 
 > Disconnect from the companion app before connecting via USB — USB serial is suspended while a BLE connection is active.
 
-> If the companion app is connected over BLE the GPX export is safe (USB receive is ignored). If the app is on USB, disconnect it first — the raw stream will otherwise disrupt the app's frame protocol.
 
 ---
 

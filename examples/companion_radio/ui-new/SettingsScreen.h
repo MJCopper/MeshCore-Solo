@@ -6,11 +6,11 @@
 #include "../RadioPresets.h"
 #include "RadioParamsEditor.h"
 #include "RadioPresetPicker.h"
-#include "AccordionList.h"
 #include "ChildMode.h"
 #include "DigitEditor.h"
 #include "QuietTime.h"
 #include "TimeOfDayEditor.h"
+#include "MessageEditorSupport.h"
 
 class SettingsScreen : public UIScreen {
   UITask* _task;
@@ -58,11 +58,8 @@ class SettingsScreen : public UIScreen {
 #if ENV_INCLUDE_GPS == 1
     HOME_GPS,
 #endif
-#if UI_SENSORS_PAGE == 1
-    HOME_SENSORS,
-#endif
     HOME_SETTINGS, HOME_QUICK_MSG,
-    HOME_TOOLS, HOME_SHUTDOWN, HOME_MAP,
+    HOME_TOOLS,
     // Radio section
     SECTION_RADIO,
     TX_POWER,
@@ -80,18 +77,14 @@ class SettingsScreen : public UIScreen {
     // Keyboard section
     SECTION_KEYBOARD,
     KEYBOARD_TYPE,
-    KEYBOARD_MAIN_ALPHABET,
-    KEYBOARD_ALPHABET,
 #if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
     KEYBOARD_CARDKB_STATUS,
-    KEYBOARD_CARDKB_COMPACT,
 #endif
     // Contacts section
     SECTION_CONTACTS, DM_FILTER, CH_FILTER, ROOM_FILTER,
     // Child mode section
 #if SOLO_FEAT_CHILD_MODE
     SECTION_CHILD, CHILD_ENABLED, CHILD_PIN, CHILD_CHANNELS, CHILD_FAVOURITES,
-    CHILD_MAP, CHILD_SENSORS, CHILD_SHUTDOWN,
 #endif
     // Messages section
     SECTION_MESSAGES,
@@ -101,20 +94,22 @@ class SettingsScreen : public UIScreen {
     Count
   };
 
-  // Cursor + scroll, fold state and the flattened visible list are owned by the
-  // shared AccordionList helper. We keep only the section→SettingItem mapping it
-  // needs (sections are walked once from the enum, honouring the #if guards).
+  // Sections are walked once from the enum, honouring the #if guards. The home
+  // card selects a section, then this screen renders only that section's items.
   int  _selected = 0;   // SettingItem under the cursor, resolved per input/render
   int  _reserve = 0;    // right-edge px reserved for the scrollbar (0 when list fits)
   bool _dirty = false;
 
-  AccordionList _acc;
   static const int NUM_SECTIONS = 8 + SOLO_FEAT_CHILD_MODE;
   static const int MAX_PER_SEC  = 16;
   uint8_t _sec_items[NUM_SECTIONS][MAX_PER_SEC]; // SettingItem per (section, row)
   uint8_t _sec_count[NUM_SECTIONS];
   uint8_t _sec_header[NUM_SECTIONS];             // the SECTION_* enum for each section
   int     _num_sections = 0;
+  int     _open_section = -1;
+  int     _active_section = -1;
+  int     _section_sel = 0;
+  int     _section_scroll = 0;
 
 #if AUTO_OFF_MILLIS > 0
   static const uint16_t AUTO_OFF_OPTS[5];
@@ -231,29 +226,13 @@ class SettingsScreen : public UIScreen {
     _num_sections = cur + 1;
   }
 
-  // (Re)load the section sizes into the accordion (folds all, resets the cursor).
-  void resetList() {
-    uint8_t sizes[NUM_SECTIONS];
-    for (int i = 0; i < _num_sections; i++) sizes[i] = _sec_count[i];
-    _acc.begin(sizes, _num_sections);
-  }
-
-  // Resolve the accordion's selected row to a SettingItem (header → SECTION_*).
-  int currentItem() const {
-    const AccordionList::Row& r = _acc.selected();
-    return (r.item < 0) ? _sec_header[r.sec] : _sec_items[r.sec][r.item];
-  }
-
   bool isHomePage(int item) const {
     return item == HOME_CLOCK    || item == HOME_RADIO      || item == HOME_BT      ||
            item == HOME_ADVERT   || item == HOME_TOOLS      ||
-           item == HOME_SHUTDOWN || item == HOME_SETTINGS   || item == HOME_QUICK_MSG ||
-           item == HOME_FAVOURITES || item == HOME_MAP
+           item == HOME_SETTINGS   || item == HOME_QUICK_MSG ||
+           item == HOME_FAVOURITES
 #if ENV_INCLUDE_GPS == 1
            || item == HOME_GPS
-#endif
-#if UI_SENSORS_PAGE == 1
-           || item == HOME_SENSORS
 #endif
     ;
   }
@@ -294,12 +273,7 @@ class SettingsScreen : public UIScreen {
 #if ENV_INCLUDE_GPS == 1
     if (item == HOME_GPS)       return NodePrefs::HPB_GPS;
 #endif
-#if UI_SENSORS_PAGE == 1
-    if (item == HOME_SENSORS)   return NodePrefs::HPB_SENSORS;
-#endif
     if (item == HOME_TOOLS)     return NodePrefs::HPB_TOOLS;
-    if (item == HOME_SHUTDOWN)  return NodePrefs::HPB_SHUTDOWN;
-    if (item == HOME_MAP)       return NodePrefs::HPB_MAP;
     if (item == HOME_SETTINGS)  return NodePrefs::HPB_SETTINGS;
     if (item == HOME_QUICK_MSG) return NodePrefs::HPB_QUICK_MSG;
     return -1;
@@ -470,7 +444,7 @@ class SettingsScreen : public UIScreen {
       display.print("N/A");
 #endif
     } else if (item == BUZZER_VOLUME) {
-      display.print("BzrVol");
+      display.print("Volume");
 #ifdef PIN_BUZZER
       renderBar(display, valCol(display), y, _task->getBuzzerVolume() + 1, 5);
 #else
@@ -618,23 +592,11 @@ class SettingsScreen : public UIScreen {
       display.print("Type");
       display.setCursor(valCol(display), y);
       display.print((p && p->keyboard_type) ? "T9" : "ABC");
-    } else if (item == KEYBOARD_MAIN_ALPHABET) {
-      display.print("Main");
-      display.setCursor(valCol(display), y);
-      display.print(NodePrefs::keyboardAlphabetLabel(p ? p->keyboard_main_alphabet : 0));
-    } else if (item == KEYBOARD_ALPHABET) {
-      display.print("Additional");
-      display.setCursor(valCol(display), y);
-      display.print(NodePrefs::keyboardAlphabetLabel(p ? p->keyboard_alt_alphabet : 0));
 #if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
     } else if (item == KEYBOARD_CARDKB_STATUS) {
       display.print("CardKB");
       display.setCursor(valCol(display), y);
       display.print(_task->isCardKBConnected() ? "Found" : "Missing");
-    } else if (item == KEYBOARD_CARDKB_COMPACT) {
-      display.print("Virtual KB");
-      display.setCursor(valCol(display), y);
-      display.print((p && p->keyboard_cardkb_compact) ? "Compact" : "Full");
 #endif
     } else if (item == BATT_DISPLAY) {
       display.print("BattDisp");
@@ -692,13 +654,9 @@ class SettingsScreen : public UIScreen {
     } else if (item == CHILD_CHANNELS) {
       display.print("Channels"); display.setCursor(valCol(display), y);
       display.print((p && p->child_channels_enabled) ? "ON" : "OFF");
-    } else if (item == CHILD_FAVOURITES || item == CHILD_MAP ||
-               item == CHILD_SENSORS || item == CHILD_SHUTDOWN) {
-      uint16_t bit = item == CHILD_FAVOURITES ? NodePrefs::HP_FAVOURITES :
-                     (item == CHILD_MAP ? NodePrefs::HP_MAP :
-                     (item == CHILD_SENSORS ? NodePrefs::HP_SENSORS : NodePrefs::HP_SHUTDOWN));
-      display.print(item == CHILD_FAVOURITES ? "Favourites" :
-                    (item == CHILD_MAP ? "Map" : (item == CHILD_SENSORS ? "Sensors" : "Shutdown")));
+    } else if (item == CHILD_FAVOURITES) {
+      uint16_t bit = NodePrefs::HP_FAVOURITES;
+      display.print("Favourites");
       display.setCursor(valCol(display), y);
       display.print((p && (p->child_visible_pages & bit)) ? "ON" : "OFF");
 #endif
@@ -745,7 +703,6 @@ public:
   SettingsScreen(UITask* task, KeyboardWidget* kb)
     : _task(task), _kb(kb) {
     buildSections();
-    resetList();
   }
 
 
@@ -754,9 +711,20 @@ public:
     _edit_name = false;
     _quiet_edit_item = -1;
     _quiet_editor.editing = false;
-    resetList();
+    _active_section = (_open_section >= 0 && _open_section < _num_sections)
+                        ? _open_section : 0;
+    _open_section = -1;
+    _section_sel = 0;
+    _section_scroll = 0;
     _editor.freq.active = false;
   }
+
+  int sectionCount() const { return _num_sections; }
+  const char* sectionLabel(int index) const {
+    return (index >= 0 && index < _num_sections)
+             ? sectionName(_sec_header[index]) : "";
+  }
+  void openSection(int index) { _open_section = index; }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
@@ -785,23 +753,11 @@ public:
       return _kb->render(display);
     }
 
-    display.drawCenteredHeader("SETTINGS");
-
-    _acc.render(display,
-      // Section header: "[+/-] Name"
-      [&](int sec, int y, bool sel, int reserve, bool collapsed) {
+    display.drawCenteredHeader(sectionName(_sec_header[_active_section]));
+    drawList(display, _sec_count[_active_section], _section_sel, _section_scroll,
+      [&](int item, int y, bool sel, int reserve) {
         _reserve = reserve;
-        display.setColor(DisplayDriver::LIGHT);
-        drawRowSelection(display, y, sel, reserve);
-        display.setCursor(2, y);
-        display.print(collapsed ? "+" : "-");
-        display.print(" ");
-        display.print(sectionName(_sec_header[sec]));
-      },
-      // Item row
-      [&](int sec, int item, int y, bool sel, int reserve) {
-        _reserve = reserve;
-        renderItem(display, _sec_items[sec][item], y, sel);
+        renderItem(display, _sec_items[_active_section][item], y, sel);
       });
 
     if (_picker.menu.active) _picker.menu.render(display);
@@ -924,7 +880,7 @@ public:
         switch (_picker.onSelected(_picker.menu.selectedIndex(), p, radioTarget(p))) {
           case RadioPresetPicker::START_SAVE:
             _kb->begin("", (int)sizeof(p->user_radio_presets[0].name) - 1);
-            _kb->clearPlaceholders();   // {loc}/{time} are for messages, not preset names
+            _kb->clearPlaceholders();   // preset names are literal
             break;
           case RadioPresetPicker::APPLIED:
             _task->applyRadioParams();
@@ -950,12 +906,17 @@ public:
       return true;
     }
 
-    // Up/down navigation and section fold/unfold live in the shared helper.
-    // Enter on an item returns ACTIVATED and falls through to the per-item logic
-    // below; left/right are ignored by the helper and likewise fall through.
-    AccordionList::Result ar = _acc.handleInput(c);
-    if (ar == AccordionList::HANDLED) return true;
-    _selected = currentItem();
+    int item_count = _sec_count[_active_section];
+    if (c == KEY_UP && item_count > 0) {
+      _section_sel = _section_sel > 0 ? _section_sel - 1 : item_count - 1;
+      return true;
+    }
+    if (c == KEY_DOWN && item_count > 0) {
+      _section_sel = _section_sel + 1 < item_count ? _section_sel + 1 : 0;
+      return true;
+    }
+    if (item_count <= 0) return false;
+    _selected = _sec_items[_active_section][_section_sel];
 
     bool right = keyIsNext(c);
     bool left  = keyIsPrev(c);
@@ -1104,29 +1065,6 @@ public:
       _dirty = true;
       return true;
     }
-    if (_selected == KEYBOARD_MAIN_ALPHABET && p && (left || right || enter)) {
-      int idx = p->keyboard_main_alphabet;
-      if (right || enter) idx = (idx + 1) % NodePrefs::KB_ALPHABET_COUNT;
-      else if (left)      idx = (idx + NodePrefs::KB_ALPHABET_COUNT - 1) % NodePrefs::KB_ALPHABET_COUNT;
-      p->keyboard_main_alphabet = (uint8_t)idx;
-      _dirty = true;
-      return true;
-    }
-    if (_selected == KEYBOARD_ALPHABET && p && (left || right || enter)) {
-      int idx = p->keyboard_alt_alphabet;
-      if (right || enter) idx = (idx + 1) % NodePrefs::KB_ALPHABET_COUNT;
-      else if (left)      idx = (idx + NodePrefs::KB_ALPHABET_COUNT - 1) % NodePrefs::KB_ALPHABET_COUNT;
-      p->keyboard_alt_alphabet = (uint8_t)idx;
-      _dirty = true;
-      return true;
-    }
-#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
-    if (_selected == KEYBOARD_CARDKB_COMPACT && p && (left || right || enter)) {
-      p->keyboard_cardkb_compact ^= 1;
-      _dirty = true;
-      return true;
-    }
-#endif
     if (_selected == DM_RESEND && p) {
       int n = p->dm_resend_count;
       if (right || enter) n = (n + 1) % 6;          // 0..5, wraps
@@ -1214,12 +1152,8 @@ public:
       // The parent remains in this settings session. Leaving Settings locks it.
       return true;
     }
-    if ((_selected == CHILD_FAVOURITES || _selected == CHILD_MAP ||
-         _selected == CHILD_SENSORS || _selected == CHILD_SHUTDOWN) &&
-        p && (left || right || enter)) {
-      uint16_t bit = _selected == CHILD_FAVOURITES ? NodePrefs::HP_FAVOURITES :
-                     (_selected == CHILD_MAP ? NodePrefs::HP_MAP :
-                     (_selected == CHILD_SENSORS ? NodePrefs::HP_SENSORS : NodePrefs::HP_SHUTDOWN));
+    if (_selected == CHILD_FAVOURITES && p && (left || right || enter)) {
+      uint16_t bit = NodePrefs::HP_FAVOURITES;
       p->child_visible_pages ^= bit;
       _dirty = true;
       return true;
@@ -1235,9 +1169,9 @@ public:
       _edit_slot = slot;
       // Bound to the custom_msgs store (140 B) so the wider keyboard buffer
       // can't overflow it on save.
-      _kb->begin(p ? p->custom_msgs[slot] : "",
-                p ? (int)sizeof(p->custom_msgs[slot]) - 1 : KB_MAX_LEN);
-      kbAddSensorPlaceholders(*_kb, &sensors);
+      messageeditor::begin(*_kb, p ? p->custom_msgs[slot] : "",
+                           p ? (int)sizeof(p->custom_msgs[slot]) - 1 : KB_MAX_LEN,
+                           &sensors);
       return true;
     }
     return false;

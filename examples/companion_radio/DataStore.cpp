@@ -1,9 +1,9 @@
 #include <Arduino.h>
 #include "DataStore.h"
+#include "solo/RepeaterTiming.h"
 #include "SoloPrefsMigration.h"
 #include "solo/SoloPrefsCodec.h"
 #include "Features.h"   // FEAT_JOYSTICK_ROTATION_SETTING (else `#if !FEAT_…` is always true)
-#include <target.h>     // radio_driver — repeater-profile freq bounds (getFreqBounds)
 
 #if defined(EXTRAFS) || defined(QSPIFLASH)
   #define MAX_BLOBRECS 100
@@ -270,7 +270,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   // 0 is a valid SNR threshold, so the "off" state needs its own sentinel set
   // before reading — an older file lacking this field must read as disabled,
   // not as "filter everything below 0 dB".
-  _prefs.repeat_min_snr = NodePrefs::REPEAT_SNR_DISABLED;
+  _prefs.reserved_repeat_min_snr = -128;
   File file = openRead(_fs, filename);
   if (!file) return;
 
@@ -396,17 +396,15 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   // → 0xC0DE000E: repeater forwarding-filter knobs. On a pre-E file the bytes here are
   // that file's own sentinel tail, so clamp every out-of-range value back to its
   // "off" default (same stray-byte handling as the fields below).
-  rd(&_prefs.repeat_skip_adverts, sizeof(_prefs.repeat_skip_adverts));
-  rd(&_prefs.repeat_max_hops,     sizeof(_prefs.repeat_max_hops));
+  rd(&_prefs.reserved_repeat_skip_adverts, sizeof(_prefs.reserved_repeat_skip_adverts));
+  rd(&_prefs.reserved_repeat_max_hops,     sizeof(_prefs.reserved_repeat_max_hops));
   rd(&_prefs.repeat_delay_boost,  sizeof(_prefs.repeat_delay_boost));
-  rd(&_prefs.repeat_min_snr,      sizeof(_prefs.repeat_min_snr));
+  rd(&_prefs.reserved_repeat_min_snr,      sizeof(_prefs.reserved_repeat_min_snr));
   rd(&_prefs.repeat_suppress_dup, sizeof(_prefs.repeat_suppress_dup));
-  if (_prefs.repeat_skip_adverts > 1) _prefs.repeat_skip_adverts = 0;
-  if (_prefs.repeat_max_hops > 64)    _prefs.repeat_max_hops = 0;
+  _prefs.reserved_repeat_skip_adverts = 0;
+  _prefs.reserved_repeat_max_hops = 0;
   if (_prefs.repeat_delay_boost > 8)  _prefs.repeat_delay_boost = 0;
-  if (_prefs.repeat_min_snr != NodePrefs::REPEAT_SNR_DISABLED &&
-      (_prefs.repeat_min_snr < -20 || _prefs.repeat_min_snr > 10))
-    _prefs.repeat_min_snr = NodePrefs::REPEAT_SNR_DISABLED;   // match the UI's -20..10 range
+  _prefs.reserved_repeat_min_snr = -128;
   if (_prefs.repeat_suppress_dup > 1) _prefs.repeat_suppress_dup = 0;
   rd(&_prefs.repeater_use_profile, sizeof(_prefs.repeater_use_profile));
   rd(&_prefs.repeater_freq,        sizeof(_prefs.repeater_freq));
@@ -469,18 +467,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   // tail bytes here; clamp back to the QWERTY default (0).
   rd(&_prefs.keyboard_type, sizeof(_prefs.keyboard_type));
   if (_prefs.keyboard_type > 1) _prefs.keyboard_type = 0;
-  // Pre-0x10 files leave stray sentinel bytes here, same as a never-configured
-  // device. Either way there's no valid saved profile, so default to a profile
-  // in the same band as the companion's own network (_prefs.freq, already read
-  // above) rather than "Current" — a repeater silently following the companion
-  // onto whatever private network it later joins isn't the MeshCore community
-  // norm; that stays opt-in. Band-matched rather than a flat frequency so the
-  // default can't land outside what's legal where the companion is set up.
-  if (_prefs.repeater_use_profile > 1) _prefs.repeater_use_profile = 0;
-  float rpt_lo, rpt_hi; radio_driver.getFreqBounds(rpt_lo, rpt_hi);
-  if (!isValidRepeaterProfile(_prefs.repeater_freq, _prefs.repeater_bw, _prefs.repeater_sf, _prefs.repeater_cr, rpt_lo, rpt_hi)) {
-    seedDefaultRepeaterProfile(_prefs);
-  }
+  // Former dedicated-repeater profile bytes remain serialized but are ignored.
   // → 0xC0DE000B: append bot_commands_enabled + quiet-hours. Older files leave
   // stray bytes here; clamp so upgraders fall back to off / no quiet hours.
   if (_prefs.bot_commands_enabled > 1)  _prefs.bot_commands_enabled = 0;
@@ -608,9 +595,8 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.gpio4_mode, sizeof(_prefs.gpio4_mode));
   if (_prefs.gpio4_mode > 3) _prefs.gpio4_mode = 0;
 
-  // → 0xC0DE0023: append the external-keyboard compact-display toggle at the
-  // tail. A pre-0x23 file has no byte here; clamp to 0 (full grid, unchanged
-  // behaviour for upgraders).
+  // → 0xC0DE0023: reserved former external-keyboard display toggle. Keep
+  // reading the byte so later fields and existing preference files stay aligned.
   rd(&_prefs.keyboard_cardkb_compact, sizeof(_prefs.keyboard_cardkb_compact));
   if (_prefs.keyboard_cardkb_compact > 1) _prefs.keyboard_cardkb_compact = 0;
 
@@ -653,6 +639,28 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   if (_prefs.quiet_time_enabled > 1) _prefs.quiet_time_enabled = 0;
   if (_prefs.quiet_time_start_min >= 24 * 60) _prefs.quiet_time_start_min = 21 * 60;
   if (_prefs.quiet_time_end_min >= 24 * 60) _prefs.quiet_time_end_min = 7 * 60;
+
+  // → 0xC0DE0027/28: standard repeater radio timing. Existing records have only
+  // their four-byte sentinel left here, so keep the defaults seeded by MyMesh
+  // unless all three floats and the new sentinel are present.
+  if (file.available() >= (int)(3 * sizeof(float) + sizeof(uint32_t))) {
+    rd(&_prefs.repeat_rx_delay_base, sizeof(_prefs.repeat_rx_delay_base));
+    rd(&_prefs.repeat_flood_tx_factor, sizeof(_prefs.repeat_flood_tx_factor));
+    rd(&_prefs.repeat_direct_tx_factor, sizeof(_prefs.repeat_direct_tx_factor));
+  } else {
+    _prefs.repeat_rx_delay_base = solo::RepeaterTiming::DEFAULT_RX_DELAY_BASE;
+    _prefs.repeat_flood_tx_factor = solo::RepeaterTiming::DEFAULT_FLOOD_TX_FACTOR;
+    _prefs.repeat_direct_tx_factor = solo::RepeaterTiming::DEFAULT_DIRECT_TX_FACTOR;
+  }
+  _prefs.repeat_rx_delay_base = solo::RepeaterTiming::validOrDefault(
+      _prefs.repeat_rx_delay_base, solo::RepeaterTiming::MAX_RX_DELAY_BASE,
+      solo::RepeaterTiming::DEFAULT_RX_DELAY_BASE);
+  _prefs.repeat_flood_tx_factor = solo::RepeaterTiming::validOrDefault(
+      _prefs.repeat_flood_tx_factor, solo::RepeaterTiming::MAX_TX_FACTOR,
+      solo::RepeaterTiming::DEFAULT_FLOOD_TX_FACTOR);
+  _prefs.repeat_direct_tx_factor = solo::RepeaterTiming::validOrDefault(
+      _prefs.repeat_direct_tx_factor, solo::RepeaterTiming::MAX_TX_FACTOR,
+      solo::RepeaterTiming::DEFAULT_DIRECT_TX_FACTOR);
 
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
@@ -809,10 +817,10 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.bot_quiet_end,       sizeof(_prefs.bot_quiet_end));
     file.write((uint8_t *)_prefs.bot_trigger_ch,       sizeof(_prefs.bot_trigger_ch));
     file.write((uint8_t *)_prefs.user_radio_presets,   sizeof(_prefs.user_radio_presets));
-    file.write((uint8_t *)&_prefs.repeat_skip_adverts,  sizeof(_prefs.repeat_skip_adverts));
-    file.write((uint8_t *)&_prefs.repeat_max_hops,      sizeof(_prefs.repeat_max_hops));
+    file.write((uint8_t *)&_prefs.reserved_repeat_skip_adverts, sizeof(_prefs.reserved_repeat_skip_adverts));
+    file.write((uint8_t *)&_prefs.reserved_repeat_max_hops, sizeof(_prefs.reserved_repeat_max_hops));
     file.write((uint8_t *)&_prefs.repeat_delay_boost,   sizeof(_prefs.repeat_delay_boost));
-    file.write((uint8_t *)&_prefs.repeat_min_snr,       sizeof(_prefs.repeat_min_snr));
+    file.write((uint8_t *)&_prefs.reserved_repeat_min_snr, sizeof(_prefs.reserved_repeat_min_snr));
     file.write((uint8_t *)&_prefs.repeat_suppress_dup,  sizeof(_prefs.repeat_suppress_dup));
     file.write((uint8_t *)&_prefs.repeater_use_profile, sizeof(_prefs.repeater_use_profile));
     file.write((uint8_t *)&_prefs.repeater_freq,        sizeof(_prefs.repeater_freq));
@@ -873,6 +881,9 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.quiet_time_enabled, sizeof(_prefs.quiet_time_enabled));
     file.write((uint8_t *)&_prefs.quiet_time_start_min, sizeof(_prefs.quiet_time_start_min));
     file.write((uint8_t *)&_prefs.quiet_time_end_min, sizeof(_prefs.quiet_time_end_min));
+    file.write((uint8_t *)&_prefs.repeat_rx_delay_base, sizeof(_prefs.repeat_rx_delay_base));
+    file.write((uint8_t *)&_prefs.repeat_flood_tx_factor, sizeof(_prefs.repeat_flood_tx_factor));
+    file.write((uint8_t *)&_prefs.repeat_direct_tx_factor, sizeof(_prefs.repeat_direct_tx_factor));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good

@@ -21,18 +21,30 @@
 #ifndef SOLO_FEAT_CARDKB
   #define SOLO_FEAT_CARDKB SOLO_FEATURE_DEFAULT
 #endif
-#ifndef SOLO_FEAT_NAVIGATION
-  #define SOLO_FEAT_NAVIGATION SOLO_FEATURE_DEFAULT
+// Mapping and navigation are intentionally excluded from this build.
+#ifdef SOLO_FEAT_NAVIGATION
+  #undef SOLO_FEAT_NAVIGATION
 #endif
-#ifndef SOLO_FEAT_REMOTE_BOT
-  #define SOLO_FEAT_REMOTE_BOT SOLO_FEATURE_DEFAULT
+#define SOLO_FEAT_NAVIGATION 0
+// Retained separately as a clear boundary for the removed location tools.
+#define SOLO_FEAT_LOCATION_TOOLS 0
+#define SOLO_FEAT_ADMIN 0
+#define SOLO_FEAT_CLOCK_TOOLS 0
+// Remote Bot is intentionally excluded from this Wio Tracker-focused fork.
+// Keep the switch fixed off so saved bot settings cannot continue operating
+// invisibly after its Tools entry has been removed.
+#ifdef SOLO_FEAT_REMOTE_BOT
+  #undef SOLO_FEAT_REMOTE_BOT
 #endif
+#define SOLO_FEAT_REMOTE_BOT 0
 #ifndef SOLO_FEAT_REPEATER
   #define SOLO_FEAT_REPEATER SOLO_FEATURE_DEFAULT
 #endif
-#ifndef SOLO_FEAT_GPIO
-  #define SOLO_FEAT_GPIO SOLO_FEATURE_DEFAULT
+// General-purpose user GPIO is intentionally excluded from this build.
+#ifdef SOLO_FEAT_GPIO
+  #undef SOLO_FEAT_GPIO
 #endif
+#define SOLO_FEAT_GPIO 0
 #ifndef SOLO_FEAT_AUTOCOMPLETE
   #define SOLO_FEAT_AUTOCOMPLETE SOLO_FEATURE_DEFAULT
 #endif
@@ -68,6 +80,9 @@ struct Features {
   static constexpr bool QUIET_TIME = SOLO_FEAT_QUIET_TIME;
   static constexpr bool CARDKB = SOLO_FEAT_CARDKB && SOLO_CAP_CARDKB;
   static constexpr bool NAVIGATION = SOLO_FEAT_NAVIGATION;
+  static constexpr bool LOCATION_TOOLS = SOLO_FEAT_LOCATION_TOOLS;
+  static constexpr bool ADMIN = SOLO_FEAT_ADMIN;
+  static constexpr bool CLOCK_TOOLS = SOLO_FEAT_CLOCK_TOOLS;
   static constexpr bool REMOTE_BOT = SOLO_FEAT_REMOTE_BOT;
   static constexpr bool REPEATER = SOLO_FEAT_REPEATER;
   static constexpr bool GPIO = SOLO_FEAT_GPIO && SOLO_CAP_USER_GPIO;

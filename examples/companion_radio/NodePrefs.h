@@ -2,11 +2,7 @@
 #include <cstdint>
 #include <stdio.h>
 
-// Firmware's own boot-default radio params — used both as the companion's
-// initial freq/sf/bw/cr (MyMesh.cpp) and, here, as the seed for a never-
-// configured repeater profile (DataStore.cpp). Kept above any per-board
-// target.h include so a board can still override via -D before this file
-// is reached.
+// Firmware's own boot-default radio params.
 #ifndef LORA_FREQ
 #define LORA_FREQ 915.0
 #endif
@@ -19,19 +15,6 @@
 #ifndef LORA_CR
 #define LORA_CR 5
 #endif
-
-// Bucket a companion frequency into whichever of the three license-exempt
-// bands MeshCore's app-driven repeat toggle historically restricted to (see
-// repeat_freq_ranges in MyMesh.cpp: 433.000 / 869.495 / 918.000 MHz). Used to
-// seed a never-configured repeater profile in the same legal band as the
-// companion's own network (MyMesh.cpp begin(), DataStore.cpp) — a flat
-// single frequency could land outside the bands allowed where the operator
-// actually lives.
-static inline float defaultRepeaterFreqForBand(float companion_freq) {
-  if (companion_freq < 500.0f) return 433.000f;
-  if (companion_freq < 890.0f) return 869.495f;
-  return 918.000f;
-}
 
 #define TELEM_MODE_DENY            0
 #define TELEM_MODE_ALLOW_FLAGS     1     // use contact.flags
@@ -139,6 +122,9 @@ struct NodePrefs {  // persisted to file
   // All-zero = empty slot (probability a real pub_key starts with 6 zero bytes is 2^-48).
   // Layout transposes between landscape (3×2) and portrait (2×3).
   static const uint8_t FAVOURITES_COUNT = 6;
+  // Keep six serialized slots for preference compatibility, but the focused
+  // Wio UI exposes four full-width dial entries.
+  static const uint8_t FAVOURITES_DIAL_COUNT = 4;
   static const uint8_t FAVOURITE_PREFIX_LEN = 6;
   uint8_t favourite_contacts[FAVOURITES_COUNT][FAVOURITE_PREFIX_LEN]; // [del→onContactRemoved]
 
@@ -186,35 +172,24 @@ struct NodePrefs {  // persisted to file
   static const uint8_t USER_RADIO_PRESET_MAX = 4;
   UserRadioPreset user_radio_presets[USER_RADIO_PRESET_MAX];
 
-  // Repeater forwarding filters — only consulted when client_repeat is on, via
-  // MyMesh::allowPacketForward(). Both default to off (0) so behaviour is
-  // unchanged until the user opts in (Tools > Repeater).
-  //  repeat_skip_adverts: 1 = don't re-flood ADVERT packets (the highest-volume
-  //    flood traffic); messages/acks still relay.
-  //  repeat_max_hops: drop a flood packet once it has already travelled this
-  //    many hops. 0 = no hop limit.
+  // Repeater forwarding preferences.
   //  repeat_delay_boost: extra retransmit-delay multiplier for FORWARDED floods
   //    only (own sends are unaffected) — a mobile companion yields to better-sited
   //    fixed repeaters. Effective delay = base * (1 + repeat_delay_boost). 0 = off.
-  //  repeat_min_snr: drop a flood packet received below this SNR (dB), so marginal
-  //    fringe traffic isn't re-flooded. REPEAT_SNR_DISABLED (-128) = off.
   //  repeat_suppress_dup: 1 = cancel a queued retransmit when the same flood is
   //    overheard from another node first (less redundant airtime in dense mesh).
-  uint8_t  repeat_skip_adverts;
-  uint8_t  repeat_max_hops;
+  // The three reserved fields formerly controlled advert, hop-count and SNR
+  // filtering. Keep their serialized positions so existing preference files
+  // remain aligned; they are reset and ignored by current firmware.
+  uint8_t  reserved_repeat_skip_adverts;
+  uint8_t  reserved_repeat_max_hops;
   uint8_t  repeat_delay_boost;
-  int8_t   repeat_min_snr;
-  static const int8_t REPEAT_SNR_DISABLED = -128;
+  int8_t   reserved_repeat_min_snr;
   uint8_t  repeat_suppress_dup;
 
-  // Optional dedicated radio profile for repeater mode. When repeater_use_profile
-  // is 1, enabling the repeater switches the radio to repeater_freq/bw/sf/cr and
-  // disabling restores the companion's freq/bw/sf/cr (the fields above). 0 = the
-  // repeater stays on the current companion frequency. Default (a never-configured
-  // device) is 1, seeded via defaultRepeaterFreqForBand(freq) + LORA_SF/BW/CR —
-  // repeating on whatever private network the companion later joins isn't the
-  // community norm, and the seed stays in the same legal band as the companion's
-  // own network rather than a flat frequency.
+  // Reserved former dedicated-repeater profile fields. They remain serialized
+  // to preserve the existing MeshCore preference layout, but are ignored:
+  // repeater mode always shares freq/bw/sf/cr above.
   uint8_t  repeater_use_profile;
   float    repeater_freq;
   float    repeater_bw;
@@ -321,24 +296,8 @@ struct NodePrefs {  // persisted to file
   // (phone-keypad groups, cycled with repeated Enter presses — see KeyboardWidget.h).
   uint8_t  keyboard_type;
 
-  // Additional (non-Latin) keyboard alphabet, orthogonal to keyboard_type above
-  // — either layout style (ABC grid or T9) can show any alphabet's characters.
-  // 0 = Latin only (default): the keyboard's existing #@/abc page-cycle key
-  // toggles between just the Latin letters page and the symbols page, as
-  // today. A non-zero value adds that alphabet's own page to the same cycle
-  // key (Latin → alphabet → symbols → Latin), so composing in it needs no new
-  // key, just Settings › Keyboard › Alphabet to pick which one is available.
-  // See KeyboardWidget.h for the per-alphabet grids (KB_CYRILLIC_CHARS etc.)
-  // and the misc-fixed font (src/helpers/ui/MiscFixedFont.h) for on-screen
-  // rendering — every alphabet here must be in its U+0020-04FF range.
-  //
-  // Latin-diacritic letters (Polish/Czech/Slovak/German/French/Spanish/
-  // Portuguese/Nordic) used to each be their own full alt-alphabet page here;
-  // they're now reached instead by holding Enter on a Latin letter that has
-  // accented variants (see KeyboardWidget.h's KB_ACCENT_VARIANTS), so this
-  // enum only covers actual non-Latin scripts. Not a schema change: an old
-  // saved value of 3+ (one of the removed languages) just clamps to 0 (Latin)
-  // via DataStore.cpp's existing `>= KB_ALPHABET_COUNT` range check.
+  // Historical script values retained for preference-file migration. Solo's
+  // keyboard now ignores both script bytes and always uses Latin/EN-US.
   static const uint8_t KB_ALPHABET_LATIN_ONLY = 0;
   static const uint8_t KB_ALPHABET_CYRILLIC   = 1;
   static const uint8_t KB_ALPHABET_GREEK      = 2;
@@ -359,7 +318,8 @@ struct NodePrefs {  // persisted to file
   // inline with alarm_on/hour/min).
   uint8_t  alarm_repeat_mask;
 
-  // Appended at the tail (see the keyboard_alt_alphabet doc comment above).
+  // Reserved former additional-script selection. Retained for preference-file
+  // compatibility; the Solo keyboard is now always Latin/EN-US.
   uint8_t  keyboard_alt_alphabet;
 
   // Bot DM allow-list: who is allowed to trigger a DM auto-reply or run a
@@ -390,13 +350,8 @@ struct NodePrefs {  // persisted to file
   uint8_t  bot_commands_ch;
   uint8_t  bot_commands_room;
 
-  // Which script (KB_ALPHABET_LATIN_ONLY/CYRILLIC/GREEK) occupies the on-screen
-  // keyboard's page 0 -- its default/opening page -- vs. keyboard_alt_alphabet
-  // above, which occupies page 1. Settings > Keyboard's Main/Additional rows.
-  // Equal to keyboard_alt_alphabet means no second page (see KeyboardWidget's
-  // hasAltAlphabet()). Appended at the tail (see the serialization tripwire
-  // below); default 0 (Latin) matches the keyboard's original always-Latin-
-  // main behaviour for upgraders.
+  // Reserved former main-script selection. Retained for preference-file
+  // compatibility; the Solo keyboard is now always Latin/EN-US.
   uint8_t  keyboard_main_alphabet;
 
   // Per-target toggle for bot *action* commands (!buzz/!gps/!advert) --
@@ -422,15 +377,9 @@ struct NodePrefs {  // persisted to file
   uint8_t  gpio3_mode;
   uint8_t  gpio4_mode;
 
-  // Settings > Keyboard's "Virtual KB" row (boards with a second I2C bus for an
-  // optional CardKB, see ENV_PIN_SDA/ENV_PIN_SCL, only). When on, the
-  // on-screen keyboard skips drawing its full letter grid + special-row icons
-  // -- an external-keyboard typist never looks at them -- and shows a compact
-  // one-line status (current script/page, caps) instead; the accent and
-  // placeholder popups still render on top exactly as before (see
-  // KeyboardWidget::render()). Manual toggle rather than auto-detected, so it
-  // stays put even if the module is briefly unplugged. Default 0 (full grid,
-  // unchanged behaviour) on upgrade.
+  // Retained as a reserved byte so existing Solo preference files keep their
+  // binary layout. CardKB presence now selects Compact automatically and this
+  // value is intentionally ignored by the UI.
   uint8_t  keyboard_cardkb_compact;
 
   // Parent-controlled child UI. The PIN stores a small non-cryptographic hash:
@@ -445,6 +394,13 @@ struct NodePrefs {  // persisted to file
   uint8_t  quiet_time_enabled;       // mute notification presentation during the local-time interval
   uint16_t quiet_time_start_min;     // local minute-of-day, default 21:00
   uint16_t quiet_time_end_min;       // local minute-of-day, default 07:00
+
+  // Standard MeshCore repeater radio timing. These affect only retransmission
+  // scheduling; the companion keeps its own identity and has no repeater admin
+  // interface. Values/defaults match examples/simple_repeater.
+  float repeat_rx_delay_base;        // repeater-only RX delay, default 10
+  float repeat_flood_tx_factor;      // airtime multiplier, default 0.5
+  float repeat_direct_tx_factor;     // airtime multiplier, default 0.3
 
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
@@ -508,7 +464,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0026;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0028;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -553,21 +509,22 @@ struct NodePrefs {  // persisted to file
   static const uint16_t HP_SHUTDOWN   = 1 << HPB_SHUTDOWN;
   static const uint16_t HP_FAVOURITES = 1 << HPB_FAVOURITES;
   static const uint16_t HP_MAP        = 1 << HPB_MAP;
-  static const uint16_t HP_ALL        = 0x01FF | HP_FAVOURITES | HP_MAP;
-  // Factory-default carousel — the everyday pages only, so a fresh device isn't
-  // 13 pages to joystick through. Messages + Settings are always visible (no
-  // mask bit), so the mask covers: Clock, Tools, Shutdown, Favourites, Map.
-  // Recent / Radio / Bluetooth / Advert / GPS / Sensors are opt-in via
-  // Settings › Home Pages. Existing users keep their saved mask (loaded from
-  // /new_prefs); this only seeds brand-new / factory-reset devices.
-  static const uint16_t HP_DEFAULT    = HP_CLOCK | HP_TOOLS | HP_SHUTDOWN | HP_FAVOURITES | HP_MAP;
+  // Retired page bits remain reserved above so MeshCore preference layouts and
+  // existing page orders retain their numeric meaning. They are not included
+  // in active masks or exposed as labels.
+  static const uint16_t HP_ALL        = HP_CLOCK | HP_RECENT | HP_RADIO |
+                                        HP_BLUETOOTH | HP_ADVERT | HP_GPS |
+                                        HP_TOOLS | HP_FAVOURITES;
+  // Messages and Settings have no mask bit and are always visible. Recent,
+  // Radio, Bluetooth, Advert and GPS remain opt-in through Home Pages.
+  static const uint16_t HP_DEFAULT    = HP_CLOCK | HP_TOOLS | HP_FAVOURITES;
 
   // Label for home page by bit-index; returns "" for out-of-range.
   // Array indices match HomePageBit values.
   static const char* homePageLabel(uint8_t bit) {
     static const char* labels[HPB_COUNT] = {
       "Clock", "Recent", "Radio", "Bluetooth", "Advert",
-      "GPS", "Sensors", "Tools", "Shutdown", "Settings", "Messages", "Favourites", "Map"
+      "GPS", "", "Tools", "", "Settings", "Messages", "Favourites", ""
     };
     return (bit < HPB_COUNT) ? labels[bit] : "";
   }
@@ -611,36 +568,15 @@ struct NodePrefs {  // persisted to file
 // struct by 16 bytes including alignment padding, confirmed via a real build.
 // Quiet Time (0xC0DE0026) fits into the resulting tail padding, confirmed via
 // a real build, so the combined layout remains the same size.
+// Repeater timing (0xC0DE0027/28) adds three floats at the persisted tail and
+// grows the struct to 2752 bytes including alignment padding, confirmed by the
+// Wio Tracker build.
 // keyboard_main_alphabet (added in an earlier bump) landed in existing tail
 // padding -- confirmed via a real build's sizeof() -- so that bump left the
 // size unchanged. bot_actions_dm/ch/room and gpio1..4_mode (the last two
 // bumps, 7 more uint8_t total) added 8 bytes, not 7 -- one byte of tail
 // padding got consumed along the way. 2720 confirmed via a real
 // WioTrackerL1Eink_companion_solo_dual build.
-static_assert(sizeof(NodePrefs) == 2736,
+static_assert(sizeof(NodePrefs) == 2752,
               "NodePrefs layout changed — sync DataStore save/load + clamp, bump "
               "SCHEMA_SENTINEL, then update this size (see steps above).");
-
-// Bounds for a usable repeater radio profile. The frequency range is passed in
-// by the caller from RadioLibWrapper::getFreqBounds() — the radio chip's own
-// validated range — so a profile that passes here is guaranteed to actually take
-// effect on the radio, instead of a hard-coded cap (was 150-960, the SX1262
-// range) that would wrongly reject legal frequencies on any other chip. SF/BW/CR
-// are the chip-independent discrete LoRa sets.
-static inline bool isValidRepeaterProfile(float freq, float bw, uint8_t sf, uint8_t cr,
-                                          float min_freq, float max_freq) {
-  return freq >= min_freq && freq <= max_freq
-      && sf >= 5 && sf <= 12
-      && cr >= 5 && cr <= 8
-      && bw >= 7.0f && bw <= 510.0f;
-}
-
-// Seed a never-configured repeater profile in the same band as the companion's
-// own network (see defaultRepeaterFreqForBand() above for why).
-static inline void seedDefaultRepeaterProfile(NodePrefs& prefs) {
-  prefs.repeater_use_profile = 1;
-  prefs.repeater_freq = defaultRepeaterFreqForBand(prefs.freq);
-  prefs.repeater_bw   = LORA_BW;
-  prefs.repeater_sf   = LORA_SF;
-  prefs.repeater_cr   = LORA_CR;
-}

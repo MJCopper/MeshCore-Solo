@@ -8,7 +8,13 @@
 | :-----------------------: | :-----------------------: |
 | ![](./overview_oled.png) | ![](./overview_eink.png) |
 
-The Messages screen is split into three modes — **DMs**, **Channels**, and **Rooms** — selectable with UP/DOWN on the mode-select screen. Each mode shows the corresponding list of conversations with unread counters.
+The Messages page on the main carousel is the recipient-category menu. It shows
+**Direct Message**, **Channel** and **Room Servers**, including their unread
+badges. Select a category with **UP/DOWN** and press **Enter** to open its list;
+there is no separate "Press Enter to open" landing card.
+
+Hold **Enter** (or press the context-menu key) on a category to open its menu.
+Select **Mark all read** to clear the unread count for that category only.
 
 ---
 
@@ -31,7 +37,7 @@ Press **Enter** on a contact or channel to open its history, then press **Enter*
 - **Custom message** — opens the on-screen keyboard
 - **Q1–Q10** — quick reply templates editable in Settings › Messages
 
-While typing, **UP** from the top letter row enters cursor mode (LEFT/RIGHT move the insertion point; UP/DOWN jump to start/end, then continue on to the special row / letter grid if pressed again once already there; Enter/Cancel exit immediately from anywhere) so you can edit or insert in the middle of what you've typed instead of only at the end. **Hold Enter** on a Latin letter with accented variants (e.g. a, e, c, n, o, s, z…) instead opens a one-row popup of that letter's accents — LEFT/RIGHT to pick, Enter to insert, Cancel to dismiss. See the on-screen keyboard section of the [UI framework guide](../../design/solo_ui_framework.md) for the full key set (Shift, T9 multi-tap, Cyrillic/Greek).
+While typing, **UP** from the top letter row enters cursor mode (LEFT/RIGHT move the insertion point; UP/DOWN jump to start/end, then continue on to the special row / letter grid if pressed again once already there; Enter/Cancel exit immediately from anywhere) so you can edit or insert in the middle of what you've typed instead of only at the end. **Hold Enter** on a Latin letter with accented variants (e.g. a, e, c, n, o, s, z…) instead opens a one-row popup of that letter's accents — LEFT/RIGHT to pick, Enter to insert, Cancel to dismiss. See the on-screen keyboard section of the [UI framework guide](../../design/solo_ui_framework.md) for the full key set.
 
 The keyboard supports placeholders that insert live data at send time:
 
@@ -60,7 +66,7 @@ Posting to a **room server** requires a login handshake first, so the device can
 - **Log out** with **Hold Enter** on a room you're currently logged into → **Logout** (only offered once logged in). Forgets the saved password on the device, so the next time you open that room it prompts for one again instead of silently reusing the old one.
 - Passwords set from the **phone app** are saved on the device too, so it can post to that room standalone after a reboot.
 
-> The on-screen keyboard's default (Latin) page is ASCII only. Typing accented or non-Latin characters — Polish, Czech, Slovak, German, French, Spanish, Portuguese or Nordic diacritics, Cyrillic, or Greek — needs Settings › Keyboard › Alphabet set to the matching language first; the keyboard's **#@/abc** key then cycles Latin → that alphabet → Symbols → Latin. A password containing characters outside whatever's currently enabled can still be set from the phone app — the device stores and replays it byte-for-byte.
+> The on-screen keyboard is EN-US. European Latin accents are available through Hold Enter; other characters can still be entered from the phone app and are stored and replayed byte-for-byte.
 
 ---
 
@@ -72,7 +78,7 @@ Posting to a **room server** requires a login handshake first, so the device can
 
 Messages are drawn as chat bubbles sized to fit their content, anchored **right** for your own outgoing messages and **left** for incoming ones (like a typical messenger), with the sender name and a compact age indicator (`3m`, `2h`, `>1d`) in the top-right corner of each bubble. The list runs **newest at the bottom** — opening a history starts you at the latest message, and scrolling **up** goes further into the past.
 
-**Short Enter** on a message opens it in fullscreen. **Hold Enter** — on a history row or in fullscreen — opens the same options menu: Reply, plus **Navigate** / **Save waypoint** when the message contains a location (see Fullscreen message view). You don't need to open the message first.
+**Short Enter** on a message opens it in fullscreen. **Hold Enter** — on a history row or in fullscreen — opens the reply options menu. You don't need to open the message first.
 
 ---
 
@@ -90,12 +96,7 @@ If the message is a reply addressed to someone (`@[nick]`), a **To: nick** bar i
 | :-----------------------: | :-----------------------: |
 | ![](./fullscreen_menu_oled.png) | ![](./fullscreen_menu_eink.png) |
 
-**Hold Enter** in fullscreen opens the options menu. It always offers **Reply** for an incoming message, and when the message contains a **location** it adds two more:
-
-- **Navigate** — opens the bearing/distance view to those coordinates (the same two-bearing screen as Waypoints and Nearby; **Back** returns to the message).
-- **Save waypoint** — stores the location as a waypoint (visible on the trail map and in the Waypoints list).
-
-A location is any `lat,lon` pair in the text — exactly what the `{loc}` placeholder inserts — so you can navigate to anything a contact shares. A `[WAY]lat,lon label` share also carries a name, used as the waypoint label. This works on DMs and channel messages, incoming or outgoing.
+**Hold Enter** in fullscreen offers **Reply** for an incoming message. Location text such as `[LOC]lat,lon` or `[WAY]lat,lon label` remains readable, but navigation and waypoint actions are not included in this build.
 
 ---
 
@@ -165,7 +166,3 @@ Joining a new community channel, or creating one to share with others, no longer
   Select **[Save]** to commit. The secret can't be redisplayed once saved (only the derived key is kept) — editing it later means typing a new passphrase or hex key, the same as re-logging into a room with a new password.
 
 ---
-
-### Mark all read
-
-**Hold Enter** on the DM / Channels / Rooms mode-select screen to clear all unread counters for the highlighted category at once.

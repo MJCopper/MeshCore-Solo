@@ -5,9 +5,7 @@
 #include "NavView.h"   // navigate to a location shared inside a message
 #include "icons.h"     // scalable mini-icons (delivery markers)
 #include "ChannelsView.h"  // on-device channel add/edit form (Channels tab)
-#if SOLO_FEAT_AUTOCOMPLETE
-#include "../solo/WordCompleter.h"
-#endif
+#include "MessageEditorSupport.h"
 
 class MessagesScreen : public UIScreen {
   UITask* _task;
@@ -43,6 +41,8 @@ class MessagesScreen : public UIScreen {
   int _msg_sel, _msg_scroll;
   int _active_msgs[QUICK_MSGS_MAX];
   int _active_msg_count;
+  bool _quick_msgs_bypassed = false;
+  bool _home_category_entry = false;
 
   // CHANNEL_HIST — selection + the unread "viewing session" bookkeeping. The
   // history ring itself and the per-channel unread counters live in _history.
@@ -53,54 +53,6 @@ class MessagesScreen : public UIScreen {
 
   // KEYBOARD
   KeyboardWidget* _kb;
-
-#if SOLO_FEAT_AUTOCOMPLETE
-  static void refreshWordCompletions(KeyboardWidget& kb, void* ctx) {
-    (void)ctx;
-    solo::WordCompleter::WordRange word = solo::WordCompleter::currentWord(
-        kb.buf, (size_t)kb.len, (size_t)kb.cursor_pos);
-    kb.clearPlaceholders();
-    kb.setCompletionRange((int)word.start, (int)word.end);
-    char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
-    uint8_t count = solo::WordCompleter::suggest(
-        kb.buf + word.start, (size_t)kb.cursor_pos - word.start,
-        matches, solo::WordCompleter::MAX_SUGGESTIONS);
-    for (uint8_t i = 0; i < count; i++) kb.addPlaceholder(matches[i]);
-    kb.addPlaceholder("{loc}");
-    kb.addPlaceholder("{time}");
-    kbAddSensorPlaceholders(kb, &sensors);
-  }
-
-  static bool previewWordCompletion(const KeyboardWidget& kb, void* ctx,
-                                    char* word, size_t word_size,
-                                    char* suffix, size_t suffix_size) {
-    (void)ctx;
-    if (!word || !suffix || word_size == 0 || suffix_size == 0) return false;
-    word[0] = suffix[0] = '\0';
-    // Keep the inline preview unambiguous: only suggest while appending at the
-    // end. The popup still supports replacing a word around a moved cursor.
-    if (kb.cursor_pos != kb.len) return false;
-    solo::WordCompleter::WordRange range = solo::WordCompleter::currentWord(
-        kb.buf, (size_t)kb.len, (size_t)kb.cursor_pos);
-    size_t prefix_len = (size_t)kb.cursor_pos - range.start;
-    if (prefix_len == 0) return false;
-    char match[1][solo::WordCompleter::MAX_WORD_LEN];
-    if (solo::WordCompleter::suggest(kb.buf + range.start, prefix_len, match, 1) != 1)
-      return false;
-    size_t match_len = strlen(match[0]);
-    if (match_len <= prefix_len) return false;
-    snprintf(word, word_size, "%s", match[0]);
-    snprintf(suffix, suffix_size, "%s", match[0] + prefix_len);
-    return true;
-  }
-
-  void enableWordCompletion() {
-    _kb->setPlaceholderRefresh(refreshWordCompletions, this, "Complete:");
-    _kb->setCompletionPreview(previewWordCompletion, this);
-  }
-#else
-  void enableWordCompletion() { }
-#endif
 
   // Context menu (opened by KEY_CONTEXT_MENU in CHANNEL_PICK / CONTACT_PICK / histories)
   PopupMenu _ctx_menu;
@@ -185,6 +137,7 @@ class MessagesScreen : public UIScreen {
   // moves. `need` also drives the gutter reserve so wide message boxes don't
   // reflow as messages arrive.
   struct HistScroll { bool need; int reserve; long total_px, scroll_px; int view_px; };
+  static const int HIST_ROW_GAP = 0;  // the underline itself separates adjacent messages
 
   // `getBody(idx)` returns the body text for list item idx (the part that wraps),
   // or nullptr to fall back to a fixed 2-line box. Must return exactly what the
@@ -196,13 +149,13 @@ class MessagesScreen : public UIScreen {
                                int hist_start_y, int cby, int lh, GetBody getBody) {
     HistScroll r{};
     const int fixed_bh = 2 * lh + 1;
-    const int top_y    = hist_start_y + 1;
+    const int top_y    = hist_start_y;
     r.view_px = cby - top_y;                  // fixed track height = full list area
     if (r.view_px < 1) r.view_px = 1;
     const int col = scrollIndicatorColWidth(display);
 
     if (!portrait) {                          // uniform 2-line boxes → exact pixel math
-      const int box = fixed_bh + 1;
+      const int box = fixed_bh + HIST_ROW_GAP;
       r.total_px  = (long)count * box;
       r.scroll_px = (long)scroll * box;
       r.need      = r.total_px > r.view_px;
@@ -211,12 +164,12 @@ class MessagesScreen : public UIScreen {
       return r;
     }
 
-    const int sp = 2;                         // portrait inter-box spacing
+    const int sp = HIST_ROW_GAP;
     auto boxH = [&](int idx, int rsv) -> int {
       const char* body = getBody(idx);
       if (!body) return fixed_bh;
       display.translateUTF8ToBlocks(s_wrap_trans, body, sizeof(s_wrap_trans));
-      int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - rsv, s_wrap_lines, 8);
+      int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - rsv, s_wrap_lines, 12);
       return (1 + (nl > 0 ? nl : 1)) * lh + 1;
     };
     // Scrollbar-needed test at the WIDEST layout (reserve 0 → fewest wrap lines →
@@ -305,18 +258,14 @@ class MessagesScreen : public UIScreen {
 
   void startReply(bool to_channel) {
     _sending_to_channel = to_channel;
-    _reply_mode = true;
-    setupMsgPick();
-    _phase = MSG_PICK;
+    beginCustomMessage();
   }
 
   // Recipient chosen while sharing — open the keyboard with the prepared text.
   void beginShareCompose(bool channel) {
     _sending_to_channel = channel;
     _reply_mode = false;
-    _kb->begin(_share_text);
-    kbAddSensorPlaceholders(*_kb, &sensors);
-    enableWordCompletion();
+    messageeditor::begin(*_kb, _share_text, &sensors);
     _phase = KEYBOARD;
   }
 
@@ -384,6 +333,22 @@ class MessagesScreen : public UIScreen {
     }
   }
 
+  // Conversation controls deliberately avoid a selectable compose row: a short
+  // Enter opens the editor, while Hold Enter opens only the saved quick messages.
+  void beginCustomMessage() {
+    _reply_mode = false;
+    _quick_msgs_bypassed = true;
+    messageeditor::begin(*_kb, "", &sensors);
+    _phase = KEYBOARD;
+  }
+
+  void beginQuickMessagePick() {
+    _reply_mode = false;
+    _quick_msgs_bypassed = false;
+    setupMsgPick();
+    _phase = MSG_PICK;
+  }
+
   // Delivery marker, drawn with the current ink colour and auto-scaled to the
   // font (see icons.h). Pending = a row of dots, one per send (so it grows with
   // each auto-resend); delivered = ✓; failed = ✗; ACK_NONE = nothing.
@@ -394,6 +359,22 @@ class MessagesScreen : public UIScreen {
       case ACK_FAIL:    miniIconDraw(d, x, top_y, ICON_CROSS);       break;
       default: break;                          // ACK_NONE → nothing
     }
+  }
+
+  // Draw only the sender name inverted so authorship stands out without making
+  // the timestamp, delivery state, or message body look selected. Returns the
+  // first x-coordinate after the badge for an adjacent ACK glyph.
+  static int drawSenderBadge(DisplayDriver& d, int x, int y, int max_w,
+                             const char* sender) {
+    if (max_w < 4) max_w = 4;
+    int badge_w = d.getTextWidth(sender) + 4;
+    if (badge_w > max_w) badge_w = max_w;
+    d.setColor(DisplayDriver::LIGHT);
+    d.fillRect(x, y, badge_w, d.getLineHeight());
+    d.setColor(DisplayDriver::DARK);
+    d.drawTextEllipsized(x + 2, y + 1, badge_w - 4, sender);
+    d.setColor(DisplayDriver::LIGHT);
+    return x + badge_w;
   }
 
   // Selection frame for one history message box, shared by the DM/room and
@@ -542,21 +523,42 @@ class MessagesScreen : public UIScreen {
       // this array is 1400 B at this build's MAX_CONTACTS=350 as an int[] -- a sizeable
       // slice of the 4 KB loop() task stack for one local array.
       uint8_t counts[MAX_CONTACTS];
+      uint8_t unreads[MAX_CONTACTS];
       for (int i = 0; i < total; i++) {
-        if (!the_mesh.getContactByIdx(i, c) || c.type != ADV_TYPE_CHAT) continue;
+        if (!the_mesh.getContactByIdx(i, c)) continue;
+        int hist_count = _history.dmHistCountForContact(c.id.pub_key);
+        bool has_dm_unread = _task->getDMUnread(c.id.pub_key) > 0;
+        bool has_direct_dm = _task->hasDirectDMContact(c.id.pub_key);
+        // A contact can advertise a different role after sending a DM. The
+        // unread table is authoritative for that received conversation, so do
+        // not strand it merely because the contact is no longer typed Chat.
+        // Keep that proven DM entry after opening it clears the unread counter.
+        // Favourite flags are intentionally not used here: rooms/repeaters can
+        // also be favourited, but belong in their own pickers.
+        if (c.type != ADV_TYPE_CHAT &&
+            (_task->isChildModeLocked() || (!has_dm_unread && !has_direct_dm))) continue;
+        // The user-facing filter is authoritative: All shows every eligible DM
+        // contact; Fav shows only upstream-starred eligible DM contacts.
         if (!show_all && !(c.flags & 0x01)) continue;
-        counts[_num_contacts] = _history.dmHistCountForContact(c.id.pub_key);
+        counts[_num_contacts] = hist_count;
+        unreads[_num_contacts] = _task->getDMUnread(c.id.pub_key);
         _sorted[_num_contacts++] = i;
       }
-      // Sort by message count descending; contacts with no messages keep original order.
+      // Unread conversations belong at the top so the category badge always
+      // leads to an obvious sender row. Within the same unread state/count,
+      // keep the existing most-history-first ordering.
       for (int i = 1; i < _num_contacts; i++) {
-        if (counts[i] == 0) continue;
-        uint16_t key = _sorted[i]; int kc = counts[i];
+        if (unreads[i] == 0 && counts[i] == 0) continue;
+        uint16_t key = _sorted[i]; int kc = counts[i]; int ku = unreads[i];
         int j = i;
-        while (j > 0 && counts[j-1] < kc) {
-          _sorted[j] = _sorted[j-1]; counts[j] = counts[j-1]; j--;
+        while (j > 0 && (unreads[j-1] < ku ||
+                         (unreads[j-1] == ku && counts[j-1] < kc))) {
+          _sorted[j] = _sorted[j-1];
+          counts[j] = counts[j-1];
+          unreads[j] = unreads[j-1];
+          j--;
         }
-        _sorted[j] = key; counts[j] = kc;
+        _sorted[j] = key; counts[j] = kc; unreads[j] = ku;
       }
     }
   }
@@ -745,6 +747,13 @@ public:
     bool viewing = (_phase == DM_HIST && memcmp(_sel_contact.id.pub_key, pub_key, 4) == 0);
     _history.addDMMsg(pub_key, outgoing, text, sender_timestamp);
     if (viewing && _dm_hist_sel > 0) { _dm_hist_sel++; _dm_hist_scroll++; }   // see addChannelMsg
+    if (!outgoing && _phase == CONTACT_PICK && !_room_mode) {
+      // The sender may have been discovered after this picker was built, or
+      // may now advertise a different contact type. Refresh on receipt so the
+      // badge and its openable row appear together without leaving/re-entering.
+      buildContactList();
+      _contact_sel = _contact_scroll = 0;
+    }
   }
   void markDmDelivered(uint32_t ack_crc) { _history.markDmDelivered(ack_crc); }
 
@@ -920,9 +929,34 @@ public:
     _pick_bot_room = false;
     _pin_picker_active = false;
     _dm_direct_entry = false;
+    _quick_msgs_bypassed = false;
+    _home_category_entry = false;
     _unread_at_entry = 0;
     _viewing_max_seen = 0;
     _ch_view.reset();
+  }
+
+  // Enter a recipient category selected directly on the Messages home page.
+  // Back from the category picker returns home instead of exposing the legacy
+  // MODE_SELECT landing screen, which remains available to share/picker flows.
+  void enterCategory(uint8_t category) {
+    reset();
+    _home_category_entry = true;
+    _mode_sel = category <= 2 ? category : 0;
+    if (_mode_sel == 1) {
+      if (!channelsModeVisible()) _mode_sel = 0;
+      else {
+        buildChannelList();
+        _channel_sel = _channel_scroll = 0;
+        _phase = CHANNEL_PICK;
+        return;
+      }
+    }
+    _room_mode = (_mode_sel == 2);
+    if (_room_mode) _task->clearRoomUnread();
+    buildContactList();
+    _contact_sel = _contact_scroll = 0;
+    _phase = CONTACT_PICK;
   }
 
   // Recent DM contacts, newest first, deduped (forwarded to the history store).
@@ -1170,7 +1204,7 @@ public:
       }
 
       int hist_start_y = display.headerH();
-      int cby = display.height() - lh;   // compose button is now exactly lh tall, no added border padding
+      int cby = display.height();
 
       char title[24];
       snprintf(title, sizeof(title), "%.23s", filtered_name);
@@ -1180,9 +1214,9 @@ public:
       uint32_t now_ts = rtc_clock.getCurrentTime();
       bool is_room = (_sel_contact.type == ADV_TYPE_ROOM);
 
-      // Portrait e-ink (height > width): variable-height boxes that show the full
-      // wrapped message text. All other displays/orientations: compact 2-line boxes.
-      bool portrait_expand = (display.height() > display.width());
+      // Histories are full-width transcripts on every display. Each message is
+      // wrapped in place; opening a separate reader is no longer necessary.
+      bool portrait_expand = true;
       const int MAX_VIS_BOXES = 8;
       int box_ys[MAX_VIS_BOXES], box_hs[MAX_VIS_BOXES], n_vis = 0;
       // Fixed-track scrollbar metrics + a stable gutter reserve (decided by a
@@ -1204,14 +1238,12 @@ public:
           });
       int reserve = hs.reserve;
       {
-        // Stack boxes upward from just above the compose row, so item 0 (the
-        // newest message) lands at the bottom of the list and older messages
-        // sit progressively higher — same anchor convention as a typical
-        // messenger, instead of newest-at-top. box_ys[i] still corresponds
-        // to item (_dm_hist_scroll + i), same as before; only its y flips.
+        // Stack rows upward from the bottom, so item 0 (the newest message)
+        // lands at the bottom and older messages sit progressively higher.
+        // The underline is the boundary, so no blank inter-row gap is needed.
         const int fixed_bh = 2 * lh + 1;
-        const int box_gap = portrait_expand ? 2 : 1;
-        int cur_y = cby - box_gap;   // reserve the same gap against compose as between boxes
+        const int box_gap = HIST_ROW_GAP;
+        int cur_y = cby;
         for (int ii = 0; ii < MAX_VIS_BOXES && (_dm_hist_scroll + ii) < dm_count; ii++) {
           int bh = fixed_bh;
           if (portrait_expand) {
@@ -1220,7 +1252,7 @@ public:
               char hsb[33];
               const char* hbody = skipReplyPrefix(dmDisplayParts(_history.dmAtPos(rp), is_room, filtered_name, hsb, sizeof(hsb)));
               display.translateUTF8ToBlocks(s_wrap_trans, hbody, sizeof(s_wrap_trans));
-              int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 8);
+              int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 12);
               bh = (1 + (nl > 0 ? nl : 1)) * lh + 1;
             }
           }
@@ -1233,7 +1265,6 @@ public:
       _hist_visible = n_vis;
       for (int i = 0; i < n_vis && (_dm_hist_scroll + i) < dm_count; i++) {
         int item = _dm_hist_scroll + i;
-        bool sel = (item == _dm_hist_sel);
         int y = box_ys[i];
         int bh = box_hs[i];
 
@@ -1248,38 +1279,24 @@ public:
         char age[6]; geo::fmtAgeShort(age, sizeof(age), now_ts, e.timestamp);
         int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
 
-        // Size the bubble to its own content before drawing anything (see
-        // computeBubbleBox): the header (sender+ack+age) vs the body, measured
-        // once here and reused below instead of re-wrapping.
+        // Full-width transcript row: compact metadata, fully wrapped body, then
+        // a one-pixel rule immediately beneath the final text line.
         int full_avail = display.width() - reserve;
-        int ack_w = e.outgoing ? (3 + ackGlyphWidth(display, _history.dmEffectiveStatus(e), e.attempt + 1)) : 0;
-        int header_w = 3 + display.getTextWidth(sender) + ack_w + age_w + 3;
-        int body_w, nl = 0;
-        if (portrait_expand) {
-          display.translateUTF8ToBlocks(s_wrap_trans, body, sizeof(s_wrap_trans));
-          nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, full_avail - 6, s_wrap_lines, 8);
-          body_w = 0;
-          for (int li = 0; li < nl; li++) { int w = display.getTextWidth(s_wrap_lines[li]); if (w > body_w) body_w = w; }
-          body_w += 6;
-        } else {
-          int raw_w = display.getTextWidth(body);
-          body_w = (raw_w > full_avail - 6 ? full_avail - 6 : raw_w) + 6;
-        }
-        BubbleBox box = computeBubbleBox(full_avail, e.outgoing, header_w, body_w);
-
-        drawHistRowFrame(display, box.x, box.w, y, bh, lh, sel);
-        display.drawTextEllipsized(box.x + 3, y + 1, box.w - 6 - age_w, sender);
+        int ack_w = e.outgoing ? ackGlyphWidth(display, _history.dmEffectiveStatus(e), e.attempt + 1) : 0;
+        int name_avail = full_avail - 2 - age_w - (ack_w > 0 ? ack_w + 3 : 0);
+        int badge_right = drawSenderBadge(display, 1, y, name_avail, sender);
         if (e.outgoing) {                       // delivery marker after "Me"
-          int gx = box.x + 3 + display.getTextWidth(sender) + 3;
+          int gx = badge_right + 3;
           drawAckGlyph(display, gx, y + 1, _history.dmEffectiveStatus(e), e.attempt + 1);
         }
-        if (age[0]) { display.setCursor(box.x + box.w - age_w, y + 1); display.print(age); }
-        if (!sel) display.setColor(DisplayDriver::LIGHT);
-        if (portrait_expand) {
-          for (int li = 0; li < nl; li++) { display.setCursor(box.x + 3, y + (li + 1) * lh + 1); display.print(s_wrap_lines[li]); }
-        } else {
-          display.drawTextEllipsized(box.x + 3, y + lh + 1, box.w - 6, body);
+        if (age[0]) { display.setCursor(full_avail - age_w, y + 1); display.print(age); }
+        display.translateUTF8ToBlocks(s_wrap_trans, body, sizeof(s_wrap_trans));
+        int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, full_avail - 6, s_wrap_lines, 12);
+        for (int li = 0; li < nl; li++) {
+          display.setCursor(2, y + (li + 1) * lh + 1);
+          display.print(s_wrap_lines[li]);
         }
+        display.fillRect(0, y + bh - 1, full_avail, 1);
       }
 
       if (dm_count == 0) {
@@ -1296,11 +1313,10 @@ public:
         long span = hs.total_px - hs.view_px;
         long inv_scroll_px = span - hs.scroll_px;
         if (inv_scroll_px < 0) inv_scroll_px = 0;
-        drawScrollIndicatorPx(display, hist_start_y + 1, hs.view_px,
+        drawScrollIndicatorPx(display, hist_start_y, hs.view_px,
                               hs.total_px, hs.view_px, inv_scroll_px);
       }
 
-      drawComposeButton(display, cby, lh, _dm_hist_sel == -1);
       if (_ctx_menu.active) _ctx_menu.render(display);
       return dm_count > 0 ? 500 : 2000;
 
@@ -1336,7 +1352,7 @@ public:
       }
 
       int hist_start_y = display.headerH();
-      int cby = display.height() - lh;   // compose button is now exactly lh tall, no added border padding
+      int cby = display.height();
 
       ChannelDetails ch;
       the_mesh.getChannel(_sel_channel_idx, ch);
@@ -1347,9 +1363,8 @@ public:
       int ch_hist_count = _history.histCountForChannel(_sel_channel_idx);
       uint32_t now_ts = rtc_clock.getCurrentTime();
 
-      // Portrait e-ink (height > width): variable-height boxes that show the full
-      // wrapped message text. All other displays/orientations: compact 2-line boxes.
-      bool portrait_expand = (display.height() > display.width());
+      // Same full-width transcript layout as direct messages and rooms.
+      bool portrait_expand = true;
       const int MAX_VIS_BOXES = 8;
       int box_ys[MAX_VIS_BOXES], box_hs[MAX_VIS_BOXES], n_vis = 0;
       // Fixed-track scrollbar metrics + stable gutter reserve (see DM history above).
@@ -1364,12 +1379,10 @@ public:
           });
       int reserve = hs.reserve;
       {
-        // Stack boxes upward from just above the compose row — see the DM
-        // history block above for why (newest at the bottom, like a typical
-        // messenger). box_ys[i] still corresponds to item (_hist_scroll + i).
+        // Stack rows upward from the bottom; see the DM history block above.
         const int fixed_bh = 2 * lh + 1;
-        const int box_gap = portrait_expand ? 2 : 1;
-        int cur_y = cby - box_gap;   // reserve the same gap against compose as between boxes
+        const int box_gap = HIST_ROW_GAP;
+        int cur_y = cby;
         for (int ii = 0; ii < MAX_VIS_BOXES && (_hist_scroll + ii) < ch_hist_count; ii++) {
           int bh = fixed_bh;
           if (portrait_expand) {
@@ -1379,7 +1392,7 @@ public:
               const char* rsep = strstr(rtext, ": ");
               const char* rbody = rsep ? rsep + 2 : rtext;
               display.translateUTF8ToBlocks(s_wrap_trans, skipReplyPrefix(rbody), sizeof(s_wrap_trans));
-              int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 8);
+              int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, display.width() - 6 - reserve, s_wrap_lines, 12);
               bh = (1 + (nl > 0 ? nl : 1)) * lh + 1;
             }
           }
@@ -1394,7 +1407,6 @@ public:
 
       for (int i = 0; i < n_vis && (_hist_scroll + i) < ch_hist_count; i++) {
         int item = _hist_scroll + i;
-        bool sel = (item == _hist_sel);
         int y = box_ys[i];
         int bh = box_hs[i];
 
@@ -1419,42 +1431,26 @@ public:
         int age_w = age[0] ? display.getTextWidth(age) + 3 : 0;
         const char* body = skipReplyPrefix(msg_part);
 
-        // Size the bubble to its own content before drawing anything (see
-        // computeBubbleBox): the header (sender+ack+age) vs the body, measured
-        // once here and reused below instead of re-wrapping. Channels have no
-        // recipient ACK — only show ✓ once a repeater echo confirms the send
-        // was relayed into the mesh; otherwise no marker (absence is normal).
+        // Channels use the same transcript row, retaining sender attribution and
+        // the repeater-echo delivery marker for outgoing messages.
         bool outgoing = strcmp(sender, "Me") == 0;
         bool show_ack = outgoing && _history.chAtPos(ring_pos).relay_status == ACK_OK;
         int full_avail = display.width() - reserve;
-        int ack_w = show_ack ? (3 + ackGlyphWidth(display, ACK_OK, 1)) : 0;
-        int header_w = 3 + display.getTextWidth(sender) + ack_w + age_w + 3;
-        int body_w, nl = 0;
-        if (portrait_expand) {
-          display.translateUTF8ToBlocks(s_wrap_trans, body, sizeof(s_wrap_trans));
-          nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, full_avail - 6, s_wrap_lines, 8);
-          body_w = 0;
-          for (int li = 0; li < nl; li++) { int w = display.getTextWidth(s_wrap_lines[li]); if (w > body_w) body_w = w; }
-          body_w += 6;
-        } else {
-          int raw_w = display.getTextWidth(body);
-          body_w = (raw_w > full_avail - 6 ? full_avail - 6 : raw_w) + 6;
-        }
-        BubbleBox box = computeBubbleBox(full_avail, outgoing, header_w, body_w);
-
-        drawHistRowFrame(display, box.x, box.w, y, bh, lh, sel);
-        display.drawTextEllipsized(box.x + 3, y + 1, box.w - 6 - age_w, sender);
+        int ack_w = show_ack ? ackGlyphWidth(display, ACK_OK, 1) : 0;
+        int name_avail = full_avail - 2 - age_w - (ack_w > 0 ? ack_w + 3 : 0);
+        int badge_right = drawSenderBadge(display, 1, y, name_avail, sender);
         if (show_ack) {
-          int gx = box.x + 3 + display.getTextWidth(sender) + 3;
+          int gx = badge_right + 3;
           drawAckGlyph(display, gx, y + 1, ACK_OK);
         }
-        if (age[0]) { display.setCursor(box.x + box.w - age_w, y + 1); display.print(age); }
-        if (!sel) display.setColor(DisplayDriver::LIGHT);
-        if (portrait_expand) {
-          for (int li = 0; li < nl; li++) { display.setCursor(box.x + 3, y + (li + 1) * lh + 1); display.print(s_wrap_lines[li]); }
-        } else {
-          display.drawTextEllipsized(box.x + 3, y + lh + 1, box.w - 6, body);
+        if (age[0]) { display.setCursor(full_avail - age_w, y + 1); display.print(age); }
+        display.translateUTF8ToBlocks(s_wrap_trans, body, sizeof(s_wrap_trans));
+        int nl = FullscreenMsgView::wrapLines(display, s_wrap_trans, full_avail - 6, s_wrap_lines, 12);
+        for (int li = 0; li < nl; li++) {
+          display.setCursor(2, y + (li + 1) * lh + 1);
+          display.print(s_wrap_lines[li]);
         }
+        display.fillRect(0, y + bh - 1, full_avail, 1);
       }
 
       if (ch_hist_count == 0) {
@@ -1470,11 +1466,10 @@ public:
         long span = hs.total_px - hs.view_px;
         long inv_scroll_px = span - hs.scroll_px;
         if (inv_scroll_px < 0) inv_scroll_px = 0;
-        drawScrollIndicatorPx(display, hist_start_y + 1, hs.view_px,
+        drawScrollIndicatorPx(display, hist_start_y, hs.view_px,
                               hs.total_px, hs.view_px, inv_scroll_px);
       }
 
-      drawComposeButton(display, cby, lh, _hist_sel == -1);
       if (_ctx_menu.active) _ctx_menu.render(display);
 
     } else if (_phase == KEYBOARD) {
@@ -1499,19 +1494,18 @@ public:
       }
       display.drawCenteredHeader(title);
 
-      int total_msg_items = 1 + _active_msg_count;
+      int total_msg_items = _active_msg_count;
+      if (total_msg_items == 0) {
+        display.drawTextCentered(display.width() / 2, display.height() / 2,
+                                 "No quick messages");
+        return 2000;
+      }
       drawList(display, total_msg_items, _msg_sel, _msg_scroll, [&](int idx, int y, bool sel, int reserve) {
         drawRowSelection(display, y, sel, reserve);
-
-        if (idx == 0) {
-          display.setCursor(2, y);
-          display.print("Custom message...");
-        } else {
-          NodePrefs* p = _task->getNodePrefs();
-          int slot = _active_msgs[idx - 1];
-          const char* tmpl = p ? p->custom_msgs[slot] : "";
-          display.drawTextEllipsized(2, y, display.width() - 4 - reserve, tmpl);
-        }
+        NodePrefs* p = _task->getNodePrefs();
+        int slot = _active_msgs[idx];
+        const char* tmpl = p ? p->custom_msgs[slot] : "";
+        display.drawTextEllipsized(2, y, display.width() - 4 - reserve, tmpl);
       });
     }
     return 2000;
@@ -1589,7 +1583,7 @@ public:
               if (sel == 0) {
                 _login_mode = true;
                 _kb->begin("", 15); // room/repeater password: max 15 chars
-                _kb->clearPlaceholders();   // {loc}/{time} are for messages, not a password
+                _kb->clearPlaceholders();   // message placeholders are not valid in a password
                 _phase = KEYBOARD;
               } else {
                 // Logout: only reachable when isRoomLoggedIn() added this item.
@@ -1630,7 +1624,7 @@ public:
         }
         auto res = _ctx_menu.handleInput(c);
         if (_pin_picker_active) {
-          // Slot picker sub-menu: index 0..FAVOURITES_COUNT-1 maps directly to slot.
+          // Slot picker sub-menu maps directly to the four visible dial slots.
           if (res == PopupMenu::SELECTED && _num_contacts > 0) {
             ContactInfo ci;
             if (the_mesh.getContactByIdx(_sorted[_contact_sel], ci)) {
@@ -1663,7 +1657,7 @@ public:
                 snprintf(alert, sizeof(alert), "Unpinned (slot %d)", pinned_slot + 1);
                 _task->showAlert(alert, 800);
               } else {
-                for (int s = 0; s < NodePrefs::FAVOURITES_COUNT; s++) {
+                for (int s = 0; s < NodePrefs::FAVOURITES_DIAL_COUNT; s++) {
                   if (_task->isFavouriteSlotEmpty(s)) {
                     snprintf(_pin_slot_labels[s], sizeof(_pin_slot_labels[s]), "Slot %d: empty", s + 1);
                   } else {
@@ -1684,7 +1678,7 @@ public:
                   }
                 }
                 _ctx_menu.begin("Pick slot", 3);
-                for (int s = 0; s < NodePrefs::FAVOURITES_COUNT; s++) _ctx_menu.addItem(_pin_slot_labels[s]);
+                for (int s = 0; s < NodePrefs::FAVOURITES_DIAL_COUNT; s++) _ctx_menu.addItem(_pin_slot_labels[s]);
                 _pin_picker_active = true;
               }
             }
@@ -1696,6 +1690,7 @@ public:
       }
       if (c == KEY_CANCEL) {
         if (_pick_bot_room) { _pick_bot_room = false; _room_mode = false; _task->gotoBotScreen(); return true; }
+        if (_home_category_entry) { _home_category_entry = false; _task->gotoHomeScreen(); return true; }
         _room_mode = false;
         _phase = MODE_SELECT;
         return true;
@@ -1742,7 +1737,7 @@ public:
             } else {
               _login_mode = true;
               _kb->begin("", 15); // room/repeater password: max 15 chars
-              _kb->clearPlaceholders();   // {loc}/{time} are for messages, not a password
+              _kb->clearPlaceholders();   // message placeholders are not valid in a password
               _phase = KEYBOARD;
             }
             return true;
@@ -1850,6 +1845,7 @@ public:
       }
       if (c == KEY_CANCEL) {
         if (_pick_bot_channel) { _pick_bot_channel = false; _task->gotoBotScreen(); return true; }
+        if (_home_category_entry) { _home_category_entry = false; _task->gotoHomeScreen(); return true; }
         _phase = MODE_SELECT;
         return true;
       }
@@ -1960,11 +1956,8 @@ public:
         }
         return true;
       }
-      // Newest (index 0) now renders at the bottom, oldest at the top (see the
-      // render block above), so UP/DOWN swap which direction walks the index:
-      // UP now climbs toward older (higher index, physically upward); DOWN
-      // now walks toward newer (lower index, physically downward) and off the
-      // bottom (index 0) reaches the compose row, which sits right below it.
+      // Newest (index 0) renders at the bottom. UP walks toward older entries;
+      // DOWN walks toward newer entries and stops at the newest message.
       if (c == KEY_UP) {
         if (_dm_hist_sel == -1 && dm_count > 0) { _dm_hist_sel = 0; _dm_hist_scroll = 0; }
         else if (_dm_hist_sel >= 0 && _dm_hist_sel < dm_count - 1) {
@@ -1978,28 +1971,17 @@ public:
         if (_dm_hist_sel > 0) {
           _dm_hist_sel--;
           if (_dm_hist_sel < _dm_hist_scroll) _dm_hist_scroll = _dm_hist_sel;
-        } else if (_dm_hist_sel == 0) {
-          _dm_hist_sel = -1;
         }
         return true;
       }
       if (c == KEY_ENTER) {
-        if (_dm_hist_sel >= 0) {
-          _dm_fs.begin();
-        } else {
-          _sending_to_channel = false;
-          setupMsgPick();
-          _phase = MSG_PICK;
-        }
+        _sending_to_channel = false;
+        beginCustomMessage();
         return true;
       }
-      if (c == KEY_CONTEXT_MENU && _dm_hist_sel >= 0) {
-        int ring_pos = _history.dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
-        if (ring_pos >= 0) {
-          bool reply_ok = !_history.dmAtPos(ring_pos).outgoing;
-          if (reply_ok) buildDmReplyPrefix(_history.dmAtPos(ring_pos));
-          buildFsMenu(_history.dmAtPos(ring_pos).text, reply_ok);
-        }
+      if (c == KEY_CONTEXT_MENU) {
+        _sending_to_channel = false;
+        beginQuickMessagePick();
         return true;
       }
 
@@ -2053,25 +2035,17 @@ public:
       }
       if (c == KEY_DOWN) {
         if (_hist_sel > 0) { _hist_sel--; if (_hist_sel < _hist_scroll) _hist_scroll = _hist_sel; }
-        else if (_hist_sel == 0) _hist_sel = -1;
         updateChannelUnread();
         return true;
       }
       if (c == KEY_ENTER) {
-        if (_hist_sel >= 0) {
-          _fs.begin();
-          updateChannelUnread();
-        } else {
-          _sending_to_channel = true;
-          setupMsgPick();
-          _phase = MSG_PICK;
-        }
+        _sending_to_channel = true;
+        beginCustomMessage();
         return true;
       }
-      if (c == KEY_CONTEXT_MENU && _hist_sel >= 0) {
-        int ring_pos = _history.histEntryForChannel(_sel_channel_idx, _hist_sel);
-        if (ring_pos >= 0)
-          buildFsMenu(_history.chAtPos(ring_pos).text, buildChannelReplyPrefix(_history.chAtPos(ring_pos).text));
+      if (c == KEY_CONTEXT_MENU) {
+        _sending_to_channel = true;
+        beginQuickMessagePick();
         return true;
       }
 
@@ -2094,7 +2068,13 @@ public:
       }
       if (res == KeyboardWidget::CANCELLED) {
         if (_share_mode) { _share_mode = false; _task->gotoHomeScreen(); }
-        else             { _phase = MSG_PICK; }
+        else if (_quick_msgs_bypassed) {
+          _quick_msgs_bypassed = false;
+          _reply_mode = false;
+          _phase = _sending_to_channel ? CHANNEL_HIST : DM_HIST;
+        } else {
+          _phase = MSG_PICK;
+        }
       } else if (res == KeyboardWidget::DONE) {
         int prefix_len = _reply_mode ? (int)strlen(_reply_prefix) : 0;
         if (_kb->len > prefix_len) {
@@ -2114,34 +2094,22 @@ public:
       return true;
 
     } else { // MSG_PICK
-      int total_msg_items = 1 + _active_msg_count;
+      int total_msg_items = _active_msg_count;
       if (c == KEY_CANCEL) {
         _reply_mode = false;
         _phase = _sending_to_channel ? CHANNEL_HIST : DM_HIST;
         return true;
       }
+      if (total_msg_items == 0) return true;
       // drawList() reclamps _msg_scroll from _msg_sel every render.
       if (c == KEY_UP)   { _msg_sel = (_msg_sel > 0) ? _msg_sel - 1 : total_msg_items - 1; return true; }
       if (c == KEY_DOWN) { _msg_sel = (_msg_sel < total_msg_items - 1) ? _msg_sel + 1 : 0; return true; }
       if (c == KEY_ENTER) {
-        if (_msg_sel == 0) {
-          _kb->begin(_reply_mode ? _reply_prefix : "");
-          kbAddSensorPlaceholders(*_kb, &sensors);
-          enableWordCompletion();
-          _phase = KEYBOARD;
-          return true;
-        }
         NodePrefs* p = _task->getNodePrefs();
-        int slot = _active_msgs[_msg_sel - 1];
+        int slot = _active_msgs[_msg_sel];
         const char* tmpl = p ? p->custom_msgs[slot] : "OK";
         char msg[MSG_TEXT_BUF];
-        if (_reply_mode) {
-          char body[MSG_TEXT_BUF];
-          expandMsg(tmpl, body, sizeof(body));
-          snprintf(msg, sizeof(msg), "%s%s", _reply_prefix, body);
-        } else {
-          expandMsg(tmpl, msg, sizeof(msg));
-        }
+        expandMsg(tmpl, msg, sizeof(msg));
         bool ok = sendText(msg);
         afterSend(ok, msg);
         return true;
