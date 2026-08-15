@@ -71,6 +71,8 @@ class MessagesScreen : public UIScreen {
   char      _ctx_ch_fav_item[12]; // "Fav" or "Unfav"
   char      _pin_slot_labels[NodePrefs::FAVOURITES_COUNT][22];  // per-slot picker labels
   bool      _pin_picker_active;  // true while the slot-picker submenu is open
+  bool      _retry_menu_active = false; // transcript Hold-Enter retry/quick menu
+  int       _retry_hist_pos = -1;       // frozen row selected when menu opened
   bool      _dm_direct_entry;    // entered DM_HIST via Favourites shortcut; CANCEL returns home
   bool      _channel_direct_entry = false; // Clock shortcut opened CHANNEL_HIST directly
   char      _reply_prefix[36];   // "@[nick] " built when reply is triggered
@@ -283,12 +285,12 @@ class MessagesScreen : public UIScreen {
   }
 
   // Conversation controls deliberately avoid a selectable compose row: a short
-  // Enter opens the editor, while Hold Enter opens only the saved quick messages.
+  // Enter opens the editor. Hold Enter opens saved quick messages directly,
+  // except when this transcript has a failed send and needs a resend action.
   void beginCustomMessage() {
     _reply_mode = false;
     _quick_msgs_bypassed = true;
-    // Attempts 4+ carry a two-byte extended-attempt suffix on the wire.
-    messageeditor::begin(*_kb, "", MAX_TEXT_LEN - 2, &sensors);
+    messageeditor::begin(*_kb, "", messageeditor::SEND_TEXT_LIMIT, &sensors);
     _phase = KEYBOARD;
   }
 
@@ -297,6 +299,52 @@ class MessagesScreen : public UIScreen {
     _quick_msgs_bypassed = false;
     setupMsgPick();
     _phase = MSG_PICK;
+  }
+
+  void beginTranscriptActions(bool channel) {
+    int failed = channel ? _history.latestFailedChannel(_sel_channel_idx)
+                         : _history.latestFailedDMForContact(_sel_contact.id.pub_key);
+    if (failed < 0) {
+      _sending_to_channel = channel;
+      beginQuickMessagePick();
+      return;
+    }
+    _retry_hist_pos = failed;
+    _retry_menu_active = true;
+    _ctx_menu.begin("Send options", 2);
+    _ctx_menu.addItem(channel ? "Resend anyway" : "Resend failed");
+    _ctx_menu.addItem("Quick messages");
+  }
+
+  void dispatchTranscriptAction(bool channel) {
+    int selected = _ctx_menu.selectedIndex();
+    _ctx_menu.active = false;
+    _retry_menu_active = false;
+    if (selected == 1) {
+      _sending_to_channel = channel;
+      beginQuickMessagePick();
+      return;
+    }
+
+    bool ok = false;
+    if (channel) {
+      ChannelDetails ch;
+      if (_retry_hist_pos >= 0 && the_mesh.getChannel(_sel_channel_idx, ch) &&
+          (!_task->isChildModeLocked() ||
+           channelAllowedForChild((uint8_t)_sel_channel_idx, ch))) {
+        ChHistEntry& e = _history.chAtPos(_retry_hist_pos);
+        if (e.ch_idx == (uint8_t)_sel_channel_idx && e.relay_status == ACK_FAIL) {
+          const char* body = strncmp(e.text, "Me: ", 4) == 0 ? e.text + 4 : e.text;
+          ok = the_mesh.sendGroupMessage(rtc_clock.getCurrentTime(), ch.channel,
+                                         the_mesh.getNodeName(), body, strlen(body));
+          if (ok) _history.armChannelRelay(_retry_hist_pos, the_mesh.lastChannelRelaySeq());
+        }
+      }
+    } else {
+      ok = _history.resendFailedDM(_retry_hist_pos, _sel_contact.id.pub_key);
+    }
+    _retry_hist_pos = -1;
+    _task->showAlert(ok ? "Retrying..." : "Resend failed", ok ? 900 : 1500);
   }
 
   void afterSend(bool ok, const char* msg) {
@@ -330,8 +378,26 @@ class MessagesScreen : public UIScreen {
       _phase = DM_HIST;
       _task->showAlert("Sent!", 600);
     } else {
+      if (_sending_to_channel) {
+        _hist_sel = _hist_scroll = 0;
+        _channel_transcript.reset();
+        _phase = CHANNEL_HIST;
+        char entry[sizeof(ChHistEntry::text)];
+        snprintf(entry, sizeof(entry), "Me: %s", msg);
+        int pos = addChannelMsg(_sel_channel_idx, entry);
+        if (pos >= 0) _history.chAtPos(pos).relay_status = ACK_FAIL;
+        _history.setChUnread(_sel_channel_idx, 0);
+        _unread_at_entry = 0;
+        _viewing_max_seen = 0;
+      } else {
+        _history.storeFailedDM(_sel_contact.id.pub_key, msg, _last_send_ts,
+                               _last_send_route);
+        _task->reconcileDMUnread();
+        _dm_hist_sel = _dm_hist_scroll = 0;
+        _dm_transcript.reset();
+        _phase = DM_HIST;
+      }
       _task->showAlert("Send failed", 1500);
-      _task->gotoHomeScreen();
     }
   }
 
@@ -354,10 +420,10 @@ class MessagesScreen : public UIScreen {
                            ? DELIVERY_ROUTE_FLOOD
                            : (_sel_contact.out_path_len == 0
                                 ? DELIVERY_ROUTE_DIRECT : DELIVERY_ROUTE_PATH);
+      _last_send_ts = send_ts;
       bool ok = the_mesh.sendMessage(_sel_contact, send_ts, 0,
                                      msg, expected_ack, est_timeout) > 0;
       if (ok && expected_ack) {
-        _last_send_ts = send_ts;
         _last_ack_tag = expected_ack;
         // Generous margin over the base estimate so a slow multi-hop ACK isn't
         // prematurely shown as failed.
@@ -1665,9 +1731,11 @@ public:
       if (_ctx_menu.active) {
         auto res = _ctx_menu.handleInput(c);
         if (res == PopupMenu::SELECTED) {
-          dispatchFsAction(false);
+          if (_retry_menu_active) dispatchTranscriptAction(false);
+          else dispatchFsAction(false);
         } else if (res != PopupMenu::NONE) {
           _ctx_menu.active = false;
+          _retry_menu_active = false;
         }
         return true;
       }
@@ -1688,8 +1756,7 @@ public:
         return true;
       }
       if (c == KEY_CONTEXT_MENU) {
-        _sending_to_channel = false;
-        beginQuickMessagePick();
+        beginTranscriptActions(false);
         return true;
       }
 
@@ -1722,9 +1789,11 @@ public:
       if (_ctx_menu.active) {
         auto res = _ctx_menu.handleInput(c);
         if (res == PopupMenu::SELECTED) {
-          dispatchFsAction(true);
+          if (_retry_menu_active) dispatchTranscriptAction(true);
+          else dispatchFsAction(true);
         } else if (res != PopupMenu::NONE) {
           _ctx_menu.active = false;
+          _retry_menu_active = false;
         }
         return true;
       }
@@ -1745,8 +1814,7 @@ public:
         return true;
       }
       if (c == KEY_CONTEXT_MENU) {
-        _sending_to_channel = true;
-        beginQuickMessagePick();
+        beginTranscriptActions(true);
         return true;
       }
 
@@ -1781,7 +1849,10 @@ public:
         if (_kb->len > prefix_len) {
           // Expand only the body — prefix "@[nick] " is preserved verbatim, so a nick
           // that happens to contain a placeholder token isn't substituted.
-          char expanded[KB_MAX_LEN + 1];
+          // Placeholder expansion must obey the same ceiling as typed text;
+          // otherwise an apparently valid draft can grow beyond what a later
+          // retry packet is able to carry.
+          char expanded[messageeditor::SEND_TEXT_LIMIT + 1];
           if (prefix_len > 0) {
             memcpy(expanded, _kb->buf, prefix_len);
             expandMsg(_kb->buf + prefix_len, expanded + prefix_len, sizeof(expanded) - prefix_len);

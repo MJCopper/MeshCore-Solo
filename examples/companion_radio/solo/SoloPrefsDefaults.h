@@ -13,6 +13,7 @@ public:
     prefs.child_visible_pages = NodePrefs::HP_FAVOURITES;
     prefs.quiet_time_start_min = 21 * 60;
     prefs.quiet_time_end_min = 7 * 60;
+    prefs.bluetooth_enabled = 1;
   }
 
   static void normalize(NodePrefs& prefs) {
@@ -24,6 +25,7 @@ public:
     if (prefs.quiet_time_enabled > 1) prefs.quiet_time_enabled = 0;
     if (prefs.quiet_time_start_min >= 24 * 60) prefs.quiet_time_start_min = 21 * 60;
     if (prefs.quiet_time_end_min >= 24 * 60) prefs.quiet_time_end_min = 7 * 60;
+    if (prefs.bluetooth_enabled > 1) prefs.bluetooth_enabled = 1;
   }
 };
 

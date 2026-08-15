@@ -21,9 +21,19 @@
 // `y` is the TOP of the text row in every function below, matching the UI's
 // coordinate convention (GFX fonts would use the baseline).
 
+// Phone keyboards commonly replace ASCII quotes with typographic Unicode
+// variants. Misc-fixed does not contain those codepoints, so map them onto the
+// equivalent ASCII glyphs instead of drawing the unsupported-emoji diamond.
+static inline uint32_t miscFixedNormalisePunctuation(uint32_t cp) {
+  if (cp == 0x2018 || cp == 0x2019 || cp == 0x02BC) return '\'';
+  if (cp == 0x201C || cp == 0x201D) return '"';
+  return cp;
+}
+
 // Pixel advance of one codepoint at text size sz. Unmapped codepoints get the
 // font's own 6px cell, same as the substitution box drawn for them.
 static inline uint8_t miscFixedXAdvance(uint32_t cp, int sz) {
+  cp = miscFixedNormalisePunctuation(cp);
   uint8_t xa;
   if (cp < MiscFixed.first || cp > MiscFixed.last) xa = 6;
   else xa = pgm_read_byte(&MiscFixedGlyphs[cp - MiscFixed.first].xAdvance);
@@ -85,7 +95,7 @@ static inline void miscFixedPrint(Adafruit_GFX& gfx, const char* str, int sz, ui
   int16_t cy = gfx.getCursorY();
   const uint8_t* p = (const uint8_t*)str;
   while (*p) {
-    uint32_t cp = DisplayDriver::decodeCodepoint(p);
+    uint32_t cp = miscFixedNormalisePunctuation(DisplayDriver::decodeCodepoint(p));
     if (cp == '\n') { cy += MiscFixed.yAdvance * sz; cx = 0; }
     else if (emojiIsVariation(cp) || emojiIsModifier(cp) || cp == 0x200D) { }
     else if (emojiConsumeKeycap(p, cp)) {
@@ -109,7 +119,7 @@ static inline uint16_t miscFixedTextWidth(const char* str, int sz) {
   uint16_t width = 0;
   const uint8_t* p = (const uint8_t*)str;
   while (*p) {
-    uint32_t cp = DisplayDriver::decodeCodepoint(p);
+    uint32_t cp = miscFixedNormalisePunctuation(DisplayDriver::decodeCodepoint(p));
     if (emojiIsVariation(cp) || emojiIsModifier(cp) || cp == 0x200D) continue;
     if (!emojiConsumeKeycap(p, cp) && emojiIsCodepoint(cp)) emojiConsumeSuffix(p, cp);
     width += miscFixedXAdvance(cp, sz);

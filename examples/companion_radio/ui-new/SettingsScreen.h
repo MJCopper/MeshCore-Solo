@@ -105,7 +105,10 @@ class SettingsScreen : public UIScreen {
   bool _dirty = false;
 #if ENV_INCLUDE_GPS == 1
   bool _gps_dirty = false; // staged until this settings screen is closed
+  uint8_t _gps_initial_mode = 0;
 #endif
+  bool _bluetooth_dirty = false; // staged with GPS; applied and saved on exit
+  uint8_t _bluetooth_initial = 1;
 
   static const int NUM_SECTIONS = 8 + SOLO_FEAT_CHILD_MODE;
   static const int MAX_PER_SEC  = 16;
@@ -471,7 +474,7 @@ class SettingsScreen : public UIScreen {
     } else if (item == BLUETOOTH_ENABLED) {
       display.print("Bluetooth");
       display.setCursor(valCol(display), y);
-      display.print(_task->isBluetoothEnabled() ? "ON" : "OFF");
+      display.print((p && p->bluetooth_enabled) ? "ON" : "OFF");
     } else if (item == LOW_BAT) {
       display.print("LowBat");
       display.setCursor(valCol(display), y);
@@ -591,6 +594,24 @@ class SettingsScreen : public UIScreen {
   TimeOfDayEditor _quiet_editor;
   int _quiet_edit_item = -1;
 
+  void commitStagedChanges() {
+    bool gps_changed = false;
+#if ENV_INCLUDE_GPS == 1
+    gps_changed = _gps_dirty;
+    if (gps_changed) _task->applyGpsPrefs();
+#endif
+    bool bluetooth_changed = _bluetooth_dirty;
+    if (bluetooth_changed) _task->applyBluetoothPrefs();
+
+    bool save_dirty = _dirty || gps_changed || bluetooth_changed;
+    _task->savePrefsIfDirty(save_dirty);
+    _dirty = false;
+#if ENV_INCLUDE_GPS == 1
+    _gps_dirty = false;
+#endif
+    _bluetooth_dirty = false;
+  }
+
 public:
   SettingsScreen(UITask* task, KeyboardWidget* kb)
     : _task(task), _kb(kb) {
@@ -600,9 +621,13 @@ public:
 
   void onShow() override {
     _dirty = false;
+    NodePrefs* p = _task->getNodePrefs();
 #if ENV_INCLUDE_GPS == 1
     _gps_dirty = false;
+    _gps_initial_mode = _task->getGPSMode();
 #endif
+    _bluetooth_dirty = false;
+    _bluetooth_initial = p ? p->bluetooth_enabled : 1;
     _edit_name = false;
     _quiet_edit_item = -1;
     _quiet_editor.editing = false;
@@ -795,13 +820,7 @@ public:
     }
 
     if (c == KEY_CANCEL) {
-#if ENV_INCLUDE_GPS == 1
-      if (_gps_dirty) {
-        _task->applyGpsPrefs();
-        _gps_dirty = false;
-      }
-#endif
-      _task->savePrefsIfDirty(_dirty);
+      commitStagedChanges();
       if (p && p->child_mode_enabled) _task->setChildAdminUnlocked(false);
       _task->gotoHomeScreen();
       return true;
@@ -938,14 +957,13 @@ public:
       else mode = (mode + 1) % solo::GpsMode::COUNT;
       p->gps_enabled = mode == 0 ? 0 : 1;
       p->gps_interval = solo::GpsMode::interval((uint8_t)mode);
-      _gps_dirty = true;
-      _dirty = true;
+      _gps_dirty = (uint8_t)mode != _gps_initial_mode;
       return true;
     }
 #endif
-    if (_selected == BLUETOOTH_ENABLED && (left || right || enter)) {
-      if (_task->isBluetoothEnabled()) _task->disableBluetooth();
-      else _task->enableBluetooth();
+    if (_selected == BLUETOOTH_ENABLED && p && (left || right || enter)) {
+      p->bluetooth_enabled ^= 1;
+      _bluetooth_dirty = p->bluetooth_enabled != _bluetooth_initial;
       return true;
     }
     if (_selected == LOW_BAT && p) {
@@ -966,7 +984,7 @@ public:
       return true;
     }
     if (_selected == REBOOT && enter) {
-      _task->savePrefsIfDirty(_dirty);   // don't lose pending edits across the restart
+      commitStagedChanges();             // don't lose pending edits across the restart
       _task->showAlert("Rebooting...", 800);
       board.reboot();
       return true;

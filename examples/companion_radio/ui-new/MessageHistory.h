@@ -221,9 +221,9 @@ public:
   // ack_deadline_ms; 0 means "sent, no confirmation possible" (no path / incoming).
   // msg_ts = sender-perspective timestamp (send ts for outgoing / sender_timestamp
   // for incoming); initial_direct selects the fixed direct-then-flood policy.
-  void storeDMMsg(const uint8_t* pub_key, bool outgoing, const char* text,
-                  uint32_t ack_tag = 0, uint32_t ack_deadline_ms = 0,
-                  uint32_t msg_ts = 0, uint8_t initial_route = DELIVERY_ROUTE_NONE) {
+  int storeDMMsg(const uint8_t* pub_key, bool outgoing, const char* text,
+                 uint32_t ack_tag = 0, uint32_t ack_deadline_ms = 0,
+                 uint32_t msg_ts = 0, uint8_t initial_route = DELIVERY_ROUTE_NONE) {
     int pos;
     if (_dm_hist_count < DM_HIST_MAX) {
       pos = (_dm_hist_head + _dm_hist_count) % DM_HIST_MAX;
@@ -257,6 +257,7 @@ public:
                           : solo::DmRetryPolicy::INITIAL_FLOOD_RETRIES)
         : 0;
     scheduleDmMaintenance();
+    return pos;
   }
 
   bool addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text,
@@ -294,6 +295,73 @@ public:
       }
     }
     return -1;
+  }
+
+  // Newest outgoing message in this conversation whose automatic delivery
+  // policy has finished. The effective-state check also catches an expired
+  // final ACK window just before the maintenance tick records ACK_FAIL.
+  int latestFailedDMForContact(const uint8_t* prefix) const {
+    for (int i = _dm_hist_count - 1; i >= 0; i--) {
+      int pos = (_dm_hist_head + i) % DM_HIST_MAX;
+      const DmHistEntry& e = _dm_hist[pos];
+      if (e.outgoing && memcmp(e.prefix, prefix, 4) == 0 &&
+          dmEffectiveStatus(e) == ACK_FAIL)
+        return pos;
+    }
+    return -1;
+  }
+
+  int latestFailedChannel(int ch_idx) const {
+    for (int i = _hist_count - 1; i >= 0; i--) {
+      int pos = (_hist_head + i) % CH_HIST_MAX;
+      const ChHistEntry& e = _hist[pos];
+      if (e.ch_idx == (uint8_t)ch_idx && e.relay_status == ACK_FAIL)
+        return pos;
+    }
+    return -1;
+  }
+
+  // Keep an immediate send failure in the transcript so it can be retried.
+  int storeFailedDM(const uint8_t* pub_key, const char* text, uint32_t msg_ts,
+                    uint8_t route) {
+    int pos = storeDMMsg(pub_key, true, text, 0, 0, msg_ts, route);
+    _dm_hist[pos].ack_status = ACK_FAIL;
+    return pos;
+  }
+
+  // Restart the complete fixed retry policy on an existing failed row. Keep
+  // its timestamp and text for recipient-side deduplication, but advance the
+  // wire attempt number so mesh duplicate suppression sees a fresh packet.
+  bool resendFailedDM(int pos, const uint8_t* expected_prefix) {
+    if (pos < 0 || pos >= DM_HIST_MAX) return false;
+    DmHistEntry& e = _dm_hist[pos];
+    if (!e.outgoing || memcmp(e.prefix, expected_prefix, 4) != 0 ||
+        dmEffectiveStatus(e) != ACK_FAIL || e.attempt == 255)
+      return false;
+
+    ContactInfo c;
+    if (!contactByPrefix(e.prefix, c)) return false;
+    bool direct = c.out_path_len != OUT_PATH_UNKNOWN;
+    uint32_t expected_ack = 0, est_timeout = 0;
+    uint8_t next_attempt = e.attempt + 1;
+    if (the_mesh.sendMessage(c, e.msg_ts, next_attempt, e.text,
+                             expected_ack, est_timeout) <= 0 || !expected_ack)
+      return false;
+
+    e.attempt = next_attempt;
+    e.ack_status = ACK_PENDING;
+    e.ack_tag = expected_ack;
+    e.ack_deadline_ms = millis() + est_timeout + 4000;
+    e.delivery_route = direct
+        ? (c.out_path_len == 0 ? DELIVERY_ROUTE_DIRECT : DELIVERY_ROUTE_PATH)
+        : DELIVERY_ROUTE_FLOOD;
+    e.direct_retries_left = direct
+        ? solo::DmRetryPolicy::DIRECT_RETRIES_AFTER_INITIAL : 0;
+    e.flood_retries_left = direct
+        ? solo::DmRetryPolicy::FALLBACK_FLOOD_TRIES
+        : solo::DmRetryPolicy::INITIAL_FLOOD_RETRIES;
+    scheduleDmMaintenance();
+    return true;
   }
 
   uint32_t latestDmActivity(const uint8_t* prefix, bool incoming_only = false) const {

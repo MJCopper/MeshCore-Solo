@@ -14,6 +14,11 @@
 
 namespace messageeditor {
 
+// Attempts 4+ append an extended-attempt byte after the message terminator.
+// Reserve those two bytes up front so every message accepted by the editor can
+// be sent by every stage of the fixed retry policy.
+static const int SEND_TEXT_LIMIT = MAX_TEXT_LEN - 2;
+
 #if SOLO_FEAT_AUTOCOMPLETE
 inline void refreshCompletions(KeyboardWidget& kb, void* ctx) {
   SensorManager* sensors = static_cast<SensorManager*>(ctx);
@@ -84,7 +89,7 @@ inline void begin(KeyboardWidget& kb, const char* initial, int max_len,
 
 inline void begin(KeyboardWidget& kb, const char* initial,
                   SensorManager* sensors) {
-  begin(kb, initial, KB_MAX_LEN, sensors);
+  begin(kb, initial, SEND_TEXT_LIMIT, sensors);
 }
 
 } // namespace messageeditor

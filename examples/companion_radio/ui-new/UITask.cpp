@@ -179,7 +179,6 @@ static const int QUICK_MSGS_MAX = 10;
 #include "AdminScreen.h"
 #endif
 #include "NearbyScreen.h"
-#include "DashboardConfigScreen.h"
 #include "AutoAdvertScreen.h"
 #include "LiveShareScreen.h"
 #include "LocatorScreen.h"
@@ -199,9 +198,8 @@ static const int QUICK_MSGS_MAX = 10;
   #define BATT_MIN_MILLIVOLTS 3200
 #endif
 
-// LiPo discharge curve: voltage (mV) → raw capacity (%). Shared by the top-bar
-// battery indicator and the dashboard Batt% field so both report the same
-// number for the same voltage. low_mv (typically NodePrefs.low_batt_mv, the
+// LiPo discharge curve: voltage (mV) → raw capacity (%) for the top-bar battery
+// indicator. low_mv (typically NodePrefs.low_batt_mv, the
 // user-configurable auto-shutdown threshold in Settings) is rescaled to 0%
 // so the bar empties at the cutoff the user actually cares about.
 static int battMvToPercent(int mv, int low_mv) {
@@ -233,7 +231,7 @@ static int battMvToPercent(int mv, int low_mv) {
 }
 
 // Render the time starting at top_y; returns the y just below the time block
-// so the caller can flow the date / dashboard rows beneath it.
+// so the caller can flow the date and message-count row beneath it.
 //
 // On a tall portrait panel (e-ink in portrait — height > width) HH and MM are
 // stacked on two lines in the huge built-in font (size 4, ~56 px tall) so the
@@ -291,7 +289,7 @@ static int drawClockTime(DisplayDriver& d, int top_y, const struct tm* ti,
 }
 
 // Draw the boot-sync marker in the same clock/date region and return the normal
-// date baseline. This keeps the separator and dashboard rows fixed in place.
+// date baseline. This keeps the separator and message-count row fixed in place.
 static int drawClockSync(DisplayDriver& d, int top_y, bool h12) {
   const bool tall = d.height() > d.width();
   int date_y;
@@ -590,7 +588,9 @@ class HomeScreen : public UIScreen {
     // (advert / trail / live-share / repeater) stay outside any BT gate — they
     // keep running with Bluetooth off, so their cue must not vanish with it.
     LocationProvider* loc = _sensors ? _sensors->getLocationProvider() : nullptr;
-    bool gps_on  = loc && _node_prefs && _node_prefs->gps_enabled;
+    // Reflect the receiver's live power state, including temporary boot-time
+    // sync and periodic acquisition windows while the configured mode sleeps.
+    bool gps_on  = loc && loc->isEnabled();
     bool mute_on = false;
 #ifdef PIN_BUZZER
     mute_on = _task->isBuzzerQuiet();
@@ -624,26 +624,9 @@ class HomeScreen : public UIScreen {
     return x;
   }
 
-  CayenneLPP sensors_lpp;
-  int next_sensors_refresh = 0;
-
-  void refresh_sensors() {
-    if (millis() > next_sensors_refresh) {
-      sensors_lpp.reset();
-      sensors_lpp.addVoltage(TELEM_CHANNEL_SELF, (float)board.getBattMilliVolts() / 1000.0f);
-      sensors.querySensors(0xFF, sensors_lpp);
-#if AUTO_OFF_MILLIS > 0
-      next_sensors_refresh = millis() + 5000; // refresh sensor values every 5 sec
-#else
-      next_sensors_refresh = millis() + 60000; // refresh sensor values every 1 min
-#endif
-    }
-  }
-
 public:
   HomeScreen(UITask* task, mesh::RTCClock* rtc, SensorManager* sensors, NodePrefs* node_prefs)
-     : _task(task), _rtc(rtc), _sensors(sensors), _node_prefs(node_prefs), _page(0),
-       sensors_lpp(200) {  }
+     : _task(task), _rtc(rtc), _sensors(sensors), _node_prefs(node_prefs), _page(0) {  }
 
   void onShow() override { noteHomeInteraction(); }
 
@@ -725,13 +708,13 @@ public:
     if (_page == HomePage::CLOCK) {
       uint32_t unix_ts = _rtc->getCurrentTime();
       int date_y = 0;
-      bool show_dashboard = true;
+      bool show_message_count = true;
       if (_task->isTimeSyncPending()) {
         display.setColor(DisplayDriver::LIGHT);
         bool h12 = _node_prefs && _node_prefs->clock_12h;
         date_y = drawClockSync(display, content_y, h12);
       } else if (unix_ts < 1000000000UL) {
-        show_dashboard = false;
+        show_message_count = false;
         display.setColor(DisplayDriver::LIGHT);
         display.setTextSize(1);
         int mid_y = content_y;
@@ -758,95 +741,19 @@ public:
 
       }
 
-      if (show_dashboard) {
+      if (show_message_count) {
         int sep_y  = date_y + lh + 1;
         int dash0  = sep_y + display.sepH() + 2;
         display.fillRect(0, sep_y, display.width(), display.sepH());
 
-        // dashboard data fields
-        if (_node_prefs) {
-          refresh_sensors();
-          const int FIELD_Y[2] = { dash0, dash0 + step };
-          for (int fi = 0; fi < 2; fi++) {
-            uint8_t field = _node_prefs->dashboard_fields[fi];
-            if (field == DASH_NONE) continue;
-
-            char label[10], val[20];
-            label[0] = '\0';
-            val[0] = '\0';
-
-            if (field == DASH_BATT_V) {
-              strcpy(label, "Batt");
-              uint16_t mv = _task->getBattMilliVolts();
-              if (mv > 0) snprintf(val, sizeof(val), "%u.%02uV", mv/1000, (mv%1000)/10);
-              else strcpy(val, "--");
-            } else if (field == DASH_BATT_PCT) {
-              strcpy(label, "Batt");
-              uint16_t mv = _task->getBattMilliVolts();
-              if (mv > 0) snprintf(val, sizeof(val), "%d%%",
-                                   battMvToPercent(mv, _node_prefs->low_batt_mv));
-              else        strcpy(val, "--");
-            } else if (field == DASH_GPS) {
-              strcpy(label, "GPS");
-#if ENV_INCLUDE_GPS == 1
-              LocationProvider* loc = sensors.getLocationProvider();
-              if (loc && loc->isValid())
-                snprintf(val, sizeof(val), "%.3f %.3f",
-                  loc->getLatitude()/1000000.0f, loc->getLongitude()/1000000.0f);
-              else
-                strcpy(val, "no fix");
-#else
-              strcpy(val, "--");
-#endif
-            } else if (field == DASH_NODES) {
-              strcpy(label, "Nodes");
-              snprintf(val, sizeof(val), "%d", the_mesh.getNumContacts());
-            } else if (field == DASH_MSGS) {
-              strcpy(label, "Msgs");
-              int unread = _task->getDMUnreadTotal() + _task->getChannelUnreadCount() + _task->getRoomUnreadCount();
-              snprintf(val, sizeof(val), "%d", unread);
-            } else {
-              uint8_t lpp_type = 0;
-              switch (field) {
-                case DASH_TEMP: strcpy(label, "Temp"); lpp_type = LPP_TEMPERATURE;        break;
-                case DASH_HUM:  strcpy(label, "Hum");  lpp_type = LPP_RELATIVE_HUMIDITY;  break;
-                case DASH_PRES: strcpy(label, "Pres"); lpp_type = LPP_BAROMETRIC_PRESSURE; break;
-                case DASH_ALT:  strcpy(label, "Alt");  lpp_type = LPP_ALTITUDE;           break;
-                case DASH_LUX:  strcpy(label, "Lux");  lpp_type = LPP_LUMINOSITY;         break;
-                case DASH_CO2:  strcpy(label, "CO2");  lpp_type = LPP_CONCENTRATION;      break;
-              }
-              if (lpp_type) {
-                LPPReader r(sensors_lpp.getBuffer(), sensors_lpp.getSize());
-                uint8_t ch, type;
-                while (r.readHeader(ch, type)) {
-                  if (type == lpp_type) {
-                    float v;
-                    switch (lpp_type) {
-                      case LPP_TEMPERATURE:         r.readTemperature(v);      snprintf(val, sizeof(val), "%.1f\xf8""C", v); break;
-                      case LPP_RELATIVE_HUMIDITY:   r.readRelativeHumidity(v); snprintf(val, sizeof(val), "%.0f%%", v);      break;
-                      case LPP_BAROMETRIC_PRESSURE: r.readPressure(v);         snprintf(val, sizeof(val), "%.0fhPa", v);     break;
-                      case LPP_ALTITUDE:            r.readAltitude(v);         snprintf(val, sizeof(val), "%.0fm", v);       break;
-                      case LPP_LUMINOSITY:          r.readLuminosity(v);       snprintf(val, sizeof(val), "%.0flux", v);     break;
-                      case LPP_CONCENTRATION:       r.readConcentration(v);    snprintf(val, sizeof(val), "%.0fppm", v);     break;
-                    }
-                    break;
-                  }
-                  r.skipData(type);
-                }
-              }
-              if (!val[0]) strcpy(val, "--");
-            }
-
-            if (val[0] && label[0]) {
-              display.setColor(DisplayDriver::LIGHT);
-              display.setCursor(0, FIELD_Y[fi]);
-              display.print(label);
-              int vw = display.getTextWidth(val);
-              display.setCursor(display.width() - vw - 1, FIELD_Y[fi]);
-              display.print(val);
-            }
-          }
-        }
+        display.setCursor(0, dash0);
+        display.print("Messages");
+        char unread_text[8];
+        int unread = _task->getDMUnreadTotal() + _task->getChannelUnreadCount() +
+                     _task->getRoomUnreadCount();
+        snprintf(unread_text, sizeof(unread_text), "%d", unread);
+        display.setCursor(display.width() - display.getTextWidth(unread_text) - 1, dash0);
+        display.print(unread_text);
       }
     } else if (_page == HomePage::RADIO) {
       display.setColor(DisplayDriver::LIGHT);
@@ -1254,11 +1161,6 @@ public:
       _task->openPreferredTranscript();
       return true;
     }
-    if (c == KEY_CONTEXT_MENU && _page == HomePage::CLOCK) {
-      if (_task->isChildModeLocked()) return true;
-      _task->gotoDashboardConfig();
-      return true;
-    }
     return false;
   }
 };
@@ -1358,7 +1260,6 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   admin_screen  = new AdminScreen(this);
 #endif
   nearby_screen = new NearbyScreen(this);
-  dashboard_config = new DashboardConfigScreen(this, node_prefs);
   auto_advert_screen = new AutoAdvertScreen(this, node_prefs);
 #if SOLO_FEAT_NAVIGATION
   live_share_screen = new LiveShareScreen(this, node_prefs);
@@ -1450,7 +1351,10 @@ void UITask::applyChildMode() {
     _alert_expiry = 0;
   }
   if (child_locked) disableSerial();
-  else enableSerial();
+  else {
+    enableSerial();                 // restore USB and the other transports
+    applyBluetoothPrefs();          // then honour the independently saved BLE state
+  }
   _next_refresh = 0;
 }
 void UITask::gotoToolsScreen() {
@@ -1487,7 +1391,6 @@ void UITask::openAdminFor(const ContactInfo& ci, bool from_picker) {
   (void)ci; (void)from_picker;
 #endif
 }
-void UITask::gotoDashboardConfig() { setCurrScreen(dashboard_config); }
 void UITask::gotoTrailScreen()     { if (solo::Features::NAVIGATION) setCurrScreen(trail_screen); }
 void UITask::gotoCompassScreen()   { if (solo::Features::NAVIGATION) setCurrScreen(compass_screen); }
 void UITask::gotoDiagnosticsScreen() { setCurrScreen(diag_screen); }
@@ -2301,66 +2204,6 @@ bool UITask::isButtonPressed() const {
 #endif
 }
 
-static void formatDashVal(uint8_t field, char* val, int val_len, uint16_t batt_mv,
-                          uint16_t low_batt_mv, CayenneLPP* lpp = nullptr) {
-  val[0] = '\0';
-  switch (field) {
-    case DASH_NONE: return;
-    case DASH_BATT_V:
-      if (batt_mv > 0) snprintf(val, val_len, "%u.%02uV", batt_mv/1000, (batt_mv%1000)/10);
-      else              strcpy(val, "--");
-      return;
-    case DASH_BATT_PCT:
-      if (batt_mv > 0) snprintf(val, val_len, "%d%%", battMvToPercent(batt_mv, low_batt_mv));
-      else             strcpy(val, "--");
-      return;
-    case DASH_NODES:
-      snprintf(val, val_len, "%d nodes", the_mesh.getNumContacts());
-      return;
-#if ENV_INCLUDE_GPS == 1
-    case DASH_GPS: {
-      LocationProvider* loc = sensors.getLocationProvider();
-      if (loc && loc->isValid())
-        snprintf(val, val_len, "%.2f %.2f",
-                 loc->getLatitude()/1000000.0f, loc->getLongitude()/1000000.0f);
-      else strcpy(val, "no fix");
-      return;
-    }
-#endif
-    default: break;
-  }
-  // LPP sensor fields
-  uint8_t lpp_type = 0;
-  switch (field) {
-    case DASH_TEMP: lpp_type = LPP_TEMPERATURE;         break;
-    case DASH_HUM:  lpp_type = LPP_RELATIVE_HUMIDITY;   break;
-    case DASH_PRES: lpp_type = LPP_BAROMETRIC_PRESSURE; break;
-    case DASH_ALT:  lpp_type = LPP_ALTITUDE;            break;
-    case DASH_LUX:  lpp_type = LPP_LUMINOSITY;          break;
-    case DASH_CO2:  lpp_type = LPP_CONCENTRATION;       break;
-  }
-  if (lpp_type) {
-    if (!lpp) { static CayenneLPP s_lpp(200); s_lpp.reset(); sensors.querySensors(0xFF, s_lpp); lpp = &s_lpp; }
-    LPPReader r(lpp->getBuffer(), lpp->getSize());
-    uint8_t ch, type;
-    while (r.readHeader(ch, type)) {
-      if (type == lpp_type) {
-        float v;
-        switch (lpp_type) {
-          case LPP_TEMPERATURE:         r.readTemperature(v);      snprintf(val, val_len, "%.1f\xf8""C", v); return;
-          case LPP_RELATIVE_HUMIDITY:   r.readRelativeHumidity(v); snprintf(val, val_len, "%.0f%%", v);      return;
-          case LPP_BAROMETRIC_PRESSURE: r.readPressure(v);         snprintf(val, val_len, "%.0fhPa", v);     return;
-          case LPP_ALTITUDE:            r.readAltitude(v);         snprintf(val, val_len, "%.0fm", v);       return;
-          case LPP_LUMINOSITY:          r.readLuminosity(v);       snprintf(val, val_len, "%.0flux", v);     return;
-          case LPP_CONCENTRATION:       r.readConcentration(v);    snprintf(val, val_len, "%.0fppm", v);     return;
-        }
-      }
-      r.skipData(type);
-    }
-    strcpy(val, "--");
-  }
-}
-
 void UITask::enqueueKey(char c, bool cardkb) {
   if (c == 0) return;
   uint8_t next = (_kq_head + 1) % KEY_QUEUE_SIZE;
@@ -2711,34 +2554,10 @@ void UITask::loop() {
         snprintf(buf, sizeof(buf),"%s %d %s", wd[ti->tm_wday], ti->tm_mday, mo[ti->tm_mon]);
         _display->drawTextCentered(_display->width() / 2, date_y, buf);
 
-        // Two sensor values side by side (dashboard_fields[0] and [1])
-        if (_node_prefs) {
-          char v0[20] = "", v1[20] = "";
-          CayenneLPP* lpp_ptr = nullptr;
-          uint8_t f0 = _node_prefs->dashboard_fields[0], f1 = _node_prefs->dashboard_fields[1];
-          auto isLPP = [](uint8_t f) {
-            return f==DASH_TEMP||f==DASH_HUM||f==DASH_PRES||f==DASH_ALT||f==DASH_LUX||f==DASH_CO2;
-          };
-          if (isLPP(f0) || isLPP(f1)) {
-            _dash_lpp.reset(); sensors.querySensors(0xFF, _dash_lpp); lpp_ptr = &_dash_lpp;
-          }
-          formatDashVal(f0, v0, sizeof(v0), _batt_mv, _node_prefs->low_batt_mv, lpp_ptr);
-          formatDashVal(f1, v1, sizeof(v1), _batt_mv, _node_prefs->low_batt_mv, lpp_ptr);
-          if (v0[0] || v1[0]) {
-            int sv_y = date_y + lk_step;
-            _display->setColor(DisplayDriver::LIGHT);
-            if (v0[0] && v1[0]) {
-              _display->setCursor(0, sv_y);
-              _display->print(v0);
-              int vw = _display->getTextWidth(v1);
-              _display->setCursor(_display->width() - vw, sv_y);
-              _display->print(v1);
-            } else {
-              const char* sv = v0[0] ? v0 : v1;
-              _display->drawTextCentered(_display->width() / 2, sv_y, sv);
-            }
-          }
-        }
+        char unread_text[24];
+        int unread = getDMUnreadTotal() + getChannelUnreadCount() + getRoomUnreadCount();
+        snprintf(unread_text, sizeof(unread_text), "Messages: %d", unread);
+        _display->drawTextCentered(_display->width() / 2, date_y + lk_step, unread_text);
       }
       // Hint popup at bottom (like alert style)
       _display->setTextSize(1);
@@ -3400,6 +3219,13 @@ void UITask::applyGpsPrefs() {
   snprintf(interval_str, sizeof(interval_str), "%u", _node_prefs->gps_interval);
   _sensors->setSettingValue("gps_interval", interval_str);
   _sensors->setSettingValue("gps", _node_prefs->gps_enabled ? "1" : "0");
+  _next_refresh = 0;
+}
+
+void UITask::applyBluetoothPrefs() {
+  if (!_node_prefs || isChildModeLocked()) return;
+  if (_node_prefs->bluetooth_enabled) enableBluetooth();
+  else disableBluetooth();
   _next_refresh = 0;
 }
 

@@ -1,6 +1,6 @@
 #pragma once
 // Configures periodic automatic 0-hop advert with GPS position.
-// Included by UITask.cpp after DashboardConfigScreen.h.
+// Included by UITask.cpp with the other settings screens.
 
 class AutoAdvertScreen : public UIScreen {
   UITask*    _task;

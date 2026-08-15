@@ -84,9 +84,9 @@ struct NodePrefs {  // persisted to file
   struct DmNotifEntry { uint8_t prefix[4]; uint8_t state; }; // state: 0=default,1=muted,2=force-on
   static const int DM_NOTIF_TABLE_MAX = 16;
   DmNotifEntry dm_notif[DM_NOTIF_TABLE_MAX]; // 16*5 = 80 bytes [del→onContactRemoved]
-  // Two clock fields are user-visible. The third byte is retained in storage so
-  // existing preference files keep their append-only layout across upgrades.
-  uint8_t  dashboard_fields[3]; // 0=None,1=Batt V,2=Temp,3=Hum,4=Pres,5=GPS,6=Alt,7=Lux,8=CO2,9=Nodes,10=Msgs,11=Batt %
+  // Reserved former clock-dashboard field selections. Keep these bytes in the
+  // serialized layout so existing preference files remain aligned.
+  uint8_t  reserved_dashboard_fields[3];
   uint32_t advert_auto_interval_sec; // periodic 0-hop advert with GPS: 0=off, else seconds
   // Second melody slot (same packing as ringtone_*)
   uint8_t  ringtone2_bpm_idx;
@@ -393,6 +393,7 @@ struct NodePrefs {  // persisted to file
   float reserved_repeat_rx_delay_base;
   float reserved_repeat_flood_tx_factor;
   float reserved_repeat_direct_tx_factor;
+  uint8_t bluetooth_enabled;  // persisted BLE state; USB remains independently available
 
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
@@ -456,7 +457,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0028;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0029;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -563,6 +564,8 @@ struct NodePrefs {  // persisted to file
 // Repeater timing (0xC0DE0027/28) adds three floats at the persisted tail and
 // grows the struct to 2752 bytes including alignment padding, confirmed by the
 // Wio Tracker build.
+// bluetooth_enabled (0xC0DE0029) is appended after those floats; older records
+// default to enabled and retain their existing sentinel alignment.
 // keyboard_main_alphabet (added in an earlier bump) landed in existing tail
 // padding -- confirmed via a real build's sizeof() -- so that bump left the
 // size unchanged. bot_actions_dm/ch/room and gpio1..4_mode (the last two

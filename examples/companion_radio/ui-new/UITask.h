@@ -98,7 +98,6 @@ class UITask : public AbstractUITask {
   UIScreen* bot_screen = nullptr;
   UIScreen* admin_screen = nullptr;
   UIScreen* nearby_screen = nullptr;
-  UIScreen* dashboard_config = nullptr;
   UIScreen* auto_advert_screen = nullptr;
   UIScreen* live_share_screen = nullptr;
   UIScreen* locator_screen = nullptr;
@@ -111,7 +110,6 @@ class UITask : public AbstractUITask {
   UIScreen* gpio_screen = nullptr;
 #endif
   UIScreen* curr = nullptr;
-  CayenneLPP _dash_lpp;
   TrailStore _trail;
   WaypointStore _waypoints;
   LiveTrackStore _livetrack;
@@ -231,7 +229,7 @@ class UITask : public AbstractUITask {
 
 public:
 
-  UITask(mesh::MainBoard* board, MultiSerialInterface* interface_manager) : AbstractUITask(board, interface_manager), _display(NULL), _sensors(NULL), _node_prefs(NULL), _dash_lpp(200) {
+  UITask(mesh::MainBoard* board, MultiSerialInterface* interface_manager) : AbstractUITask(board, interface_manager), _display(NULL), _sensors(NULL), _node_prefs(NULL) {
     next_batt_chck = _next_refresh = 0;
     ui_started_at = 0;
     _batt_mv = 0;
@@ -289,7 +287,6 @@ public:
   void pickAdminTarget();                  // Admin is remote-only: open Nodes to pick a repeater/room
   void openAdminFor(const ContactInfo& ci, bool from_picker); // canonical Admin entry for a specific target (Nodes' Hold-Enter menu or the picker above)
   void gotoNearbyScreen();
-  void gotoDashboardConfig();
   void gotoAutoAdvertScreen();
   void gotoLiveShareScreen();
   void gotoLocatorScreen();
@@ -500,6 +497,7 @@ public:
   uint8_t getGPSMode() const;
   void setGPSMode(uint8_t mode);
   void applyGpsPrefs();
+  void applyBluetoothPrefs();
   bool hasGPS();   // true if this board exposes a toggleable GPS (distinct from GPS being off)
   void toggleGPS();
   void applyGpsState(bool on);   // shared by toggleGPS() and botSetGPS()

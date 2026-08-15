@@ -4,7 +4,7 @@
 
 TEST(GpsMode, ExposesRequestedModesAndIntervals) {
   EXPECT_EQ(solo::GpsMode::COUNT, 9);
-  EXPECT_STREQ(solo::GpsMode::label(0), "Off");
+  EXPECT_STREQ(solo::GpsMode::label(0), "OFF");
   EXPECT_STREQ(solo::GpsMode::label(1), "Continuous");
   EXPECT_EQ(solo::GpsMode::interval(2), 120U);
   EXPECT_EQ(solo::GpsMode::interval(3), 300U);

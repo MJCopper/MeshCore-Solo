@@ -42,7 +42,7 @@ A brief press of any button wakes the display and shows the lock screen. It disp
 
 - **Time** — large, same format as the Clock page (24 h / 12 h from Settings)
 - **Date** — day-of-week, day, month
-- **Two sensor values** — the first two Dashboard Config fields (same values configured for the Clock page); shown side by side if both are set
+- **Messages** — total unread direct, channel and room message count
 
 The display turns off again automatically after 5 seconds of inactivity (or 2 seconds immediately after locking).
 

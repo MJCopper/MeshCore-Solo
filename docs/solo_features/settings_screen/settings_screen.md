@@ -99,8 +99,8 @@ The **repeater** mode and radio timing controls live on their own screen — see
 | ----------- | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Name        | keyboard entry (up to 31 chars)                     | This device's node name, shown to others and in every advert. **Enter** opens the keyboard pre-filled with the current name; applied and saved on submit |
 | Timezone    | −12 h … +14 h                                       | UTC offset in whole hours                                                              |
-| GPS         | Off / Continuous / 2 min / 5 min / 15 min / 30 min / 1 h / 3 h / 6 h | Continuous keeps the receiver on. Timed modes wake it to acquire and stabilise a fix, cache the position/time, then power it down until the selected interval |
-| Bluetooth   | On / Off                                            | Enables or disables Bluetooth; the USB companion interface is unaffected               |
+| GPS         | OFF / Continuous / 2 min / 5 min / 15 min / 30 min / 1 h / 3 h / 6 h | Continuous keeps the receiver on. Timed modes wake it to acquire and stabilise a fix, cache the position/time, then power it down until the selected interval |
+| Bluetooth   | ON / OFF                                            | Persistently enables or disables Bluetooth; the USB companion interface is unaffected   |
 | Low battery | off / 3.0 V / 3.1 V / 3.2 V / 3.3 V / 3.4 V / 3.5 V | Auto-shutdown threshold; also sets the 0 % anchor for the battery percentage indicator |
 | Units       | Metric / Imperial                                   | Unit system for distance values shown by supported screens such as Nearby Nodes. Metric uses m/km; Imperial uses ft/mi. |
 | Reboot      | action (**Enter**)                                  | Restarts this device. Pending setting changes are saved first. Last row, so it isn't the default-selected one |

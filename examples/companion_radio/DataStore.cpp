@@ -339,7 +339,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.clock_hide_seconds,        sizeof(_prefs.clock_hide_seconds));
   rd(&_prefs.buzzer_auto,               sizeof(_prefs.buzzer_auto));
   rd(_prefs.dm_notif,                   sizeof(_prefs.dm_notif));
-  rd(_prefs.dashboard_fields,           sizeof(_prefs.dashboard_fields));
+  rd(_prefs.reserved_dashboard_fields,  sizeof(_prefs.reserved_dashboard_fields));
   rd(&_prefs.advert_auto_interval_sec,  sizeof(_prefs.advert_auto_interval_sec));
   rd(&_prefs.ringtone2_bpm_idx,         sizeof(_prefs.ringtone2_bpm_idx));
   rd(&_prefs.ringtone2_len,             sizeof(_prefs.ringtone2_len));
@@ -635,6 +635,11 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     rd(&_prefs.reserved_repeat_flood_tx_factor, sizeof(_prefs.reserved_repeat_flood_tx_factor));
     rd(&_prefs.reserved_repeat_direct_tx_factor, sizeof(_prefs.reserved_repeat_direct_tx_factor));
   }
+  // → 0xC0DE0029: persisted Bluetooth state. A 0x28 record has only its
+  // four-byte sentinel remaining, so retain the default-ON value unless the
+  // new byte and sentinel are both present.
+  if (file.available() >= (int)(sizeof(_prefs.bluetooth_enabled) + sizeof(uint32_t)))
+    rd(&_prefs.bluetooth_enabled, sizeof(_prefs.bluetooth_enabled));
   solo::PrefsDefaults::normalize(_prefs);
 
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
@@ -756,7 +761,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.clock_hide_seconds, sizeof(_prefs.clock_hide_seconds));
     file.write((uint8_t *)&_prefs.buzzer_auto, sizeof(_prefs.buzzer_auto));
     file.write((uint8_t *)_prefs.dm_notif, sizeof(_prefs.dm_notif));
-    file.write((uint8_t *)_prefs.dashboard_fields, sizeof(_prefs.dashboard_fields));
+    file.write((uint8_t *)_prefs.reserved_dashboard_fields, sizeof(_prefs.reserved_dashboard_fields));
     file.write((uint8_t *)&_prefs.advert_auto_interval_sec, sizeof(_prefs.advert_auto_interval_sec));
     file.write((uint8_t *)&_prefs.ringtone2_bpm_idx, sizeof(_prefs.ringtone2_bpm_idx));
     file.write((uint8_t *)&_prefs.ringtone2_len, sizeof(_prefs.ringtone2_len));
@@ -859,6 +864,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.reserved_repeat_rx_delay_base, sizeof(_prefs.reserved_repeat_rx_delay_base));
     file.write((uint8_t *)&_prefs.reserved_repeat_flood_tx_factor, sizeof(_prefs.reserved_repeat_flood_tx_factor));
     file.write((uint8_t *)&_prefs.reserved_repeat_direct_tx_factor, sizeof(_prefs.reserved_repeat_direct_tx_factor));
+    file.write((uint8_t *)&_prefs.bluetooth_enabled, sizeof(_prefs.bluetooth_enabled));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good
