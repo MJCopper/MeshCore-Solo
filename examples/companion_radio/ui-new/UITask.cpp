@@ -1,5 +1,8 @@
 #include "UITask.h"
 #include "SoundNotifier.h"
+#include "HomePageRegistry.h"
+#include "../solo/NotificationPreferences.h"
+#include "../solo/NotificationPolicy.h"
 #include <helpers/TxtDataHelpers.h>
 #include "../MyMesh.h"
 #include "../MsgExpand.h"
@@ -336,6 +339,21 @@ class HomeScreen : public UIScreen {
   uint8_t _settings_sel = 0, _settings_scroll = 0;
   uint8_t _tools_sel = 0, _tools_scroll = 0;
   PopupMenu _msg_menu;
+  static const uint32_t HOME_IDLE_RETURN_MS = 5UL * 60UL * 1000UL;
+  uint32_t _home_idle_deadline = 0;
+
+  void noteHomeInteraction() {
+    _home_idle_deadline = millis() + HOME_IDLE_RETURN_MS;
+  }
+
+  void returnToClockIfIdle() {
+    if (_page == CLOCK || _home_idle_deadline == 0 ||
+        (int32_t)(millis() - _home_idle_deadline) < 0) return;
+    _page = CLOCK;
+    _msg_menu.active = false;
+    _pin_menu.active = false;
+    _pin_target_slot = -1;
+  }
 
   template <class LabelFn>
   void renderHomeList(DisplayDriver& display, int content_y, int count,
@@ -358,7 +376,7 @@ class HomeScreen : public UIScreen {
 
   bool messageChannelsVisible() const {
     NodePrefs* p = _task->getNodePrefs();
-    return !_task->isChildModeLocked() || (p && p->child_channels_enabled);
+    return solo::Policy::channelsVisible(p, _task->isChildModeLocked());
   }
   int messageModeCount() const { return messageChannelsVisible() ? 3 : 2; }
   int messageModeAt(int pos) const {
@@ -479,16 +497,7 @@ class HomeScreen : public UIScreen {
     if (page == RECENT) return false;  // Recent adverts folded into Nearby Nodes; page retired
     int bit = pageBit(page);
     if (bit < 0) return true;
-    uint16_t mask = (_node_prefs && _node_prefs->home_pages_mask) ? _node_prefs->home_pages_mask : NodePrefs::HP_ALL;
-    if (_task->isChildModeLocked()) {
-      const uint16_t optional = NodePrefs::HP_RECENT | NodePrefs::HP_FAVOURITES;
-      if (optional & (1U << bit)) return (_node_prefs->child_visible_pages & (1U << bit)) != 0;
-      const uint16_t child_hidden = NodePrefs::HP_RADIO | NodePrefs::HP_BLUETOOTH |
-                                    NodePrefs::HP_ADVERT | NodePrefs::HP_GPS |
-                                    NodePrefs::HP_TOOLS;
-      if (child_hidden & (1U << bit)) return false;
-    }
-    return (mask >> bit) & 1;
+    return homepage::visible(_node_prefs, (uint8_t)bit, _task->isChildModeLocked());
   }
 
   // Build ordered list of all visible pages, respecting page_order when set.
@@ -636,6 +645,8 @@ public:
      : _task(task), _rtc(rtc), _sensors(sensors), _node_prefs(node_prefs), _page(0),
        sensors_lpp(200) {  }
 
+  void onShow() override { noteHomeInteraction(); }
+
   // Small 5x5 glyph shown in the page-indicator row for each HomePage.
   static const MiniIcon* pageIcon(int page) {
     switch (page) {
@@ -656,6 +667,7 @@ public:
   }
 
   int render(DisplayDriver& display) override {
+    returnToClockIfIdle();
     char tmp[80];
     display.setTextSize(1);
     const int lh      = display.getLineHeight();  // line height at sz1
@@ -667,34 +679,29 @@ public:
     const int dots_y    = lh + pg_half + 1;       // icon-row centre, below the header
     const int content_y = dots_y + pg_half + 3;   // first content row, below the icons
 
-    // node name + battery — hidden on CLOCK page (full screen used for dashboard)
-    if (_page != CLOCK) {
-      display.setColor(DisplayDriver::LIGHT);
-      char filtered_name[sizeof(_node_prefs->node_name)];
-      display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
-      int rightEdge = renderBatteryIndicator(display, _task->getBattMilliVolts());
-      display.setColor(DisplayDriver::LIGHT);
-      // Only show the live-power readout when APC is actually controlling power —
-      // not merely when the pref is set. While repeating APC is suppressed and
-      // power is pinned to the ceiling, so apcActive() is false and the name bar
-      // drops the readout (matching the "--" lock in Settings).
-      if (the_mesh.apcActive()) {
-        char pwr_buf[8];
-        snprintf(pwr_buf, sizeof(pwr_buf), "%ddB", (int)radio_driver.getTxPower());
-        int pwr_w = display.getTextWidth(pwr_buf);
-        display.drawTextEllipsized(0, 0, rightEdge - 2 - pwr_w - 2, filtered_name);
-        display.drawTextRightAlign(rightEdge - 2, 0, pwr_buf);
-      } else {
-        display.drawTextEllipsized(0, 0, rightEdge - 2, filtered_name);
-      }
+    // Shared carousel top bar: node name, live radio power, status indicators
+    // and battery. Clock content now starts below the same header as every page.
+    display.setColor(DisplayDriver::LIGHT);
+    char filtered_name[sizeof(_node_prefs->node_name)];
+    display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
+    int rightEdge = renderBatteryIndicator(display, _task->getBattMilliVolts());
+    display.setColor(DisplayDriver::LIGHT);
+    if (the_mesh.apcActive()) {
+      char pwr_buf[8];
+      snprintf(pwr_buf, sizeof(pwr_buf), "%ddB", (int)radio_driver.getTxPower());
+      int pwr_w = display.getTextWidth(pwr_buf);
+      display.drawTextEllipsized(0, 0, rightEdge - 2 - pwr_w - 2, filtered_name);
+      display.drawTextRightAlign(rightEdge - 2, 0, pwr_buf);
+    } else {
+      display.drawTextEllipsized(0, 0, rightEdge - 2, filtered_name);
     }
 
     // ensure current page is visible (e.g. after settings change)
     if (!isPageVisible(_page)) _page = navPage(_page, +1);
 
-    // curr page indicator — a row of small page icons, one per visible page, with
-    // the current page underlined. Hidden on CLOCK (full screen used for dashboard).
-    if (_page != CLOCK) {
+    // Current page indicator — a row of small page icons, one per visible page,
+    // with the current page underlined.
+    {
       int order[(int)Count]; int n = buildVisibleOrder(order);
       int curr_vis = 0;
       for (int i = 0; i < n; i++) if (order[i] == _page) { curr_vis = i; break; }
@@ -722,12 +729,12 @@ public:
       if (_task->isTimeSyncPending()) {
         display.setColor(DisplayDriver::LIGHT);
         bool h12 = _node_prefs && _node_prefs->clock_12h;
-        date_y = drawClockSync(display, 0, h12);
+        date_y = drawClockSync(display, content_y, h12);
       } else if (unix_ts < 1000000000UL) {
         show_dashboard = false;
         display.setColor(DisplayDriver::LIGHT);
         display.setTextSize(1);
-        int mid_y = display.height() / 2 - step;
+        int mid_y = content_y;
         display.drawTextCentered(display.width() / 2, mid_y, "! No time sync");
         display.drawTextCentered(display.width() / 2, mid_y + step, "Enable GPS or");
         display.drawTextCentered(display.width() / 2, mid_y + step * 2, "connect app");
@@ -741,7 +748,7 @@ public:
         display.setColor(DisplayDriver::LIGHT);
         bool show_sec = !Features::IS_EINK && (!_node_prefs || !_node_prefs->clock_hide_seconds);
         bool h12 = _node_prefs && _node_prefs->clock_12h;
-        date_y = drawClockTime(display, 0, ti, h12, show_sec);
+        date_y = drawClockTime(display, content_y, ti, h12, show_sec);
 
         display.setTextSize(1);
         static const char* wd[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
@@ -749,15 +756,6 @@ public:
         snprintf(buf, sizeof(buf),"%s %d %s %d", wd[ti->tm_wday], ti->tm_mday, mo[ti->tm_mon], 1900 + ti->tm_year);
         display.drawTextCentered(display.width() / 2, date_y, buf);
 
-        // Alarm armed: a small bell in the top-left corner. The status bar (and
-        // its bell) is hidden on this page, so signal the armed alarm here. Just
-        // the glyph — no time text — so it stays clear of the centred clock
-        // digits (which can reach the corner when seconds are shown), matching
-        // the icon-only status-bar indicator. The exact time is in Clock Tools.
-        if (solo::Features::CLOCK_TOOLS && _node_prefs && _node_prefs->alarm_on) {
-          display.setColor(DisplayDriver::LIGHT);
-          miniIconDrawTop(display, 0, 0, ICON_ALARM);
-        }
       }
 
       if (show_dashboard) {
@@ -768,8 +766,8 @@ public:
         // dashboard data fields
         if (_node_prefs) {
           refresh_sensors();
-          const int FIELD_Y[3] = { dash0, dash0 + step, dash0 + step * 2 };
-          for (int fi = 0; fi < 3; fi++) {
+          const int FIELD_Y[2] = { dash0, dash0 + step };
+          for (int fi = 0; fi < 2; fi++) {
             uint8_t field = _node_prefs->dashboard_fields[fi];
             if (field == DASH_NONE) continue;
 
@@ -904,22 +902,23 @@ public:
       char buf[50];
       int y = content_y;
       bool gps_state = _task->getGPSState();
+      uint8_t gps_mode = _task->getGPSMode();
 #ifdef PIN_GPS_SWITCH
       bool hw_gps_state = digitalRead(PIN_GPS_SWITCH);
       if (gps_state != hw_gps_state) {
         strcpy(buf, gps_state ? "gps off(hw)" : "gps off(sw)");
       } else {
-        strcpy(buf, gps_state ? "gps on" : "gps off");
+        snprintf(buf, sizeof(buf), "GPS %s", solo::GpsMode::label(gps_mode));
       }
 #else
-      strcpy(buf, gps_state ? "gps on" : "gps off");
+      snprintf(buf, sizeof(buf), "GPS %s", solo::GpsMode::label(gps_mode));
 #endif
       display.drawTextLeftAlign(0, y, buf);
       if (nmea == NULL) {
         y += step;
         display.drawTextLeftAlign(0, y, "Can't access GPS");
       } else {
-        strcpy(buf, nmea->isValid()?"fix":"no fix");
+        strcpy(buf, !gps_state ? "off" : (nmea->isEnabled() ? (nmea->isValid() ? "fix" : "search") : "sleep"));
         display.drawTextRightAlign(display.width()-1, y, buf);
         y += step;
         display.drawTextLeftAlign(0, y, "sat");
@@ -1057,25 +1056,31 @@ public:
       if (_pin_menu.active) _pin_menu.render(display);
     }
     bool auto_adv = _node_prefs && _node_prefs->advert_auto_interval_sec > 0;
-    // Any blinking status-bar indicator needs a 1 s refresh to animate evenly —
-    // but the status bar (and its icons) is hidden on the CLOCK page, so don't
-    // pay the 1 s cadence there for icons that aren't drawn.
+    // Any blinking status-bar indicator needs a 1 s refresh to animate evenly.
     bool repeating  = _node_prefs && _node_prefs->client_repeat;
     bool loc_sharing = _node_prefs && _node_prefs->loc_share_enabled;
-    bool need_blink = (_page != HomePage::CLOCK) &&
-                       (auto_adv || _task->trail().isActive() || repeating || loc_sharing);
+    bool need_blink = auto_adv || _task->trail().isActive() || repeating || loc_sharing;
+    int refresh_ms;
     if (Features::IS_EINK) {
       // slow display: poll every 30 s; inbound msgs force immediate refresh via notify()
-      return Features::HOME_REFRESH_MS;
-    }
-    if (_page == HomePage::CLOCK) {
+      refresh_ms = Features::HOME_REFRESH_MS;
+    } else if (_page == HomePage::CLOCK) {
       bool show_sec = !_node_prefs || !_node_prefs->clock_hide_seconds;
-      return need_blink ? 1000 : (show_sec ? 1000 : 60000);
+      refresh_ms = need_blink ? 1000 : (show_sec ? 1000 : 60000);
+    } else {
+      refresh_ms = need_blink ? 1000 : 5000;
     }
-    return need_blink ? 1000 : 5000;
+    // Reuse the next scheduled home render as the five-minute deadline. This
+    // adds no polling or wake loop and avoids up to 30 s of overshoot on e-ink.
+    if (_page != HomePage::CLOCK && _home_idle_deadline != 0) {
+      int32_t remaining = (int32_t)(_home_idle_deadline - millis());
+      if (remaining > 0 && remaining < refresh_ms) refresh_ms = remaining;
+    }
+    return refresh_ms;
   }
 
   bool handleInput(char c) override {
+    noteHomeInteraction();
     if (_page == HomePage::QUICK_MSG && _msg_menu.active) {
       auto result = _msg_menu.handleInput(c);
       if (result == PopupMenu::SELECTED) {
@@ -1245,13 +1250,10 @@ public:
       return true;
     }
 #endif
-#if SOLO_FEAT_CLOCK_TOOLS
     if (c == KEY_ENTER && _page == HomePage::CLOCK) {
-      if (_task->isChildModeLocked()) return true;
-      _task->gotoClockTools();
+      _task->openPreferredTranscript();
       return true;
     }
-#endif
     if (c == KEY_CONTEXT_MENU && _page == HomePage::CLOCK) {
       if (_task->isChildModeLocked()) return true;
       _task->gotoDashboardConfig();
@@ -1390,7 +1392,7 @@ void UITask::beginBootTimeSync() {
 
   loc->syncTime();
   if (_boot_time_sync.shouldStartGps())
-    _sensors->setSettingValue("gps", "1");  // temporary: do not alter/save gps_enabled
+    _sensors->setSettingValue("gps_power", "1");
 }
 
 void UITask::tickBootTimeSync() {
@@ -1402,9 +1404,9 @@ void UITask::tickBootTimeSync() {
       rtc_clock.getSetGeneration(), configured_on, enabled, millis());
   if (action == solo::BootTimeSync::Action::START_TEMP_GPS && loc && _sensors) {
     loc->syncTime();
-    _sensors->setSettingValue("gps", "1");
+    _sensors->setSettingValue("gps_power", "1");
   } else if (action == solo::BootTimeSync::Action::STOP_TEMP_GPS && _sensors) {
-    _sensors->setSettingValue("gps", "0");
+    _sensors->setSettingValue("gps_power", "0");
   }
   if (was_pending && !_boot_time_sync.pending()) _next_refresh = 0;
 }
@@ -1442,8 +1444,9 @@ void UITask::applyChildMode() {
     // Counts accumulated before the restricted session cannot be attributed
     // safely to an allowed sender (room count is aggregate), so start the
     // child-visible notification state clean. Message history is untouched.
-    _msgcount = _room_unread = 0;
+    _msgcount = 0;
     memset(_dm_unread_table, 0, sizeof(_dm_unread_table));
+    memset(_room_unread_table, 0, sizeof(_room_unread_table));
     _alert_expiry = 0;
   }
   if (child_locked) disableSerial();
@@ -1705,6 +1708,94 @@ void UITask::openContactDM(const ContactInfo& ci) {
   setCurrScreen(messages_screen);
 }
 
+void UITask::openPreferredTranscript() {
+  MessagesScreen* screen = (MessagesScreen*)messages_screen;
+  enum TranscriptType : uint8_t { TRANSCRIPT_NONE, TRANSCRIPT_DM, TRANSCRIPT_ROOM, TRANSCRIPT_CHANNEL };
+  TranscriptType best_type = TRANSCRIPT_NONE;
+  uint8_t best_key[NodePrefs::FAVOURITE_PREFIX_LEN] = {0};
+  uint8_t best_channel = 0;
+  uint32_t best_activity = 0;
+
+  // First pass: newest transcript that still contains unread traffic.
+  for (int i = 0; i < the_mesh.getNumContacts(); i++) {
+    ContactInfo contact;
+    if (!the_mesh.getContactByIdx(i, contact)) continue;
+    bool room = contact.type == ADV_TYPE_ROOM;
+    if (contact.type != ADV_TYPE_CHAT && !room) continue;
+    if (!solo::Policy::contactAllowed(_node_prefs, isChildModeLocked(), &contact,
+                                      room ? ADV_TYPE_ROOM : ADV_TYPE_CHAT)) continue;
+    bool unread = room ? (getRoomUnread(contact.id.pub_key) > 0)
+                       : (getDMUnread(contact.id.pub_key) > 0);
+    if (!unread) continue;
+    uint32_t activity = screen->latestDmActivity(contact.id.pub_key, true);
+    if (activity >= best_activity && activity != 0) {
+      best_activity = activity;
+      best_type = room ? TRANSCRIPT_ROOM : TRANSCRIPT_DM;
+      memcpy(best_key, contact.id.pub_key, sizeof(best_key));
+    }
+  }
+  for (uint8_t i = 0; i < MAX_GROUP_CHANNELS; i++) {
+    ChannelDetails channel;
+    if (!screen->channelUnread(i) || !the_mesh.getChannel(i, channel)) continue;
+    if (!solo::Policy::channelAllowed(_node_prefs, isChildModeLocked(), i,
+                                      channel.name, channel.channel.secret)) continue;
+    uint32_t activity = screen->latestChannelActivity(i);
+    if (activity >= best_activity && activity != 0) {
+      best_activity = activity;
+      best_type = TRANSCRIPT_CHANNEL;
+      best_channel = i;
+    }
+  }
+
+  // Second pass: with nothing unread, choose the newest transcript regardless
+  // of whether its last entry was sent or received.
+  if (best_type == TRANSCRIPT_NONE) {
+    for (int i = 0; i < the_mesh.getNumContacts(); i++) {
+      ContactInfo contact;
+      if (!the_mesh.getContactByIdx(i, contact)) continue;
+      bool room = contact.type == ADV_TYPE_ROOM;
+      if (contact.type != ADV_TYPE_CHAT && !room) continue;
+      if (!solo::Policy::contactAllowed(_node_prefs, isChildModeLocked(), &contact,
+                                        room ? ADV_TYPE_ROOM : ADV_TYPE_CHAT)) continue;
+      uint32_t activity = screen->latestDmActivity(contact.id.pub_key);
+      if (activity >= best_activity && activity != 0) {
+        best_activity = activity;
+        best_type = room ? TRANSCRIPT_ROOM : TRANSCRIPT_DM;
+        memcpy(best_key, contact.id.pub_key, sizeof(best_key));
+      }
+    }
+    for (uint8_t i = 0; i < MAX_GROUP_CHANNELS; i++) {
+      ChannelDetails channel;
+      if (!the_mesh.getChannel(i, channel)) continue;
+      if (!solo::Policy::channelAllowed(_node_prefs, isChildModeLocked(), i,
+                                        channel.name, channel.channel.secret)) continue;
+      uint32_t activity = screen->latestChannelActivity(i);
+      if (activity >= best_activity && activity != 0) {
+        best_activity = activity;
+        best_type = TRANSCRIPT_CHANNEL;
+        best_channel = i;
+      }
+    }
+  }
+
+  if (best_type == TRANSCRIPT_CHANNEL) {
+    screen->reset();
+    screen->enterChannel(best_channel);
+    setCurrScreen(messages_screen);
+    return;
+  }
+  if (best_type == TRANSCRIPT_DM || best_type == TRANSCRIPT_ROOM) {
+    ContactInfo* contact = the_mesh.lookupContactByPubKey(best_key, sizeof(best_key));
+    if (contact) {
+      screen->reset();
+      screen->enterDM(*contact);
+      setCurrScreen(messages_screen);
+      return;
+    }
+  }
+  showAlert("No recent messages", 1000);
+}
+
 void UITask::shareToMessage(const char* text) {
   ((MessagesScreen*)messages_screen)->startShare(text);
   setCurrScreen(messages_screen);
@@ -1763,6 +1854,10 @@ void UITask::onChannelRelayed(uint32_t seq) {
   ((MessagesScreen*)messages_screen)->markChannelRelayed(seq);
 }
 
+void UITask::onChannelRelayExpired(uint32_t seq) {
+  ((MessagesScreen*)messages_screen)->markChannelRelayExpired(seq);
+}
+
 void UITask::onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
   // Only one on-device login can be in flight at a time (MyMesh::ui_pending_login
   // is a single slot) -- route the result to whichever of the two screens that
@@ -1788,8 +1883,11 @@ void UITask::onAdminReply(const uint8_t* pub_key, const char* text) {
   _next_refresh = 0;   // same reasoning as onRoomLoginResult above
 }
 
-void UITask::addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp) {
-  ((MessagesScreen*)messages_screen)->addDMMsg(pub_key, outgoing, text, sender_timestamp);
+bool UITask::addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp) {
+  bool added = ((MessagesScreen*)messages_screen)->addDMMsg(pub_key, outgoing, text,
+                                                            sender_timestamp);
+  if (added) reconcileDMUnread();
+  return added;
 }
 
 int UITask::getDMUnreadTotal() const {
@@ -1812,11 +1910,53 @@ uint8_t UITask::getDMUnread(const uint8_t* pub_key) const {
   return 0;
 }
 
+int UITask::getRoomUnreadCount() const {
+  int total = 0;
+  for (int i = 0; i < ROOM_UNREAD_TABLE_SIZE; i++) {
+    if (_room_unread_table[i].count == 0) continue;
+    int held = ((MessagesScreen*)messages_screen)->dmHistCountForContact(_room_unread_table[i].prefix);
+    total += (_room_unread_table[i].count < held) ? _room_unread_table[i].count : held;
+  }
+  return total;
+}
+
+uint8_t UITask::getRoomUnread(const uint8_t* pub_key) const {
+  for (int i = 0; i < ROOM_UNREAD_TABLE_SIZE; i++) {
+    if (_room_unread_table[i].count > 0 &&
+        memcmp(_room_unread_table[i].prefix, pub_key, 4) == 0) {
+      int held = ((MessagesScreen*)messages_screen)->dmHistCountForContact(pub_key);
+      return _room_unread_table[i].count < held
+          ? _room_unread_table[i].count : (uint8_t)held;
+    }
+  }
+  return 0;
+}
+
+void UITask::clearRoomUnread(const uint8_t* pub_key) {
+  for (int i = 0; i < ROOM_UNREAD_TABLE_SIZE; i++) {
+    if (_room_unread_table[i].seen &&
+        memcmp(_room_unread_table[i].prefix, pub_key, 4) == 0) {
+      _room_unread_table[i].count = 0;
+      return;
+    }
+  }
+}
+
+void UITask::clearRoomUnread() {
+  for (int i = 0; i < ROOM_UNREAD_TABLE_SIZE; i++)
+    _room_unread_table[i].count = 0;
+}
+
 void UITask::reconcileDMUnread() {
   for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++) {
     if (_dm_unread_table[i].count == 0) continue;
     if (((MessagesScreen*)messages_screen)->dmHistCountForContact(_dm_unread_table[i].prefix) == 0)
       memset(&_dm_unread_table[i], 0, sizeof(_dm_unread_table[i]));
+  }
+  for (int i = 0; i < ROOM_UNREAD_TABLE_SIZE; i++) {
+    if (_room_unread_table[i].count == 0) continue;
+    if (((MessagesScreen*)messages_screen)->dmHistCountForContact(_room_unread_table[i].prefix) == 0)
+      memset(&_room_unread_table[i], 0, sizeof(_room_unread_table[i]));
   }
 }
 
@@ -1837,8 +1977,8 @@ bool UITask::notificationAllowed(UIEventType event, uint8_t contact_type,
     if (!pub_key) return false;
     ContactInfo* contact = the_mesh.lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
     uint8_t expected_type = event == UIEventType::roomMessage ? ADV_TYPE_ROOM : ADV_TYPE_CHAT;
-    return contact && childmode::contactIdentityMatches(contact->type, contact_type,
-                                                        expected_type) &&
+    return contact && solo::Policy::contactIdentityMatches(contact->type, contact_type,
+                                                           expected_type) &&
            solo::Policy::contactAllowed(_node_prefs, true, contact, expected_type);
   }
 
@@ -1858,26 +1998,27 @@ bool UITask::isQuietTimeActive() const {
          quiettime::active(_node_prefs, rtc_clock.getCurrentTime());
 }
 
-bool UITask::notificationPresentationAllowed(UIEventType event) const {
+bool UITask::notificationQuietAffected(UIEventType event) const {
   switch (event) {
     case UIEventType::contactMessage:
     case UIEventType::channelMessage:
     case UIEventType::roomMessage:
     case UIEventType::advertReceivedFlood:
     case UIEventType::advertReceivedZeroHop:
-      return !isQuietTimeActive();
+      return true;
     case UIEventType::ack:
     case UIEventType::none:
     default:
-      return true;
+      return false;
   }
 }
 
 void UITask::notify(UIEventType event) {
   // Context-free message calls cannot satisfy the child allow-list. Receive
   // paths use incomingMessage(), which supplies the required identity.
-  if (!notificationAllowed(event) || !notificationPresentationAllowed(event)) return;
-  presentNotification(event);
+  solo::NotificationDecision decision = solo::NotificationPolicy::decide(
+      notificationAllowed(event), isQuietTimeActive(), notificationQuietAffected(event));
+  if (decision.present()) presentNotification(event);
 }
 
 void UITask::presentNotification(UIEventType t) {
@@ -1924,7 +2065,7 @@ void UITask::presentNotification(UIEventType t) {
 void UITask::msgRead(int msgcount) {
   _msgcount = msgcount;
   if (msgcount == 0) {
-    _room_unread = 0;
+    clearRoomUnread();
     memset(_dm_unread_table, 0, sizeof(_dm_unread_table));
     ((MessagesScreen*)messages_screen)->clearAllChannelUnread();
   }
@@ -1939,11 +2080,13 @@ void UITask::incomingMessage(UIEventType event, uint8_t path_len,
                              const char* from_name, const char* text, int msgcount,
                              uint8_t contact_type, const uint8_t* pub_key,
                              int channel_idx) {
-  bool allowed = notificationAllowed(event, contact_type, pub_key, channel_idx);
-  bool present = allowed && notificationPresentationAllowed(event);
-  if (allowed)
-    handleNewMsg(path_len, from_name, text, msgcount, contact_type, pub_key, present);
-  if (present) {
+  solo::NotificationDecision decision = solo::NotificationPolicy::decide(
+      notificationAllowed(event, contact_type, pub_key, channel_idx),
+      isQuietTimeActive(), notificationQuietAffected(event));
+  if (decision.record_unread)
+    handleNewMsg(path_len, from_name, text, msgcount, contact_type, pub_key,
+                 decision.show_visual);
+  if (decision.play_sound || decision.vibrate) {
     presentNotification(event);
   } else {
     _last_notif_dm_valid = false;
@@ -1957,6 +2100,11 @@ void UITask::handleNewMsg(uint8_t path_len, const char* from_name, const char* t
   (void)path_len;
   (void)text;
 
+  // Capture visibility before notification handling can wake the panel. An
+  // open transcript is only "read" when it was already physically visible.
+  bool viewing_contact = pub_key != nullptr
+      && ((MessagesScreen*)messages_screen)->isViewingContact(pub_key);
+
   // The mesh queue count includes deliberately silent traffic. Keep the normal
   // exact count outside child mode, but count only allowed messages while locked.
   if (isChildModeLocked()) {
@@ -1964,24 +2112,45 @@ void UITask::handleNewMsg(uint8_t path_len, const char* from_name, const char* t
   } else {
     _msgcount = msgcount;
   }
-  if (contact_type == ADV_TYPE_ROOM && _room_unread < _msgcount) _room_unread++;
-  if (contact_type == ADV_TYPE_CHAT && pub_key != nullptr) {
-    memcpy(_last_notif_dm_prefix, pub_key, 4);
-    _last_notif_dm_valid = true;
+  if (contact_type == ADV_TYPE_ROOM && pub_key != nullptr && !viewing_contact) {
     int slot = -1, empty_slot = -1, reclaim_slot = -1;
-    for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++) {
-      if (_dm_unread_table[i].seen && memcmp(_dm_unread_table[i].prefix, pub_key, 4) == 0) { slot = i; break; }
-      if (empty_slot < 0 && !_dm_unread_table[i].seen) empty_slot = i;
-      if (reclaim_slot < 0 && _dm_unread_table[i].seen && _dm_unread_table[i].count == 0) reclaim_slot = i;
+    for (int i = 0; i < ROOM_UNREAD_TABLE_SIZE; i++) {
+      if (_room_unread_table[i].seen &&
+          memcmp(_room_unread_table[i].prefix, pub_key, 4) == 0) { slot = i; break; }
+      if (empty_slot < 0 && !_room_unread_table[i].seen) empty_slot = i;
+      if (reclaim_slot < 0 && _room_unread_table[i].seen &&
+          _room_unread_table[i].count == 0) reclaim_slot = i;
     }
     if (slot >= 0) {
-      if (_dm_unread_table[slot].count < 99) _dm_unread_table[slot].count++;
+      if (_room_unread_table[slot].count < 99) _room_unread_table[slot].count++;
     } else {
       int target = empty_slot >= 0 ? empty_slot : reclaim_slot;
       if (target >= 0) {
-        memcpy(_dm_unread_table[target].prefix, pub_key, 4);
-        _dm_unread_table[target].count = 1;
-        _dm_unread_table[target].seen = 1;
+        memcpy(_room_unread_table[target].prefix, pub_key, 4);
+        _room_unread_table[target].count = 1;
+        _room_unread_table[target].seen = 1;
+      }
+    }
+  }
+  if (contact_type == ADV_TYPE_CHAT && pub_key != nullptr) {
+    memcpy(_last_notif_dm_prefix, pub_key, 4);
+    _last_notif_dm_valid = true;
+    if (!viewing_contact) {
+      int slot = -1, empty_slot = -1, reclaim_slot = -1;
+      for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++) {
+        if (_dm_unread_table[i].seen && memcmp(_dm_unread_table[i].prefix, pub_key, 4) == 0) { slot = i; break; }
+        if (empty_slot < 0 && !_dm_unread_table[i].seen) empty_slot = i;
+        if (reclaim_slot < 0 && _dm_unread_table[i].seen && _dm_unread_table[i].count == 0) reclaim_slot = i;
+      }
+      if (slot >= 0) {
+        if (_dm_unread_table[slot].count < 99) _dm_unread_table[slot].count++;
+      } else {
+        int target = empty_slot >= 0 ? empty_slot : reclaim_slot;
+        if (target >= 0) {
+          memcpy(_dm_unread_table[target].prefix, pub_key, 4);
+          _dm_unread_table[target].count = 1;
+          _dm_unread_table[target].seen = 1;
+        }
       }
     }
   }
@@ -1995,10 +2164,15 @@ void UITask::handleNewMsg(uint8_t path_len, const char* from_name, const char* t
   if (_display != NULL && !_locked) {
     if (!_display->isOn() && !isClientConnected()) {   // wake for the msg unless an app (BLE/USB) is already showing it
       turnDisplayOn();
+      _notification_wake_active = true;
     }
     if (_display->isOn()) {
-      uint32_t aoff = autoOffMillis();
-      if (aoff > 0) _auto_off = millis() + aoff;
+      if (_notification_wake_active) {
+        _auto_off = millis() + 5000UL;
+      } else {
+        uint32_t aoff = autoOffMillis();
+        if (aoff > 0) _auto_off = millis() + aoff;
+      }
       _next_refresh = 100;
     }
   }
@@ -2233,6 +2407,7 @@ void UITask::turnDisplayOff() {
   discardCardKBKeys();
 #endif
   _display->turnOff();
+  _notification_wake_active = false;
 }
 
 // Poll an optional CardKB (I2C keyboard, addr 0x5F) on Wire1/Grove, feeding
@@ -2350,7 +2525,6 @@ void UITask::loop() {
   // Background delivery: resend pending on-device DMs whose ACK timed out, and
   // finalise the ✗ marker — runs regardless of which screen is active.
   ((MessagesScreen*)messages_screen)->tickDmResends();
-  reconcileDMUnread();
 #if UI_HAS_JOYSTICK
   uint8_t joy_rot = _node_prefs ? _node_prefs->joystick_rotation : JOYSTICK_ROTATION;
   int ev = user_btn.check();
@@ -2618,11 +2792,12 @@ void UITask::loop() {
     // timer counts from the moment external power is removed. Off by default
     // because OLED panels burn in quickly; only enable for LCD targets or
     // where the display is replaceable.
-    if (board.isExternalPowered()) {
+    if (board.isExternalPowered() && !_notification_wake_active) {
       _auto_off = millis() + AUTO_OFF_MILLIS;
     }
 #endif
-    if (!_locked && autoOffMillis() > 0 && (int32_t)(millis() - _auto_off) >= 0 && !isRinging()) {
+    if (!_locked && (_notification_wake_active || autoOffMillis() > 0) &&
+        (int32_t)(millis() - _auto_off) >= 0 && !isRinging()) {
       turnDisplayOff();
 #ifdef PIN_LED
       digitalWrite(PIN_LED, LOW);  // turn off status LED with display to save power
@@ -2932,18 +3107,7 @@ void UITask::onContactRemoved(const uint8_t* pub_key) {
   // contact, so an orphaned entry isn't just stale, it can eventually starve
   // new overrides for contacts that still exist. Keyed by a 4-byte prefix
   // (narrower than the 6-byte one above), so compare only that many bytes.
-  for (int i = 0; i < NodePrefs::DM_NOTIF_TABLE_MAX; i++) {
-    if (_node_prefs->dm_notif[i].state && memcmp(_node_prefs->dm_notif[i].prefix, pub_key, 4) == 0) {
-      memset(&_node_prefs->dm_notif[i], 0, sizeof(_node_prefs->dm_notif[i]));
-      changed = true;
-    }
-  }
-  for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++) {
-    if (_node_prefs->dm_melody[i].slot && memcmp(_node_prefs->dm_melody[i].prefix, pub_key, 4) == 0) {
-      memset(&_node_prefs->dm_melody[i], 0, sizeof(_node_prefs->dm_melody[i]));
-      changed = true;
-    }
-  }
+  changed |= solo::NotificationPreferences::removeContact(_node_prefs, pub_key);
 
   if (changed) the_mesh.savePrefs();
 }
@@ -2967,16 +3131,7 @@ void UITask::onChannelRemoved(uint8_t channel_idx) {
     changed = true;
   }
   uint64_t mask = 1ULL << channel_idx;
-  if (_node_prefs->ch_notif_melody_set & mask) {
-    _node_prefs->ch_notif_melody_set &= ~mask;
-    _node_prefs->ch_notif_melody_2   &= ~mask;
-    changed = true;
-  }
-  if (_node_prefs->ch_notif_override & mask) {
-    _node_prefs->ch_notif_override &= ~mask;
-    _node_prefs->ch_notif_muted    &= ~mask;
-    changed = true;
-  }
+  changed |= solo::NotificationPreferences::removeChannel(_node_prefs, channel_idx);
   if (_node_prefs->ch_fav_bitmask & mask) {
     _node_prefs->ch_fav_bitmask &= ~mask;
     changed = true;
@@ -3165,6 +3320,9 @@ char UITask::checkDisplayOn(char c) {
       c = 0;
     }
     if (!_locked) {
+      // Any physical interaction takes ownership of a notification-only wake
+      // and restores the user's normal display timeout.
+      _notification_wake_active = false;
       uint32_t aoff = autoOffMillis();
       if (aoff > 0) _auto_off = millis() + aoff;  // extend auto-off timer
     }
@@ -3214,6 +3372,37 @@ bool UITask::getGPSState() {
   return false;
 }
 
+uint8_t UITask::getGPSMode() const {
+  if (!_node_prefs) return 0;
+  return solo::GpsMode::fromPrefs(_node_prefs->gps_enabled != 0,
+                                  _node_prefs->gps_interval);
+}
+
+void UITask::setGPSMode(uint8_t mode) {
+  if (_sensors == NULL || _node_prefs == NULL || mode >= solo::GpsMode::COUNT) return;
+
+  _node_prefs->gps_enabled = mode == 0 ? 0 : 1;
+  _node_prefs->gps_interval = solo::GpsMode::interval(mode);
+
+  applyGpsPrefs();
+  notify(UIEventType::ack);
+  the_mesh.savePrefs();
+
+  char alert[32];
+  snprintf(alert, sizeof(alert), "GPS: %s", solo::GpsMode::label(mode));
+  showAlert(alert, 900);
+  _next_refresh = 0;
+}
+
+void UITask::applyGpsPrefs() {
+  if (_sensors == NULL || _node_prefs == NULL) return;
+  char interval_str[12];
+  snprintf(interval_str, sizeof(interval_str), "%u", _node_prefs->gps_interval);
+  _sensors->setSettingValue("gps_interval", interval_str);
+  _sensors->setSettingValue("gps", _node_prefs->gps_enabled ? "1" : "0");
+  _next_refresh = 0;
+}
+
 bool UITask::hasGPS() {
   if (_sensors != NULL) {
     int num = _sensors->getNumSettings();
@@ -3225,26 +3414,13 @@ bool UITask::hasGPS() {
 }
 
 void UITask::toggleGPS() {
-  if (_node_prefs) applyGpsState(_node_prefs->gps_enabled == 0);
+  setGPSMode((getGPSMode() + 1) % solo::GpsMode::COUNT);
 }
 
-// Sets GPS to an absolute state (vs. toggleGPS()'s flip) -- shared by the
-// Home-page manual toggle and the bot's !gps on/off command, which needs to
-// set a specific state rather than flip whatever it currently is.
+// Bot commands retain their binary contract: "on" selects continuous GPS and
+// "off" selects Off. The device UI exposes the additional periodic modes.
 void UITask::applyGpsState(bool on) {
-  if (_sensors == NULL) return;
-  int num = _sensors->getNumSettings();
-  for (int i = 0; i < num; i++) {
-    if (strcmp(_sensors->getSettingName(i), "gps") == 0) {
-      _sensors->setSettingValue("gps", on ? "1" : "0");
-      _node_prefs->gps_enabled = on ? 1 : 0;
-      notify(UIEventType::ack);
-      the_mesh.savePrefs();
-      showAlert(_node_prefs->gps_enabled ? "GPS: Enabled" : "GPS: Disabled", 800);
-      _next_refresh = 0;
-      break;
-    }
-  }
+  setGPSMode(on ? 1 : 0);
 }
 
 void UITask::botSetGPS(bool on) {
@@ -3454,14 +3630,6 @@ void UITask::applyTxPower() {
   // (which also sets the radio) so the live power tracks the new ceiling at once.
   if (_node_prefs->tx_apc) { the_mesh.applyApc(); return; }
   radio_driver.setTxPower(_node_prefs->tx_power_dbm);
-}
-
-void UITask::applyPowerSave() {
-  if (_node_prefs == NULL) return;
-  // A repeater must hear every packet to relay it, so duty-cycle RX (which sleeps
-  // between preamble checks) is forced off while repeating — the user's pref is
-  // kept and restored when the repeater is switched off.
-  radio_driver.setPowerSaving(_node_prefs->rx_powersave && !_node_prefs->client_repeat);
 }
 
 void UITask::applyApc() {

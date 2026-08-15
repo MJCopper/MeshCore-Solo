@@ -10,10 +10,19 @@
 // MSG_TEXT_BUF and the two entry structs are file-scope (not nested) so the
 // phase machine in MessagesScreen keeps referring to them unqualified.
 
+#include "../solo/DmRetryPolicy.h"
+
 // Outgoing-message delivery state. DM: a real end-to-end ACK (✓ delivered to
 // the recipient). Channel: only a "relayed into mesh" echo from a repeater (no
-// recipient ACK exists for floods), so a missing echo is NOT shown as failure.
+// recipient ACK exists for floods); a missing echo is shown as a local failure.
 enum AckState : uint8_t { ACK_NONE = 0, ACK_PENDING, ACK_OK, ACK_FAIL };
+enum DeliveryRoute : uint8_t {
+  DELIVERY_ROUTE_NONE = 0,
+  DELIVERY_ROUTE_DIRECT,
+  DELIVERY_ROUTE_PATH,
+  DELIVERY_ROUTE_FLOOD,
+  DELIVERY_ROUTE_RELAY,
+};
 
 // History text holds a full received message. Channel messages carry the sender
 // embedded as "Name: body" in the payload, so a message can be up to the
@@ -26,7 +35,9 @@ struct ChHistEntry {
   uint8_t  ch_idx;
   char     text[MSG_TEXT_BUF];
   uint32_t timestamp;
-  uint8_t  relay_status;   // AckState; only PENDING/OK used (no failure for floods)
+  uint32_t activity_seq;   // RAM-only local insertion order across both history rings
+  uint8_t  relay_status;   // pending while listening; OK with count, FAIL at zero
+  uint8_t  relay_count;    // matching repeater echoes heard during the window
   uint32_t relay_seq;      // MyMesh relay seq to match against onChannelRelayed()
 };
 
@@ -35,7 +46,9 @@ struct DmHistEntry {
   uint8_t  outgoing;
   char     text[MSG_TEXT_BUF];
   uint32_t timestamp;
+  uint32_t activity_seq;   // RAM-only local insertion order across both history rings
   uint8_t  ack_status;       // AckState; meaningful only when outgoing
+  uint8_t  delivery_route;   // DeliveryRoute used by the latest transmission
   uint32_t ack_tag;          // expected_ack CRC to match against onMsgAck()
   uint32_t ack_deadline_ms;  // millis() by which a pending ACK must arrive
   // Sender-perspective message timestamp: the send timestamp for outgoing
@@ -43,7 +56,8 @@ struct DmHistEntry {
   // sender_timestamp for incoming (used to dedup retried copies). 0 = unknown.
   uint32_t msg_ts;
   uint8_t  attempt;          // last attempt number sent (outgoing); next resend = attempt+1
-  uint8_t  resends_left;     // remaining auto-resends before the marker shows ✗
+  uint8_t  direct_retries_left;
+  uint8_t  flood_retries_left;
 };
 
 class MessageHistory {
@@ -55,7 +69,9 @@ public:
   static const int DM_HIST_MAX = 32;
 
   MessageHistory()
-    : _hist_head(0), _hist_count(0), _dm_hist_head(0), _dm_hist_count(0) {
+    : _hist_head(0), _hist_count(0), _dm_hist_head(0), _dm_hist_count(0),
+      _activity_seq(0), _dm_maintenance_pending(false),
+      _next_dm_maintenance_ms(0) {
     memset(_ch_unread, 0, sizeof(_ch_unread));
   }
 
@@ -91,9 +107,11 @@ public:
     }
     _hist[pos].ch_idx = ch_idx;
     _hist[pos].timestamp = timestamp ? timestamp : rtc_clock.getCurrentTime();
+    _hist[pos].activity_seq = ++_activity_seq;
     strncpy(_hist[pos].text, text, sizeof(_hist[pos].text) - 1);
     _hist[pos].text[sizeof(_hist[pos].text) - 1] = '\0';
     _hist[pos].relay_status = ACK_NONE;
+    _hist[pos].relay_count = 0;
     _hist[pos].relay_seq = 0;
 
     if (!viewing && _ch_unread[ch_idx] < 99) _ch_unread[ch_idx]++;
@@ -122,13 +140,31 @@ public:
     return -1;
   }
 
+  uint32_t latestChannelActivity(int ch_idx) const {
+    int pos = histEntryForChannel(ch_idx, 0);
+    return pos >= 0 ? _hist[pos].activity_seq : 0;
+  }
+
   // Called when a repeater echo of one of our channel sends is heard.
   void markChannelRelayed(uint32_t seq) {
     if (seq == 0) return;
     for (int i = 0; i < _hist_count; i++) {
       ChHistEntry& e = _hist[(_hist_head + i) % CH_HIST_MAX];
-      if (e.relay_status == ACK_PENDING && e.relay_seq == seq) {
+      if ((e.relay_status == ACK_PENDING || e.relay_status == ACK_OK) &&
+          e.relay_seq == seq) {
+        if (e.relay_count < 255) e.relay_count++;
         e.relay_status = ACK_OK;
+        return;
+      }
+    }
+  }
+
+  void markChannelRelayExpired(uint32_t seq) {
+    if (seq == 0) return;
+    for (int i = 0; i < _hist_count; i++) {
+      ChHistEntry& e = _hist[(_hist_head + i) % CH_HIST_MAX];
+      if (e.relay_seq == seq) {
+        if (e.relay_count == 0) e.relay_status = ACK_FAIL;
         return;
       }
     }
@@ -140,6 +176,7 @@ public:
   void armChannelRelay(int pos, uint32_t seq) {
     if (pos < 0 || pos >= CH_HIST_MAX) return;
     _hist[pos].relay_status = ACK_PENDING;
+    _hist[pos].relay_count  = 0;
     _hist[pos].relay_seq    = seq;
   }
 
@@ -183,10 +220,10 @@ public:
   // ack_tag != 0 marks an outgoing DM as awaiting an end-to-end ACK by
   // ack_deadline_ms; 0 means "sent, no confirmation possible" (no path / incoming).
   // msg_ts = sender-perspective timestamp (send ts for outgoing / sender_timestamp
-  // for incoming); resends = remaining auto-resends for an outgoing pending DM.
+  // for incoming); initial_direct selects the fixed direct-then-flood policy.
   void storeDMMsg(const uint8_t* pub_key, bool outgoing, const char* text,
                   uint32_t ack_tag = 0, uint32_t ack_deadline_ms = 0,
-                  uint32_t msg_ts = 0, uint8_t resends = 0) {
+                  uint32_t msg_ts = 0, uint8_t initial_route = DELIVERY_ROUTE_NONE) {
     int pos;
     if (_dm_hist_count < DM_HIST_MAX) {
       pos = (_dm_hist_head + _dm_hist_count) % DM_HIST_MAX;
@@ -202,17 +239,27 @@ public:
     // actually sent, so "now" would mislabel every backlog message as fresh.
     // Fall back to receipt time only when the sender's timestamp is unknown.
     _dm_hist[pos].timestamp = msg_ts ? msg_ts : rtc_clock.getCurrentTime();
+    _dm_hist[pos].activity_seq = ++_activity_seq;
     strncpy(_dm_hist[pos].text, text, sizeof(DmHistEntry::text) - 1);
     _dm_hist[pos].text[sizeof(DmHistEntry::text) - 1] = '\0';
     _dm_hist[pos].ack_status      = (outgoing && ack_tag) ? ACK_PENDING : ACK_NONE;
+    _dm_hist[pos].delivery_route  = outgoing ? initial_route : DELIVERY_ROUTE_NONE;
     _dm_hist[pos].ack_tag         = ack_tag;
     _dm_hist[pos].ack_deadline_ms = ack_deadline_ms;
     _dm_hist[pos].msg_ts          = msg_ts;
     _dm_hist[pos].attempt         = 0;
-    _dm_hist[pos].resends_left    = (outgoing && ack_tag) ? resends : 0;
+    bool initial_direct = initial_route == DELIVERY_ROUTE_DIRECT ||
+                          initial_route == DELIVERY_ROUTE_PATH;
+    _dm_hist[pos].direct_retries_left = (outgoing && ack_tag && initial_direct)
+        ? solo::DmRetryPolicy::DIRECT_RETRIES_AFTER_INITIAL : 0;
+    _dm_hist[pos].flood_retries_left = (outgoing && ack_tag)
+        ? (initial_direct ? solo::DmRetryPolicy::FALLBACK_FLOOD_TRIES
+                          : solo::DmRetryPolicy::INITIAL_FLOOD_RETRIES)
+        : 0;
+    scheduleDmMaintenance();
   }
 
-  void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text,
+  bool addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text,
                 uint32_t sender_timestamp = 0) {
     // Drop retried copies of an incoming DM: a resend reuses the sender's
     // timestamp and text but carries a fresh packet hash, so the mesh dup-filter
@@ -222,10 +269,12 @@ public:
         const DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
         if (!e.outgoing && e.msg_ts == sender_timestamp &&
             memcmp(e.prefix, pub_key, 4) == 0 && strcmp(e.text, text) == 0)
-          return;  // duplicate retry — already in history
+          return false;  // duplicate retry — already in history
       }
     }
-    storeDMMsg(pub_key, outgoing, text, 0, 0, outgoing ? 0 : sender_timestamp, 0);
+    storeDMMsg(pub_key, outgoing, text, 0, 0, outgoing ? 0 : sender_timestamp,
+               DELIVERY_ROUTE_NONE);
+    return true;
   }
 
   int dmHistCountForContact(const uint8_t* prefix) const {
@@ -247,12 +296,22 @@ public:
     return -1;
   }
 
+  uint32_t latestDmActivity(const uint8_t* prefix, bool incoming_only = false) const {
+    for (int i = _dm_hist_count - 1; i >= 0; i--) {
+      const DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
+      if (memcmp(e.prefix, prefix, 4) == 0 && (!incoming_only || !e.outgoing))
+        return e.activity_seq;
+    }
+    return 0;
+  }
+
   // Effective status for display. A pending ACK only reads as failed once its
-  // deadline has passed AND no auto-resends remain — while resends_left > 0 the
-  // entry stays pending (tickDmResends() retries / finalises it). Safety net for
+  // deadline has passed AND no automatic retries remain. Until then the entry
+  // stays pending (tickDmResends() retries / finalises it). Safety net for
   // when the tick hasn't run yet; the tick is the authority that writes ACK_FAIL.
   AckState dmEffectiveStatus(const DmHistEntry& e) const {
-    if (e.ack_status == ACK_PENDING && e.resends_left == 0 &&
+    if (e.ack_status == ACK_PENDING && e.direct_retries_left == 0 &&
+        e.flood_retries_left == 0 &&
         (int32_t)(millis() - e.ack_deadline_ms) >= 0)
       return ACK_FAIL;
     return (AckState)e.ack_status;
@@ -266,6 +325,7 @@ public:
       DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
       if (e.outgoing && e.ack_status == ACK_PENDING && e.ack_tag == ack_crc) {
         e.ack_status = ACK_OK;
+        scheduleDmMaintenance();
         return;
       }
     }
@@ -273,16 +333,32 @@ public:
 
   // Periodic resend driver for outgoing DMs whose ACK deadline lapsed with no
   // ACK: resend with the next attempt# (reusing the original timestamp so the
-  // recipient dedups) while resends remain, else mark it failed (✗).
+  // recipient dedups). Known routes get one direct retry, then three forced
+  // flood tries; unknown routes get two flood retries, then the entry fails (✗).
   void tickDmResends() {
     uint32_t now = millis();
+    if (!_dm_maintenance_pending ||
+        (int32_t)(now - _next_dm_maintenance_ms) < 0) return;
     for (int i = 0; i < _dm_hist_count; i++) {
       DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
       if (!e.outgoing || e.ack_status != ACK_PENDING) continue;
       if ((int32_t)(now - e.ack_deadline_ms) < 0) continue;   // still waiting
-      if (e.resends_left == 0) { e.ack_status = ACK_FAIL; continue; }
+      if (e.direct_retries_left == 0 && e.flood_retries_left == 0) {
+        e.ack_status = ACK_FAIL;
+        continue;
+      }
       ContactInfo c;
       if (!contactByPrefix(e.prefix, c)) { e.ack_status = ACK_FAIL; continue; }
+
+      bool send_direct = e.direct_retries_left > 0 && c.out_path_len != OUT_PATH_UNKNOWN;
+      if (e.direct_retries_left > 0 && !send_direct) e.direct_retries_left = 0;
+      if (!send_direct) {
+        // Force every fallback attempt to flood, even if a path-return packet
+        // learned a fresh route after an earlier flood whose ACK was missed.
+        the_mesh.clearContactPath(e.prefix, sizeof(e.prefix));
+        c.out_path_len = OUT_PATH_UNKNOWN;
+        memset(c.out_path, 0, sizeof(c.out_path));
+      }
       uint32_t expected_ack = 0, est_timeout = 0;
       uint8_t next_attempt = e.attempt + 1;
       if (the_mesh.sendMessage(c, e.msg_ts, next_attempt, e.text,
@@ -290,11 +366,16 @@ public:
         e.attempt         = next_attempt;
         e.ack_tag         = expected_ack;   // each attempt has a distinct ACK CRC
         e.ack_deadline_ms = now + est_timeout + 4000;
-        e.resends_left--;
+        e.delivery_route = send_direct
+            ? (c.out_path_len == 0 ? DELIVERY_ROUTE_DIRECT : DELIVERY_ROUTE_PATH)
+            : DELIVERY_ROUTE_FLOOD;
+        if (send_direct) e.direct_retries_left--;
+        else e.flood_retries_left--;
       } else {
         e.ack_status = ACK_FAIL;            // couldn't compose/send — give up
       }
     }
+    scheduleDmMaintenance();
   }
 
   // Recent DM contacts, newest first, deduped. Resolves the 4-byte _dm_hist
@@ -327,6 +408,24 @@ public:
   const DmHistEntry& dmAtPos(int pos) const { return _dm_hist[pos]; }
 
 private:
+  // Recompute only when delivery state changes. UITask may call
+  // tickDmResends() every loop, but the idle path above is then constant-time
+  // instead of walking the whole history ring.
+  void scheduleDmMaintenance() {
+    _dm_maintenance_pending = false;
+    uint32_t now = millis();
+    uint32_t shortest = 0;
+    for (int i = 0; i < _dm_hist_count; i++) {
+      const DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
+      if (!e.outgoing || e.ack_status != ACK_PENDING) continue;
+      uint32_t wait = (int32_t)(e.ack_deadline_ms - now) > 0
+          ? e.ack_deadline_ms - now : 0;
+      if (!_dm_maintenance_pending || wait < shortest) shortest = wait;
+      _dm_maintenance_pending = true;
+    }
+    if (_dm_maintenance_pending) _next_dm_maintenance_ms = now + shortest;
+  }
+
   // Look up a contact by 4-byte pub_key prefix (as stored in DmHistEntry).
   bool contactByPrefix(const uint8_t* prefix, ContactInfo& out) const {
     int total = the_mesh.getNumContacts();
@@ -344,4 +443,7 @@ private:
 
   DmHistEntry _dm_hist[DM_HIST_MAX];
   int _dm_hist_head, _dm_hist_count;
+  uint32_t _activity_seq;
+  bool _dm_maintenance_pending;
+  uint32_t _next_dm_maintenance_ms;
 };

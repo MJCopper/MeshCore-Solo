@@ -33,6 +33,28 @@ TEST(SoloPolicy, AllowsOnlyFavouriteContactOfExpectedTypeWhileLocked) {
   EXPECT_FALSE(solo::Policy::contactAllowed(&prefs, true, &contact, ADV_TYPE_ROOM));
 }
 
+TEST(SoloPolicy, MatchesStoredAndReportedContactTypes) {
+  EXPECT_TRUE(solo::Policy::contactIdentityMatches(ADV_TYPE_CHAT, ADV_TYPE_CHAT,
+                                                   ADV_TYPE_CHAT));
+  EXPECT_FALSE(solo::Policy::contactIdentityMatches(ADV_TYPE_ROOM, ADV_TYPE_CHAT,
+                                                    ADV_TYPE_CHAT));
+  EXPECT_FALSE(solo::Policy::contactIdentityMatches(ADV_TYPE_CHAT, ADV_TYPE_ROOM,
+                                                    ADV_TYPE_CHAT));
+}
+
+TEST(SoloPolicy, BoundsFavouriteChannelMask) {
+  NodePrefs prefs;
+  std::memset(&prefs, 0, sizeof(prefs));
+  prefs.child_channels_enabled = 1;
+  prefs.ch_fav_bitmask = (1ULL << 0) | (1ULL << 63);
+  uint8_t private_secret[16] = {1};
+
+  EXPECT_TRUE(solo::Policy::channelAllowed(&prefs, true, 0, "Family", private_secret));
+  EXPECT_TRUE(solo::Policy::channelAllowed(&prefs, true, 63, "Family", private_secret));
+  EXPECT_FALSE(solo::Policy::channelAllowed(&prefs, true, 1, "Family", private_secret));
+  EXPECT_FALSE(solo::Policy::channelAllowed(&prefs, true, 64, "Family", private_secret));
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

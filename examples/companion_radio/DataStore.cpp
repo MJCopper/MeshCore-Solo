@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include "DataStore.h"
-#include "solo/RepeaterTiming.h"
+#include "solo/SoloPrefsDefaults.h"
 #include "SoloPrefsMigration.h"
 #include "solo/SoloPrefsCodec.h"
 #include "Features.h"   // FEAT_JOYSTICK_ROTATION_SETTING (else `#if !FEAT_…` is always true)
@@ -385,9 +385,9 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.units_imperial,      sizeof(_prefs.units_imperial));
   rd(&_prefs.trail_show_pace,     sizeof(_prefs.trail_show_pace));
   rd(&_prefs.advert_sound_scope,  sizeof(_prefs.advert_sound_scope));
-  rd(&_prefs.rx_powersave,        sizeof(_prefs.rx_powersave));
+  rd(&_prefs.reserved_rx_powersave, sizeof(_prefs.reserved_rx_powersave));
   rd(&_prefs.tx_apc,              sizeof(_prefs.tx_apc));
-  rd(&_prefs.dm_resend_count,     sizeof(_prefs.dm_resend_count));
+  rd(&_prefs.reserved_dm_resend_count, sizeof(_prefs.reserved_dm_resend_count));
   rd(&_prefs.bot_commands_enabled, sizeof(_prefs.bot_commands_enabled));
   rd(&_prefs.bot_quiet_start,     sizeof(_prefs.bot_quiet_start));
   rd(&_prefs.bot_quiet_end,       sizeof(_prefs.bot_quiet_end));
@@ -398,14 +398,12 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   // "off" default (same stray-byte handling as the fields below).
   rd(&_prefs.reserved_repeat_skip_adverts, sizeof(_prefs.reserved_repeat_skip_adverts));
   rd(&_prefs.reserved_repeat_max_hops,     sizeof(_prefs.reserved_repeat_max_hops));
-  rd(&_prefs.repeat_delay_boost,  sizeof(_prefs.repeat_delay_boost));
+  rd(&_prefs.reserved_repeat_delay_boost, sizeof(_prefs.reserved_repeat_delay_boost));
   rd(&_prefs.reserved_repeat_min_snr,      sizeof(_prefs.reserved_repeat_min_snr));
-  rd(&_prefs.repeat_suppress_dup, sizeof(_prefs.repeat_suppress_dup));
+  rd(&_prefs.reserved_repeat_suppress_dup, sizeof(_prefs.reserved_repeat_suppress_dup));
   _prefs.reserved_repeat_skip_adverts = 0;
   _prefs.reserved_repeat_max_hops = 0;
-  if (_prefs.repeat_delay_boost > 8)  _prefs.repeat_delay_boost = 0;
   _prefs.reserved_repeat_min_snr = -128;
-  if (_prefs.repeat_suppress_dup > 1) _prefs.repeat_suppress_dup = 0;
   rd(&_prefs.repeater_use_profile, sizeof(_prefs.repeater_use_profile));
   rd(&_prefs.repeater_freq,        sizeof(_prefs.repeater_freq));
   rd(&_prefs.repeater_bw,          sizeof(_prefs.repeater_bw));
@@ -483,11 +481,8 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   if (_prefs.units_imperial  > 1) _prefs.units_imperial  = 0;
   if (_prefs.trail_show_pace > 1) _prefs.trail_show_pace = 0;
   if (_prefs.advert_sound_scope > 1) _prefs.advert_sound_scope = ADVERT_SOUND_SCOPE_ALL;
-  if (_prefs.rx_powersave    > 1) _prefs.rx_powersave    = 0;
+  _prefs.reserved_rx_powersave = 0;
   if (_prefs.tx_apc          > 1) _prefs.tx_apc          = 0;
-  // An old (0xC0DE0009) file leaves the low byte of its sentinel here (0x09),
-  // which is out of range — fall back to the default of 2 resends.
-  if (_prefs.dm_resend_count > 5) _prefs.dm_resend_count = 2;
 
   // → 0xC0DE0019: page_order grew 11 → 13 so Shutdown and Map become reorderable.
   // The extra slots are appended here at the tail (not inline) so a pre-0x19 save,
@@ -632,35 +627,15 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
       rd(&_prefs.quiet_time_end_min, sizeof(_prefs.quiet_time_end_min));
     }
   }
-  if (_prefs.child_mode_enabled > 1) _prefs.child_mode_enabled = 0;
-  if (_prefs.child_channels_enabled > 1) _prefs.child_channels_enabled = 0;
-  _prefs.child_visible_pages &= NodePrefs::HP_FAVOURITES |
-                                NodePrefs::HP_MAP | NodePrefs::HP_SENSORS | NodePrefs::HP_SHUTDOWN;
-  if (_prefs.quiet_time_enabled > 1) _prefs.quiet_time_enabled = 0;
-  if (_prefs.quiet_time_start_min >= 24 * 60) _prefs.quiet_time_start_min = 21 * 60;
-  if (_prefs.quiet_time_end_min >= 24 * 60) _prefs.quiet_time_end_min = 7 * 60;
-
   // → 0xC0DE0027/28: standard repeater radio timing. Existing records have only
   // their four-byte sentinel left here, so keep the defaults seeded by MyMesh
   // unless all three floats and the new sentinel are present.
   if (file.available() >= (int)(3 * sizeof(float) + sizeof(uint32_t))) {
-    rd(&_prefs.repeat_rx_delay_base, sizeof(_prefs.repeat_rx_delay_base));
-    rd(&_prefs.repeat_flood_tx_factor, sizeof(_prefs.repeat_flood_tx_factor));
-    rd(&_prefs.repeat_direct_tx_factor, sizeof(_prefs.repeat_direct_tx_factor));
-  } else {
-    _prefs.repeat_rx_delay_base = solo::RepeaterTiming::DEFAULT_RX_DELAY_BASE;
-    _prefs.repeat_flood_tx_factor = solo::RepeaterTiming::DEFAULT_FLOOD_TX_FACTOR;
-    _prefs.repeat_direct_tx_factor = solo::RepeaterTiming::DEFAULT_DIRECT_TX_FACTOR;
+    rd(&_prefs.reserved_repeat_rx_delay_base, sizeof(_prefs.reserved_repeat_rx_delay_base));
+    rd(&_prefs.reserved_repeat_flood_tx_factor, sizeof(_prefs.reserved_repeat_flood_tx_factor));
+    rd(&_prefs.reserved_repeat_direct_tx_factor, sizeof(_prefs.reserved_repeat_direct_tx_factor));
   }
-  _prefs.repeat_rx_delay_base = solo::RepeaterTiming::validOrDefault(
-      _prefs.repeat_rx_delay_base, solo::RepeaterTiming::MAX_RX_DELAY_BASE,
-      solo::RepeaterTiming::DEFAULT_RX_DELAY_BASE);
-  _prefs.repeat_flood_tx_factor = solo::RepeaterTiming::validOrDefault(
-      _prefs.repeat_flood_tx_factor, solo::RepeaterTiming::MAX_TX_FACTOR,
-      solo::RepeaterTiming::DEFAULT_FLOOD_TX_FACTOR);
-  _prefs.repeat_direct_tx_factor = solo::RepeaterTiming::validOrDefault(
-      _prefs.repeat_direct_tx_factor, solo::RepeaterTiming::MAX_TX_FACTOR,
-      solo::RepeaterTiming::DEFAULT_DIRECT_TX_FACTOR);
+  solo::PrefsDefaults::normalize(_prefs);
 
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
@@ -705,7 +680,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     // tail (notif_melody_ad + units_imperial + trail_show_pace). Older files
     // leave stray/old bytes in these fields; they're clamped above, so
     // upgraders fall back to built-in advert sound + metric + speed + All.
-    // → 0xC0DE0009: append tx_apc after rx_powersave. Clamped above, so
+    // → 0xC0DE0009: append tx_apc after the reserved RX-power byte.
     // upgraders fall back to APC off (fixed tx power).
     // → 0xC0DE000C: split out a per-channel trigger (was shared with the DM
     // trigger). Pre-0x0C files have no bot_trigger_ch; seed it from bot_trigger
@@ -809,9 +784,9 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.units_imperial,      sizeof(_prefs.units_imperial));
     file.write((uint8_t *)&_prefs.trail_show_pace,     sizeof(_prefs.trail_show_pace));
     file.write((uint8_t *)&_prefs.advert_sound_scope,  sizeof(_prefs.advert_sound_scope));
-    file.write((uint8_t *)&_prefs.rx_powersave,        sizeof(_prefs.rx_powersave));
+    file.write((uint8_t *)&_prefs.reserved_rx_powersave, sizeof(_prefs.reserved_rx_powersave));
     file.write((uint8_t *)&_prefs.tx_apc,              sizeof(_prefs.tx_apc));
-    file.write((uint8_t *)&_prefs.dm_resend_count,     sizeof(_prefs.dm_resend_count));
+    file.write((uint8_t *)&_prefs.reserved_dm_resend_count, sizeof(_prefs.reserved_dm_resend_count));
     file.write((uint8_t *)&_prefs.bot_commands_enabled, sizeof(_prefs.bot_commands_enabled));
     file.write((uint8_t *)&_prefs.bot_quiet_start,     sizeof(_prefs.bot_quiet_start));
     file.write((uint8_t *)&_prefs.bot_quiet_end,       sizeof(_prefs.bot_quiet_end));
@@ -819,9 +794,9 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)_prefs.user_radio_presets,   sizeof(_prefs.user_radio_presets));
     file.write((uint8_t *)&_prefs.reserved_repeat_skip_adverts, sizeof(_prefs.reserved_repeat_skip_adverts));
     file.write((uint8_t *)&_prefs.reserved_repeat_max_hops, sizeof(_prefs.reserved_repeat_max_hops));
-    file.write((uint8_t *)&_prefs.repeat_delay_boost,   sizeof(_prefs.repeat_delay_boost));
+    file.write((uint8_t *)&_prefs.reserved_repeat_delay_boost, sizeof(_prefs.reserved_repeat_delay_boost));
     file.write((uint8_t *)&_prefs.reserved_repeat_min_snr, sizeof(_prefs.reserved_repeat_min_snr));
-    file.write((uint8_t *)&_prefs.repeat_suppress_dup,  sizeof(_prefs.repeat_suppress_dup));
+    file.write((uint8_t *)&_prefs.reserved_repeat_suppress_dup, sizeof(_prefs.reserved_repeat_suppress_dup));
     file.write((uint8_t *)&_prefs.repeater_use_profile, sizeof(_prefs.repeater_use_profile));
     file.write((uint8_t *)&_prefs.repeater_freq,        sizeof(_prefs.repeater_freq));
     file.write((uint8_t *)&_prefs.repeater_bw,          sizeof(_prefs.repeater_bw));
@@ -881,9 +856,9 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.quiet_time_enabled, sizeof(_prefs.quiet_time_enabled));
     file.write((uint8_t *)&_prefs.quiet_time_start_min, sizeof(_prefs.quiet_time_start_min));
     file.write((uint8_t *)&_prefs.quiet_time_end_min, sizeof(_prefs.quiet_time_end_min));
-    file.write((uint8_t *)&_prefs.repeat_rx_delay_base, sizeof(_prefs.repeat_rx_delay_base));
-    file.write((uint8_t *)&_prefs.repeat_flood_tx_factor, sizeof(_prefs.repeat_flood_tx_factor));
-    file.write((uint8_t *)&_prefs.repeat_direct_tx_factor, sizeof(_prefs.repeat_direct_tx_factor));
+    file.write((uint8_t *)&_prefs.reserved_repeat_rx_delay_base, sizeof(_prefs.reserved_repeat_rx_delay_base));
+    file.write((uint8_t *)&_prefs.reserved_repeat_flood_tx_factor, sizeof(_prefs.reserved_repeat_flood_tx_factor));
+    file.write((uint8_t *)&_prefs.reserved_repeat_direct_tx_factor, sizeof(_prefs.reserved_repeat_direct_tx_factor));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good
@@ -946,6 +921,10 @@ File file = openRead(_getContactsChannelsFS(), "/contacts3");
 
         if (!success) break; // EOF
 
+        // Routes are short-lived radio state. Keep the legacy fields in the
+        // record for file compatibility, but always relearn paths after boot.
+        c.out_path_len = OUT_PATH_UNKNOWN;
+        memset(c.out_path, 0, sizeof(c.out_path));
         c.id = mesh::Identity(pub_key);
         if (!host->onContactLoaded(c)) full = true;
       }
@@ -967,6 +946,8 @@ void DataStore::saveContacts(DataStoreHost* host, bool (*filter)(const ContactIn
   uint32_t idx = 0;
   ContactInfo c;
   uint8_t unused = 0;
+  uint8_t unsaved_path_len = OUT_PATH_UNKNOWN;
+  uint8_t unsaved_path[MAX_PATH_SIZE] = {0};
 
   while (host->getContactForSave(idx, c)) {
     if (filter && !filter(c)) {
@@ -979,9 +960,10 @@ void DataStore::saveContacts(DataStoreHost* host, bool (*filter)(const ContactIn
     success = success && (file.write(&c.flags, 1) == 1);
     success = success && (file.write(&unused, 1) == 1);
     success = success && (file.write((uint8_t *)&c.sync_since, 4) == 4);
-    success = success && (file.write((uint8_t *)&c.out_path_len, 1) == 1);
+    // Preserve the contacts3 record layout without persisting transient routes.
+    success = success && (file.write(&unsaved_path_len, 1) == 1);
     success = success && (file.write((uint8_t *)&c.last_advert_timestamp, 4) == 4);
-    success = success && (file.write(c.out_path, 64) == 64);
+    success = success && (file.write(unsaved_path, sizeof(unsaved_path)) == sizeof(unsaved_path));
     success = success && (file.write((uint8_t *)&c.lastmod, 4) == 4);
     success = success && (file.write((uint8_t *)&c.gps_lat, 4) == 4);
     success = success && (file.write((uint8_t *)&c.gps_lon, 4) == 4);

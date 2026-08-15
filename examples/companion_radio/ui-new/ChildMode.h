@@ -1,12 +1,8 @@
 #pragma once
 
 #include "../NodePrefs.h"
-#include <Utils.h>
-#include <helpers/ContactInfo.h>
 #include <helpers/ui/DisplayDriver.h>
 #include "DigitEditor.h"
-#include "ChildModePolicy.h"
-#include "../solo/SoloPolicy.h"
 
 // Small policy helper kept independent of the screens so upstream UI changes
 // only need to call these predicates. This is intentionally a practical UI
@@ -44,21 +40,6 @@ static inline uint32_t pinHash(uint32_t pin) {
     pin /= 10;
   }
   return h ^ 0x4348494Cu;  // "CHIL", avoids the unset value being a useful PIN
-}
-
-static inline bool contactAllowed(const NodePrefs* prefs, const ContactInfo& contact) {
-  const bool locked = solo::Features::CHILD_MODE && prefs && prefs->child_mode_enabled;
-  return solo::Policy::contactAllowed(prefs, locked, &contact);
-}
-
-static inline bool privateChannel(const char* name, const uint8_t* secret) {
-  return solo::Policy::privateChannel(name, secret);
-}
-
-static inline bool channelAllowed(const NodePrefs* prefs, uint8_t index,
-                                  const char* name, const uint8_t* secret) {
-  const bool locked = solo::Features::CHILD_MODE && prefs && prefs->child_mode_enabled;
-  return solo::Policy::channelAllowed(prefs, locked, index, name, secret);
 }
 
 } // namespace childmode

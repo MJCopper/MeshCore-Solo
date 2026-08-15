@@ -32,7 +32,9 @@ Configure and favourite the allowed conversations before enabling Child Mode.
 | :-----------------------: | :-----------------------: |
 | ![](./compose_oled.png) | ![](./compose_eink.png) |
 
-Press **Enter** on a contact or channel to open its history, then press **Enter** again (or select the **[+ send]** button, anchored at the right edge of the history) to compose a message. Choose between:
+Press **Enter** on a contact or channel to open its history. In the history,
+press **Enter** to compose a custom message or hold **Enter** to open the quick
+message list.
 
 - **Custom message** — opens the on-screen keyboard
 - **Q1–Q10** — quick reply templates editable in Settings › Messages
@@ -76,27 +78,38 @@ Posting to a **room server** requires a login handshake first, so the device can
 | :-----------------------: | :-----------------------: |
 | ![](./history_oled.png) | ![](./history_eink.png) |
 
-Messages are drawn as chat bubbles sized to fit their content, anchored **right** for your own outgoing messages and **left** for incoming ones (like a typical messenger), with the sender name and a compact age indicator (`3m`, `2h`, `>1d`) in the top-right corner of each bubble. The list runs **newest at the bottom** — opening a history starts you at the latest message, and scrolling **up** goes further into the past.
+Direct messages, room posts and channel posts use the same full-width transcript
+layout. Sender names are inverted, the compact age (`3m`, `2h`, `>1d`) appears
+on the sender row, and a horizontal rule separates messages. The newest content
+starts at the bottom.
 
-**Short Enter** on a message opens it in fullscreen. **Hold Enter** — on a history row or in fullscreen — opens the reply options menu. You don't need to open the message first.
+Outgoing delivery markers show both route and state. `D` means zero-hop direct,
+`P` means a stored repeater path and `F` means flood. While waiting, the number
+is the total transmission count (`P1`, `P2`, `F3`, etc.). A confirmed delivery
+uses the latest route plus a tick (`F✓`); an exhausted direct-message send shows
+`✗`. Channels instead count matching repeater echoes heard during a six-second
+window: `1✓`, `2✓`, etc. Zero echoes becomes `✗`; this does not prove that no
+recipient heard the original transmission.
 
----
+Use **UP/DOWN** to scroll one wrapped line at a time. Long messages continue
+through the viewport instead of being truncated or requiring a separate reader;
+scrolling up eventually reveals the sender row and every earlier line. The same
+layout and navigation apply to direct messages, rooms and channels.
 
-### Fullscreen message view
+Press **Enter** to compose a custom message. Hold **Enter** to open quick
+messages.
 
-|           OLED            |           E-Ink           |
-| :-----------------------: | :-----------------------: |
-| ![](./fullscreen_oled.png) | ![](./fullscreen_eink.png) |
+Unread state is tracked per direct contact, room and channel. A message is
+marked read immediately only when its matching transcript is physically visible
+on an unlocked display. Messages received while the display is off or the lock
+screen is shown remain unread until that transcript is rendered after wake.
+Retransmitted copies of the same direct or room message do not create another
+history entry, unread count or notification.
 
-Navigate between messages with **LEFT** (newer) and **RIGHT** (older). Long messages scroll with **UP/DOWN**.
-
-If the message is a reply addressed to someone (`@[nick]`), a **To: nick** bar is shown below the sender name and the body is displayed without the address prefix.
-
-|           OLED            |           E-Ink           |
-| :-----------------------: | :-----------------------: |
-| ![](./fullscreen_menu_oled.png) | ![](./fullscreen_menu_eink.png) |
-
-**Hold Enter** in fullscreen offers **Reply** for an incoming message. Location text such as `[LOC]lat,lon` or `[WAY]lat,lon label` remains readable, but navigation and waypoint actions are not included in this build.
+When an eligible notification wakes an otherwise sleeping display, the display
+turns off again after five seconds unless the user presses a Tracker button. A
+notification received while the display is already on does not shorten the
+normal display timeout.
 
 ---
 

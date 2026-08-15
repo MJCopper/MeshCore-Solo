@@ -667,7 +667,7 @@ bool EnvironmentSensorManager::begin() {
 bool EnvironmentSensorManager::querySensors(uint8_t requester_permissions, CayenneLPP& telemetry) {
   next_available_channel = TELEM_CHANNEL_SELF + 1;
 
-  if (requester_permissions & TELEM_PERM_LOCATION && gps_active) {
+  if (requester_permissions & TELEM_PERM_LOCATION && gps_configured) {
     telemetry.addGPS(TELEM_CHANNEL_SELF, node_lat, node_lon, node_altitude);
   }
 
@@ -703,7 +703,7 @@ const char* EnvironmentSensorManager::getSettingValue(int i) const {
   int settings = 0;
   #if ENV_INCLUDE_GPS
     if (gps_detected && i == settings++) {
-      return gps_active ? "1" : "0";
+      return gps_configured ? "1" : "0";
     }
   #endif
   return NULL;
@@ -713,15 +713,30 @@ bool EnvironmentSensorManager::setSettingValue(const char* name, const char* val
   #if ENV_INCLUDE_GPS
   if (gps_detected && strcmp(name, "gps") == 0) {
     if (strcmp(value, "0") == 0) {
+      gps_configured = false;
       stop_gps();
     } else {
-      start_gps();
+      gps_configured = true;
+      if (gps_update_interval_sec == 0) start_gps();
+      else start_periodic_gps();
     }
     return true;
   }
   if (strcmp(name, "gps_interval") == 0) {
     uint32_t interval_seconds = atoi(value);
-    gps_update_interval_sec = interval_seconds > 0 ? interval_seconds : 1;
+    gps_update_interval_sec = interval_seconds;
+    if (gps_configured) {
+      if (gps_update_interval_sec == 0) start_gps();
+      else start_periodic_gps();
+    }
+    return true;
+  }
+  // Temporary hardware claim used by boot-time clock synchronisation. Unlike
+  // the public "gps" setting, this deliberately leaves the saved user intent
+  // and periodic schedule unchanged.
+  if (strcmp(name, "gps_power") == 0) {
+    if (strcmp(value, "0") == 0) stop_gps();
+    else start_gps();
     return true;
   }
   #endif
@@ -860,6 +875,7 @@ bool EnvironmentSensorManager::gpsIsAwake(uint8_t ioPin){
 #endif
 
 void EnvironmentSensorManager::start_gps() {
+  if (gps_active) return;
   gps_active = true;
   #ifdef RAK_WISBLOCK_GPS
     pinMode(gpsResetPin, OUTPUT);
@@ -876,6 +892,7 @@ void EnvironmentSensorManager::start_gps() {
 }
 
 void EnvironmentSensorManager::stop_gps() {
+  if (!gps_active) return;
   gps_active = false;
   #ifdef RAK_WISBLOCK_GPS
     pinMode(gpsResetPin, OUTPUT);
@@ -889,38 +906,57 @@ void EnvironmentSensorManager::stop_gps() {
   MESH_DEBUG_PRINTLN("Stop GPS is N/A on this board. Actual GPS state unchanged");
   #endif
 }
+
+void EnvironmentSensorManager::start_periodic_gps() {
+  start_gps();
+  uint32_t now = millis();
+  gps_acquire_deadline_ms = now + 90000UL;
+  gps_fix_stable_since_ms = 0;
+}
 #endif // ENV_INCLUDE_GPS
 
 #if ENV_INCLUDE_GPS || defined(ENV_INCLUDE_BME680_BSEC)
 void EnvironmentSensorManager::loop() {
 
   #if ENV_INCLUDE_GPS
-  static unsigned long next_gps_update = 0;
   if (gps_active) {
     _location->loop();
   }
-  if ((long)(millis() - next_gps_update) > 0) {
+  uint32_t now = millis();
+  if (gps_configured && gps_update_interval_sec > 0 && !gps_active &&
+      (int32_t)(now - gps_next_acquire_ms) >= 0) {
+    start_periodic_gps();
+  }
 
-    if(gps_active){
+  if (gps_active) {
+    bool valid = _location->isValid();
     #ifdef RAK_WISBLOCK_GPS
-    if ((i2cGPSFlag || serialGPSFlag) && _location->isValid()) {
-      node_lat = ((double)_location->getLatitude())/1000000.;
-      node_lon = ((double)_location->getLongitude())/1000000.;
-      MESH_DEBUG_PRINTLN("lat %f lon %f", node_lat, node_lon);
-      node_altitude = ((double)_location->getAltitude()) / 1000.0;
-      MESH_DEBUG_PRINTLN("lat %f lon %f alt %f", node_lat, node_lon, node_altitude);
-    }
-    #else
-    if (_location->isValid()) {
-      node_lat = ((double)_location->getLatitude())/1000000.;
-      node_lon = ((double)_location->getLongitude())/1000000.;
-      MESH_DEBUG_PRINTLN("lat %f lon %f", node_lat, node_lon);
-      node_altitude = ((double)_location->getAltitude()) / 1000.0;
-      MESH_DEBUG_PRINTLN("lat %f lon %f alt %f", node_lat, node_lon, node_altitude);
-    }
+    valid = (i2cGPSFlag || serialGPSFlag) && valid;
     #endif
+    if (valid && (int32_t)(now - gps_next_cache_ms) >= 0) {
+      node_lat = ((double)_location->getLatitude())/1000000.;
+      node_lon = ((double)_location->getLongitude())/1000000.;
+      MESH_DEBUG_PRINTLN("lat %f lon %f", node_lat, node_lon);
+      node_altitude = ((double)_location->getAltitude()) / 1000.0;
+      MESH_DEBUG_PRINTLN("lat %f lon %f alt %f", node_lat, node_lon, node_altitude);
+      gps_next_cache_ms = now + 1000UL;
     }
-    next_gps_update = millis() + (gps_update_interval_sec * 1000);
+    if (valid) {
+      if (gps_fix_stable_since_ms == 0) gps_fix_stable_since_ms = now;
+    } else {
+      gps_fix_stable_since_ms = 0;
+    }
+
+    if (gps_configured && gps_update_interval_sec > 0) {
+      bool stable = gps_fix_stable_since_ms != 0 &&
+                    (uint32_t)(now - gps_fix_stable_since_ms) >= 4000UL;
+      bool timed_out = (int32_t)(now - gps_acquire_deadline_ms) >= 0;
+      if (stable || timed_out) {
+        stop_gps();
+        gps_next_acquire_ms = now + gps_update_interval_sec * 1000UL;
+        gps_fix_stable_since_ms = 0;
+      }
+    }
   }
   #endif
   #if ENV_INCLUDE_BME680_BSEC

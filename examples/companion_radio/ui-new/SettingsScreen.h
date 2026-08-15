@@ -11,6 +11,8 @@
 #include "QuietTime.h"
 #include "TimeOfDayEditor.h"
 #include "MessageEditorSupport.h"
+#include "HomePageRegistry.h"
+#include "../solo/GpsMode.h"
 
 class SettingsScreen : public UIScreen {
   UITask* _task;
@@ -54,7 +56,7 @@ class SettingsScreen : public UIScreen {
 #endif
     // Home pages section
     SECTION_HOME_PAGES,
-    HOME_CLOCK, HOME_FAVOURITES, HOME_RADIO, HOME_BT, HOME_ADVERT,
+    HOME_FAVOURITES, HOME_RADIO, HOME_BT, HOME_ADVERT,
 #if ENV_INCLUDE_GPS == 1
     HOME_GPS,
 #endif
@@ -65,12 +67,15 @@ class SettingsScreen : public UIScreen {
     TX_POWER,
     RADIO_PRESET,
     CUSTOM_FREQ, CUSTOM_SF, CUSTOM_BW, CUSTOM_CR,
-    POWER_SAVE,
     TX_APC,
     // System section
     SECTION_SYSTEM,
     DEVICE_NAME,
     TIMEZONE,
+#if ENV_INCLUDE_GPS == 1
+    GPS_MODE,
+#endif
+    BLUETOOTH_ENABLED,
     LOW_BAT,
     UNITS,
     REBOOT,
@@ -88,7 +93,6 @@ class SettingsScreen : public UIScreen {
 #endif
     // Messages section
     SECTION_MESSAGES,
-    DM_RESEND,
     MSG_SLOT_0, MSG_SLOT_1, MSG_SLOT_2, MSG_SLOT_3, MSG_SLOT_4,
     MSG_SLOT_5, MSG_SLOT_6, MSG_SLOT_7, MSG_SLOT_8, MSG_SLOT_9,
     Count
@@ -99,6 +103,9 @@ class SettingsScreen : public UIScreen {
   int  _selected = 0;   // SettingItem under the cursor, resolved per input/render
   int  _reserve = 0;    // right-edge px reserved for the scrollbar (0 when list fits)
   bool _dirty = false;
+#if ENV_INCLUDE_GPS == 1
+  bool _gps_dirty = false; // staged until this settings screen is closed
+#endif
 
   static const int NUM_SECTIONS = 8 + SOLO_FEAT_CHILD_MODE;
   static const int MAX_PER_SEC  = 16;
@@ -116,9 +123,6 @@ class SettingsScreen : public UIScreen {
   static const char* AUTO_OFF_LABELS[5];
   static const int AUTO_OFF_COUNT = 5;
 #endif
-// GPS update interval tables are no longer surfaced in Settings — the sensor
-// manager defaults to 1 s when nothing else sets it. Pref byte _prefs.gps_interval
-// is retained for backwards compatibility.
   static const uint16_t LOW_BAT_OPTS[7];
   static const char* LOW_BAT_LABELS[7];
   static const int LOW_BAT_COUNT = 7;
@@ -227,7 +231,7 @@ class SettingsScreen : public UIScreen {
   }
 
   bool isHomePage(int item) const {
-    return item == HOME_CLOCK    || item == HOME_RADIO      || item == HOME_BT      ||
+    return item == HOME_RADIO      || item == HOME_BT      ||
            item == HOME_ADVERT   || item == HOME_TOOLS      ||
            item == HOME_SETTINGS   || item == HOME_QUICK_MSG ||
            item == HOME_FAVOURITES
@@ -254,8 +258,8 @@ class SettingsScreen : public UIScreen {
     if (item == HOME_SETTINGS || item == HOME_QUICK_MSG) return true;
     uint16_t bit = homePageBit(item);
     if (!bit) return false;
-    uint16_t mask = (p && p->home_pages_mask) ? p->home_pages_mask : NodePrefs::HP_ALL;
-    return (mask & bit) != 0;
+    int index = homePageBitIndex(item);
+    return index >= 0 && homepage::visible(p, (uint8_t)index, false);
   }
 
   bool homePageToggleable(int item) const {
@@ -265,7 +269,6 @@ class SettingsScreen : public UIScreen {
   // Returns the bit-index used in page_order for this SettingItem, or -1.
   // Bit-index values are defined once in NodePrefs::HomePageBit.
   int homePageBitIndex(int item) const {
-    if (item == HOME_CLOCK)     return NodePrefs::HPB_CLOCK;
     if (item == HOME_FAVOURITES) return NodePrefs::HPB_FAVOURITES;
     if (item == HOME_RADIO)     return NodePrefs::HPB_RADIO;
     if (item == HOME_BT)        return NodePrefs::HPB_BLUETOOTH;
@@ -284,132 +287,23 @@ class SettingsScreen : public UIScreen {
     if (!p || p->page_order_set != NodePrefs::PAGE_ORDER_MAGIC) return 0;
     int bit = homePageBitIndex(item);
     if (bit < 0) return 0;
-    for (int i = 0; i < NodePrefs::PAGE_ORDER_LEN; i++) {
-      uint8_t v = p->page_order[i];
-      if (v < 1 || v > NodePrefs::HPB_COUNT) break;
-      if ((int)(v - 1) == bit) return i + 1;
-    }
-    return 0;
+    int position = homepage::position(p, (uint8_t)bit);
+    // Clock permanently owns absolute slot 1 and is not configurable. Present
+    // the remaining pages as their own 1-based sequence.
+    return position > 1 ? position - 1 : 0;
   }
 
   // Initialises page_order to the default display sequence if not already set.
   // Also repairs a partially-initialised order where CLOCK is absent; migrates
   // older orders by inserting FAVOURITES after CLOCK; and appends any pages that
   // are absent from a stale saved order (e.g. TOOLS/MESSAGES added by later firmware).
-  void ensurePageOrderInit(NodePrefs* p) const {
-    if (!p) return;
-    if (p->page_order_set == NodePrefs::PAGE_ORDER_MAGIC) {
-      bool has_clock = false;
-      bool has_fav   = false;
-      int  len       = 0;
-      int  clock_at  = -1;
-      for (int i = 0; i < NodePrefs::PAGE_ORDER_LEN; i++) {
-        uint8_t v = p->page_order[i];
-        if (v < 1 || v > NodePrefs::HPB_COUNT) break;
-        if ((int)(v - 1) == NodePrefs::HPB_CLOCK)      { has_clock = true; clock_at = i; }
-        if ((int)(v - 1) == NodePrefs::HPB_FAVOURITES) { has_fav = true; }
-        len = i + 1;
-      }
-      if (!has_clock) {
-        // Corrupted/partial — full re-init below.
-        memset(p->page_order, 0, sizeof(p->page_order));
-      } else {
-        if (!has_fav) {
-          // Insert FAVOURITES right after CLOCK. Real orders are shorter than
-          // PAGE_ORDER_LEN so there's room; only a pathologically full order would
-          // drop its last entry, which buildVisibleOrder's fallback re-appends.
-          int insert_at = clock_at + 1;
-          // Guard against a saved order with all PAGE_ORDER_LEN slots already
-          // valid and CLOCK in the last one: insert_at would be PAGE_ORDER_LEN,
-          // one past the array, and the shift loop below wouldn't run (tail is
-          // clamped to the last index) to catch it -- the write would land one
-          // byte past page_order, into whatever NodePrefs field follows.
-          if (insert_at < NodePrefs::PAGE_ORDER_LEN) {
-            int tail = (len < NodePrefs::PAGE_ORDER_LEN) ? len : NodePrefs::PAGE_ORDER_LEN - 1;
-            for (int i = tail; i > insert_at; i--) p->page_order[i] = p->page_order[i - 1];
-            p->page_order[insert_at] = NodePrefs::HPB_FAVOURITES + 1;
-          }
-        }
-        // Append any pages that are absent from the saved order (e.g. added by a
-        // later firmware version). Recount first since the block above may have
-        // just inserted FAVOURITES.
-        {
-          uint16_t present = 0;
-          int cur_len = 0;
-          for (int i = 0; i < NodePrefs::PAGE_ORDER_LEN; i++) {
-            uint8_t v = p->page_order[i];
-            if (v < 1 || v > NodePrefs::HPB_COUNT) break;
-            present |= (uint16_t)(1u << (v - 1));
-            cur_len++;
-          }
-          // Every page has a slot now (PAGE_ORDER_LEN == HPB_COUNT), so all pages
-          // are required — any missing from a stale saved order (SHUTDOWN and MAP
-          // for pre-0x0019 upgraders) is appended into the free tail slots below.
-          static const uint8_t REQUIRED[] = {
-            NodePrefs::HPB_CLOCK, NodePrefs::HPB_FAVOURITES,
-            NodePrefs::HPB_RECENT, NodePrefs::HPB_RADIO,
-            NodePrefs::HPB_BLUETOOTH, NodePrefs::HPB_ADVERT,
-#if ENV_INCLUDE_GPS == 1
-            NodePrefs::HPB_GPS,
-#endif
-#if UI_SENSORS_PAGE == 1
-            NodePrefs::HPB_SENSORS,
-#endif
-            NodePrefs::HPB_SETTINGS, NodePrefs::HPB_MAP, NodePrefs::HPB_TOOLS,
-            NodePrefs::HPB_QUICK_MSG, NodePrefs::HPB_SHUTDOWN,
-          };
-          for (int ri = 0; ri < (int)(sizeof(REQUIRED)/sizeof(REQUIRED[0])); ri++) {
-            uint8_t bit = REQUIRED[ri];
-            if (!(present & (uint16_t)(1u << bit)) && cur_len < NodePrefs::PAGE_ORDER_LEN)
-              p->page_order[cur_len++] = bit + 1;
-          }
-        }
-        return;
-      }
-    }
-    // Default: CLOCK FAVOURITES RECENT RADIO BT ADVERT [GPS] [SENSORS] SETTINGS
-    // MAP TOOLS MESSAGES SHUTDOWN — mirrors the home-carousel enum order. Every
-    // page has an explicit slot now (PAGE_ORDER_LEN == HPB_COUNT).
-    int j = 0;
-    p->page_order[j++] = NodePrefs::HPB_CLOCK      + 1;
-    p->page_order[j++] = NodePrefs::HPB_FAVOURITES + 1;
-    p->page_order[j++] = NodePrefs::HPB_RECENT     + 1;
-    p->page_order[j++] = NodePrefs::HPB_RADIO      + 1;
-    p->page_order[j++] = NodePrefs::HPB_BLUETOOTH  + 1;
-    p->page_order[j++] = NodePrefs::HPB_ADVERT     + 1;
-#if ENV_INCLUDE_GPS == 1
-    p->page_order[j++] = NodePrefs::HPB_GPS        + 1;
-#endif
-#if UI_SENSORS_PAGE == 1
-    p->page_order[j++] = NodePrefs::HPB_SENSORS    + 1;
-#endif
-    p->page_order[j++] = NodePrefs::HPB_SETTINGS   + 1;
-    p->page_order[j++] = NodePrefs::HPB_MAP        + 1;
-    p->page_order[j++] = NodePrefs::HPB_TOOLS      + 1;
-    p->page_order[j++] = NodePrefs::HPB_QUICK_MSG  + 1;
-    p->page_order[j++] = NodePrefs::HPB_SHUTDOWN   + 1;
-    while (j < NodePrefs::PAGE_ORDER_LEN) p->page_order[j++] = 0;
-    p->page_order_set = NodePrefs::PAGE_ORDER_MAGIC;
-  }
+  void ensurePageOrderInit(NodePrefs* p) const { homepage::ensureOrder(p); }
 
   // Swaps item's page_order slot with its neighbour in the given direction (-1=earlier, +1=later).
   void movePageInOrder(int item, int delta, NodePrefs* p) {
-    ensurePageOrderInit(p);
     int bit = homePageBitIndex(item);
     if (bit < 0) return;
-    int cur = -1, total = 0;
-    for (int i = 0; i < NodePrefs::PAGE_ORDER_LEN; i++) {
-      uint8_t v = p->page_order[i];
-      if (v < 1 || v > NodePrefs::HPB_COUNT) break;
-      if ((int)(v - 1) == bit) cur = i;
-      total++;
-    }
-    if (cur < 0) return;
-    int next = cur + delta;
-    if (next < 0 || next >= total) return;
-    uint8_t tmp = p->page_order[cur];
-    p->page_order[cur] = p->page_order[next];
-    p->page_order[next] = tmp;
+    homepage::move(p, (uint8_t)bit, delta);
   }
 
   bool isMsgSlot(int item) const {
@@ -544,12 +438,6 @@ class SettingsScreen : public UIScreen {
       snprintf(buf, sizeof(buf), "%d", p ? (int)p->cr : 0);
       display.setCursor(valCol(display), y);
       display.print(buf);
-    } else if (item == POWER_SAVE) {
-      display.print("Pwr save");
-      display.setCursor(valCol(display), y);
-      // Forced off (and locked) while the repeater is on — it must hear all traffic.
-      if (p && p->client_repeat) display.print("--");
-      else display.print((p && p->rx_powersave) ? "ON" : "OFF");
     } else if (item == TX_APC) {
       display.print("Auto pwr");
       display.setCursor(valCol(display), y);
@@ -574,6 +462,16 @@ class SettingsScreen : public UIScreen {
       else         snprintf(buf, sizeof(buf),"UTC%d",  (int)tz);
       display.setCursor(valCol(display), y);
       display.print(buf);
+#if ENV_INCLUDE_GPS == 1
+    } else if (item == GPS_MODE) {
+      display.print("GPS");
+      display.setCursor(valCol(display), y);
+      display.print(solo::GpsMode::label(_task->getGPSMode()));
+#endif
+    } else if (item == BLUETOOTH_ENABLED) {
+      display.print("Bluetooth");
+      display.setCursor(valCol(display), y);
+      display.print(_task->isBluetoothEnabled() ? "ON" : "OFF");
     } else if (item == LOW_BAT) {
       display.print("LowBat");
       display.setCursor(valCol(display), y);
@@ -660,12 +558,6 @@ class SettingsScreen : public UIScreen {
       display.setCursor(valCol(display), y);
       display.print((p && (p->child_visible_pages & bit)) ? "ON" : "OFF");
 #endif
-    } else if (item == DM_RESEND) {
-      display.print("Resend");
-      display.setCursor(valCol(display), y);
-      uint8_t n = p ? p->dm_resend_count : 0;
-      if (n == 0) display.print("OFF");
-      else { char buf[6]; snprintf(buf, sizeof(buf), "%ux", (unsigned)n); display.print(buf); }
     } else if (isMsgSlot(item)) {
       int slot = msgSlotIndex(item);
       char label[5];
@@ -708,6 +600,9 @@ public:
 
   void onShow() override {
     _dirty = false;
+#if ENV_INCLUDE_GPS == 1
+    _gps_dirty = false;
+#endif
     _edit_name = false;
     _quiet_edit_item = -1;
     _quiet_editor.editing = false;
@@ -900,6 +795,12 @@ public:
     }
 
     if (c == KEY_CANCEL) {
+#if ENV_INCLUDE_GPS == 1
+      if (_gps_dirty) {
+        _task->applyGpsPrefs();
+        _gps_dirty = false;
+      }
+#endif
       _task->savePrefsIfDirty(_dirty);
       if (p && p->child_mode_enabled) _task->setChildAdminUnlocked(false);
       _task->gotoHomeScreen();
@@ -1006,13 +907,6 @@ public:
     if (_selected == CUSTOM_SF && p && dir && RadioParamsEditor::stepSF(p->sf, dir)) { _task->applyRadioParams(); _dirty = true; return true; }
     if (_selected == CUSTOM_BW && p && dir && RadioParamsEditor::stepBW(p->bw, dir)) { _task->applyRadioParams(); _dirty = true; return true; }
     if (_selected == CUSTOM_CR && p && dir && RadioParamsEditor::stepCR(p->cr, dir)) { _task->applyRadioParams(); _dirty = true; return true; }
-    if (_selected == POWER_SAVE && p && (left || right || enter)) {
-      if (p->client_repeat) { _task->showAlert("Off while repeating", 900); return true; }
-      p->rx_powersave ^= 1;
-      _task->applyPowerSave();
-      _dirty = true;
-      return true;
-    }
     if (_selected == TX_APC && p && (left || right || enter)) {
       if (p->client_repeat) { _task->showAlert("Off while repeating", 900); return true; }
       p->tx_apc ^= 1;
@@ -1036,6 +930,23 @@ public:
     if (_selected == TIMEZONE && p) {
       if (right && p->tz_offset_hours < 14)  { p->tz_offset_hours++; _dirty = true; return true; }
       if (left  && p->tz_offset_hours > -12) { p->tz_offset_hours--; _dirty = true; return true; }
+    }
+#if ENV_INCLUDE_GPS == 1
+    if (_selected == GPS_MODE && p && (left || right || enter)) {
+      int mode = _task->getGPSMode();
+      if (left) mode = (mode + solo::GpsMode::COUNT - 1) % solo::GpsMode::COUNT;
+      else mode = (mode + 1) % solo::GpsMode::COUNT;
+      p->gps_enabled = mode == 0 ? 0 : 1;
+      p->gps_interval = solo::GpsMode::interval((uint8_t)mode);
+      _gps_dirty = true;
+      _dirty = true;
+      return true;
+    }
+#endif
+    if (_selected == BLUETOOTH_ENABLED && (left || right || enter)) {
+      if (_task->isBluetoothEnabled()) _task->disableBluetooth();
+      else _task->enableBluetooth();
+      return true;
     }
     if (_selected == LOW_BAT && p) {
       int idx = lowBatIndex();
@@ -1064,12 +975,6 @@ public:
       p->keyboard_type ^= 1;
       _dirty = true;
       return true;
-    }
-    if (_selected == DM_RESEND && p) {
-      int n = p->dm_resend_count;
-      if (right || enter) n = (n + 1) % 6;          // 0..5, wraps
-      else if (left)      n = (n + 5) % 6;
-      if (left || right || enter) { p->dm_resend_count = (uint8_t)n; _dirty = true; return true; }
     }
     if (_selected == BATT_DISPLAY && p) {
       int idx = p->batt_display_mode < BATT_DISPLAY_COUNT ? p->batt_display_mode : 0;

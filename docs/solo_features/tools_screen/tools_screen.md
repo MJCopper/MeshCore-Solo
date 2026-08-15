@@ -45,15 +45,14 @@ Press **Enter** to inspect the selected node. **Hold Enter** opens the available
 
 ## Repeater
 
-When repeater support is enabled, it always uses the current radio settings from **Settings › Radio**. The top-level Repeater screen contains the **Repeater** on/off control and an **Advanced** submenu. Advanced contains radio timing, Yield and duplicate suppression; operation continues in the background after leaving Tools. Adverts and valid message floods are forwarded without user-defined SNR or global hop filters; automatic loop detection and the standard eight-hop advert limit remain active.
+When repeater support is enabled, it always uses the current radio settings from **Settings › Radio**. The Repeater screen contains only the **Repeater** on/off control. Operation continues in the background after leaving Tools. Adverts and valid message floods are forwarded without user-defined SNR or global hop filters; automatic loop detection and the standard eight-hop advert limit remain active.
 
-Its radio timing follows the standard MeshCore repeater backend. **RX delay**
-defaults to `10`, while **Flood TX** and **Direct TX** default to airtime factors
-of `0.5` and `0.3`. **Yield** remains an additional flood-delay multiplier for
-letting better-positioned fixed repeaters transmit first. Multi-ACK behaviour is
-shared with the companion's existing radio configuration.
+Its radio timing follows the standard MeshCore repeater backend and is fixed:
+**RX delay** is `10`, **Flood TX** and **Direct TX** use airtime factors of `0.5`
+and `0.3`, and **Yield** is `x2`. Multi-ACK behaviour is shared with the
+companion's existing radio configuration.
 
-Yield defaults to `x2`, and duplicate suppression defaults to **ON**. This gives
+Duplicate suppression is always **ON**. Together with the fixed Yield, this gives
 another repeater time to forward a flood first and cancels the pending duplicate
 when that retransmission is overheard.
 

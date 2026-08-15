@@ -48,7 +48,6 @@ All firmware files are published on the [releases page](https://github.com/Marek
 - [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md) — nearby nodes, ringtone editor, diagnostics, and optional repeater mode
 
 - **Battery saving (radio)** — two optional, independent toggles under Settings › Radio:
-  - **Pwr save** — hardware duty-cycle receive (SX126x `SetRxDutyCycle`): the radio cycles RX↔sleep on its own and wakes on a preamble, cutting average RX current with only a little added receive latency
   - **Auto pwr** — Adaptive Power Control: trims actual TX power on strong links (from ACK SNR) and ramps back up to the configured ceiling on weak/lost links; the home screen shows the live power
 
 ### E-ink Display (Wio Tracker L1)

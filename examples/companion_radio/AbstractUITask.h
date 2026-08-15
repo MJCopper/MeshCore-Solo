@@ -51,6 +51,7 @@ public:
   // A repeater rebroadcast of one of our channel sends was heard (seq from
   // lastChannelRelaySeq()) — drives the channel "relayed into mesh" marker.
   virtual void onChannelRelayed(uint32_t seq) { (void)seq; }
+  virtual void onChannelRelayExpired(uint32_t seq) { (void)seq; }
   // Result of an on-device-UI-triggered MyMesh::sendRoomLogin() arrived.
   // pub_key is the contact's key prefix (>=4 bytes valid); permissions is the
   // room/repeater ACL byte (only meaningful when success is true).
@@ -105,7 +106,7 @@ public:
     notify(event);
   }
   virtual void addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp = 0) {}
-  virtual void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) {}
+  virtual bool addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) { return false; }
   // A node shared its current position via a [LOC] message. pub_key is the
   // sender's key prefix for a verified DM share, or null for a channel share
   // (keyed by name, best-effort). Default no-op so UI variants opt in.

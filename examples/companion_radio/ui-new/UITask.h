@@ -27,6 +27,7 @@
 #include "../LiveTrack.h"
 #include "../solo/SoloRuntime.h"
 #include "../solo/BootTimeSync.h"
+#include "../solo/GpsMode.h"
 #include "KeyboardWidget.h"
 #if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
   #include <helpers/ui/CardKBController.h>
@@ -42,6 +43,7 @@ class UITask : public AbstractUITask {
   GenericVibration vibration;
 #endif
   unsigned long _next_refresh, _auto_off;
+  bool _notification_wake_active;
   NodePrefs* _node_prefs;
   bool _locked;
   solo::Runtime _solo;
@@ -58,13 +60,16 @@ class UITask : public AbstractUITask {
   KeyboardWidget _kb;        // shared across all screens — only one active at a time
   unsigned long _alert_expiry;
   int _msgcount;
-  int _room_unread;
   int _last_notif_ch_idx;
   uint8_t _last_notif_dm_prefix[4];
   bool _last_notif_dm_valid;
   struct DMUnreadEntry { uint8_t prefix[4]; uint8_t count; uint8_t seen; };
   static const int DM_UNREAD_TABLE_SIZE = 16;
   DMUnreadEntry _dm_unread_table[DM_UNREAD_TABLE_SIZE];
+  // The shared history can hold at most 32 distinct room conversations, so a
+  // same-sized table cannot lose an unread room merely because many are active.
+  static const int ROOM_UNREAD_TABLE_SIZE = 32;
+  DMUnreadEntry _room_unread_table[ROOM_UNREAD_TABLE_SIZE];
   unsigned long ui_started_at, next_batt_chck;
   uint16_t _batt_mv;  // EMA-filtered battery voltage
   unsigned long next_backlight_btn_check = 0;
@@ -230,7 +235,8 @@ public:
     next_batt_chck = _next_refresh = 0;
     ui_started_at = 0;
     _batt_mv = 0;
-    _msgcount = _room_unread = 0;
+    _msgcount = 0;
+    _notification_wake_active = false;
     _locked = false;
     _lock_wake_until = 0;
     _lock_seq_count = 0; _lock_seq_ms = 0; _lock_seq_used = false;
@@ -238,6 +244,7 @@ public:
     _last_notif_dm_valid = false;
     memset(_last_notif_dm_prefix, 0, sizeof(_last_notif_dm_prefix));
     memset(_dm_unread_table, 0, sizeof(_dm_unread_table));
+    memset(_room_unread_table, 0, sizeof(_room_unread_table));
     curr = NULL;
   }
   void begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* node_prefs);
@@ -266,6 +273,7 @@ public:
   void gotoMessagesCategory(uint8_t category);
   void gotoChildUnlockScreen();
   void openContactDM(const ContactInfo& ci);
+  void openPreferredTranscript();
   void shareToMessage(const char* text);   // open Messages pre-loaded to share `text`
   void quickShareMyLocation();             // Home Map Hold-Enter: one-shot position share
   void pickLocShareTarget();               // open Messages to choose the live-share target
@@ -384,20 +392,23 @@ public:
   void handleNewMsg(uint8_t path_len, const char* from_name, const char* text,
                     int msgcount, uint8_t contact_type, const uint8_t* pub_key,
                     bool present);
-  bool notificationPresentationAllowed(UIEventType event) const;
+  bool notificationQuietAffected(UIEventType event) const;
   bool isQuietTimeActive() const;
   void addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp = 0) override;
-  void addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) override;
+  bool addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) override;
   void onMsgAck(uint32_t ack_crc) override;
   void onChannelRelayed(uint32_t seq) override;
+  void onChannelRelayExpired(uint32_t seq) override;
   void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) override;
   void onAdminReply(const uint8_t* pub_key, const char* text) override;
   int  getDMUnreadTotal() const;
   int  getMsgCount() const { return _msgcount; }
   int  getChannelUnreadCount() const;
-  int  getRoomUnreadCount() const { return _room_unread; }
+  int  getRoomUnreadCount() const;
   int  markMessageCategoryRead(uint8_t category);
-  void clearRoomUnread() { _room_unread = 0; }
+  uint8_t getRoomUnread(const uint8_t* pub_key) const;
+  void clearRoomUnread(const uint8_t* pub_key);
+  void clearRoomUnread();
   // Clamped to the DM ring's actual occupancy for this contact -- defined in
   // UITask.cpp (needs MessagesScreen to be a complete type). Same self-healing
   // shape as MessageHistory::chUnread() for channels.
@@ -415,6 +426,11 @@ public:
   }
   void clearAllDMUnread() {
     for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++) _dm_unread_table[i].count = 0;
+  }
+  // A screen remains selected while the panel is asleep. Treat it as visible
+  // only while it is actually current and the physical display is powered.
+  bool isMessagesScreenVisible() const {
+    return !_locked && curr == messages_screen && _display != NULL && _display->isOn();
   }
   void forgetDMContact(const uint8_t* pub_key) {
     for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++)
@@ -481,6 +497,9 @@ public:
   void cycleBuzzerMode();   // ON → OFF → Auto → ON
   int  getBuzzerMode(); // 0=ON, 1=OFF, 2=Auto
   bool getGPSState();
+  uint8_t getGPSMode() const;
+  void setGPSMode(uint8_t mode);
+  void applyGpsPrefs();
   bool hasGPS();   // true if this board exposes a toggleable GPS (distinct from GPS being off)
   void toggleGPS();
   void applyGpsState(bool on);   // shared by toggleGPS() and botSetGPS()
@@ -500,7 +519,6 @@ public:
   void setBuzzerVolumeLevel(uint8_t level);
   uint8_t getBuzzerVolume() const { return _node_prefs ? _node_prefs->buzzer_volume : 4; }
   void applyTxPower();
-  void applyPowerSave();   // hardware duty-cycle RX on/off from prefs
   void applyApc();         // Adaptive Power Control on/off from prefs
   void applyRadioParams(); // freq/bw/sf/cr from prefs (radio preset change)
   // Save-on-exit helper for the screen `_dirty` pattern: persists NodePrefs once

@@ -8,13 +8,28 @@
 | :-----------------------: | :-----------------------: |
 | ![](./overview_oled.png) | ![](./overview_eink.png) |
 
-A full-screen clock page on the home screen. Shows the current time and date, with up to three configurable data fields below.
+A clock page on the home carousel. It uses the same node-name, status, battery
+and page-indicator bars as the other carousel pages, followed by the current
+time and date with up to two configurable data fields below.
 
-When the Clock page is enabled, pressing **Cancel/Back** on any other home
-carousel page returns directly to Clock. Cancel still closes an active popup
-before this shortcut is applied.
+Clock is always enabled and is always the first home carousel page. Pressing
+**Cancel/Back** on any other home carousel page returns directly to Clock.
+Cancel still closes an active popup before this shortcut is applied.
 
-Time is synchronized from GPS or via the companion app. While the clock remains unsynchronised, a GPS receiver configured off is temporarily retried once per hour for up to five minutes, then powered down again between attempts. Timezone offset is applied from **Settings › System**.
+If another home carousel page is left idle for five minutes, the display
+returns to Clock automatically. Only normal UI refresh scheduling is used, so
+this does not add a background polling loop or keep the display awake.
+
+Press **Enter** on Clock to open the transcript containing the newest unread
+message. If nothing is unread, it opens the most recently active sent-or-received
+transcript instead. Direct messages, room posts and channel messages are all
+supported. Conversations unavailable under Child Mode are skipped.
+
+Time is synchronized from GPS or via the companion app. The initial GPS attempt
+may run for five minutes. While the clock remains unsynchronised, a GPS receiver
+configured off is then retried once per hour for up to 90 seconds, with all
+automatic retries stopping 24 hours after boot. The receiver is powered down
+between attempts. Timezone offset is applied from **Settings › System**.
 
 If no time source is available, the screen shows _"! No time sync"_ with a hint to enable GPS or connect the app.
 
@@ -33,7 +48,7 @@ If no time source is available, the screen shows _"! No time sync"_ with a hint 
 | :-----------------------: | :-----------------------: |
 | ![](./fields_oled.png) | ![](./fields_eink.png) |
 
-Up to three data fields are shown below the date separator. Each field displays a label and a value on the same line.
+Up to two data fields are shown below the date separator. Each field displays a label and a value on the same line.
 
 | Field       | Label | Value                                                                     |
 | ----------- | ----- | ------------------------------------------------------------------------- |
@@ -60,9 +75,9 @@ Sensor fields show `--` when the sensor is not connected or has no data.
 | :-----------------------: | :-----------------------: |
 | ![](./config_oled.png) | ![](./config_eink.png) |
 
-<!-- screenshot pending: Dashboard Config — three field slots cycled with LEFT/RIGHT -->
+<!-- screenshot pending: Dashboard Config — two field slots cycled with LEFT/RIGHT -->
 
-**Hold Enter** (or press the **Context menu** key) on the Clock page to open the Dashboard Config screen, where each of the three field slots can be cycled with **LEFT/RIGHT**.
+**Hold Enter** (or press the **Context menu** key) on the Clock page to open the Dashboard Config screen, where each of the two field slots can be cycled with **LEFT/RIGHT**.
 
 ---
 
@@ -77,8 +92,8 @@ After every boot the Clock page shows **SYNC** until an authoritative live time
 update arrives from GPS, a companion connection or another network source. If
 GPS is configured off, the firmware powers it temporarily in the background,
 requests a time update, then powers it off again after synchronisation. A
-five-minute GPS timeout prevents an indoor device from leaving the receiver on
+bounded GPS attempt prevents an indoor device from leaving the receiver on
 indefinitely; **SYNC** remains until another source supplies the time.
 
 Only the clock and date region is replaced by **SYNC**. The horizontal separator
-and all three configured dashboard fields remain visible and continue updating.
+and both configured dashboard fields remain visible and continue updating.

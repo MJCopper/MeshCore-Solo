@@ -84,6 +84,8 @@ struct NodePrefs {  // persisted to file
   struct DmNotifEntry { uint8_t prefix[4]; uint8_t state; }; // state: 0=default,1=muted,2=force-on
   static const int DM_NOTIF_TABLE_MAX = 16;
   DmNotifEntry dm_notif[DM_NOTIF_TABLE_MAX]; // 16*5 = 80 bytes [del→onContactRemoved]
+  // Two clock fields are user-visible. The third byte is retained in storage so
+  // existing preference files keep their append-only layout across upgrades.
   uint8_t  dashboard_fields[3]; // 0=None,1=Batt V,2=Temp,3=Hum,4=Pres,5=GPS,6=Alt,7=Lux,8=CO2,9=Nodes,10=Msgs,11=Batt %
   uint32_t advert_auto_interval_sec; // periodic 0-hop advert with GPS: 0=off, else seconds
   // Second melody slot (same packing as ringtone_*)
@@ -143,21 +145,19 @@ struct NodePrefs {  // persisted to file
   // Trail Summary readout: 0=speed (km/h or mph), 1=pace (min/km or min/mi).
   // The km-vs-mi choice now comes from units_imperial, so this is just the mode.
   uint8_t  trail_show_pace;
-  // Hardware duty-cycle receive (battery saver): 0=continuous RX (default), 1=on.
-  // The SX126x cycles RX↔sleep on its own and wakes on a preamble — cuts average
-  // RX current at the cost of a little receive latency. See RadioLibWrapper
-  // power-save (startReceiveDutyCycleAuto).
-  uint8_t  rx_powersave;
+  // Reserved former RX duty-cycle control. Base MeshCore companion and repeater
+  // operation use continuous receive; retain this byte only so existing Solo
+  // preference files remain aligned.
+  uint8_t  reserved_rx_powersave;
   // Adaptive Power Control: 0=off (fixed tx_power_dbm, default), 1=on. When on,
   // tx_power_dbm is treated as a ceiling and the radio's actual power is lowered
   // at runtime on strong links (good ACK SNR), saving TX energy. Never persisted
   // below the ceiling, so disabling restores the user's configured power.
   uint8_t  tx_apc;
 
-  // Auto-resend for on-device DMs: number of extra send attempts (0..5) made when
-  // no end-to-end ACK arrives before the deadline, before the delivery marker
-  // shows ✗. 0 = no auto-resend (single attempt). Default 2.
-  uint8_t  dm_resend_count;
+  // Retained only to preserve the existing preferences-file layout. On-device
+  // DM delivery now uses the fixed policy in solo/DmRetryPolicy.h.
+  uint8_t  reserved_dm_resend_count;
 
   // User-saved radio presets, written by the "Save current..." entry in the
   // shared preset picker (Settings > Radio and Tools > Repeater both populate
@@ -172,20 +172,13 @@ struct NodePrefs {  // persisted to file
   static const uint8_t USER_RADIO_PRESET_MAX = 4;
   UserRadioPreset user_radio_presets[USER_RADIO_PRESET_MAX];
 
-  // Repeater forwarding preferences.
-  //  repeat_delay_boost: extra retransmit-delay multiplier for FORWARDED floods
-  //    only (own sends are unaffected) — a mobile companion yields to better-sited
-  //    fixed repeaters. Effective delay = base * (1 + repeat_delay_boost). 0 = off.
-  //  repeat_suppress_dup: 1 = cancel a queued retransmit when the same flood is
-  //    overheard from another node first (less redundant airtime in dense mesh).
-  // The three reserved fields formerly controlled advert, hop-count and SNR
-  // filtering. Keep their serialized positions so existing preference files
-  // remain aligned; they are reset and ignored by current firmware.
+  // Reserved former repeater controls. Keep their serialized positions so
+  // existing preference files remain aligned; runtime behaviour is fixed.
   uint8_t  reserved_repeat_skip_adverts;
   uint8_t  reserved_repeat_max_hops;
-  uint8_t  repeat_delay_boost;
+  uint8_t  reserved_repeat_delay_boost;
   int8_t   reserved_repeat_min_snr;
-  uint8_t  repeat_suppress_dup;
+  uint8_t  reserved_repeat_suppress_dup;
 
   // Reserved former dedicated-repeater profile fields. They remain serialized
   // to preserve the existing MeshCore preference layout, but are ignored:
@@ -395,12 +388,11 @@ struct NodePrefs {  // persisted to file
   uint16_t quiet_time_start_min;     // local minute-of-day, default 21:00
   uint16_t quiet_time_end_min;       // local minute-of-day, default 07:00
 
-  // Standard MeshCore repeater radio timing. These affect only retransmission
-  // scheduling; the companion keeps its own identity and has no repeater admin
-  // interface. Values/defaults match examples/simple_repeater.
-  float repeat_rx_delay_base;        // repeater-only RX delay, default 10
-  float repeat_flood_tx_factor;      // airtime multiplier, default 0.5
-  float repeat_direct_tx_factor;     // airtime multiplier, default 0.3
+  // Reserved former configurable repeater timing fields. Serialized positions
+  // are retained for compatibility; runtime timing is fixed in RepeaterTiming.
+  float reserved_repeat_rx_delay_base;
+  float reserved_repeat_flood_tx_factor;
+  float reserved_repeat_direct_tx_factor;
 
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).

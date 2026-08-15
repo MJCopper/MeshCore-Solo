@@ -60,12 +60,14 @@ See [Quiet Time](../quiet_time/quiet_time.md) for schedule behaviour and time ed
 | :-----------------------: | :-----------------------: |
 | ![](./homepages_oled.png) | ![](./homepages_eink.png) |
 
-Lists all available home screen pages. For each entry:
+Lists the configurable home screen pages. For each entry:
 
 - **LEFT / RIGHT** — move the page earlier or later in the navigation sequence
 - **Enter** — toggle the page ON / OFF
 
+**Clock** is always the first home screen and is not shown in this list.
 **Settings** and **Messages** are always visible and cannot be disabled.
+Position numbers begin at **1** for the first configurable page after Clock.
 
 ---
 
@@ -79,7 +81,6 @@ Lists all available home screen pages. For each entry:
 | SF        | 5–12       | LEFT/RIGHT. Spreading factor. |
 | BW        | 7.8–500 kHz | LEFT/RIGHT cycles the standard LoRa bandwidths. |
 | CR        | 5–8        | LEFT/RIGHT. Coding rate (4/5–4/8). |
-| Pwr save  | ON / OFF   | **Battery saver.** Hardware duty-cycle receive: the SX126x cycles RX↔sleep on its own and wakes on a preamble, cutting average RX current. Trades a little receive latency; leave OFF for lowest-latency reception. Requires an SX126x radio (otherwise stays on continuous RX). **Forced off (shown as `--`) while the repeater is on** — a repeater must listen continuously; your setting is restored when the repeater is switched off. |
 | Auto pwr  | ON / OFF   | **Adaptive Power Control.** Lowers actual TX power on strong links to save energy, ramping back up — to the **TX Pwr** ceiling — on weak or lost links. Link quality comes from direct-message ACK SNR and, for channel messages (no ACK), from hearing a repeater rebroadcast your packet. The radio page / name bar shows the live power. Default OFF (fixed TX power). **Suppressed (shown as `--`) while the repeater is on** — a repeater holds full TX power for consistent relay reach; your setting is restored when the repeater is switched off. |
 
 |           OLED            |           E-Ink           |
@@ -98,9 +99,20 @@ The **repeater** mode and radio timing controls live on their own screen — see
 | ----------- | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Name        | keyboard entry (up to 31 chars)                     | This device's node name, shown to others and in every advert. **Enter** opens the keyboard pre-filled with the current name; applied and saved on submit |
 | Timezone    | −12 h … +14 h                                       | UTC offset in whole hours                                                              |
+| GPS         | Off / Continuous / 2 min / 5 min / 15 min / 30 min / 1 h / 3 h / 6 h | Continuous keeps the receiver on. Timed modes wake it to acquire and stabilise a fix, cache the position/time, then power it down until the selected interval |
+| Bluetooth   | On / Off                                            | Enables or disables Bluetooth; the USB companion interface is unaffected               |
 | Low battery | off / 3.0 V / 3.1 V / 3.2 V / 3.3 V / 3.4 V / 3.5 V | Auto-shutdown threshold; also sets the 0 % anchor for the battery percentage indicator |
 | Units       | Metric / Imperial                                   | Unit system for distance values shown by supported screens such as Nearby Nodes. Metric uses m/km; Imperial uses ft/mi. |
 | Reboot      | action (**Enter**)                                  | Restarts this device. Pending setting changes are saved first. Last row, so it isn't the default-selected one |
+
+GPS selections made here remain staged while Settings is open. Pressing
+**Cancel/Back** applies the selected mode and saves it, so cycling the choices
+does not repeatedly reconfigure the receiver or display GPS alert popups.
+
+The GPS home card shows the selected operating mode and whether the receiver is
+searching, has a fix, or is sleeping. Press **Enter** on that card to cycle the
+same modes. A timed interval begins after the previous acquisition finishes;
+the last valid coordinates remain available while the receiver sleeps.
 
 ---
 
@@ -170,8 +182,8 @@ See [Child Mode](../child_mode/child_mode.md) for preparation, restrictions, GPS
 
 ### Messages
 
-| Setting | Options        | Notes                                                                                          |
-| ------- | -------------- | ---------------------------------------------------------------------------------------------- |
-| Resend  | off / 1×–5×    | Auto-resend an on-device direct message this many times when no delivery ACK is received (default 2×) |
-
 Up to 10 quick reply templates (Q1–Q10). Press **Enter** on a slot to open the keyboard editor. Supports the same placeholders as the main keyboard (`{time}`, `{loc}`, and sensor placeholders when connected).
+
+On-device direct-message delivery uses a fixed policy. When a known path exists,
+Solo tries it twice in total, clears it after both attempts fail, then tries
+three times by flood. With no known path, it tries three times by flood in total.

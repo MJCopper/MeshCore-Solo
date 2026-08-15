@@ -86,6 +86,9 @@ public :
     }
 
     void reset() override {
+        // Do not let a cached valid sentence satisfy a new periodic acquisition.
+        nmea.clear();
+        time_valid = 0;
         if (_pin_reset != -1) {
             digitalWrite(_pin_reset, GPS_RESET_ACTIVE);
             delay(10);

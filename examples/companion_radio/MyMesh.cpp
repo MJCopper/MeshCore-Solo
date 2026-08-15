@@ -1,5 +1,6 @@
 #include "MyMesh.h"
 #include "solo/RepeaterTiming.h"
+#include "solo/SoloPrefsDefaults.h"
 #include "MsgExpand.h"
 #include "GeoUtils.h"
 #include "Features.h"
@@ -282,24 +283,24 @@ int MyMesh::getInterferenceThreshold() const {
 }
 
 int MyMesh::calcRxDelay(float score, uint32_t air_time) const {
-  const float base = _prefs.client_repeat ? _prefs.repeat_rx_delay_base : _prefs.rx_delay_base;
+  const float base = _prefs.client_repeat ? solo::RepeaterTiming::RX_DELAY_BASE : _prefs.rx_delay_base;
   if (base <= 0.0f) return 0;
   return (int)((pow(base, 0.85f - score) - 1.0) * air_time);
 }
 
 uint32_t MyMesh::getRetransmitDelay(const mesh::Packet *packet) {
   uint32_t airtime = _radio->getEstAirtimeFor(packet->getPathByteLen() + packet->payload_len + 2);
-  uint32_t t = solo::RepeaterTiming::delayWindow(airtime, _prefs.repeat_flood_tx_factor);
+  uint32_t t = solo::RepeaterTiming::delayWindow(airtime, solo::RepeaterTiming::FLOOD_TX_FACTOR);
   uint32_t d = getRNG()->nextInt(0, 5*t + 1);
   // Yield filter (Tools > Repeater): scale the flood retransmit delay so a
   // mobile companion waits longer and lets better-sited fixed repeaters win the
   // flood first. Only forwarded floods reach here — own sends pass their own
   // delay to sendFlood() — so this never slows the companion's own traffic.
-  return d * (1 + _prefs.repeat_delay_boost);
+  return d * solo::RepeaterTiming::YIELD_MULTIPLIER;
 }
 uint32_t MyMesh::getDirectRetransmitDelay(const mesh::Packet *packet) {
   uint32_t airtime = _radio->getEstAirtimeFor(packet->getPathByteLen() + packet->payload_len + 2);
-  uint32_t t = solo::RepeaterTiming::delayWindow(airtime, _prefs.repeat_direct_tx_factor);
+  uint32_t t = solo::RepeaterTiming::delayWindow(airtime, solo::RepeaterTiming::DIRECT_TX_FACTOR);
   return getRNG()->nextInt(0, 5*t + 1);
 }
 
@@ -457,12 +458,19 @@ bool MyMesh::deleteContactByKey(const uint8_t* pub_key) {
   return true;
 }
 
+bool MyMesh::clearContactPath(const uint8_t* pub_key, size_t prefix_len) {
+  ContactInfo* recipient = lookupContactByPubKey(pub_key, prefix_len);
+  if (!recipient) return false;
+  recipient->out_path_len = OUT_PATH_UNKNOWN;
+  memset(recipient->out_path, 0, sizeof(recipient->out_path));
+  onContactPathUpdated(*recipient);
+  return true;
+}
+
 void MyMesh::onContactPathUpdated(const ContactInfo &contact) {
   out_frame[0] = PUSH_CODE_PATH_UPDATED;
   memcpy(&out_frame[1], contact.id.pub_key, PUB_KEY_SIZE);
   _serial->writeFrame(out_frame, 1 + PUB_KEY_SIZE); // NOTE: app may not be connected
-
-  dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
 }
 
 ContactInfo*  MyMesh::processAck(const uint8_t *data) {
@@ -472,6 +480,16 @@ ContactInfo*  MyMesh::processAck(const uint8_t *data) {
   // ACK to whatever contact that slot last belonged to.
   static const uint8_t zero_ack[4] = {0, 0, 0, 0};
   if (memcmp(data, zero_ack, 4) == 0) return checkConnectionsAck(data);
+
+  // This is the common ACK path for both standalone ACK packets and ACKs
+  // embedded in a returned contact path. On-device sends keep their pending
+  // tag in MessageHistory rather than expected_ack_table, so notifying here is
+  // essential: doing it only from onAckRecv() misses the embedded form and the
+  // UI incorrectly retries a message that was already delivered.
+  uint32_t ack_crc;
+  memcpy(&ack_crc, data, sizeof(ack_crc));
+  if (_ui) _ui->onMsgAck(ack_crc);
+
   // see if matches any in a table
   for (int i = 0; i < EXPECTED_ACK_TABLE_SIZE; i++) {
     if (expected_ack_table[i].ack == 0) continue;   // empty slot
@@ -531,15 +549,14 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
   // we only want to show text messages on display, not cli data
   bool should_display = txt_type == TXT_TYPE_PLAIN || txt_type == TXT_TYPE_SIGNED_PLAIN;
   if (should_display && _ui) {
-    _ui->incomingMessage(from.type == ADV_TYPE_ROOM ? UIEventType::roomMessage : UIEventType::contactMessage,
-                         path_len, from.name, text, offline_queue_len, from.type, from.id.pub_key);
     // Add to the on-device conversation history. Room servers (ADV_TYPE_ROOM) are
     // viewed through the same history list as chat contacts (keyed by the server's
     // pubkey), so their posts must be stored too — otherwise an incoming room
     // message fires the notification and reaches the app via the offline queue but
     // never shows when the room is opened directly on the device.
+    bool added = true;
     if (from.type == ADV_TYPE_CHAT) {
-      _ui->addDMMsg(from.id.pub_key, false, text, sender_timestamp);
+      added = _ui->addDMMsg(from.id.pub_key, false, text, sender_timestamp);
     } else if (from.type == ADV_TYPE_ROOM) {
       // A room carries many guests, so prefix the post with its author so the UI
       // can attribute each line. The signed message's `extra` holds the sender's
@@ -554,8 +571,13 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
       } else {
         snprintf(labeled, sizeof(labeled), "%s", text);
       }
-      _ui->addDMMsg(from.id.pub_key, false, labeled, sender_timestamp);
+      added = _ui->addDMMsg(from.id.pub_key, false, labeled, sender_timestamp);
     }
+    // A retry reuses timestamp + text but has a fresh packet hash. Only the
+    // first stored copy should affect unread state or notify the user.
+    if (added)
+      _ui->incomingMessage(from.type == ADV_TYPE_ROOM ? UIEventType::roomMessage : UIEventType::contactMessage,
+                           path_len, from.name, text, offline_queue_len, from.type, from.id.pub_key);
   }
 #endif
 }
@@ -583,8 +605,7 @@ bool MyMesh::filterRecvFloodPacket(mesh::Packet* packet) {
       if (!s.pending || s.len != packet->payload_len) continue;
       if (!hashed) { packet->calculatePacketHash(h); hashed = true; }
       if (memcmp(h, s.hash, MAX_HASH_SIZE) == 0) {
-        s.pending = false;
-        _relay_active--;
+        if (s.heard < 255) s.heard++;
         if (_ui) _ui->onChannelRelayed(s.seq);
         break;
       }
@@ -1522,6 +1543,7 @@ void MyMesh::trackRelaySend(const mesh::Packet* pkt) {
   s.deadline = futureMillis(APC_FLOOD_ECHO_WINDOW_MS);
   _relay_seq = (_relay_seq == 0xFFFFFFFFu) ? 1 : _relay_seq + 1;   // never 0 (0 = "no relay")
   s.seq = _relay_seq;
+  s.heard = 0;
   s.pending = true;
   _last_relay_seq = _relay_seq;
   _relay_head = (_relay_head + 1) % RELAY_RING;
@@ -1538,12 +1560,6 @@ void MyMesh::onAckRecv(mesh::Packet* packet, uint32_t ack_crc) {
   bool mine = isAckPending(ack_crc);
   BaseChatMesh::onAckRecv(packet, ack_crc);
   if (mine && apcActive()) apcSampleSnr(radio_driver.getLastSNR());
-  // Drive the DM delivery-status marker. Note isAckPending() only covers
-  // app/serial-initiated sends (expected_ack_table); a DM composed on the
-  // device UI registers in BaseChatMesh's own ack table instead, so gating on
-  // `mine` here would leave every on-device DM stuck at ✗. The UI matches the
-  // crc against its own pending tag, so an unrelated/overheard ACK is ignored.
-  if (_ui) _ui->onMsgAck(ack_crc);
 }
 
 MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMeshTables &tables, DataStore& store, AbstractUITask* ui)
@@ -1615,14 +1631,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.notif_melody_ad = 0;    // built-in advert sound by default
   _prefs.advert_sound_scope = ADVERT_SOUND_SCOPE_ALL;  // sound every advert by default
   _prefs.home_pages_mask = NodePrefs::HP_DEFAULT;  // curated everyday carousel; rest opt-in via Home Pages
-  _prefs.child_visible_pages = NodePrefs::HP_FAVOURITES;  // child default: Favourites only
-  _prefs.quiet_time_start_min = 21 * 60;
-  _prefs.quiet_time_end_min = 7 * 60;
-  _prefs.repeat_rx_delay_base = solo::RepeaterTiming::DEFAULT_RX_DELAY_BASE;
-  _prefs.repeat_flood_tx_factor = solo::RepeaterTiming::DEFAULT_FLOOD_TX_FACTOR;
-  _prefs.repeat_direct_tx_factor = solo::RepeaterTiming::DEFAULT_DIRECT_TX_FACTOR;
-  _prefs.repeat_delay_boost = solo::RepeaterTiming::DEFAULT_YIELD_BOOST;
-  _prefs.repeat_suppress_dup = solo::RepeaterTiming::DEFAULT_SUPPRESS_DUP;
+  solo::PrefsDefaults::apply(_prefs);
   _prefs.bot_enabled = 0;
   _prefs.bot_channel_enabled = 0;
   _prefs.bot_channel_idx = 0;
@@ -1634,7 +1643,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.bot_quiet_start = 0;
   _prefs.bot_quiet_end = 0;       // start==end → quiet hours disabled
   _prefs.dm_show_all = 1;        // show all contacts by default
-  _prefs.dm_resend_count = 2;    // auto-resend on-device DMs twice by default
+  _prefs.reserved_dm_resend_count = 0;
   memset(_prefs.dm_notif, 0, sizeof(_prefs.dm_notif));
   _prefs.auto_off_secs = 15;    // 15 seconds auto-off by default
   _prefs.clock_hide_seconds = Features::CLOCK_HIDE_SECONDS_DEFAULT ? 1 : 0;
@@ -1698,15 +1707,7 @@ void MyMesh::begin(bool has_display) {
   if (isnan(_prefs.rx_delay_base)  || isinf(_prefs.rx_delay_base))  _prefs.rx_delay_base  = 0;
   _prefs.rx_delay_base = constrain(_prefs.rx_delay_base, 0, 20.0f);
   _prefs.airtime_factor = constrain(_prefs.airtime_factor, 0, 9.0f);
-  _prefs.repeat_rx_delay_base = solo::RepeaterTiming::validOrDefault(
-      _prefs.repeat_rx_delay_base, solo::RepeaterTiming::MAX_RX_DELAY_BASE,
-      solo::RepeaterTiming::DEFAULT_RX_DELAY_BASE);
-  _prefs.repeat_flood_tx_factor = solo::RepeaterTiming::validOrDefault(
-      _prefs.repeat_flood_tx_factor, solo::RepeaterTiming::MAX_TX_FACTOR,
-      solo::RepeaterTiming::DEFAULT_FLOOD_TX_FACTOR);
-  _prefs.repeat_direct_tx_factor = solo::RepeaterTiming::validOrDefault(
-      _prefs.repeat_direct_tx_factor, solo::RepeaterTiming::MAX_TX_FACTOR,
-      solo::RepeaterTiming::DEFAULT_DIRECT_TX_FACTOR);
+  solo::PrefsDefaults::normalize(_prefs);
   _prefs.freq = constrain(_prefs.freq, 150.0f, 2500.0f);
   _prefs.bw = constrain(_prefs.bw, 7.8f, 500.0f);
   _prefs.sf = constrain(_prefs.sf, 5, 12);
@@ -1743,7 +1744,6 @@ void MyMesh::begin(bool has_display) {
   applyRadioParams();
   applyApc();                                         // sets TX power to the ceiling and arms APC if enabled
   radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain);
-  radio_driver.setPowerSaving(_prefs.rx_powersave && !_prefs.client_repeat);   // duty-cycle RX off while repeating (must hear all traffic)
   MESH_DEBUG_PRINTLN("RX Boosted Gain Mode: %s",
                      radio_driver.getRxBoostedGainMode() ? "Enabled" : "Disabled");
 }
@@ -2193,10 +2193,8 @@ void MyMesh::handleCmdFrame(size_t len) {
       savePrefs();
 
       applyRadioParams();
-      // Keep the "repeating ⇒ continuous RX, full TX power" invariants when repeat
-      // is toggled via the app, mirroring the on-device path (a repeater must hear
-      // all traffic and relay at consistent power).
-      radio_driver.setPowerSaving(_prefs.rx_powersave && !_prefs.client_repeat);
+      // Repeater mode pins TX power to the ceiling. RX remains continuous in
+      // every mode, matching base MeshCore companion and repeater behaviour.
       applyApc();   // pins power to the ceiling; apcActive() keeps it there while repeating
       MESH_DEBUG_PRINTLN("OK: CMD_SET_RADIO_PARAMS: f=%d, bw=%d, sf=%d, cr=%d", freq, bw, (uint32_t)sf,
                          (uint32_t)cr);
@@ -3110,11 +3108,12 @@ void MyMesh::loop() {
     _apc_flood_pending = false;
     if (apcActive()) apcOnFailure();
   }
-  // UI relay windows expired with no echo — just drop them (no echo is not a
-  // failure for channels; the marker simply stays "sent").
+  // Close UI relay-count windows. A zero count becomes a failed-to-hear marker;
+  // one or more echoes retain their final count.
   if (_relay_active > 0) {
     for (int i = 0; i < RELAY_RING; i++) {
       if (_relay[i].pending && millisHasNowPassed(_relay[i].deadline)) {
+        if (_ui) _ui->onChannelRelayExpired(_relay[i].seq);
         _relay[i].pending = false;
         _relay_active--;
       }

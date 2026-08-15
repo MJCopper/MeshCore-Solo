@@ -20,13 +20,19 @@ protected:
   uint8_t      next_available_channel = TELEM_CHANNEL_SELF + 1;
 
   bool     gps_detected = false;
+  bool     gps_configured = false;
   bool     gps_active = false;
-  uint32_t gps_update_interval_sec = 1;
+  uint32_t gps_update_interval_sec = 0;  // 0 = continuous; non-zero = fix cadence
+  uint32_t gps_next_acquire_ms = 0;
+  uint32_t gps_acquire_deadline_ms = 0;
+  uint32_t gps_fix_stable_since_ms = 0;
+  uint32_t gps_next_cache_ms = 0;
 
   #if ENV_INCLUDE_GPS
   LocationProvider* _location;
   void start_gps();
   void stop_gps();
+  void start_periodic_gps();
   void initBasicGPS();
   #ifdef RAK_BOARD
   void rakGPSInit();

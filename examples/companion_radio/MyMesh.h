@@ -118,6 +118,7 @@ public:
   // delete a contact without the phone app. Mirrors the CMD_ADD/REMOVE paths.
   bool addDiscoveredContact(const uint8_t* pub_key, const char* name, uint8_t type);
   bool deleteContactByKey(const uint8_t* pub_key);
+  bool clearContactPath(const uint8_t* pub_key, size_t prefix_len);
 
   // Ping/Trace functionality
   #define PING_RESULT_MAX 4
@@ -150,10 +151,9 @@ protected:
   bool filterRecvFloodPacket(mesh::Packet* packet) override;
   bool allowPacketForward(const mesh::Packet* packet) override;
   bool isRepeatLooped(const mesh::Packet* packet) const;
-  // Overhear suppression only makes sense while repeating; gated behind its own
-  // opt-in pref (Tools > Repeater > Suppress dup).
+  // Always suppress a queued flood when another repeater forwards it first.
   bool wantsOverhearSuppress() const override {
-    return solo::Features::REPEATER && _prefs.client_repeat && _prefs.repeat_suppress_dup;
+    return solo::Features::REPEATER && _prefs.client_repeat;
   }
 
   void sendFloodScoped(const TransportKey& scope, mesh::Packet* pkt, uint32_t delay_millis);
@@ -306,12 +306,12 @@ public:
 
 #if ENV_INCLUDE_GPS == 1
   void applyGpsPrefs() {
+    char interval_str[12];  // Max: 24 hours = 86400 seconds (5 digits + null)
+    sprintf(interval_str, "%u", _prefs.gps_interval);
+    // Apply cadence first so enabling a timed mode cannot briefly start GPS in
+    // continuous mode during boot or preference reload.
+    sensors.setSettingValue("gps_interval", interval_str);
     sensors.setSettingValue("gps", _prefs.gps_enabled ? "1" : "0");
-    if (_prefs.gps_interval > 0) {
-      char interval_str[12];  // Max: 24 hours = 86400 seconds (5 digits + null)
-      sprintf(interval_str, "%u", _prefs.gps_interval);
-      sensors.setSettingValue("gps_interval", interval_str);
-    }
   }
 #endif
 
@@ -416,6 +416,7 @@ private:
     uint16_t len;
     uint32_t deadline;
     uint32_t seq;
+    uint8_t  heard;
     bool     pending;
   };
   RelaySlot _relay[RELAY_RING];

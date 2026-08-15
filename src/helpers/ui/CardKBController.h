@@ -16,7 +16,9 @@ public:
   };
 
 private:
-  static const uint32_t POLL_INTERVAL_MS = 20;
+  // About 33 Hz remains responsive for human typing while cutting active-screen
+  // I2C transactions by one third compared with the former 50 Hz poll.
+  static const uint32_t POLL_INTERVAL_MS = 30;
   static const uint8_t MAX_READ_FAILURES = 3;
 
   TwoWire* _wire = nullptr;

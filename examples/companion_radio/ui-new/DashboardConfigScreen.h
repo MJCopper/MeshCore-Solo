@@ -21,7 +21,7 @@ class DashboardConfigScreen : public UIScreen {
   UITask*    _task;
   NodePrefs* _prefs;
 
-  static const int FIELD_SLOTS = 3;
+  static const int FIELD_SLOTS = 2;
 
   static const char* OPTION_NAMES[DASH_COUNT];
 
@@ -48,7 +48,7 @@ public:
 
     display.drawCenteredHeader("CLOCK FIELDS");
 
-    static const char* labels[] = { "Field 1", "Field 2", "Field 3" };
+    static const char* labels[] = { "Field 1", "Field 2" };
     for (int i = 0; i < FIELD_SLOTS; i++) {
       int y = start_y + i * item_h;
       bool sel = (i == _sel);

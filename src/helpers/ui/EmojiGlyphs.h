@@ -3,12 +3,15 @@
 #include <Adafruit_GFX.h>
 #include "DisplayDriver.h"
 #include "EmojiGlyphData.h"
+#include "EmojiOverrides.h"
 
 // Tiny emoji support for the 6x9 monochrome UI font. The generated artwork is
 // isolated in EmojiGlyphData.h so changing the source set never touches the
 // renderer or the main MiscFixed font.
 
 static inline int16_t emojiGlyphIndex(uint32_t cp) {
+  for (uint8_t i = 0; i < emojiOverrideCount; i++)
+    if (pgm_read_dword(&emojiOverrideCodepoints[i]) == cp) return -2 - i;
   int16_t lo = 0, hi = emojiScalarGlyphCount - 1;
   while (lo <= hi) {
     int16_t mid = (lo + hi) >> 1;
@@ -116,7 +119,8 @@ static inline int16_t emojiDrawGlyph(Adafruit_GFX& gfx, int16_t x, int16_t y,
   static const uint8_t fallback[8] PROGMEM = {
     0x04, 0x0A, 0x11, 0x11, 0x11, 0x0A, 0x04, 0x00
   };
-  const uint8_t* rows = index >= 0 ? emojiGlyphRows[index] : fallback;
+  const uint8_t* rows = index >= 0 ? emojiGlyphRows[index] :
+                        index <= -2 ? emojiOverrideRows[-2 - index] : fallback;
   emojiDrawRows(gfx, x, y, rows, sz, color);
   return x + 6 * sz;
 }

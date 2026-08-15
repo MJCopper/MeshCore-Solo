@@ -4,6 +4,7 @@
 #ifdef PIN_BUZZER
 #include <helpers/ui/buzzer.h>
 #include "../NodePrefs.h"
+#include "../solo/NotificationPreferences.h"
 
 class SoundNotifier {
   genericBuzzer&   _buz;
@@ -39,12 +40,7 @@ public:
   void playDM(bool dm_valid, const uint8_t* dm_prefix) {
     bool play = false, force = false;
     if (dm_valid && _prefs) {
-      uint8_t state = 0;
-      for (int i = 0; i < NodePrefs::DM_NOTIF_TABLE_MAX; i++) {
-        if (_prefs->dm_notif[i].state &&
-            memcmp(_prefs->dm_notif[i].prefix, dm_prefix, 4) == 0)
-          { state = _prefs->dm_notif[i].state; break; }
-      }
+      uint8_t state = solo::NotificationPreferences::dmState(_prefs, dm_prefix);
       if (state == 2) { play = true; force = true; }
       else if (state == 1) { /* muted */ }
       else { play = !_buz.isQuiet(); }
@@ -55,10 +51,8 @@ public:
 
     int slot = _prefs ? (int)_prefs->notif_melody_dm : 0;
     if (dm_valid && _prefs) {
-      for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++)
-        if (_prefs->dm_melody[i].slot &&
-            memcmp(_prefs->dm_melody[i].prefix, dm_prefix, 4) == 0)
-          { slot = _prefs->dm_melody[i].slot; break; }
+      uint8_t override_slot = solo::NotificationPreferences::dmMelody(_prefs, dm_prefix);
+      if (override_slot) slot = override_slot;
     }
     playSlot(slot, force, "MsgRcv3:d=4,o=6,b=200:32e,32g,32b,16c7");
   }
@@ -66,12 +60,9 @@ public:
   void playCH(int ch_idx) {
     bool play = false, force = false;
     if (ch_idx >= 0 && ch_idx < 64 && _prefs) {
-      uint64_t mask = 1ULL << ch_idx;
-      if (_prefs->ch_notif_override & mask) {
-        if (!(_prefs->ch_notif_muted & mask)) { play = true; force = true; }
-      } else {
-        play = !_buz.isQuiet();
-      }
+      uint8_t state = solo::NotificationPreferences::channelState(_prefs, ch_idx);
+      if (state == 2) { play = true; force = true; }
+      else if (state == 0) play = !_buz.isQuiet();
     } else {
       play = !_buz.isQuiet();
     }
@@ -79,9 +70,8 @@ public:
 
     int slot = _prefs ? (int)_prefs->notif_melody_ch : 0;
     if (ch_idx >= 0 && ch_idx < 64 && _prefs) {
-      uint64_t mask = 1ULL << ch_idx;
-      if (_prefs->ch_notif_melody_set & mask)
-        slot = (_prefs->ch_notif_melody_2 & mask) ? 2 : 1;
+      uint8_t override_slot = solo::NotificationPreferences::channelMelody(_prefs, ch_idx);
+      if (override_slot) slot = override_slot;
     }
     playSlot(slot, force, "kerplop:d=16,o=6,b=120:32g#,32c#");
   }

@@ -20,7 +20,7 @@ available.
 Detection occurs once during startup. If CardKB is connected later, or is
 disconnected while running, restart the Tracker to detect it again.
 
-To minimise battery use, CardKB is polled at most once every 20 ms and only while
+To minimise battery use, CardKB is polled at most once every 30 ms and only while
 the display is on. Wake the display with a Tracker button before using the
 keyboard. Polling stops after three consecutive I2C read failures.
 

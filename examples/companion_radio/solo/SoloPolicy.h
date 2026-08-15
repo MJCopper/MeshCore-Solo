@@ -22,6 +22,15 @@ public:
     return (contact.flags & 0x01) != 0;
   }
 
+  static bool contactIdentityMatches(uint8_t stored_type, uint8_t reported_type,
+                                     uint8_t expected_type) {
+    return stored_type == expected_type && reported_type == expected_type;
+  }
+
+  static bool channelsVisible(const NodePrefs* prefs, bool locked) {
+    return !locked || (prefs && prefs->child_channels_enabled);
+  }
+
   static bool contactAllowed(const NodePrefs* prefs, bool locked,
                              const ContactInfo* contact, uint8_t expected_type = 0) {
     if (!locked) return true;
