@@ -337,6 +337,7 @@ class HomeScreen : public UIScreen {
   uint8_t _settings_sel = 0, _settings_scroll = 0;
   uint8_t _tools_sel = 0, _tools_scroll = 0;
   PopupMenu _msg_menu;
+  PopupMenu _fav_menu;
   static const uint32_t HOME_IDLE_RETURN_MS = 5UL * 60UL * 1000UL;
   uint32_t _home_idle_deadline = 0;
 
@@ -349,6 +350,7 @@ class HomeScreen : public UIScreen {
         (int32_t)(millis() - _home_idle_deadline) < 0) return;
     _page = CLOCK;
     _msg_menu.active = false;
+    _fav_menu.active = false;
     _pin_menu.active = false;
     _pin_target_slot = -1;
   }
@@ -598,7 +600,8 @@ class HomeScreen : public UIScreen {
     bool advert_visible = the_mesh.advertIndicatorActive();
     struct Sicon { bool active; const MiniIcon* icon; bool boxed; bool blink; };
     const Sicon icons[] = {
-      { _task->isSerialEnabled(), &ICON_BLUETOOTH, _task->isSerialEnabled() && _task->isBLEConnected(), false },
+      { _node_prefs && _node_prefs->bluetooth_enabled,
+                                  &ICON_BLUETOOTH, _task->isBLEConnected(), false },
       { gps_on,                   &ICON_GPS,        gps_on && loc->isValid(),                            false },
       { solo::Features::CLOCK_TOOLS && _node_prefs && _node_prefs->alarm_on,
                                                                     &ICON_ALARM,       true, false },
@@ -961,6 +964,7 @@ public:
       // cleared, the slot is empty next frame so this can't re-fire per frame.
       if (fav_changed) the_mesh.savePrefs();
       if (_pin_menu.active) _pin_menu.render(display);
+      if (_fav_menu.active) _fav_menu.render(display);
     }
     bool auto_adv = _node_prefs && _node_prefs->advert_auto_interval_sec > 0;
     // Any blinking status-bar indicator needs a 1 s refresh to animate evenly.
@@ -1002,6 +1006,23 @@ public:
     // Favourites is a single vertical list; UP/DOWN select its four rows while
     // LEFT/RIGHT remain dedicated to carousel page navigation.
     if (_page == HomePage::FAVOURITES) {
+      // Hold Enter exposes the same compact action-menu convention used by the
+      // other lists. Editing remains unavailable while Child Mode is locked.
+      if (_fav_menu.active) {
+        auto res = _fav_menu.handleInput(c);
+        if (res == PopupMenu::SELECTED) {
+          bool filled = !_task->isFavouriteSlotEmpty(_fav_sel);
+          int action = _fav_menu.selectedIndex();
+          if (!filled || action == 0) {
+            buildPinPicker(_fav_sel); // Add, or Change on a populated slot.
+          } else {
+            _task->clearFavouriteSlot(_fav_sel);
+            the_mesh.savePrefs();
+            _task->showAlert("Favourite removed", 800);
+          }
+        }
+        return true;
+      }
       // Pin picker consumes all input while open.
       if (_pin_menu.active) {
         auto res = _pin_menu.handleInput(c);
@@ -1010,9 +1031,17 @@ public:
           if (idx >= 0 && idx < _pin_count) {
             // If this contact is already pinned elsewhere, vacate that slot first.
             int existing = _task->findFavouriteSlot(_pin_keys[idx]);
-            if (existing >= 0 && existing != _pin_target_slot) _task->clearFavouriteSlot(existing);
-            _task->setFavouriteSlot(_pin_target_slot, _pin_keys[idx]);
-            the_mesh.savePrefs();
+            NodePrefs* p = _task->getNodePrefs();
+            bool changed = !p || memcmp(p->favourite_contacts[_pin_target_slot], _pin_keys[idx],
+                                        NodePrefs::FAVOURITE_PREFIX_LEN) != 0;
+            if (existing >= 0 && existing != _pin_target_slot) {
+              _task->clearFavouriteSlot(existing);
+              changed = true;
+            }
+            if (changed) {
+              _task->setFavouriteSlot(_pin_target_slot, _pin_keys[idx]);
+              the_mesh.savePrefs();
+            }
             char alert[24];
             snprintf(alert, sizeof(alert), "Pinned to slot %d", _pin_target_slot + 1);
             _task->showAlert(alert, 800);
@@ -1027,6 +1056,17 @@ public:
       }
       if (c == KEY_DOWN) {
         _fav_sel = _fav_sel + 1 < NodePrefs::FAVOURITES_DIAL_COUNT ? _fav_sel + 1 : 0;
+        return true;
+      }
+      if (c == KEY_CONTEXT_MENU) {
+        if (_task->isChildModeLocked()) {
+          _task->showAlert("Parent only", 800);
+          return true;
+        }
+        bool filled = !_task->isFavouriteSlotEmpty(_fav_sel);
+        _fav_menu.begin("Favourite", filled ? 2 : 1);
+        _fav_menu.addItem(filled ? "Change" : "Add");
+        if (filled) _fav_menu.addItem("Remove");
         return true;
       }
       if (c == KEY_ENTER) {
@@ -2350,7 +2390,12 @@ void UITask::pollCardKB() {
     // keyboard was left open before the device locked, or brushed against in
     // a pocket) could pop the accent popup while the screen is supposed to
     // ignore all input.
-    if (woke && !_locked) _kb.openAccentFor(base);
+    if (woke && !_locked) {
+      // M has no accent group, making Fn+M a conflict-free mnemonic shortcut
+      // to the message-only emoji picker in Compact mode.
+      if (base == 'm' && _kb.openEmojiPicker()) return;
+      _kb.openAccentFor(base);
+    }
     return;
   } else {
     // Plain Enter would otherwise commit whatever grid cell row/col happen to

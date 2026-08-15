@@ -103,6 +103,8 @@ class SettingsScreen : public UIScreen {
   int  _selected = 0;   // SettingItem under the cursor, resolved per input/render
   int  _reserve = 0;    // right-edge px reserved for the scrollbar (0 when list fits)
   bool _dirty = false;
+  NodePrefs _initial_prefs;
+  bool _have_initial_prefs = false;
 #if ENV_INCLUDE_GPS == 1
   bool _gps_dirty = false; // staged until this settings screen is closed
   uint8_t _gps_initial_mode = 0;
@@ -603,7 +605,9 @@ class SettingsScreen : public UIScreen {
     bool bluetooth_changed = _bluetooth_dirty;
     if (bluetooth_changed) _task->applyBluetoothPrefs();
 
-    bool save_dirty = _dirty || gps_changed || bluetooth_changed;
+    NodePrefs* p = _task->getNodePrefs();
+    bool save_dirty = p && (!_have_initial_prefs ||
+                            memcmp(p, &_initial_prefs, sizeof(NodePrefs)) != 0);
     _task->savePrefsIfDirty(save_dirty);
     _dirty = false;
 #if ENV_INCLUDE_GPS == 1
@@ -622,6 +626,8 @@ public:
   void onShow() override {
     _dirty = false;
     NodePrefs* p = _task->getNodePrefs();
+    _have_initial_prefs = p != nullptr;
+    if (p) memcpy(&_initial_prefs, p, sizeof(NodePrefs));
 #if ENV_INCLUDE_GPS == 1
     _gps_dirty = false;
     _gps_initial_mode = _task->getGPSMode();

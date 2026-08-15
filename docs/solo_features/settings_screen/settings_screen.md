@@ -10,7 +10,9 @@
 
 All settings are saved to flash and restored on next boot. The Settings home card lists the available sections directly. Use **UP/DOWN** to select a section and press **Enter** to open its dedicated screen. Only that section's settings are shown; the old collapsible `+`/`-` section list is not used. Press **LEFT/RIGHT** to change a value, or **Enter** for toggle items.
 
-Press **Cancel/Back** to save and return to the home screen.
+Press **Cancel/Back** to save and return to the home screen. Settings are written
+only if their final values differ from those present when Settings was opened;
+cycling a value back to its original choice does not cause a flash write.
 
 ---
 
@@ -120,7 +122,7 @@ the last valid coordinates remain available while the receiver sleeps.
 
 | Setting  | Options    | Notes                                                                                              |
 | -------- | ---------- | -------------------------------------------------------------------------------------------------- |
-| Layout   | ABC / T9   | English on-screen keyboard style. **ABC** provides one key per letter. In message fields, **T9** predicts words from phone-keypad digit sequences; literal fields retain traditional multi-tap. |
+| Layout   | ABC / T9   | English on-screen keyboard style; default **T9**. **ABC** provides one key per letter. In message fields, **T9** predicts words from phone-keypad digit sequences; literal fields retain traditional multi-tap. CardKB remains direct QWERTY. |
 | CardKB | Found / Missing | Read-only boot detection and connection status for an optional Grove CardKB |
 
 Applies to every on-screen text field (messages, waypoint labels, room passwords, preset names). Earlier releases labelled the grid *QWERTY*; the layout has always been alphabetical, so it is now named **ABC**.

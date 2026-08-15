@@ -46,6 +46,7 @@ addresses.
 | Esc | Cancel / Back |
 | Backspace | Delete the previous character |
 | Tab | Open message word completion/placeholders, or the Hold Enter context action elsewhere |
+| Fn+M | Open the emoji picker in a message editor |
 | Fn + letter | Open the accent choices for that Latin letter |
 | Fn + Esc | Lock or unlock after the display has been woken |
 | Shift / Sym | Enter uppercase letters and symbols using CardKB's own modes |

@@ -46,6 +46,10 @@ If a pinned contact is removed from the contacts list — explicitly, or auto-ev
 
 Select a contact to pin it to that slot.
 
+Hold **Enter** on any tile to open its standard action menu. An empty tile offers
+**Add**; a populated tile offers **Change** and **Remove**. These actions are
+blocked while Child Mode is locked.
+
 **From a DM conversation** — **Hold Enter** › context menu › **Pin to dial**, then choose a slot from the slot picker (Slot 1–4, showing the current occupant name or "empty").
 
 If the selected contact is already pinned in another slot, it is moved to the new slot automatically.

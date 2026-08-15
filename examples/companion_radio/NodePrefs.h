@@ -285,8 +285,8 @@ struct NodePrefs {  // persisted to file
   }
 
   // On-screen keyboard layout, shared across every text-entry screen (Settings >
-  // Keyboard). 0=ABC grid, alphabetical order (default), 1=T9 multi-tap
-  // (phone-keypad groups, cycled with repeated Enter presses — see KeyboardWidget.h).
+  // Keyboard). 0=ABC grid, alphabetical order, 1=T9 predictive (default when
+  // using the on-screen keyboard). CardKB always supplies direct QWERTY input.
   uint8_t  keyboard_type;
 
   // Historical script values retained for preference-file migration. Solo's

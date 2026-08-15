@@ -14,6 +14,10 @@ public:
     prefs.quiet_time_start_min = 21 * 60;
     prefs.quiet_time_end_min = 7 * 60;
     prefs.bluetooth_enabled = 1;
+    // T9 is the factory on-screen layout. CardKB input is direct QWERTY and
+    // ignores this preference while connected, so no hardware-specific value
+    // needs to be persisted or rewritten at boot.
+    prefs.keyboard_type = 1;
   }
 
   static void normalize(NodePrefs& prefs) {
@@ -26,6 +30,7 @@ public:
     if (prefs.quiet_time_start_min >= 24 * 60) prefs.quiet_time_start_min = 21 * 60;
     if (prefs.quiet_time_end_min >= 24 * 60) prefs.quiet_time_end_min = 7 * 60;
     if (prefs.bluetooth_enabled > 1) prefs.bluetooth_enabled = 1;
+    if (prefs.keyboard_type > 1) prefs.keyboard_type = 1;
   }
 };
 

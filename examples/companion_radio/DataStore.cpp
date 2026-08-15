@@ -461,10 +461,10 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   if (_prefs.alarm_on > 1)    _prefs.alarm_on = 0;
   if (_prefs.alarm_hour > 23) _prefs.alarm_hour = 0;
   if (_prefs.alarm_min > 59)  _prefs.alarm_min = 0;
-  // → 0xC0DE001A: keyboard type (QWERTY/T9). Pre-0x1A files leave stray sentinel
-  // tail bytes here; clamp back to the QWERTY default (0).
+  // → 0xC0DE001A: keyboard type (ABC/T9). Pre-0x1A files leave stray sentinel
+  // tail bytes here; clamp back to the current on-screen default (T9).
   rd(&_prefs.keyboard_type, sizeof(_prefs.keyboard_type));
-  if (_prefs.keyboard_type > 1) _prefs.keyboard_type = 0;
+  if (_prefs.keyboard_type > 1) _prefs.keyboard_type = 1;
   // Former dedicated-repeater profile bytes remain serialized but are ignored.
   // → 0xC0DE000B: append bot_commands_enabled + quiet-hours. Older files leave
   // stray bytes here; clamp so upgraders fall back to off / no quiet hours.

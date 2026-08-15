@@ -3,6 +3,7 @@
 #include <helpers/ui/DisplayDriver.h>
 #include <Arduino.h>
 #include "PopupMenu.h"
+#include "EmojiPicker.h"
 #include "icons.h"   // mini-icons for the special-key row (⇧ ⌫ ⎵ ✓)
 #include "../NodePrefs.h"
 #include "../Features.h"
@@ -56,8 +57,9 @@ static const int KB_MAX_LEN    = 160;
 // stack buffers so a very wide display (small font → many chars per line)
 // can't overrun them.
 static const int KB_PREVIEW_CAP = 46;
-// The same cap in BYTES. Accented input uses two-byte UTF-8 codepoints.
-static const int KB_PREVIEW_BYTES = KB_PREVIEW_CAP * 2;
+// The same cap in BYTES. Unicode scalar values, including emoji, can occupy
+// four UTF-8 bytes even though each still consumes one display cell.
+static const int KB_PREVIEW_BYTES = KB_PREVIEW_CAP * 4;
 
 // ── UTF-8 helpers ────────────────────────────────────────────────────────────
 // The EN-US grid is ASCII, but the accent picker and externally supplied text
@@ -239,6 +241,8 @@ struct KeyboardWidget {
   // which screen (Messages/Bot/Settings/Admin/...) currently owns it.
   bool _visible = false;
   bool _external_keyboard_connected = false;
+  bool _emoji_enabled = false;
+  EmojiPicker _emoji_picker;
   void beginFrame() { _visible = false; }
   bool isVisible() const { return _visible; }
   void setExternalKeyboardConnected(bool connected) { _external_keyboard_connected = connected; }
@@ -250,7 +254,11 @@ struct KeyboardWidget {
   // "grid navigation" apart from every other state arrows/Enter already mean
   // something else in (those all render their own visible feedback, so they
   // don't need Compact's special-casing).
-  bool inPlainGridState() const { return isVisible() && !_ph_menu.active && !cursor_mode && !accent_active; }
+  bool inPlainGridState() const {
+    return isVisible() && !_ph_menu.active && !_emoji_picker.active() &&
+           !cursor_mode && !accent_active;
+  }
+  void setEmojiEnabled(bool enabled) { _emoji_enabled = enabled; }
 
   char _ph_buf[KB_PH_MAX][KB_PH_LEN];
   int  _ph_count;
@@ -428,6 +436,8 @@ struct KeyboardWidget {
     cursor_pos = len;
     cursor_mode = false;
     accent_active = false;
+    _emoji_enabled = false;
+    _emoji_picker.close();
     accent_group = -1;
     accent_sel = 0;
     row = col = 0;
@@ -471,6 +481,22 @@ struct KeyboardWidget {
       cursor_pos += n;
       buf[len] = '\0';
     }
+  }
+
+  // Insert an arbitrary UTF-8 sequence at the cursor. Message emoji and future
+  // Unicode pickers share this byte-safe path; max_len remains the encoded
+  // message limit, while cursor movement/backspace remain codepoint-aware.
+  bool insertUtf8(const char* text) {
+    if (!text) return false;
+    int n = (int)strlen(text);
+    int tail_len = len - cursor_pos;
+    if (n <= 0 || len + n > max_len) return false;
+    memmove(buf + cursor_pos + n, buf + cursor_pos, tail_len);
+    memcpy(buf + cursor_pos, text, n);
+    len += n;
+    cursor_pos += n;
+    buf[len] = '\0';
+    return true;
   }
 
   // Insert one character typed literally on an external keyboard (CardKB or
@@ -528,6 +554,14 @@ struct KeyboardWidget {
     if (_ph_refresh) _ph_refresh(*this, _ph_refresh_ctx);   // contextual repopulate, if wired up
     _ph_menu.begin(_ph_title, KB_PH_VISIBLE);
     for (int i = 0; i < _ph_count; i++) _ph_menu.addItem(_ph_buf[i]);
+    return true;
+  }
+
+  bool openEmojiPicker() {
+    if (!_emoji_enabled || !inPlainGridState()) return false;
+    t9_cell = -1;
+    commitT9Prediction();
+    _emoji_picker.open();
     return true;
   }
 
@@ -852,6 +886,7 @@ struct KeyboardWidget {
 
     // placeholder picker overlay (drawn on top of keyboard)
     if (_ph_menu.active) _ph_menu.render(display);
+    _emoji_picker.render(display);
     return 50;
   }
 
@@ -879,6 +914,11 @@ struct KeyboardWidget {
   }
 
   Result handleInput(char c) {
+    if (_emoji_picker.active()) {
+      const char* emoji = _emoji_picker.handleInput(c);
+      if (emoji) insertUtf8(emoji);
+      return NONE;
+    }
     // placeholder overlay consumes all input
     if (_ph_menu.active) {
       bool selecting_t9_prediction = predictiveT9Active();
@@ -1028,6 +1068,7 @@ struct KeyboardWidget {
         commitT9Prediction();
         return NONE;
       }
+      if (row == rows && col == 4 && openEmojiPicker()) return NONE; // #@ / abc
       if (row < rows) {
         if (!isT9() && !pageIsSymbols(page)) {
           int gi = findAccentGroup(cellStr(row, col)[0]);

@@ -83,6 +83,7 @@ inline void enableCompletion(KeyboardWidget& kb, SensorManager*) { kb.setPredict
 inline void begin(KeyboardWidget& kb, const char* initial, int max_len,
                   SensorManager* sensors) {
   kb.begin(initial, max_len);
+  kb.setEmojiEnabled(true);
   kbAddSensorPlaceholders(kb, sensors);
   enableCompletion(kb, sensors);
 }

@@ -6,6 +6,7 @@ class AutoAdvertScreen : public UIScreen {
   UITask*    _task;
   NodePrefs* _prefs;
   bool       _dirty;
+  uint32_t   _initial_interval;
 
   static const int OPT_COUNT = 4;
   static const uint32_t OPTS[OPT_COUNT];
@@ -22,6 +23,7 @@ public:
 
   void onShow() override {
     _dirty = false;
+    _initial_interval = _prefs->advert_auto_interval_sec;
     for (int i = 0; i < OPT_COUNT; i++)
       if (OPTS[i] == _prefs->advert_auto_interval_sec) return;
     // Retired short intervals must not keep running while the screen shows Off.
@@ -58,6 +60,7 @@ public:
 
   bool handleInput(char c) override {
     if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
+      _dirty = _prefs->advert_auto_interval_sec != _initial_interval;
       _task->savePrefsIfDirty(_dirty);
       _task->gotoHomeScreen();
       return true;

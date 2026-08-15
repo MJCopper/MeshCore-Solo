@@ -41,6 +41,12 @@ message list.
 
 While typing, **UP** from the top letter row enters cursor mode (LEFT/RIGHT move the insertion point; UP/DOWN jump to start/end, then continue on to the special row / letter grid if pressed again once already there; Enter/Cancel exit immediately from anywhere) so you can edit or insert in the middle of what you've typed instead of only at the end. **Hold Enter** on a Latin letter with accented variants (e.g. a, e, c, n, o, s, z…) instead opens a one-row popup of that letter's accents — LEFT/RIGHT to pick, Enter to insert, Cancel to dismiss. See the on-screen keyboard section of the [UI framework guide](../../design/solo_ui_framework.md) for the full key set.
 
+Message editors also provide a small emoji picker. Hold **Enter** on the
+`#@`/`abc` page key, choose 👍, 👎, 🙂, or 🙁, then press **Enter** to insert it
+at the text cursor. Emoji count against the encoded message byte limit; each of
+these initial entries uses four bytes but behaves as one character for cursor
+movement and Backspace.
+
 The keyboard supports placeholders that insert live data at send time:
 
 | Placeholder | Value                | Availability                |
@@ -68,7 +74,9 @@ Posting to a **room server** requires a login handshake first, so the device can
 - **Log out** with **Hold Enter** on a room you're currently logged into → **Logout** (only offered once logged in). Forgets the saved password on the device, so the next time you open that room it prompts for one again instead of silently reusing the old one.
 - Passwords set from the **phone app** are saved on the device too, so it can post to that room standalone after a reboot.
 
-> The on-screen keyboard is EN-US. European Latin accents are available through Hold Enter; other characters can still be entered from the phone app and are stored and replayed byte-for-byte.
+> The on-screen keyboard is EN-US. European Latin accents and the initial emoji
+> picker are available locally; other characters can still be entered from the
+> phone app and are stored and replayed byte-for-byte.
 
 ---
 
