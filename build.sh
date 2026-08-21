@@ -17,7 +17,7 @@ Commands:
   build-companion-firmwares: Build all companion firmwares for all build targets.
   build-repeater-firmwares: Build all repeater firmwares for all build targets.
   build-room-server-firmwares: Build all chat room server firmwares for all build targets.
-  build-solo-firmwares: Build all solo firmwares for all build targets.
+  build-zen-firmwares: Build all Zen firmwares for all build targets.
 
 Examples:
 Build firmware for the "RAK_4631_repeater" device target
@@ -304,7 +304,7 @@ elif [[ $1 == "build-repeater-firmwares" ]]; then
   build_repeater_firmwares
 elif [[ $1 == "build-wio-tracker-l1-firmwares" ]]; then
   build_wio_tracker_l1_firmwares
-elif [[ $1 == "build-solo-firmwares" ]]; then
+elif [[ $1 == "build-zen-firmwares" ]]; then
   build_solo_firmwares
 elif [[ $1 == "build-room-server-firmwares" ]]; then
   build_room_server_firmwares

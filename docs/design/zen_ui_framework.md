@@ -3,8 +3,8 @@
 [Go back](../../README.md)
 
 This is a developer guide to the reusable building blocks behind the
-`companion_radio` **solo** firmware UI (the `ui-new` screens). It is not a
-user manual — for what each screen *does*, see [solo_features](../solo_features/).
+`companion_radio` **Zen** firmware UI (the `ui-new` screens). It is not a
+user manual — for what each screen does, see [zen_features](../zen_features/).
 The goal here is so that adding a new screen or feature means *wiring together
 existing helpers*, not reinventing list scrolling, text wrapping, or persistence.
 
@@ -43,8 +43,8 @@ public:
   This return value is the main lever for the e-ink cost/latency trade-off — see
   §9. `UITask` owns `startFrame()`/`endFrame()`; **`render()` must not call them.**
 - **`handleInput(c)`** gets one key (`KEY_*`, see §7). Return `true` if consumed.
-- **`poll()`** runs every loop tick regardless of focus — rare, for background
-  housekeeping (e.g. the shutdown button).
+- **`poll()`** runs every loop tick regardless of focus — reserve it for
+  bounded background housekeeping that cannot use the render schedule.
 - **`onShow()`** is called by `setCurrScreen()` every time the screen becomes
   current — override it to reset per-visit state (`_sel = 0`, `_dirty = false`,
   sub-views). Default no-op for screens that keep state across visits. Because
@@ -60,8 +60,8 @@ public:
    ```cpp
    void UITask::gotoMyScreen() { setCurrScreen(my_screen); }
    ```
-   Only screens needing a *parameter* at entry add a typed call after it (e.g.
-   `gotoRingtoneEditor` → `selectSlot(slot)`, `gotoMapScreen` → `showMapView()`).
+   Only screens needing a parameter at entry add a typed call after it (for
+   example, `gotoRingtoneEditor` selecting a melody slot).
 4. Reach it from somewhere — usually a row in `ToolsScreen.h` (add an `Action`
    enum value, a row in the right section table, and a `dispatch()` case).
 
@@ -72,7 +72,7 @@ missed `new` is an inert no-op rather than a null deref.
 
 The constructor takes `UITask* task` plus whatever it needs (`NodePrefs*`,
 `KeyboardWidget*`, …); the task back-pointer is how a screen calls shared
-services (`_task->showAlert(...)`, `_task->waypoints()`, …).
+services such as `_task->showAlert(...)` and preference-saving helpers.
 
 ---
 
@@ -145,11 +145,11 @@ calculator (`scrollIndicatorReserve`) are exposed for hand-laid lists.
 | Component | Header | Use for |
 | --- | --- | --- |
 | `PopupMenu` | `PopupMenu.h` | a modal action menu over any screen |
-| `AccordionList` | `AccordionList.h` | collapsible sectioned lists (Tools, Settings) |
+| `AccordionList` | `AccordionList.h` | legacy-compatible collapsible lists when genuinely needed |
 | `KeyboardWidget` | `KeyboardWidget.h` | on-screen text entry |
 | `DigitEditor` | `DigitEditor.h` | scroll-edit one number, digit by digit |
 | `FullscreenMsgView` | `FullscreenMsgView.h` | scrollable full-message reader + word wrap |
-| `NavView` | `NavView.h` | bearing/distance/ETA "navigate to a point" view |
+| `MessageTranscriptView` | `MessageTranscriptView.h` | shared DM, room and channel transcript layout |
 
 All follow the same shape: a `begin(...)` to open, an `active` flag, a
 `handleInput(c)` returning a small `Result` enum, and a `render()`/`draw()`.
@@ -163,7 +163,7 @@ if (_menu.active) {                       // popup eats input while open
 }
 ...
 _menu.begin("Options", 6);                // open it
-_menu.addItem("Navigate"); _menu.addItem("Ping");
+_menu.addItem("Ping"); _menu.addItem("Favourite");
 _menu.active = true;
 ```
 
@@ -172,13 +172,18 @@ sensor tokens) via `addPlaceholder()` / `clearPlaceholders()`; the shared
 `kbAddSensorPlaceholders()` (`ui-new/SensorPlaceholders.h`) adds only the tokens
 the board's sensors actually provide. Expand them with `expandMsg()` at send time.
 
-Two EN-US layouts share the Latin grid: **ABC** (one key per letter) and **T9**
-(phone-keypad multi-tap — repeated Enter within `KB_T9_TIMEOUT_MS` cycles a
-cell's letter group, then its digit). The page cycle contains Latin and Symbols.
+Two EN-US layouts share the text engine: **ABC** (one key per letter) and
+**predictive T9**. In message fields, T9 turns phone-keypad digit sequences into
+ranked words from Zen's 2,500-word Australianised conversational dictionary.
+Its page cycle is predictive T9 → symbols → literal multi-tap → predictive T9,
+so out-of-dictionary words can still be entered. Literal fields such as names
+and passwords use multi-tap rather than predictive replacement.
 The historical main/additional-script preference bytes remain serialized for
 configuration compatibility but are no longer exposed or read by the keyboard.
-Latin-diacritic letters (Polish, Czech, German, etc.) are reached by Hold-Enter
-on the corresponding Latin letter (see `KB_ACCENT_VARIANTS` below).
+Latin-diacritic letters are available from the corresponding ABC letter through
+the shared accent popup. In completion-enabled message fields, Hold Enter opens
+the completion dialog. The smiley special key opens the four-entry emoji picker;
+CardKB uses Fn+M.
 Shift is one-shot by default (capitalises the next letter, including whichever
 candidate a T9 multi-tap cycle settles on) or Hold-Enter to toggle caps-lock;
 Hold-Clear erases the whole field. **UP from the top letter row** enters
@@ -203,25 +208,15 @@ across a yield — see §9).
 
 ## 5. Domain helpers
 
-**Geo (`GeoUtils.h`, namespace `geo`, all pure/header-inline):**
+**Formatting (`GeoUtils.h`, namespace `geo`, all pure/header-inline):**
 
 - `haversineKm(lat1,lon1,lat2,lon2)`, `bearingDeg(...)`, `bearingCardinal(deg)`.
 - `fmtDist(buf,n,km,imperial)` — "850m"/"2.3km" or feet/miles.
 - `fmtAgeShort(buf,n,now,ts)` — compact "12s"/"5m"/"3h"/"2d" tag, "" for unknown.
   **This is the one age formatter** — don't reimplement the s/m/h ladder.
-- `parseLatLon(text, lat, lon, label?, n?)` — pull a `lat,lon` out of message
-  text; reads the `[WAY]` label if tagged.
-- `parseLocShare(text, lat, lon)` — true only for an explicit `[LOC]` share.
 
-Coordinates are **int32 degrees × 1e6** everywhere (GPS, contacts, trail,
-prefs). The message tags are `LOCATION_MSG_TAG` (`[LOC]`, the sender's own live
-position) and `WAYPOINT_MSG_TAG` (`[WAY]`, a saved point to share); both stay
-human-readable on clients that don't know them.
-
-**State stores:** `TrailStore` (`Trail.h`, GPS breadcrumb ring + GPX export),
-`LiveTrackStore` (`LiveTrack.h`, RAM table of others' `[LOC]` positions, expiring),
-`WaypointStore` (`Waypoint.h`, persisted saved points). Reach them via the task
-(`_task->trail()`, `_task->liveTrack()`, `_task->waypoints()`).
+Zen does not compile the Map, Trail, Live Share, Locator, Compass or Waypoint
+interfaces. New Zen features must not depend on their legacy screen fragments.
 
 **Message reply prefix:** `msgReplyBody(text, nick?, n?)` (`FullscreenMsgView.h`)
 parses a leading `@[nick] ` reply marker, returning the body and optionally the
@@ -245,19 +240,18 @@ MINI_ICON(ICON_FOO, 5,
 Draw with `miniIconDraw(display, x, topY, ICON_FOO)` (auto-scaled & centered),
 `miniIconDrawTop` (exact placement), or the boxed/slot variants
 (`drawBoxedIcon` = lit when active, `drawSlotIcon` = plain). Bigger page glyphs
-use `BIG_ICON` / `bigIconDraw`. The home status bar composes these right-to-left
-with a `blinkOn()` cadence for "leave it on and forget" broadcasts (auto-advert,
-Live Share, trail, repeater) — follow that pattern when adding an indicator:
-always shown on e-ink, blinking on OLED.
+use `BIG_ICON` / `bigIconDraw`. The home status bar composes these right-to-left.
+The advert indicator is a transient, steady icon shown for exactly five seconds
+after an advert is queued; enabling automatic adverts alone does not display or
+flash it. Persistent states such as repeater mode use their own status policy.
 
 Icons are drawn from a fixed priority-ordered table (`HomeScreen::renderBatteryIndicator()`,
 `UITask.cpp`); once the row runs out of horizontal space the loop just stops,
 so the lowest-priority icons silently drop first rather than the whole bar
-crushing the node name. A blinking icon still reserves its width on the
-off-phase of its blink, so the row's layout can't visibly shift width as icons
-blink in and out.
+crushing the node name. Any animated status icon must reserve its width in every
+phase so the row cannot shift as its drawing changes.
 
-Screens with a Hold-Enter context menu (Nodes, Bot, Admin, Diagnostics, …) pass
+Screens with a Hold-Enter context menu (Messages, Nodes and Diagnostics) pass
 `menu_hint=true` to their header call (see §2) so a `≡` glyph advertises the
 menu; `KEY_CONTEXT_MENU` (Hold-Enter) opens it.
 
@@ -303,15 +297,13 @@ slow e-ink refresh:
 
 ## 8. Persistence
 
-Device settings live in one `NodePrefs` struct (`NodePrefs.h`), saved via
-`the_mesh.savePrefs()` and loaded by `DataStore.cpp`. Rules when adding a field:
-
-- **Append only**, and bump `NodePrefs::SCHEMA_SENTINEL`. Serialization is
-  binary-positional, so order is the on-disk format; never insert in the middle.
-- Add a matching `rd(...)` in `DataStore::loadPrefsInt()` and a `file.write(...)`
-  in `savePrefs()`, in the same position, and **clamp on load** (an upgrader's
-  file lacks the field and reads stray bytes — clamp to a sane default). Saves
-  are atomic (temp-file + rename), so a crash mid-save can't corrupt settings.
+MeshCore-owned settings remain in `NodePrefs` and its upstream persistence path.
+Zen-owned preferences are encoded through the versioned sidecar in
+`solo/SoloPrefsCodec.h`; the historical internal name is intentionally retained
+for stored-data compatibility. Defaults and validation live in
+`SoloPrefsDefaults.h`, with legacy layouts handled by `SoloPrefsMigration.h`.
+Add new Zen fields at this boundary rather than shifting upstream storage, and
+provide a clamped default or migration for older files.
 
 **The `_dirty` convention:** a multi-field editor screen mutates `_node_prefs`
 live for instant feedback but only persists once, on exit, gated by a `_dirty`
@@ -322,12 +314,6 @@ save-on-exit reads the same and the "did we touch flash?" decision lives in one
 place. A one-shot action from a popup (no exit hook) calls `the_mesh.savePrefs()`
 immediately. Follow whichever matches your screen.
 
-**The shared "active target"** (Locator/Nav destination) is set through
-`UITask::setTarget()` (defines it), `setTargetNow()` (defines + saves + toast),
-or `clearTarget()` — one definition used by the Locator screen, the map, and the
-Nearby/Waypoints "Set as target" actions. Resolve a person's current position
-with `resolvePersonPos()` (live `[LOC]` share, else last-advertised fix).
-
 ### Child Mode policy
 
 Child Mode is deliberately kept as a thin policy layer so upstream screen
@@ -337,9 +323,8 @@ live in `ui-new/ChildMode.h`; session state and transport enforcement live in
 the preference directly, because a verified parent session temporarily lifts
 the restrictions while leaving the persisted mode enabled.
 
-The persisted configuration appends `child_mode_enabled`,
-`child_mode_pin_hash`, and `child_visible_pages` to `NodePrefs`. Optional pages
-use the existing `HomePageBit` positions, avoiding a second navigation model.
+The persisted configuration is owned by the Zen preference sidecar. Optional
+pages use the existing `HomePageBit` positions, avoiding a second navigation model.
 Keep the policy at existing boundaries when extending it:
 
 - filter home pages in the central page-visibility predicate;
@@ -365,7 +350,7 @@ recovery and bypass path.
   needed, and don't depend on `loop()` cadence for timing that must be exact
   (the ringtone player moved to a hardware timer for this reason).
 - **Reference cleanup.** Anything that remembers a contact by pubkey (favourite
-  slot, Locator/Live-Share target, per-contact mute/melody) or a channel by
+  slot or per-contact notification/melody override) or a channel by
   index must drop that reference when the entity goes away — hook
   `UITask::onContactRemoved()` / `onChannelRemoved()`. New per-contact or
   per-channel state should clear there too.

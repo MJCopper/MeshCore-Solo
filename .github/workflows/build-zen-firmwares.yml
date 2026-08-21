@@ -1,4 +1,4 @@
-name: Build Solo Firmwares
+name: Build Zen Firmwares
 
 permissions:
   contents: write
@@ -17,9 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        env:
-          - WioTrackerL1_companion_solo_dual
-          - WioTrackerL1Eink_companion_solo_dual
+        include:
+          - env: WioTrackerL1_companion_solo_dual
+            device: WioTrackerL1
+          - env: WioTrackerL1Eink_companion_solo_dual
+            device: WioTrackerL1Eink
     steps:
 
       - name: Clone Repo
@@ -43,15 +45,14 @@ jobs:
 
       - name: Rename firmware
         run: |
-          DEVICE_NAME=$(echo "${{ matrix.env }}" | sed 's/_solo_dual$//;s/_companion$//' | tr '_' '-')
-          mv out/*.uf2 "out/solo-${{ env.BUILD_VERSION }}-${DEVICE_NAME}.uf2" 2>/dev/null || true
+          mv out/*.uf2 "out/zen-${{ env.BUILD_VERSION }}-${{ matrix.device }}.uf2" 2>/dev/null || true
           # nRF52 DFU package (adafruit-nrfutil) — used for OTA / BLE-DFU updates.
-          mv out/*.zip "out/solo-${{ env.BUILD_VERSION }}-${DEVICE_NAME}-ota.zip" 2>/dev/null || true
+          mv out/*.zip "out/zen-${{ env.BUILD_VERSION }}-${{ matrix.device }}-ota.zip" 2>/dev/null || true
 
       - name: Upload Firmware
         uses: actions/upload-artifact@v4
         with:
-          name: solo-${{ matrix.env }}-firmware
+          name: zen-${{ matrix.device }}-firmware
           path: out
 
   release:
@@ -63,17 +64,17 @@ jobs:
       - name: Extract Version from Git Tag
         run: echo "GIT_TAG_VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
 
-      - name: Download all solo firmwares
+      - name: Download all Zen firmwares
         uses: actions/download-artifact@v4
         with:
-          pattern: solo-*-firmware
+          pattern: zen-*-firmware
           merge-multiple: true
           path: out
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Solo ${{ env.GIT_TAG_VERSION }}
+          name: Zen ${{ env.GIT_TAG_VERSION }}
           body: ""
           draft: true
           files: |

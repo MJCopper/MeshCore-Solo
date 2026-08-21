@@ -38,12 +38,6 @@ If a pinned contact is removed from the contacts list — explicitly, or auto-ev
 2. Recent DM contacts — listed after
 3. All remaining chat contacts — fallback when the first two tiers are empty (e.g. fresh install before any DMs)
 
-|            OLED            |           E-Ink            |
-| :------------------------: | :------------------------: |
-| ![](./picker_oled.png) | ![](./picker_eink.png) |
-
-<!-- screenshot pending: Pin-to-dial contact picker (favourites first, then recent DMs, then all contacts) -->
-
 Select a contact to pin it to that slot.
 
 Hold **Enter** on any tile to open its standard action menu. An empty tile offers

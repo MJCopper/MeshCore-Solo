@@ -39,13 +39,16 @@ message list.
 - **Custom message** — opens the on-screen keyboard
 - **Q1–Q10** — quick reply templates editable in Settings › Messages
 
-While typing, **UP** from the top letter row enters cursor mode (LEFT/RIGHT move the insertion point; UP/DOWN jump to start/end, then continue on to the special row / letter grid if pressed again once already there; Enter/Cancel exit immediately from anywhere) so you can edit or insert in the middle of what you've typed instead of only at the end. **Hold Enter** on a Latin letter with accented variants (e.g. a, e, c, n, o, s, z…) instead opens a one-row popup of that letter's accents — LEFT/RIGHT to pick, Enter to insert, Cancel to dismiss. See the on-screen keyboard section of the [UI framework guide](../../design/solo_ui_framework.md) for the full key set.
+The editor enforces MeshCore's encoded message limit as text is entered. UTF-8
+characters and emoji consume their actual encoded byte length, so they may use
+more capacity than plain ASCII while still moving and deleting as one glyph.
 
-Message editors also provide a small emoji picker. Hold **Enter** on the
-`#@`/`abc` page key, choose 👍, 👎, 🙂, or 🙁, then press **Enter** to insert it
-at the text cursor. Emoji count against the encoded message byte limit; each of
-these initial entries uses four bytes but behaves as one character for cursor
-movement and Backspace.
+While typing, **UP** from the top letter row enters cursor mode (LEFT/RIGHT move the insertion point; UP/DOWN jump to start/end, then continue on to the special row / letter grid if pressed again once already there; Enter/Cancel exit immediately from anywhere) so you can edit or insert in the middle of what you've typed instead of only at the end. **Hold Enter** opens completion choices in message fields. On the ABC layout, holding a Latin letter with accented variants instead opens that letter's accent choices when completion is unavailable. See the [Zen UI framework guide](../../design/zen_ui_framework.md) for the shared keyboard behaviour.
+
+Message editors also provide a small emoji picker. Select the smiley key on the
+keyboard, or press **Fn+M** on CardKB, then choose 👍, 👎, 🙂, or 🙁. Emoji count
+against the encoded message byte limit; each entry behaves as one character for
+cursor movement and Backspace.
 
 The keyboard supports placeholders that insert live data at send time:
 
@@ -60,7 +63,13 @@ The keyboard supports placeholders that insert live data at send time:
 | `{lux}`     | luminosity           | sensor connected            |
 | `{co2}`     | CO₂ concentration    | sensor connected            |
 
-Sensor placeholders appear automatically in the placeholder picker when the corresponding sensor is active. `{time}` and `{loc}` are always shown.
+Sensor placeholders appear automatically when the corresponding sensor is
+active. Time and location expansion remain available to quick-message templates,
+but are not mixed into the normal word-completion list.
+
+In channel and room transcripts, replying to a particular received message
+pre-fills an `@[name] ` prefix so other participants can see who is being
+addressed. Direct-message replies do not need the prefix.
 
 ---
 
@@ -107,6 +116,11 @@ layout and navigation apply to direct messages, rooms and channels.
 Press **Enter** to compose a custom message. Hold **Enter** to open quick
 messages.
 
+If the newest outgoing direct message exhausts automatic delivery attempts,
+Hold **Enter** in its transcript and choose **Resend failed**. For channels the
+equivalent action is **Resend anyway**, because a missing repeater echo is not
+proof that every recipient missed the original packet.
+
 Unread state is tracked per direct contact, room and channel. A message is
 marked read immediately only when its matching transcript is physically visible
 on an unlocked display. Messages received while the display is off or the lock
@@ -118,6 +132,11 @@ When an eligible notification wakes an otherwise sleeping display, the display
 turns off again after five seconds unless the user presses a Tracker button. A
 notification received while the display is already on does not shorten the
 normal display timeout.
+
+Direct-message delivery is automatic and has no user-adjustable retry setting.
+With a known path Zen sends once on that path, retries it once, clears the stale
+path, then makes up to three flood attempts. Without a known path it makes up to
+three flood attempts in total. An ACK ends the sequence immediately.
 
 ---
 
@@ -136,7 +155,9 @@ normal display timeout.
 | Melody: global / M1 / M2     | Per-contact melody override — **LEFT/RIGHT** to cycle                          |
 | Pin to dial / Unpin (slot N) | Pin this contact to a Favourites Dial slot; if already pinned shows which slot |
 
-When **Pin to dial** is selected, a slot picker opens (Slot 1–6 showing current occupant name or "empty"). Choosing a slot that already holds another contact moves the new contact there.
+When **Pin to dial** is selected, a slot picker opens (Slot 1–4 showing the
+current occupant name or "empty"). Choosing an occupied slot replaces it and
+moves an already-pinned contact rather than duplicating it.
 
 In the **Rooms** list the context menu instead offers:
 

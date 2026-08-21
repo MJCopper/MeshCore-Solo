@@ -1,50 +1,34 @@
-## Unreleased
+## MeshCore Zen v2.26
 
-### What's new
+Zen v2.26 is based on MeshCore v1.17.1 and completes the project rename from
+Solo to Zen. Historical Solo release headings below are retained as the names
+under which those versions were originally published.
 
-- **Remote Bot has been removed** from this Wio Tracker-focused build. Incoming messages can no longer trigger automatic replies, query responses, or remote actions, including commands saved in an older configuration.
-- **Map, Live Share, Trail, Locator, and Compass have been removed.** Their screens and background location sharing, recording, geofence, proximity-beeper, and heading work are disabled. GPS itself remains available for configured tracking and telemetry.
-- **The manual Shutdown page has been removed.** Automatic low-battery shutdown and internal power-management behavior are unchanged.
-- **The on-device remote Admin tool has been removed.** Companion-app and USB/Bluetooth protocol administration remain unchanged.
-- **Clock Tools have been removed.** Alarm, countdown timer, and stopwatch are no longer constructed or ticked; the normal Clock page and timekeeping remain.
-- **The user GPIO tool has been removed.** Its screen and saved pin-mode application are compiled out; board pins used by core hardware are unaffected.
-- **Tools is now a flat list.** The Location, Comms, and System category submenus have been removed, so every remaining utility is available immediately on opening Tools.
-- **The standalone Sensors home page has been removed.** Sensor drivers, dashboard fields, telemetry, and message placeholders remain available.
-- **The on-device keyboard is now EN-US only.** The Main and Additional language settings have been removed; the keyboard cycles directly between Latin and Symbols. Existing preference files remain compatible, and European Latin accents are still available through Hold Enter / CardKB Fn+letter.
-- **Repeater mode now always uses the current radio settings.** The separate repeater network/profile and its duplicate frequency, bandwidth, spreading-factor and coding-rate controls have been removed.
-- **Repeater radio timing now matches the standard MeshCore repeater backend.** RX delay and flood/direct TX airtime factors are configurable without adding repeater identity, advert, admin or CLI management features. Multi-ACK support is retained.
-- **Repeater forwarding policy is safer and simpler.** The local Skip advert, Max hops and Min SNR filters have been removed; standard loop detection and the eight-hop advert limit remain automatic.
-- **Repeater contention defaults favour established repeaters.** Yield now defaults to `x2` and duplicate suppression defaults to on for new preference sets.
-- **Repeater settings are now grouped.** The main screen keeps the on/off control prominent, while timing, Yield and duplicate suppression live under Advanced.
-- **Boot time synchronisation now runs in the background.** The Clock page shows `SYNC` until GPS, a companion connection or another live source sets the RTC. GPS is temporarily powered when configured off and released after sync or a five-minute timeout.
-- **The Messages home page is now the category menu.** Direct Message, Channel and Room Servers—with unread badges—are selectable directly from the main carousel, removing the extra landing-screen step.
-- **Mark all read moved with the Messages menu.** Hold Enter/context-menu on a category on the carousel page to clear that category's unread count.
-- **Clock synchronisation keeps dashboard data visible.** `SYNC` replaces only the clock and date; the separator and three configurable data rows remain in place.
-- **Settings and Tools now open from their home cards.** Their first-level items are selectable directly in the carousel; each Settings section opens as its own clean screen without the collapsible `+`/`-` list, and leaving a selected tool returns directly to the carousel.
-- **Auto-Advert intervals are now suited to background discovery.** The available choices are Off, 1 hour, 3 hours, and 6 hours.
-- **Auto-Advert has moved from Tools to Settings.** It now appears directly on the Settings home card and returns there through the normal carousel flow.
-- **Unread Direct Messages can always be opened.** Outside Child Mode, a sender with local conversation history remains in the Direct Message list even when the contact filter is set to favourites, and an unread sender remains visible if their advertised contact type later changes. Child Mode remains strictly favourites-only.
-- **Unread DM senders now sort to the top.** The Direct Message category prioritises unread count before conversation-history size, so a new sender cannot be buried beneath older conversations.
-- **Direct-message identity is tracked separately from favourites.** Outside locked Child Mode, a contact that actually sent a DM remains in Direct Messages if its later advert reports another type. Favourite repeaters and rooms are no longer pulled into the DM list, and clearing the unread count does not forget a proven DM sender.
-- **The DM All/Fav filter is authoritative again.** All shows every eligible DM contact; Fav shows only upstream-starred eligible DM contacts. Conversation history no longer bypasses the selected filter.
-- **The final eight contacts are no longer skipped by on-device lists.** The public contact count excluded MeshCore's eight internal anonymous-request slots while indexed lookup still started at those slots, causing Nodes, Direct Messages and other screens to inspect eight empty entries and omit the last eight real contacts. Public indexing now consistently addresses real contacts only.
-- **An unsynchronised clock now retries GPS hourly.** If the clock still shows `SYNC`, GPS configured off is temporarily enabled once per hour, allowed up to five minutes to set the clock, and powered down between attempts. Any GPS, app or other RTC synchronisation ends the retry cycle.
-- **Favourites is now a compact four-entry list.** The former two-column/six-slot grid is replaced by four full-width rows with tighter vertical spacing; UP/DOWN selects a contact and LEFT/RIGHT changes home page. Six-slot preference storage is retained for firmware compatibility, while all active pin pickers expose the four visible slots.
-- **Optional CardKB support (Wio Tracker L1, Grove I2C) provides keyboard-only navigation.** It is detected at boot, uses the compact editor automatically while connected, and restores the full virtual keyboard if the connection is lost. Arrows move the text cursor, Enter submits, Tab opens word completion and sensor placeholders, and Fn+letter opens Latin accent choices.
+### Highlights
 
-### Fixes
+- Full-message DM, room and channel transcripts with one-line scrolling,
+  targeted replies, unread-state repair, route/transmission markers and manual
+  resend of the latest failed outgoing message.
+- Predictive T9, ABC, a 2,500-word Australianised completion dictionary, native
+  UTF-8 rendering, common monochrome emoji and four insertable chat emoji.
+- Optional low-power CardKB input with compact composition and polling limited
+  to periods when the display is awake.
+- Four-entry editable Favourites Dial, PIN-protected Child Mode and daily Quiet
+  Time that suppresses sound while retaining visual alerts and vibration.
+- Boot-time GPS clock sync, bounded hourly retry, timed GPS modes and a fixed
+  Clock home page with unread-message shortcut.
+- Advert intervals of Off/1 h/3 h/6 h, shared GPS privacy policy and a steady
+  five-second sent-advert indicator.
+- Companion repeater mode using current radio settings and fixed backend timing,
+  Yield x2 and duplicate suppression.
+- Settings save on exit only when values changed; Zen preferences remain
+  isolated from the upstream MeshCore preference layout.
 
-- **DM/room replies sometimes didn't show who they were addressed to, and room messages could wrap incorrectly.** The reply-prefix (`@[nick] `) was being stripped at the wrong point for room posts and DMs feeding the fullscreen message view, so a DM reply's "To:" header could go missing while a room reply showed the raw `@[nick] ` marker as literal message text; a related mismatch meant the history list's scrollbar/box-height sizing pass wrapped room messages with their sender name still attached, disagreeing with the actual rendered text.
-- **A channel's or DM/room's unread badge could claim messages the history no longer held** — e.g. showing "7 unread" on a conversation that opens to an empty list, and opening it only knocked the count down by one instead of clearing it. Every unread badge is now capped at what its message ring actually still holds; a channel's counter only decrements on eviction when the dropped message was itself unread (previously it decremented regardless, undercounting newer unread messages), and a DM sender's badge now self-heals (and frees up for a new sender) once their messages have left the shared 32-slot DM ring.
-- **CardKB's Fn+`<letter>` accent-popup shortcut could open the accent popup while the device was locked**, unlike every other key on the keyboard (all of which are correctly discarded while locked) — it went straight to the keyboard widget instead of through the normal locked-input gate. Now respects the lock like everything else. Since a locked device now correctly ignores CardKB entirely, **Fn+Esc** (single press) is added as CardKB's own lock/unlock gesture — otherwise a CardKB-only setup had no way to unlock at all.
-- **Triple-click could still toggle the buzzer while the screen was locked**, on boards that don't have a joystick (the single-user-button and analog-button variants) — the joystick variant already correctly suppressed it. Now consistent everywhere.
-- **Shift didn't capitalise ł, ń, ź, ż (or ĺ, ľ, ň, ž)** — a case-pairing rule for the wider Latin Extended-A block missed a parity flip around three unpaired codepoints, so e.g. typing "Łódź" with Shift held produced "łódź" instead. Fixed for the whole block.
-- **A long press on the physical button neither woke a sleeping display nor kept it awake**, and — while unlocked with the display off — could deliver its action to a screen you couldn't see, so the context menu was found already open at the next wake instead of the press simply waking the device. Long-press now goes through the same wake/keep-awake handling every other key already gets.
-- **Typing on CardKB right after cycling a T9 letter, then tapping that same T9 cell again quickly, could overwrite an unrelated character.** None of CardKB's direct actions — typing, moving the cursor with the arrows, or opening the placeholder picker with Tab — were invalidating the pending T9 cycle the way every on-screen keypress already does, so the next tap "continued" the cycle against a moved cursor.
-- **The keyboard's text preview could split a Cyrillic, Greek or accented character in half at the end of a line**, drawing garbage on both sides of the break, and fitted only half as much text per line as it had room for. Line breaks in the preview were counted in bytes rather than characters — every other part of the keyboard already counted characters.
-- **Caps-lock and one-shot Shift looked identical on the keyboard's ⇧ key**, so there was no way to tell whether the next letter alone or every following letter would be capitalised. Caps-lock is now marked with an underline on the key.
-- **E-ink: the screen faded as you used it** — text drawn a few updates earlier went grey while whatever had just changed stayed crisp, and only a full refresh brought it back (until the next few updates ate it again). A partial update is differential: the panel drives only the pixels that differ from the previous frame and leaves the rest to hold their own charge, which this panel doesn't do well. Every update now drives the whole image, at the cost of a few milliseconds of SPI — the refresh itself takes exactly as long as before, so nothing got slower. Cutting power mid-image also leaves much less residue on the panel now. **Full rfsh** is still there for clearing ghosts and can stay off.
-- **A message containing a line break drew two words on top of each other.** Newlines the sender typed were treated as ordinary characters — measured as a blank 6px cell, then handed to the display, which moved back to the left edge one row down mid-line and drew the rest of it over the following line. Line breaks now end the line properly (blank lines included) in the fullscreen message view and the history list, and fold into a space in the one-line message previews.
+### Removed from Zen
+
+Map, Trail, Live Share, Locator, Compass, Remote Bot, GPIO, Clock Tools,
+Sensors, Shutdown and on-device remote Admin screens are not included. Sensor
+drivers remain available for telemetry, dashboard values and placeholders.
 
 ---
 

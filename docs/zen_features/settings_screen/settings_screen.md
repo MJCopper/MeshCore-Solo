@@ -57,6 +57,10 @@ Advert has its own entry on the Settings home card.
 | Auto Advert | Off / 1 hour / 3 hours / 6 hours | Periodically sends a zero-hop advert so nearby nodes can discover this device. |
 | GPS Details | Hide / Share                    | Controls whether coordinates are included in every self advert, including automatic adverts and adverts triggered manually on the device or by a companion app. |
 
+All self-advert entry points use this same location policy. Whenever an advert
+is actually queued, the top-bar advert icon appears steadily for five seconds;
+it is not shown merely because Auto Advert is enabled and it does not flash.
+
 See [Quiet Time](../quiet_time/quiet_time.md) for schedule behaviour and time editing.
 
 ---
@@ -90,12 +94,6 @@ Position numbers begin at **1** for the first configurable page after Clock.
 | CR        | 5–8        | LEFT/RIGHT. Coding rate (4/5–4/8). |
 | Auto pwr  | ON / OFF   | **Adaptive Power Control.** Lowers actual TX power on strong links to save energy, ramping back up — to the **TX Pwr** ceiling — on weak or lost links. Link quality comes from direct-message ACK SNR and, for channel messages (no ACK), from hearing a repeater rebroadcast your packet. The radio page / name bar shows the live power. Default OFF (fixed TX power). **Suppressed (shown as `--`) while the repeater is on** — a repeater holds full TX power for consistent relay reach; your setting is restored when the repeater is switched off. |
 
-|           OLED            |           E-Ink           |
-| :-----------------------: | :-----------------------: |
-| ![](./radio_oled.png) | ![](./radio_eink.png) |
-
-<!-- screenshot pending: Radio — preset popup (pick/save/delete) and/or the digit-by-digit frequency editor -->
-
 The **repeater** mode and radio timing controls live on their own screen — see **Tools › Repeater**.
 
 ---
@@ -104,7 +102,7 @@ The **repeater** mode and radio timing controls live on their own screen — see
 
 | Setting     | Options                                             | Notes                                                                                  |
 | ----------- | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Name        | keyboard entry (up to 31 chars)                     | This device's node name, shown to others and in every advert. **Enter** opens the keyboard pre-filled with the current name; applied and saved on submit |
+| Name        | keyboard entry (up to 31 chars)                     | This device's node name, shown to others and in every advert. **Enter** opens the keyboard pre-filled with the current name; the final change is saved when Settings is exited |
 | Timezone    | −12 h … +14 h                                       | UTC offset in whole hours                                                              |
 | GPS         | OFF / Continuous / 2 min / 5 min / 15 min / 30 min / 1 h / 3 h / 6 h | Continuous keeps the receiver on. Timed modes wake it to acquire and stabilise a fix, cache the position/time, then power it down until the selected interval |
 | Bluetooth   | ON / OFF                                            | Persistently enables or disables Bluetooth; the USB companion interface is unaffected   |
@@ -127,19 +125,21 @@ the last valid coordinates remain available while the receiver sleeps.
 
 | Setting  | Options    | Notes                                                                                              |
 | -------- | ---------- | -------------------------------------------------------------------------------------------------- |
-| Layout   | ABC / T9   | English on-screen keyboard style; default **T9**. **ABC** provides one key per letter. In message fields, **T9** predicts words from phone-keypad digit sequences; literal fields retain traditional multi-tap. CardKB remains direct QWERTY. |
+| Type     | ABC / T9   | English on-screen keyboard style; default **T9**. **ABC** provides one key per letter. In message fields, **T9** predicts words from phone-keypad digit sequences; literal fields retain traditional multi-tap. CardKB remains direct QWERTY. |
 | CardKB | Found / Missing | Read-only boot detection and connection status for an optional Grove CardKB |
 
-Applies to every on-screen text field (messages, waypoint labels, room passwords, preset names). Earlier releases labelled the grid *QWERTY*; the layout has always been alphabetical, so it is now named **ABC**.
+The selected type applies consistently to message composition, quick-message
+editing, room passwords, device names and preset names. Earlier releases called
+the grid QWERTY; the on-screen layout is alphabetical and is now named **ABC**.
 
 Message composition also provides a small common-word completion dictionary.
 In the Full editor, the best match is shown as uncommitted text after the
 underscore cursor (for example, `hel_lo`). In Compact CardKB mode the hint shows
 comma-separated candidates, clipped at the display edge when the final word
 does not fit.
-Type the beginning of a word, then open the `{}` picker (or press **Tab** on
-CardKB) to see up to eight matches under **Complete:**. Selecting one replaces
-the whole word at the cursor. Completion is deliberately limited to message
+Type the beginning of a word, then hold **Enter** (or press **Tab** on CardKB)
+to see up to eight matches under **Complete:**. Selecting one replaces the
+whole word at the cursor and appends a space. Completion is limited to message
 text; passwords, names and configuration fields are never suggested or
 modified. The dictionary contains 2,500 frequency-ranked conversational words,
 based on the SUBTLEX-US spoken-English corpus with a 130-entry Australian
@@ -147,8 +147,8 @@ localisation layer covering spellings and everyday vocabulary. Proper names,
 corpus fragments, profanity and explicit adult or violent terms are excluded.
 
 With the full on-screen **T9** layout, pressing keys 2–9 builds a predictive
-digit sequence and displays the highest-ranked matching word immediately. The
-`{}` picker shows up to eight alternatives. Space, Done, cursor movement, a
+digit sequence and displays the highest-ranked matching word immediately. Hold
+**Enter** shows up to eight alternatives. Space, Done, cursor movement, a
 page change or choosing an alternative commits the provisional word;
 Backspace removes the latest digit. The page key cycles **T9 → #@ → abc → T9**,
 where `abc` is traditional multi-tap for spelling words outside the dictionary.
@@ -156,7 +156,10 @@ Key 1 and the symbols page also retain multi-tap. Predictive entry is limited
 to message text; names, passwords and other literal fields always use
 multi-tap in T9 layout. CardKB remains direct QWERTY input in either setting.
 
-European Latin-diacritic letters remain available through **Hold Enter** on a plain Latin letter that has accented variants (`a c d e i l n o r s t u y z`). This opens a one-row popup of its accents (e.g. holding `a` offers `á à â ã ä å ą`); **LEFT/RIGHT** picks, **Enter** inserts it, and **Cancel** dismisses it.
+The smiley special key opens the emoji picker for 👍, 👎, 🙂 and 🙁. European
+Latin-diacritic letters remain available from ABC letters that have accented
+variants (`a c d e i l n o r s t u y z`); **LEFT/RIGHT** selects an accent,
+**Enter** inserts it, and **Cancel** dismisses it.
 
 See [CardKB](../cardkb/cardkb.md) for connection, controls and polling behaviour.
 

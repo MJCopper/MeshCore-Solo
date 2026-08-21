@@ -13,11 +13,12 @@ The Tools home card is a flat list of the utilities included in this focused Wio
 | Tool | Purpose |
 | ---- | ------- |
 | Nodes | Browse recently advertised nodes, inspect their details, ping known nodes, manage contacts and run discovery scans |
-| Repeater | Configure repeating, standard radio timing and duplicate suppression when support is compiled in |
+| Repeater | Enable or disable the companion repeater backend using Zen's fixed forwarding policy |
 | Ringtone Editor | Edit and preview the notification melody |
 | Diagnostics | Inspect device, radio, mesh and runtime information |
 
-Map, Trail, Live Share, Locator, Compass, Remote Bot, GPIO, Clock Tools and on-device remote Admin are not included in this build.
+Map, Trail, Live Share, Locator, Compass, Remote Bot, GPIO, Clock Tools,
+Sensors, Shutdown and on-device remote Admin are not included in Zen.
 
 ---
 
@@ -55,6 +56,10 @@ companion's existing radio configuration.
 Duplicate suppression is always **ON**. Together with the fixed Yield, this gives
 another repeater time to forward a flood first and cancels the pending duplicate
 when that retransmission is overheard.
+
+Repeater mode does not expose a second radio profile, packet filters, hop/SNR
+thresholds, timing controls or management interface. It deliberately reuses the
+current companion radio settings and fixed backend values above.
 
 ---
 

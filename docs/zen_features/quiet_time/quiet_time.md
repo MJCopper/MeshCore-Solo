@@ -29,4 +29,6 @@ Quiet Time suppresses buzzer sounds for incoming direct messages, room messages,
 channel messages and received adverts. Their visual presentation, vibration,
 normal message history and unread state remain available.
 
-Delivery acknowledgements, key feedback, alarms and countdown timers are not silenced. Message routing, acknowledgements and the companion offline queue are unchanged.
+Delivery acknowledgements and key feedback are not silenced. Message routing,
+acknowledgements and the companion offline queue are unchanged. Alarm, timer and
+stopwatch tools are not included in Zen.

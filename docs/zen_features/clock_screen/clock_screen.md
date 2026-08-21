@@ -31,7 +31,8 @@ configured off is then retried once per hour for up to 90 seconds, with all
 automatic retries stopping 24 hours after boot. The receiver is powered down
 between attempts. Timezone offset is applied from **Settings › System**.
 
-If no time source is available, the screen shows _"! No time sync"_ with a hint to enable GPS or connect the app.
+Until an authoritative time source succeeds, only the clock and date region is
+replaced by **SYNC**. The separator and unread-message line remain visible.
 
 ---
 
@@ -50,9 +51,8 @@ line is always present and is not configurable.
 
 ---
 
-### Clock tools
+Alarm, Timer and Stopwatch are intentionally not included in Zen.
 
-Alarm, Timer and Stopwatch are not included in this focused build.
 ---
 
 ## Boot time synchronisation
