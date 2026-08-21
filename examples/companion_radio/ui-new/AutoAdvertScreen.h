@@ -47,7 +47,7 @@ public:
       display.setCursor(2, y);
       display.print(item == 0 ? "Auto Advert" : "GPS Details");
       const char* value = item == 0 ? OPT_LABELS[currentIdx()]
-                                    : (_prefs->advert_loc_policy == ADVERT_LOC_NONE ? "HIDE" : "SHARE");
+                                    : (_prefs->advert_loc_policy == ADVERT_LOC_NONE ? "Hide" : "Share");
       display.drawTextRightAlign(display.width() - reserve - 2, y, value);
       display.setColor(DisplayDriver::LIGHT);
     });
@@ -83,4 +83,4 @@ public:
 };
 
 const uint32_t AutoAdvertScreen::OPTS[AutoAdvertScreen::OPT_COUNT]       = { 0, 3600, 10800, 21600 };
-const char*    AutoAdvertScreen::OPT_LABELS[AutoAdvertScreen::OPT_COUNT] = { "off", "1h", "3h", "6h" };
+const char*    AutoAdvertScreen::OPT_LABELS[AutoAdvertScreen::OPT_COUNT] = { "Off", "1h", "3h", "6h" };

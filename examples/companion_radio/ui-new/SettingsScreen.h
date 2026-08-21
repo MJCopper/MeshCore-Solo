@@ -328,7 +328,7 @@ class SettingsScreen : public UIScreen {
 
 #if FEAT_BRIGHTNESS_SETTING
     if (item == BRIGHTNESS) {
-      display.print("Bright");
+      display.print("Brightness");
       renderBar(display, valCol(display), y, (p ? p->display_brightness : 2) + 1, 5);
     } else
 #endif
@@ -336,7 +336,7 @@ class SettingsScreen : public UIScreen {
       display.print("Buzzer");
       display.setCursor(valCol(display), y);
 #ifdef PIN_BUZZER
-      { static const char* labels[] = { "ON", "OFF", "Auto" };
+      { static const char* labels[] = { "On", "Off", "Auto" };
         int m = _task->getBuzzerMode();
         display.print(labels[m < 3 ? m : 0]); }
 #else
@@ -351,22 +351,22 @@ class SettingsScreen : public UIScreen {
       display.print("N/A");
 #endif
     } else if (item == DM_MELODY) {
-      display.print("DM sound");
+      display.print("DM Sound");
       display.setCursor(valCol(display), y);
       { uint8_t v = p ? p->notif_melody_dm : 0;
         display.print(SOUND_LABELS[v < SOUND_COUNT ? v : 0]); }
     } else if (item == CH_MELODY) {
-      display.print("Ch sound");
+      display.print("Ch Sound");
       display.setCursor(valCol(display), y);
       { uint8_t v = p ? p->notif_melody_ch : 0;
         display.print(SOUND_LABELS[v < SOUND_COUNT ? v : 0]); }
     } else if (item == AD_SOUND) {
-      display.print("AD sound");
+      display.print("AD Sound");
       display.setCursor(valCol(display), y);
       { uint8_t v = p ? p->notif_melody_ad : 0;
         display.print(SOUND_LABELS[v < SOUND_COUNT ? v : 0]); }
     } else if (item == AD_SOUND_SCOPE) {
-      display.print("AD scope");
+      display.print("AD Scope");
       display.setCursor(valCol(display), y);
       { uint8_t v = p ? p->advert_sound_scope : ADVERT_SOUND_SCOPE_ALL;
         display.print(AD_SCOPE_LABELS[v < AD_SCOPE_COUNT ? v : 0]); }
@@ -374,10 +374,10 @@ class SettingsScreen : public UIScreen {
     } else if (item == QUIET_TIME) {
       display.print("Quiet Time");
       display.setCursor(valCol(display), y);
-      if (!p || !p->quiet_time_enabled) display.print("OFF");
-      else display.print(_task->isQuietTimeActive() ? "ACTIVE" : "ON");
+      if (!p || !p->quiet_time_enabled) display.print("Off");
+      else display.print(_task->isQuietTimeActive() ? "Active" : "On");
     } else if (item == QUIET_FROM || item == QUIET_UNTIL) {
-      display.print(item == QUIET_FROM ? "Quiet from" : "Quiet until");
+      display.print(item == QUIET_FROM ? "Quiet From" : "Quiet Until");
       int x = valCol(display);
       if (sel && _quiet_editor.active() && _quiet_edit_item == item) {
         _quiet_editor.render(display, x, y);
@@ -400,9 +400,9 @@ class SettingsScreen : public UIScreen {
       display.print(homePageLabel(item));
       display.setCursor(display.width() - 6 * display.getCharWidth() - _reserve, y);
       if (!homePageToggleable(item))
-        display.print("always");
+        display.print("Always");
       else
-        display.print(homePageVisible(item, p) ? "ON" : "OFF");
+        display.print(homePageVisible(item, p) ? "On" : "Off");
     } else if (item == TX_POWER) {
       display.print("TX Pwr");
       char buf[8];
@@ -444,23 +444,23 @@ class SettingsScreen : public UIScreen {
       display.setCursor(valCol(display), y);
       display.print(buf);
     } else if (item == TX_APC) {
-      display.print("Auto pwr");
+      display.print("Auto Pwr");
       display.setCursor(valCol(display), y);
       // Suppressed (and locked) while repeating — a repeater holds full TX power.
       if (p && p->client_repeat) display.print("--");
-      else display.print((p && p->tx_apc) ? "ON" : "OFF");
+      else display.print((p && p->tx_apc) ? "On" : "Off");
 #if AUTO_OFF_MILLIS > 0
     } else if (item == AUTO_OFF) {
-      display.print("AutoOff");
+      display.print("Auto-off");
       display.setCursor(valCol(display), y);
       display.print(AUTO_OFF_LABELS[autoOffIndex()]);
 #endif
     } else if (item == AUTO_LOCK) {
-      display.print("AutoLock");
+      display.print("Auto-lock");
       display.setCursor(valCol(display), y);
-      display.print((p && p->auto_lock) ? "ON" : "OFF");
+      display.print((p && p->auto_lock) ? "On" : "Off");
     } else if (item == TIMEZONE) {
-      display.print("TimeZone");
+      display.print("Timezone");
       char buf[8];
       int8_t tz = p ? p->tz_offset_hours : 0;
       if (tz >= 0) snprintf(buf, sizeof(buf),"UTC+%d", (int)tz);
@@ -476,9 +476,9 @@ class SettingsScreen : public UIScreen {
     } else if (item == BLUETOOTH_ENABLED) {
       display.print("Bluetooth");
       display.setCursor(valCol(display), y);
-      display.print((p && p->bluetooth_enabled) ? "ON" : "OFF");
+      display.print((p && p->bluetooth_enabled) ? "On" : "Off");
     } else if (item == LOW_BAT) {
-      display.print("LowBat");
+      display.print("Low Battery");
       display.setCursor(valCol(display), y);
       display.print(LOW_BAT_LABELS[lowBatIndex()]);
     } else if (item == UNITS) {
@@ -502,7 +502,7 @@ class SettingsScreen : public UIScreen {
       display.print(_task->isCardKBConnected() ? "Found" : "Missing");
 #endif
     } else if (item == BATT_DISPLAY) {
-      display.print("BattDisp");
+      display.print("Battery");
       display.setCursor(valCol(display), y);
       uint8_t mode = p ? p->batt_display_mode : 0;
       display.print(BATT_DISPLAY_LABELS[mode < BATT_DISPLAY_COUNT ? mode : 0]);
@@ -510,7 +510,7 @@ class SettingsScreen : public UIScreen {
     } else if (item == CLOCK_SECONDS) {
       display.print("Seconds");
       display.setCursor(valCol(display), y);
-      display.print((p && p->clock_hide_seconds) ? "OFF" : "ON");
+      display.print((p && p->clock_hide_seconds) ? "Off" : "On");
 #endif
     } else if (item == CLOCK_FORMAT) {
       display.print("Format");
@@ -530,7 +530,7 @@ class SettingsScreen : public UIScreen {
 #endif
 #if FEAT_FULL_REFRESH_SETTING
     } else if (item == EINK_FULL_REFRESH) {
-      display.print("Full rfsh");
+      display.print("Full Refresh");
       display.setCursor(valCol(display), y);
       { uint8_t idx = p ? p->eink_full_refresh_every : 0;
         if (idx >= EINK_FULL_REFRESH_COUNT) idx = 0;
@@ -539,29 +539,29 @@ class SettingsScreen : public UIScreen {
     } else if (item == DM_FILTER) {
       display.print("DM");
       display.setCursor(valCol(display), y);
-      display.print((p && p->dm_show_all) ? "all" : "fav");
+      display.print((p && p->dm_show_all) ? "All" : "Fav");
     } else if (item == CH_FILTER) {
       display.print("Channels");
       display.setCursor(valCol(display), y);
-      display.print((p && p->ch_fav_only) ? "fav" : "all");
+      display.print((p && p->ch_fav_only) ? "Fav" : "All");
     } else if (item == ROOM_FILTER) {
       display.print("Rooms");
       display.setCursor(valCol(display), y);
-      display.print((p && p->room_fav_only) ? "fav" : "all");
+      display.print((p && p->room_fav_only) ? "Fav" : "All");
 #if SOLO_FEAT_CHILD_MODE
     } else if (item == CHILD_ENABLED) {
       display.print("Enabled"); display.setCursor(valCol(display), y);
-      display.print((p && p->child_mode_enabled) ? "ON" : "OFF");
+      display.print((p && p->child_mode_enabled) ? "On" : "Off");
     } else if (item == CHILD_PIN) {
       display.print("Set PIN"); display.setCursor(valCol(display), y); display.print("******");
     } else if (item == CHILD_CHANNELS) {
       display.print("Channels"); display.setCursor(valCol(display), y);
-      display.print((p && p->child_channels_enabled) ? "ON" : "OFF");
+      display.print((p && p->child_channels_enabled) ? "On" : "Off");
     } else if (item == CHILD_FAVOURITES) {
       uint16_t bit = NodePrefs::HP_FAVOURITES;
       display.print("Favourites");
       display.setCursor(valCol(display), y);
-      display.print((p && (p->child_visible_pages & bit)) ? "ON" : "OFF");
+      display.print((p && (p->child_visible_pages & bit)) ? "On" : "Off");
 #endif
     } else if (isMsgSlot(item)) {
       int slot = msgSlotIndex(item);
@@ -1109,13 +1109,13 @@ public:
 
 #if AUTO_OFF_MILLIS > 0
 const uint16_t SettingsScreen::AUTO_OFF_OPTS[5]   = { 5, 15, 30, 60, 0 };
-const char*    SettingsScreen::AUTO_OFF_LABELS[5]  = { "5s", "15s", "30s", "60s", "never" };
+const char*    SettingsScreen::AUTO_OFF_LABELS[5]  = { "5s", "15s", "30s", "60s", "Never" };
 #endif
 const uint16_t SettingsScreen::LOW_BAT_OPTS[7]   = { 0, 3000, 3100, 3200, 3300, 3400, 3500 };
-const char*    SettingsScreen::LOW_BAT_LABELS[7]  = { "off", "3.0V", "3.1V", "3.2V", "3.3V", "3.4V", "3.5V" };
-const char*    SettingsScreen::BATT_DISPLAY_LABELS[3] = { "icon", "%", "V" };
-const char*    SettingsScreen::SOUND_LABELS[4] = { "built-in", "M1", "M2", "None" };
+const char*    SettingsScreen::LOW_BAT_LABELS[7]  = { "Off", "3.0V", "3.1V", "3.2V", "3.3V", "3.4V", "3.5V" };
+const char*    SettingsScreen::BATT_DISPLAY_LABELS[3] = { "Icon", "%", "V" };
+const char*    SettingsScreen::SOUND_LABELS[4] = { "Built-in", "M1", "M2", "None" };
 const char*    SettingsScreen::AD_SCOPE_LABELS[2] = { "All", "Zero-hop" };
 #if FEAT_FULL_REFRESH_SETTING
-const char* SettingsScreen::EINK_FULL_REFRESH_LABELS[5] = { "off", "5", "10", "20", "30" };
+const char* SettingsScreen::EINK_FULL_REFRESH_LABELS[5] = { "Off", "5", "10", "20", "30" };
 #endif

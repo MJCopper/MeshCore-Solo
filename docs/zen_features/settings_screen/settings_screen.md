@@ -21,14 +21,14 @@ cycling a value back to its original choice does not cause a flash write.
 | Setting                              | Options                          | Notes                                                                                                 |
 | ------------------------------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Brightness                           | 1–5                              | LEFT/RIGHT; preview applies immediately                                                               |
-| Auto-off                             | 5 s / 15 s / 30 s / 60 s / never | LEFT/RIGHT                                                                                            |
-| Auto-lock                            | on / off                         | Locks device when display turns off                                                                   |
-| Battery                              | icon / % / V                     | Display mode for the top-bar battery indicator                                                        |
-| Clock seconds                        | show / hide                      | Hiding reduces OLED refresh from 1 s to 60 s                                                          |
+| Auto-off                             | 5 s / 15 s / 30 s / 60 s / Never | LEFT/RIGHT                                                                                            |
+| Auto-lock                            | On / Off                         | Locks device when display turns off                                                                   |
+| Battery                              | Icon / % / V                     | Display mode for the top-bar battery indicator                                                        |
+| Clock seconds                        | On / Off                         | Turning seconds off reduces OLED refresh from 1 s to 60 s                                             |
 | Clock format                         | 24 h / 12 h                      | 12 h appends AM/PM                                                                                    |
 | Display rotation _(e-ink only)_      | 0° / 90° / 180° / 270°           | Applied immediately                                                                                   |
 | Joystick rotation _(e-ink only)_     | 0° / 90° / 180° / 270°           | Rotates input mapping independently of display rotation; useful for custom enclosures                 |
-| Full refresh interval _(e-ink only)_ | off / 5 / 10 / 20 / 30           | Partial refreshes between full clears; reduces ghosting on long sessions                              |
+| Full refresh interval _(e-ink only)_ | Off / 5 / 10 / 20 / 30           | Partial refreshes between full clears; reduces ghosting on long sessions                              |
 
 ---
 
@@ -92,7 +92,7 @@ Position numbers begin at **1** for the first configurable page after Clock.
 | SF        | 5–12       | LEFT/RIGHT. Spreading factor. |
 | BW        | 7.8–500 kHz | LEFT/RIGHT cycles the standard LoRa bandwidths. |
 | CR        | 5–8        | LEFT/RIGHT. Coding rate (4/5–4/8). |
-| Auto pwr  | ON / OFF   | **Adaptive Power Control.** Lowers actual TX power on strong links to save energy, ramping back up — to the **TX Pwr** ceiling — on weak or lost links. Link quality comes from direct-message ACK SNR and, for channel messages (no ACK), from hearing a repeater rebroadcast your packet. The radio page / name bar shows the live power. Default OFF (fixed TX power). **Suppressed (shown as `--`) while the repeater is on** — a repeater holds full TX power for consistent relay reach; your setting is restored when the repeater is switched off. |
+| Auto Pwr  | On / Off   | **Adaptive Power Control.** Lowers actual TX power on strong links to save energy, ramping back up — to the **TX Pwr** ceiling — on weak or lost links. Link quality comes from direct-message ACK SNR and, for channel messages (no ACK), from hearing a repeater rebroadcast your packet. The radio page / name bar shows the live power. Default Off (fixed TX power). **Suppressed (shown as `--`) while the repeater is on** — a repeater holds full TX power for consistent relay reach; your setting is restored when the repeater is switched off. |
 
 The **repeater** mode and radio timing controls live on their own screen — see **Tools › Repeater**.
 
@@ -104,9 +104,9 @@ The **repeater** mode and radio timing controls live on their own screen — see
 | ----------- | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Name        | keyboard entry (up to 31 chars)                     | This device's node name, shown to others and in every advert. **Enter** opens the keyboard pre-filled with the current name; the final change is saved when Settings is exited |
 | Timezone    | −12 h … +14 h                                       | UTC offset in whole hours                                                              |
-| GPS         | OFF / Continuous / 2 min / 5 min / 15 min / 30 min / 1 h / 3 h / 6 h | Continuous keeps the receiver on. Timed modes wake it to acquire and stabilise a fix, cache the position/time, then power it down until the selected interval |
-| Bluetooth   | ON / OFF                                            | Persistently enables or disables Bluetooth; the USB companion interface is unaffected   |
-| Low battery | off / 3.0 V / 3.1 V / 3.2 V / 3.3 V / 3.4 V / 3.5 V | Auto-shutdown threshold; also sets the 0 % anchor for the battery percentage indicator |
+| GPS         | Off / Continuous / 2 min / 5 min / 15 min / 30 min / 1 h / 3 h / 6 h | Continuous keeps the receiver on. Timed modes wake it to acquire and stabilise a fix, cache the position/time, then power it down until the selected interval |
+| Bluetooth   | On / Off                                            | Persistently enables or disables Bluetooth; the USB companion interface is unaffected   |
+| Low Battery | Off / 3.0 V / 3.1 V / 3.2 V / 3.3 V / 3.4 V / 3.5 V | Auto-shutdown threshold; also sets the 0 % anchor for the battery percentage indicator |
 | Units       | Metric / Imperial                                   | Unit system for distance values shown by supported screens such as Nearby Nodes. Metric uses m/km; Imperial uses ft/mi. |
 | Reboot      | action (**Enter**)                                  | Restarts this device. Pending setting changes are saved first. Last row, so it isn't the default-selected one |
 
@@ -169,9 +169,9 @@ See [CardKB](../cardkb/cardkb.md) for connection, controls and polling behaviour
 
 | Setting  | Options          | Notes                                                |
 | -------- | ---------------- | ---------------------------------------------------- |
-| DMs      | all / favourites | `all` shows every eligible direct-message contact; `favourites` shows only upstream-starred eligible DM contacts. Rooms and repeaters remain in their own lists |
-| Channels | all / favourites | Show all channels or only favourited ones            |
-| Rooms    | all / favourites | Show all room servers or only favourited ones        |
+| DMs      | All / Favourites | **All** shows every eligible direct-message contact; **Favourites** shows only upstream-starred eligible DM contacts. Rooms and repeaters remain in their own lists |
+| Channels | All / Favourites | Show all channels or only favourited ones            |
+| Rooms    | All / Favourites | Show all room servers or only favourited ones        |
 
 ---
 
@@ -179,10 +179,10 @@ See [CardKB](../cardkb/cardkb.md) for connection, controls and polling behaviour
 
 | Setting    | Options  | Notes                                                                    |
 | ---------- | -------- | ------------------------------------------------------------------------ |
-| Enabled    | ON / OFF | Enables the restricted interface; requires a saved PIN and confirmation  |
+| Enabled    | On / Off | Enables the restricted interface; requires a saved PIN and confirmation  |
 | Set PIN    | 000000–999999 | Enter the six-digit parent PIN twice; the saved value is not displayed |
-| Channels   | ON / OFF | Shows favourited private channels in Messages; Public and # channels remain hidden; default OFF |
-| Favourites | ON / OFF | Allows the Favourites Dial; default ON                                   |
+| Channels   | On / Off | Shows favourited private channels in Messages; Public and # channels remain hidden; default Off |
+| Favourites | On / Off | Allows the Favourites Dial; default On                                   |
 
 While Child Mode is locked, selecting Settings opens the parent PIN prompt. A successful PIN entry temporarily restores the full Settings screen and companion access. Leaving Settings or allowing the display to sleep ends the parent session.
 

@@ -19,7 +19,7 @@ public:
 
   static const char* label(uint8_t mode) {
     static const char* LABELS[COUNT] = {
-      "OFF", "Continuous", "2mins", "5mins", "15mins",
+      "Off", "Continuous", "2mins", "5mins", "15mins",
       "30mins", "1hr", "3hr", "6hr"
     };
     return LABELS[mode < COUNT ? mode : 0];

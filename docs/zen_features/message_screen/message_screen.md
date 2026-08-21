@@ -151,8 +151,8 @@ three flood attempts in total. An ACK ends the sequence immediately.
 | Item                         | Action                                                                         |
 | ---------------------------- | ------------------------------------------------------------------------------ |
 | Mark as read                 | Clears unread counter for this contact                                         |
-| Notif: default / OFF / ON    | Per-contact notification override — **LEFT/RIGHT** to cycle                    |
-| Melody: global / M1 / M2     | Per-contact melody override — **LEFT/RIGHT** to cycle                          |
+| Notif: Default / Off / On    | Per-contact notification override — **LEFT/RIGHT** to cycle                    |
+| Melody: Global / M1 / M2     | Per-contact melody override — **LEFT/RIGHT** to cycle                          |
 | Pin to dial / Unpin (slot N) | Pin this contact to a Favourites Dial slot; if already pinned shows which slot |
 
 When **Pin to dial** is selected, a slot picker opens (Slot 1–4 showing the
@@ -179,9 +179,9 @@ In the **Rooms** list the context menu instead offers:
 | Item                      | Action                                                                |
 | ------------------------- | --------------------------------------------------------------------- |
 | Mark all read             | Clears all unread for this channel                                    |
-| Notif: default / OFF / ON | Per-channel notification override — **LEFT/RIGHT** to cycle           |
-| Melody: global / M1 / M2  | Per-channel melody override — **LEFT/RIGHT** to cycle                 |
-| Fav: yes / no             | Add or remove this channel from favourites — **LEFT/RIGHT** to toggle |
+| Notif: Default / Off / On | Per-channel notification override — **LEFT/RIGHT** to cycle           |
+| Melody: Global / M1 / M2  | Per-channel melody override — **LEFT/RIGHT** to cycle                 |
+| Fav: Yes / No             | Add or remove this channel from favourites — **LEFT/RIGHT** to toggle |
 | Edit                      | Opens the Add/Edit form below, pre-filled with the channel's name    |
 | Delete                    | Removes the channel immediately (no confirm prompt)                   |
 

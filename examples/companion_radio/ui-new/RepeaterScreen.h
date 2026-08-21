@@ -30,9 +30,9 @@ class RepeaterScreen : public UIScreen {
   }
 
   void itemValue(int item, NodePrefs* p, char* buf, size_t n) const {
-    if (!p) { strncpy(buf, "OFF", n); buf[n-1]=0; return; }
+    if (!p) { strncpy(buf, "Off", n); buf[n-1]=0; return; }
     switch (item) {
-      case IT_REPEATER: strncpy(buf, p->client_repeat ? "ON" : "OFF", n); break;
+      case IT_REPEATER: strncpy(buf, p->client_repeat ? "On" : "Off", n); break;
       default: strncpy(buf, "", n); break;
     }
     buf[n - 1] = '\0';
