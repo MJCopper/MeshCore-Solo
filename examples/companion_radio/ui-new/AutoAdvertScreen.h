@@ -1,5 +1,6 @@
 #pragma once
-// Configures periodic automatic 0-hop advert with GPS position.
+// Configures automatic adverts and the location privacy policy shared by every
+// self-advert path (automatic, on-device manual, and companion-app manual).
 // Included by UITask.cpp with the other settings screens.
 
 class AutoAdvertScreen : public UIScreen {
@@ -7,6 +8,9 @@ class AutoAdvertScreen : public UIScreen {
   NodePrefs* _prefs;
   bool       _dirty;
   uint32_t   _initial_interval;
+  uint8_t    _initial_loc_policy;
+  int        _sel;
+  int        _scroll;
 
   static const int OPT_COUNT = 4;
   static const uint32_t OPTS[OPT_COUNT];
@@ -23,7 +27,9 @@ public:
 
   void onShow() override {
     _dirty = false;
+    _sel = _scroll = 0;
     _initial_interval = _prefs->advert_auto_interval_sec;
+    _initial_loc_policy = _prefs->advert_loc_policy;
     for (int i = 0; i < OPT_COUNT; i++)
       if (OPTS[i] == _prefs->advert_auto_interval_sec) return;
     // Retired short intervals must not keep running while the screen shows Off.
@@ -34,43 +40,41 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
-    int label_y = display.listStart();
-    int bar_y   = label_y + display.lineStep();
-    int bar_h   = display.lineStep();
-    int tip_y   = bar_y + bar_h + 4;
+    display.drawCenteredHeader("ADVERT");
 
-    display.drawCenteredHeader("AUTO-ADVERT");
-
-    display.setCursor(2, label_y);
-    display.print("Interval:");
-
-    int idx = currentIdx();
-    display.setColor(DisplayDriver::LIGHT);
-    display.fillRect(0, bar_y, display.width(), bar_h);
-    display.setColor(DisplayDriver::DARK);
-    display.drawTextCentered(display.width() / 2, bar_y + 1, OPT_LABELS[idx]);
-    display.setColor(DisplayDriver::LIGHT);
-
-    display.setCursor(2, tip_y);
-    display.print("<  > to change");
-    display.setCursor(2, tip_y + display.lineStep());
-    display.print("[Esc] to save");
+    drawList(display, 2, _sel, _scroll, [&](int item, int y, bool selected, int reserve) {
+      drawRowSelection(display, y, selected, reserve);
+      display.setCursor(2, y);
+      display.print(item == 0 ? "Auto Advert" : "GPS Details");
+      const char* value = item == 0 ? OPT_LABELS[currentIdx()]
+                                    : (_prefs->advert_loc_policy == ADVERT_LOC_NONE ? "HIDE" : "SHARE");
+      display.drawTextRightAlign(display.width() - reserve - 2, y, value);
+      display.setColor(DisplayDriver::LIGHT);
+    });
     return 500;
   }
 
   bool handleInput(char c) override {
     if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) {
-      _dirty = _prefs->advert_auto_interval_sec != _initial_interval;
+      _dirty = _prefs->advert_auto_interval_sec != _initial_interval ||
+               _prefs->advert_loc_policy != _initial_loc_policy;
       _task->savePrefsIfDirty(_dirty);
       _task->gotoHomeScreen();
       return true;
     }
+    if (c == KEY_UP)   { _sel = (_sel + 1) % 2; return true; }
+    if (c == KEY_DOWN) { _sel = (_sel + 1) % 2; return true; }
     bool right = keyIsNext(c) || c == KEY_ENTER;
     bool left  = keyIsPrev(c);
     if (right || left) {
-      int idx = currentIdx();
-      idx = right ? (idx + 1) % OPT_COUNT : (idx + OPT_COUNT - 1) % OPT_COUNT;
-      _prefs->advert_auto_interval_sec = OPTS[idx];
+      if (_sel == 0) {
+        int idx = currentIdx();
+        idx = right ? (idx + 1) % OPT_COUNT : (idx + OPT_COUNT - 1) % OPT_COUNT;
+        _prefs->advert_auto_interval_sec = OPTS[idx];
+      } else {
+        _prefs->advert_loc_policy = _prefs->advert_loc_policy == ADVERT_LOC_NONE
+            ? ADVERT_LOC_SHARE : ADVERT_LOC_NONE;
+      }
       _dirty = true;
       return true;
     }

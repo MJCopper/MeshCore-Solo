@@ -16,10 +16,10 @@ class UITask;
 #define FIRMWARE_BUILD_DATE "14 Aug 2026"
 #endif
 
-// Solo release version. The underlying MeshCore protocol/base version is
+// Zen release version. The underlying MeshCore protocol/base version is
 // reported separately through the MESHCORE_VERSION build flag.
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.26"
+#define FIRMWARE_VERSION "v2.26"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -434,6 +434,8 @@ private:
   unsigned long _bot_last_room_reply_ms;
   unsigned long _next_auto_advert_ms;
   unsigned long _advert_indicator_until_ms;
+  mesh::Packet* createConfiguredSelfAdvert();
+  bool sendConfiguredSelfAdvert(bool flood);
   void noteAdvertQueued();
 
   // Per-contact DM reply throttle: a small ring of the most recent recipients so

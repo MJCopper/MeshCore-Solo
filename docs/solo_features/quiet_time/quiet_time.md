@@ -2,7 +2,10 @@
 
 [Go back](../../../README.md)
 
-Quiet Time silences incoming notification presentation during a daily local-time interval. Messages continue to be received, stored and counted as unread, but do not show a pop-up alert, wake the display, sound the buzzer or trigger vibration.
+Quiet Time silences incoming notification sounds during a daily local-time
+interval. Messages continue to be received, stored and counted as unread. An
+eligible notification still shows its pop-up, triggers vibration where fitted,
+and wakes a sleeping display for five seconds, but does not sound the buzzer.
 
 Configure it under **Settings › Sound**:
 
@@ -22,6 +25,8 @@ Quiet Time remains inactive until the RTC has a valid synchronised time. This pr
 
 ### What is silenced
 
-Quiet Time suppresses presentation for incoming direct messages, room messages, channel messages and received adverts. Their normal message history and unread state remain available.
+Quiet Time suppresses buzzer sounds for incoming direct messages, room messages,
+channel messages and received adverts. Their visual presentation, vibration,
+normal message history and unread state remain available.
 
 Delivery acknowledgements, key feedback, alarms and countdown timers are not silenced. Message routing, acknowledgements and the companion offline queue are unchanged.

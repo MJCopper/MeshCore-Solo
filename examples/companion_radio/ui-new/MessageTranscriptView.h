@@ -28,8 +28,7 @@ class MessageTranscriptView {
   uint8_t _pending_added = 0;  // new newest entries awaiting the next layout
 
   static int wrappedLines(DisplayDriver& d, const char* body, int width) {
-    d.translateUTF8ToBlocks(s_wrap_trans, body, sizeof(s_wrap_trans));
-    int n = FullscreenMsgView::wrapLines(d, s_wrap_trans, width, s_wrap_lines,
+    int n = FullscreenMsgView::wrapLines(d, body, width, s_wrap_lines,
                                          MSG_WRAP_LINES_MAX);
     return n > 0 ? n : 1;
   }
@@ -85,9 +84,8 @@ public:
     TranscriptMessage msg;
     for (int item = 0; item < count && item_bottom > view_top; item++) {
       if (!provide(item, msg)) continue;
-      d.translateUTF8ToBlocks(s_wrap_trans, msg.body, sizeof(s_wrap_trans));
       int body_lines = FullscreenMsgView::wrapLines(
-          d, s_wrap_trans, d.width() - 6 - reserve, s_wrap_lines, MSG_WRAP_LINES_MAX);
+          d, msg.body, d.width() - 6 - reserve, s_wrap_lines, MSG_WRAP_LINES_MAX);
       if (body_lines < 1) { s_wrap_lines[0][0] = '\0'; body_lines = 1; }
       int rows = 1 + body_lines;
       int item_top = item_bottom - rows * lh;

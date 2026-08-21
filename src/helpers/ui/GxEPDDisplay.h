@@ -23,6 +23,7 @@
 
 #include "DisplayDriver.h"
 #include "MiscFixedFont.h"
+#include "EmojiGlyphs.h"
 
 #ifndef DISPLAY_ROTATION
   #define DISPLAY_ROTATION 0
@@ -56,7 +57,6 @@ class GxEPDDisplay : public DisplayDriver {
 #endif
   bool _init = false;
   bool _isOn = false;
-  bool _single_font = true;   // e-ink is single-font too now (misc-fixed 6x9), matching the OLED driver
   uint16_t _curr_color;
   CRC32 display_crc;
   int last_display_crc_value = 0;
@@ -109,18 +109,10 @@ public:
     if (_text_sz == 4) return 8 * BIG_TEXT_SCALE;
     if (_text_sz == 3) return 28;
     if (_text_sz == 2) return 16 * sc;
-    return (_single_font ? 9 : 8) * sc;   // misc-fixed 6x9 box height
+    return (_text_sz == 1 ? 9 : 8) * sc;
   }
   void setSingleFont(bool) override { }   // single-font: ignore toggles, stay misc-fixed 6x9
-  bool isSingleFont() const override { return _single_font; }
-  void translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) override {
-    if (_single_font) {
-      strncpy(dest, src, dest_size - 1);
-      dest[dest_size - 1] = '\0';
-    } else {
-      translateUTF8Static(dest, src, dest_size);
-    }
-  }
+  bool isSingleFont() const override { return true; }
   bool begin();
 
   bool isOn() override { return _isOn; }
@@ -138,7 +130,7 @@ public:
   void drawXbm(int x, int y, const uint8_t* bits, int w, int h) override;
   uint16_t getTextWidth(const char* str) override;
   uint16_t getCodepointWidth(uint32_t cp) override {
-    if (_single_font && _text_sz == 1) return glyphXAdvance(cp, scale());
+    if (_text_sz == 1) return glyphXAdvance(cp, scale());
     return DisplayDriver::getCodepointWidth(cp);
   }
   void setDisplayRotation(uint8_t rot) override;

@@ -13,7 +13,6 @@ static const int FS_CHARS_MAX = 80;  // max bytes per wrapped line
 // render-call stack at the cost of a fixed RAM allocation. Only used inside
 // render()/wrap helpers — never across a yield, so the single instance is safe.
 static const int MSG_WRAP_LINES_MAX = 24;
-static char s_wrap_trans[512];
 static char s_wrap_lines[MSG_WRAP_LINES_MAX][FS_CHARS_MAX];
 
 // Parse a leading "@[nick] " reply prefix. Returns the message body that
@@ -134,21 +133,19 @@ struct FullscreenMsgView {
     display.setColor(DisplayDriver::DARK);
     display.drawTextEllipsized(2, 1, display.width() - 4, sender);
     if (to_nick[0]) {
-      char trans_nick[32], to_label[36];
-      display.translateUTF8ToBlocks(trans_nick, to_nick, sizeof(trans_nick));
-      snprintf(to_label, sizeof(to_label), "To: %s", trans_nick);
+      char to_label[36];
+      snprintf(to_label, sizeof(to_label), "To: %s", to_nick);
       display.drawTextEllipsized(2, lineH + 3, display.width() - 4, to_label);
     }
     display.setColor(DisplayDriver::LIGHT);
 
-    display.translateUTF8ToBlocks(s_wrap_trans, body, sizeof(s_wrap_trans));
-    int lcount = wrapLines(display, s_wrap_trans, max_px, s_wrap_lines, MSG_WRAP_LINES_MAX);
+    int lcount = wrapLines(display, body, max_px, s_wrap_lines, MSG_WRAP_LINES_MAX);
     // Reserve the right-edge column for the scroll indicator and re-wrap so text
     // can't run under it. Reserve appears only once the list overflows, and a
     // narrower second pass only ever yields more lines — so it stays overflowing.
     int reserve = scrollIndicatorReserve(display, lcount, visible);
     if (reserve > 0)
-      lcount = wrapLines(display, s_wrap_trans, max_px - reserve, s_wrap_lines, MSG_WRAP_LINES_MAX);
+      lcount = wrapLines(display, body, max_px - reserve, s_wrap_lines, MSG_WRAP_LINES_MAX);
     int max_scroll = lcount > visible ? lcount - visible : 0;
     _max_scroll = max_scroll;
     if (scroll > max_scroll) scroll = max_scroll;

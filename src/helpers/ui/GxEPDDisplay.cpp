@@ -29,9 +29,9 @@ ColorVal UIColor::corp_blue = DisplayDriver::LIGHT;
 // GFX fonts use the baseline as the cursor origin. UI code assumes top-of-cell
 // coordinates (same convention as the OLED driver). Add the font ascender so
 // the two conventions match.
-static int fontAscender(int sz, bool single_font, int scale) {
+static int fontAscender(int sz, int scale) {
   if (sz == 3) return 26;                       // FreeSans18pt7b: proportional, baseline origin
-  if (sz == 1 && single_font) return 7 * scale;   // misc-fixed 6x9 GFX font: baseline origin, ascent 7px×scale
+  if (sz == 1) return 7 * scale;                // misc-fixed 6x9 GFX font
   return 0;                                     // GFX built-in font: cursor is top-left of cell
 }
 
@@ -39,6 +39,9 @@ static int fontAscender(int sz, bool single_font, int scale) {
 // Pixels are placed at y + yo*sc + row*sc — identical to how GFX would render
 // a scaled GFX font, but bypassing GFX so multi-byte UTF-8 is decoded correctly.
 int16_t GxEPDDisplay::drawGlyph(int16_t x, int16_t y, uint32_t cp, int sc) {
+  int16_t emoji_index = emojiGlyphIndex(cp);
+  if (emoji_index >= 0 || emojiIsCodepoint(cp))
+    return emojiDrawGlyph(display, x, y - 7 * sc, emoji_index, sc, _curr_color);
   for (uint8_t i = 0; i < lemonIconCount; i++) {
     if (pgm_read_dword(&lemonIconCPs[i]) == cp) {
       const GFXglyph* g = &lemonIconGlyphs[i];
@@ -139,7 +142,7 @@ void GxEPDDisplay::startFrame(ColorVal bkg) {
   display.setTextColor(_curr_color = GxEPD_BLACK);
   _text_sz = 1;
   int sc = scale();
-  display.setFont(_single_font ? &MiscFixed : NULL);
+  display.setFont(&MiscFixed);
   display.setTextSize(sc);
   display_crc.reset();
 }
@@ -168,7 +171,7 @@ void GxEPDDisplay::setTextSize(int sz) {
       display.setTextSize(scale() * 2);
       break;
     default:
-      display.setFont(_single_font ? &MiscFixed : NULL);
+      display.setFont(&MiscFixed);
       display.setTextSize(sc);
       break;
   }
@@ -190,13 +193,13 @@ void GxEPDDisplay::setCursor(int x, int y) {
   // Offset y by the font ascender: callers pass top-of-cell y, GFX fonts
   // expect baseline y. Without this, text would be clipped at the top.
   int sc = scale();
-  display.setCursor(x, y + fontAscender(_text_sz, _single_font, sc));
+  display.setCursor(x, y + fontAscender(_text_sz, sc));
 }
 
 void GxEPDDisplay::print(const char* str) {
   display_crc.update<char>(str, strlen(str));
   // misc-fixed path only for sz=1 — setTextSize(2/3) switches GFX to other fonts.
-  if (_single_font && _text_sz == 1) {
+  if (_text_sz == 1) {
     int16_t cx = display.getCursorX();
     int16_t cy = display.getCursorY();
     const int sc = scale();
@@ -204,7 +207,19 @@ void GxEPDDisplay::print(const char* str) {
     while (*p) {
       uint32_t cp = decodeCodepoint(p);
       if (cp == '\n') { cy += MiscFixed.yAdvance * sc; cx = 0; }
-      else            { cx = drawGlyph(cx, cy, cp, sc); }
+      else if (emojiIsVariation(cp) || emojiIsModifier(cp) || cp == 0x200D) { }
+      else if (emojiConsumeKeycap(p, cp)) {
+        cx = emojiDrawGlyph(display, cx, cy - 7 * sc, -1, sc, _curr_color);
+      } else {
+        int16_t index = emojiGlyphIndex(cp);
+        if (index >= 0 || emojiIsCodepoint(cp)) {
+          if (emojiIsRegionalIndicator(cp)) index = emojiFlagGlyphIndex(cp, p);
+          emojiConsumeSuffix(p, cp);
+          cx = emojiDrawGlyph(display, cx, cy - 7 * sc, index, sc, _curr_color);
+        } else {
+          cx = drawGlyph(cx, cy, cp, sc);
+        }
+      }
     }
     display.setCursor(cx, cy);
     return;
@@ -262,11 +277,16 @@ void GxEPDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
 }
 
 uint16_t GxEPDDisplay::getTextWidth(const char* str) {
-  if (_single_font && _text_sz == 1) {
+  if (_text_sz == 1) {
     uint16_t total = 0;
     const int sc = scale();
     const uint8_t* p = (const uint8_t*)str;
-    while (*p) total += glyphXAdvance(decodeCodepoint(p), sc);
+    while (*p) {
+      uint32_t cp = decodeCodepoint(p);
+      if (emojiIsVariation(cp) || emojiIsModifier(cp) || cp == 0x200D) continue;
+      if (!emojiConsumeKeycap(p, cp) && emojiIsCodepoint(cp)) emojiConsumeSuffix(p, cp);
+      total += glyphXAdvance(cp, sc);
+    }
     return total;
   }
   display.setTextWrap(false);

@@ -97,20 +97,8 @@ uint8_t SH1106Display::glyphXAdvance(uint32_t cp) {
   return miscFixedXAdvance(cp, _text_sz);
 }
 
-void SH1106Display::translateUTF8ToBlocks(char* dest, const char* src, size_t dest_size) {
-  if (_single_font) {
-    size_t n = strlen(src);
-    if (n >= dest_size) n = dest_size - 1;
-    memcpy(dest, src, n);
-    dest[n] = '\0';
-  } else {
-    DisplayDriver::translateUTF8ToBlocks(dest, src, dest_size);
-  }
-}
-
 void SH1106Display::print(const char *str)
 {
-  if (!_single_font) { display.print(str); return; }
   miscFixedPrint(display, str, _text_sz, _color);
 }
 
@@ -131,11 +119,7 @@ void SH1106Display::drawXbm(int x, int y, const uint8_t *bits, int w, int h)
 
 uint16_t SH1106Display::getTextWidth(const char *str)
 {
-  if (_single_font) return miscFixedTextWidth(str, _text_sz);
-  int16_t x1, y1;
-  uint16_t w, h;
-  display.getTextBounds(str, 0, 0, &x1, &y1, &w, &h);
-  return w;
+  return miscFixedTextWidth(str, _text_sz);
 }
 
 void SH1106Display::setBrightness(uint8_t level)

@@ -1,4 +1,4 @@
-# Solo UI framework — a guide for adding features
+# Zen UI framework — a guide for adding features
 
 [Go back](../../README.md)
 
@@ -107,9 +107,8 @@ Drawing helpers (all clip/measure for you):
 - `drawTextEllipsized(x, y, max_w, str)` — truncates with `…`; **use this for
   any user string** (names, labels) so long/UTF-8 text can't overrun.
 - `drawTextCentered(mid_x, y, str)`.
-- `translateUTF8ToBlocks(dst, src, n)` — map UTF-8 to the panel's glyph set for
-  *display only*. Never run text through it before sending it over the air or
-  storing it (it is lossy) — see the reply-prefix note in §5.
+- All text helpers accept native UTF-8. Do not pre-convert display strings;
+  clipping, measurement and glyph fallback are handled by the display driver.
 
 ---
 
@@ -197,8 +196,8 @@ cell, is a no-op.
 
 `FullscreenMsgView::wrapLines()` is a standalone pixel-accurate word-wrapper
 (O(n), variable-width-font aware) reusable by any multi-line layout; it writes
-into the shared `s_wrap_trans` / `s_wrap_lines` scratch (single-threaded render,
-never held across a yield — see §9).
+into the shared `s_wrap_lines` scratch (single-threaded render, never held
+across a yield — see §9).
 
 ---
 

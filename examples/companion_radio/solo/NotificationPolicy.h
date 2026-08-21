@@ -3,8 +3,8 @@
 namespace solo {
 
 // Separates accepting a notification into device state from presenting it to
-// the user. Quiet Time suppresses presentation only; Child Mode may reject an
-// event entirely when its sender/channel is outside the allow-list.
+// the user. Quiet Time suppresses sound only; Child Mode may reject an event
+// entirely when its sender/channel is outside the allow-list.
 struct NotificationDecision {
   bool record_unread;
   bool show_visual;
@@ -18,8 +18,8 @@ class NotificationPolicy {
 public:
   static NotificationDecision decide(bool eligible, bool quiet_active,
                                      bool quiet_affected) {
-    bool present = eligible && !(quiet_active && quiet_affected);
-    NotificationDecision result = { eligible, present, present, present };
+    bool sound = eligible && !(quiet_active && quiet_affected);
+    NotificationDecision result = { eligible, eligible, sound, eligible };
     return result;
   }
 };

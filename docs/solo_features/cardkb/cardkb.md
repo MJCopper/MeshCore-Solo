@@ -4,7 +4,7 @@
 
 ### Overview
 
-The Wio Tracker L1 Solo firmware supports the M5Stack CardKB connected directly
+The Wio Tracker L1 Zen firmware supports the M5Stack CardKB connected directly
 to the Grove I2C port. The keyboard is detected automatically at address `0x5F`;
 there is no setting required to enable it and the Tracker controls remain
 available.

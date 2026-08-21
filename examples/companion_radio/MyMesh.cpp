@@ -2036,22 +2036,8 @@ void MyMesh::handleCmdFrame(size_t len) {
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
     }
   } else if (cmd_frame[0] == CMD_SEND_SELF_ADVERT) {
-    mesh::Packet* pkt;
-    if (_prefs.advert_loc_policy == ADVERT_LOC_NONE) {
-      pkt = createSelfAdvert(_prefs.node_name);
-    } else {
-      pkt = createSelfAdvert(_prefs.node_name, sensors.node_lat, sensors.node_lon);
-    }
-    if (pkt) {
-      if (len >= 2 && cmd_frame[1] == 1) { // optional param (1 = flood, 0 = zero hop)
-        unsigned long delay_millis = 0;
-        TransportKey default_scope;
-        memcpy(&default_scope.key, _prefs.default_scope_key, sizeof(default_scope.key));
-        sendFloodScoped(default_scope, pkt, delay_millis);
-      } else {
-        sendZeroHop(pkt);
-      }
-      noteAdvertQueued();
+    // Optional parameter: 1 = flood, 0 (or omitted) = zero hop.
+    if (sendConfiguredSelfAdvert(len >= 2 && cmd_frame[1] == 1)) {
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_TABLE_FULL);
@@ -2116,12 +2102,7 @@ void MyMesh::handleCmdFrame(size_t len) {
   } else if (cmd_frame[0] == CMD_EXPORT_CONTACT) {
     if (len < 1 + PUB_KEY_SIZE) {
       // export SELF
-      mesh::Packet* pkt;
-      if (_prefs.advert_loc_policy == ADVERT_LOC_NONE) {
-        pkt = createSelfAdvert(_prefs.node_name);
-      } else {
-        pkt = createSelfAdvert(_prefs.node_name, sensors.node_lat, sensors.node_lon);
-      }
+      mesh::Packet* pkt = createConfiguredSelfAdvert();
       if (pkt) {
         pkt->header |= ROUTE_TYPE_FLOOD; // would normally be sent in this mode
 
@@ -3137,13 +3118,7 @@ void MyMesh::loop() {
   }
 
   if (_prefs.advert_auto_interval_sec > 0 && millisHasNowPassed(_next_auto_advert_ms)) {
-    mesh::Packet* pkt = (sensors.node_lat != 0 || sensors.node_lon != 0)
-      ? createSelfAdvert(_prefs.node_name, sensors.node_lat, sensors.node_lon)
-      : createSelfAdvert(_prefs.node_name);
-    if (pkt) {
-      sendZeroHop(pkt);
-      noteAdvertQueued();
-    }
+    sendConfiguredSelfAdvert(false);
     _next_auto_advert_ms = futureMillis(_prefs.advert_auto_interval_sec * 1000UL);
   }
 
@@ -3158,19 +3133,36 @@ void MyMesh::loop() {
 }
 
 bool MyMesh::advert() {
-  mesh::Packet* pkt;
-  if (_prefs.advert_loc_policy == ADVERT_LOC_NONE) {
-    pkt = createSelfAdvert(_prefs.node_name);
+  return sendConfiguredSelfAdvert(false);
+}
+
+// One privacy gate for every self-advert producer. advert_loc_policy is the
+// existing MeshCore setting exposed by companion apps; any location-sharing
+// mode includes the current stored/fixed position, while NONE emits no
+// coordinates at all.
+mesh::Packet* MyMesh::createConfiguredSelfAdvert() {
+  if (_prefs.advert_loc_policy == ADVERT_LOC_NONE)
+    return createSelfAdvert(_prefs.node_name);
+  return createSelfAdvert(_prefs.node_name, sensors.node_lat, sensors.node_lon);
+}
+
+// Shared transmit path for timed, on-device, and companion-app adverts.
+// The caller chooses reach; payload/privacy and UI state cannot drift between
+// triggers. Contact export deliberately uses createConfiguredSelfAdvert()
+// directly because it serializes a packet without transmitting it.
+bool MyMesh::sendConfiguredSelfAdvert(bool flood) {
+  mesh::Packet* pkt = createConfiguredSelfAdvert();
+  if (!pkt) return false;
+
+  if (flood) {
+    TransportKey default_scope;
+    memcpy(&default_scope.key, _prefs.default_scope_key, sizeof(default_scope.key));
+    sendFloodScoped(default_scope, pkt, 0);
   } else {
-    pkt = createSelfAdvert(_prefs.node_name, sensors.node_lat, sensors.node_lon);
-  }
-  if (pkt) {
     sendZeroHop(pkt);
-    noteAdvertQueued();
-    return true;
-  } else {
-    return false;
   }
+  noteAdvertQueued();
+  return true;
 }
 
 // The RF send itself is normally shorter than a UI refresh interval, so expose

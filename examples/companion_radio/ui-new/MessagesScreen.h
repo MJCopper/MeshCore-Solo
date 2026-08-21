@@ -69,7 +69,7 @@ class MessagesScreen : public UIScreen {
   char      _ctx_melody_item[20];
   char      _ctx_pin_item[28];   // "Pin to dial" or "Unpin (slot N)"
   char      _ctx_ch_fav_item[12]; // "Fav" or "Unfav"
-  char      _pin_slot_labels[NodePrefs::FAVOURITES_COUNT][22];  // per-slot picker labels
+  char      _pin_slot_labels[NodePrefs::FAVOURITES_COUNT][40];  // "Slot N: " + full UTF-8 contact name
   bool      _pin_picker_active;  // true while the slot-picker submenu is open
   bool      _retry_menu_active = false; // transcript Hold-Enter retry/quick menu
   int       _retry_hist_pos = -1;       // frozen row selected when menu opened
@@ -209,7 +209,7 @@ class MessagesScreen : public UIScreen {
 
   void startReply(bool to_channel) {
     _sending_to_channel = to_channel;
-    beginCustomMessage();
+    beginCustomMessage(true);
   }
 
   // Recipient chosen while sharing — open the keyboard with the prepared text.
@@ -287,10 +287,11 @@ class MessagesScreen : public UIScreen {
   // Conversation controls deliberately avoid a selectable compose row: a short
   // Enter opens the editor. Hold Enter opens saved quick messages directly,
   // except when this transcript has a failed send and needs a resend action.
-  void beginCustomMessage() {
-    _reply_mode = false;
+  void beginCustomMessage(bool replying = false) {
+    _reply_mode = replying;
     _quick_msgs_bypassed = true;
-    messageeditor::begin(*_kb, "", messageeditor::SEND_TEXT_LIMIT, &sensors);
+    messageeditor::begin(*_kb, replying ? _reply_prefix : "",
+                         messageeditor::SEND_TEXT_LIMIT, &sensors);
     _phase = KEYBOARD;
   }
 
@@ -1060,12 +1061,10 @@ public:
 
         ContactInfo c;
         if (the_mesh.getContactByIdx(mesh_idx, c)) {
-          char filtered[sizeof(c.name)];
-          display.translateUTF8ToBlocks(filtered, c.name, sizeof(filtered));
           uint8_t dm_unread = _room_mode ? _task->getRoomUnread(c.id.pub_key)
                                          : _task->getDMUnread(c.id.pub_key);
           int bw = dm_unread > 0 ? display.unreadBadgeWidth(dm_unread) + 2 : 0;
-          display.drawTextEllipsized(2, y, display.width() - 2 - bw - reserve, filtered);
+          display.drawTextEllipsized(2, y, display.width() - 2 - bw - reserve, c.name);
           if (dm_unread > 0)
             display.drawUnreadBadge(display.width() - reserve, y, dm_unread, sel);
         }
@@ -1109,9 +1108,7 @@ public:
 
     } else if (_phase == DM_HIST) {
       display.setTextSize(1);
-      char filtered_name[sizeof(_sel_contact.name)];
-      display.translateUTF8ToBlocks(filtered_name, _sel_contact.name, sizeof(filtered_name));
-
+      const char* contact_name = _sel_contact.name;
       if (_dm_fs.active && _dm_hist_sel >= 0) {
         int ring_pos = _history.dmHistEntryForContact(_sel_contact.id.pub_key, _dm_hist_sel);
         if (ring_pos >= 0) {
@@ -1120,7 +1117,7 @@ public:
           // No skipReplyPrefix() here -- _dm_fs.render() parses "@[nick] " itself
           // (for the "To:" header); stripping it here first would hide it there.
           const char* body = dmDisplayParts(e, _sel_contact.type == ADV_TYPE_ROOM,
-                                            filtered_name, sender_buf, sizeof(sender_buf));
+                                            contact_name, sender_buf, sizeof(sender_buf));
           const char* sender = sender_buf;
           int dm_count = _history.dmHistCountForContact(_sel_contact.id.pub_key);
           int ret = _dm_fs.render(display, sender, body,
@@ -1141,8 +1138,8 @@ public:
 
       int hist_start_y = display.headerH();
 
-      char title[24];
-      snprintf(title, sizeof(title), "%.23s", filtered_name);
+      char title[40];
+      snprintf(title, sizeof(title), "%s", contact_name);
       display.drawCenteredHeader(title, true, _ctx_menu.active);
 
       int dm_count = _history.dmHistCountForContact(_sel_contact.id.pub_key);
@@ -1157,7 +1154,7 @@ public:
             const DmHistEntry& e = _history.dmAtPos(ring_pos);
             char sender[33];
             const char* body = skipReplyPrefix(
-                dmDisplayParts(e, is_room, filtered_name, sender, sizeof(sender)));
+                dmDisplayParts(e, is_room, contact_name, sender, sizeof(sender)));
             strncpy(msg.sender, sender, sizeof(msg.sender) - 1);
             msg.sender[sizeof(msg.sender) - 1] = '\0';
             strncpy(msg.body, body, sizeof(msg.body) - 1);
@@ -1271,16 +1268,15 @@ public:
         int rlen = (int)strlen(_reply_prefix) - 4; // exclude "@[" and "] "
         if (rlen < 0) rlen = 0;
         if (rlen > 20) rlen = 20;
-        char nick_raw[32], nick_trans[32];
+        char nick_raw[32];
         snprintf(nick_raw, sizeof(nick_raw), "%.*s", rlen, _reply_prefix + 2);
-        display.translateUTF8ToBlocks(nick_trans, nick_raw, sizeof(nick_trans));
-        snprintf(title, sizeof(title), "RE:%s", nick_trans);
+        snprintf(title, sizeof(title), "RE:%s", nick_raw);
       } else if (_sending_to_channel) {
         ChannelDetails ch;
         the_mesh.getChannel(_sel_channel_idx, ch);
-        snprintf(title, sizeof(title), "%.23s", ch.name);
+        snprintf(title, sizeof(title), "%s", ch.name);
       } else {
-        snprintf(title, sizeof(title), "TO:%.14s", _sel_contact.name);
+        snprintf(title, sizeof(title), "TO:%s", _sel_contact.name);
       }
       display.drawCenteredHeader(title);
 
@@ -1450,7 +1446,7 @@ public:
                   if (_task->isFavouriteSlotEmpty(s)) {
                     snprintf(_pin_slot_labels[s], sizeof(_pin_slot_labels[s]), "Slot %d: empty", s + 1);
                   } else {
-                    char nm[16] = "?";
+                    char nm[32] = "?"; // ContactInfo::name, retained as UTF-8
                     NodePrefs* p = _task->getNodePrefs();
                     if (p) {
                       const uint8_t* pfx = p->favourite_contacts[s];
@@ -1458,7 +1454,7 @@ public:
                         ContactInfo c2;
                         if (!the_mesh.getContactByIdx(idx, c2)) break;
                         if (memcmp(c2.id.pub_key, pfx, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
-                          DisplayDriver::translateUTF8Static(nm, c2.name, sizeof(nm));
+                          snprintf(nm, sizeof(nm), "%s", c2.name);
                           break;
                         }
                       }

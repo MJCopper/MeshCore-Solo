@@ -1,10 +1,10 @@
-# MeshCore Solo Companion Firmware
+# MeshCore Zen Companion Firmware
 
 A fork of the official [MeshCore](https://github.com/meshcore-dev/MeshCore) companion radio firmware with extended features and UI enhancements for the Seeed Wio Tracker L1.
 
 Join the discussion on the official MeshCore Discord: https://discord.gg/sdhYArU2jr
 
-Solo firmware thread: https://discord.com/channels/1495203904898728149/1505294337884553447
+Zen firmware thread: https://discord.com/channels/1495203904898728149/1505294337884553447
 
 ---
 
@@ -96,7 +96,7 @@ Updating to a newer version usually does not require erasing flash unless the re
 | [Child Mode](./docs/solo_features/child_mode/child_mode.md)                 | Parent PIN, allowed conversations and pages, transport restrictions, recovery |
 | [Quiet Time](./docs/solo_features/quiet_time/quiet_time.md)                 | Daily local-time notification schedule with retained unread state |
 | [Tools Screen](./docs/solo_features/tools_screen/tools_screen.md)          | Nearby nodes, ringtone editor, diagnostics, and repeater mode |
-| [Solo UI framework](./docs/design/solo_ui_framework.md)                    | **Developer guide** — the reusable building blocks (screens, lists, popups, mini-icons, geo/persistence helpers) and how to add a new feature |
+| [Zen UI framework](./docs/design/solo_ui_framework.md)                     | **Developer guide** — the reusable building blocks (screens, lists, popups, mini-icons, geo/persistence helpers) and how to add a new feature |
 
 ### Upstream MeshCore
 
@@ -111,11 +111,11 @@ Updating to a newer version usually does not require erasing flash unless the re
 
 ---
 
-## Solo Tools
+## Zen Tools
 
-Solo builds include screenshot capture without requiring special build flags.
+Zen builds include screenshot capture without requiring special build flags.
 
-### [Solo Tools Web App](https://marekzegare4.github.io/Solo-tools/) — no install required
+### [Zen Tools Web App](https://marekzegare4.github.io/Solo-tools/) — no install required
 
 Open the link in a browser with Web Serial support (Chromium-based) and click **Connect device**. The web app supports:
 

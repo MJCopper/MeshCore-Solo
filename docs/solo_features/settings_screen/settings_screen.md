@@ -40,7 +40,7 @@ cycling a value back to its original choice does not cause a flash write.
 | Volume         | 1–5                            | LEFT/RIGHT; preview tone plays on each change                |
 | DM Melody      | built-in / Melody 1 / Melody 2 / None | Notification sound for incoming private messages. `None` disables the sound for this event. |
 | Channel Melody | built-in / Melody 1 / Melody 2 / None | Notification sound for incoming channel messages. `None` disables the sound for this event. |
-| AD sound       | built-in / Melody 1 / Melody 2 / None | Sound played whenever an **advert** is received from *any* node — pairs with Auto-Advert as an audible "in range" heartbeat. `None` disables the sound for this event. |
+| AD sound       | built-in / Melody 1 / Melody 2 / None | Sound played whenever an **advert** is received from *any* node — pairs with automatic adverts as an audible "in range" heartbeat. `None` disables the sound for this event. |
 | AD scope       | All / Zero-hop                | Filters the AD sound so it plays for every advert or only for local zero-hop adverts. |
 | Quiet Time     | Off / On / Active             | Enables the daily schedule; Active means the current local time is inside it |
 | Quiet from     | 21:00                         | Start of Quiet Time in the configured local timezone |
@@ -48,9 +48,14 @@ cycling a value back to its original choice does not cause a flash write.
 
 Melody 1 and Melody 2 are custom sequences editable in **Tools › Ringtone Editor**.
 
-### Auto-Advert
+### Advert
 
-Auto-Advert has its own entry on the Settings home card. It configures periodic zero-hop adverts used by nearby nodes to discover this device. Available intervals are **Off**, **1 hour**, **3 hours**, and **6 hours**.
+Advert has its own entry on the Settings home card.
+
+| Setting     | Options                         | Notes |
+| ----------- | ------------------------------- | ----- |
+| Auto Advert | Off / 1 hour / 3 hours / 6 hours | Periodically sends a zero-hop advert so nearby nodes can discover this device. |
+| GPS Details | Hide / Share                    | Controls whether coordinates are included in every self advert, including automatic adverts and adverts triggered manually on the device or by a companion app. |
 
 See [Quiet Time](../quiet_time/quiet_time.md) for schedule behaviour and time editing.
 
@@ -187,5 +192,5 @@ See [Child Mode](../child_mode/child_mode.md) for preparation, restrictions, GPS
 Up to 10 quick reply templates (Q1–Q10). Press **Enter** on a slot to open the keyboard editor. Supports the same placeholders as the main keyboard (`{time}`, `{loc}`, and sensor placeholders when connected).
 
 On-device direct-message delivery uses a fixed policy. When a known path exists,
-Solo tries it twice in total, clears it after both attempts fail, then tries
+Zen tries it twice in total, clears it after both attempts fail, then tries
 three times by flood. With no known path, it tries three times by flood in total.

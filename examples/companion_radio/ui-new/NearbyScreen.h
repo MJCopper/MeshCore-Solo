@@ -847,7 +847,8 @@ public:
 
         drawRowSelection(display, y, sel, reserve);
 
-        char filt[32];
+        char fallback[32];
+        const char* shown = e.name;
         int tx = 2;
         if (e.is_live) {
           // Diamond marker = this node is broadcasting its position ([LOC]),
@@ -864,11 +865,11 @@ public:
           miniIconDrawCentered(display, tx + iw / 2, y + display.getLineHeight() / 2 - 1, ICON_PG_STAR);
           tx += iw + 2;
         }
-        display.translateUTF8ToBlocks(filt, e.name, sizeof(filt));
         if (_source == SRC_SCAN && !e.name[0]) {  // unknown node → "[Type]"
-          snprintf(filt, sizeof(filt), "[%s]", typeName(e.type));
+          snprintf(fallback, sizeof(fallback), "[%s]", typeName(e.type));
+          shown = fallback;
         }
-        display.drawTextEllipsized(tx, y, dist_col - tx - 2, filt);
+        display.drawTextEllipsized(tx, y, dist_col - tx - 2, shown);
 
         display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
         char right[10];

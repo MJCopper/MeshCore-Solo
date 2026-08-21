@@ -52,7 +52,7 @@ class SplashScreen : public UIScreen {
   UITask* _task;
   unsigned long dismiss_after;
   char _version_info[12];
-  char _solo_ver[12];
+  char _zen_ver[12];
 
 public:
   SplashScreen(UITask* task) : _task(task) {
@@ -60,16 +60,16 @@ public:
     strncpy(_version_info, MESHCORE_VERSION, sizeof(_version_info) - 1);
     _version_info[sizeof(_version_info) - 1] = '\0';
 
-    // Solo firmware version: strip the commit-hash suffix build.sh always
+    // Zen firmware version: strip the commit-hash suffix build.sh always
     // appends as the LAST dash-segment (v1.15-solo.1-abcdef -> v1.15-solo.1).
     // Must be the last dash, not the first: a tag like v1.21-rc1 has a dash
     // of its own before the commit hash gets appended.
     const char *ver = FIRMWARE_VERSION;
     const char *dash = strrchr(ver, '-');
     int plen = dash ? (int)(dash - ver) : (int)strlen(ver);
-    if (plen >= (int)sizeof(_solo_ver)) plen = sizeof(_solo_ver) - 1;
-    memcpy(_solo_ver, ver, plen);
-    _solo_ver[plen] = '\0';
+    if (plen >= (int)sizeof(_zen_ver)) plen = sizeof(_zen_ver) - 1;
+    memcpy(_zen_ver, ver, plen);
+    _zen_ver[plen] = '\0';
 
     dismiss_after = millis() + BOOT_SCREEN_MILLIS;
   }
@@ -97,15 +97,15 @@ public:
     display.drawTextCentered(display.width()/2, date_y, FIRMWARE_BUILD_DATE);
 
 #ifdef FIRMWARE_SOLO_BUILD
-    int solo_y = date_y + step;
-    display.fillRect(0, solo_y - 1, display.width(), lh + 2);
+    int zen_y = date_y + step;
+    display.fillRect(0, zen_y - 1, display.width(), lh + 2);
     display.setColor(DisplayDriver::DARK);
-    char solo_label[24];
-    if (_solo_ver[0])
-      snprintf(solo_label, sizeof(solo_label), "Solo %s", _solo_ver);
+    char zen_label[24];
+    if (_zen_ver[0])
+      snprintf(zen_label, sizeof(zen_label), "Zen %s", _zen_ver);
     else
-      snprintf(solo_label, sizeof(solo_label), "Solo");
-    display.drawTextCentered(display.width()/2, solo_y, solo_label);
+      snprintf(zen_label, sizeof(zen_label), "Zen");
+    display.drawTextCentered(display.width()/2, zen_y, zen_label);
     display.setColor(DisplayDriver::LIGHT);
 #endif
 
@@ -400,7 +400,7 @@ class HomeScreen : public UIScreen {
       if (c.type != ADV_TYPE_CHAT) continue;
       if (!(c.flags & 0x01)) continue;
       memcpy(_pin_keys[_pin_count], c.id.pub_key, NodePrefs::FAVOURITE_PREFIX_LEN);
-      DisplayDriver::translateUTF8Static(_pin_labels[_pin_count], c.name, sizeof(_pin_labels[_pin_count]));
+      snprintf(_pin_labels[_pin_count], sizeof(_pin_labels[_pin_count]), "%s", c.name);
       _pin_count++;
     }
     // 2) Recent DM contacts (deduped).
@@ -416,7 +416,7 @@ class HomeScreen : public UIScreen {
         if (!the_mesh.getContactByIdx(idx, c)) break;
         if (memcmp(c.id.pub_key, recent[i], NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
           memcpy(_pin_keys[_pin_count], recent[i], NodePrefs::FAVOURITE_PREFIX_LEN);
-          DisplayDriver::translateUTF8Static(_pin_labels[_pin_count], c.name, sizeof(_pin_labels[_pin_count]));
+          snprintf(_pin_labels[_pin_count], sizeof(_pin_labels[_pin_count]), "%s", c.name);
           _pin_count++;
           break;
         }
@@ -433,7 +433,7 @@ class HomeScreen : public UIScreen {
           if (memcmp(_pin_keys[j], c.id.pub_key, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) { dup = true; break; }
         if (dup) continue;
         memcpy(_pin_keys[_pin_count], c.id.pub_key, NodePrefs::FAVOURITE_PREFIX_LEN);
-        DisplayDriver::translateUTF8Static(_pin_labels[_pin_count], c.name, sizeof(_pin_labels[_pin_count]));
+        snprintf(_pin_labels[_pin_count], sizeof(_pin_labels[_pin_count]), "%s", c.name);
         _pin_count++;
       }
     }
@@ -450,7 +450,7 @@ class HomeScreen : public UIScreen {
   static const int PIN_PICKER_MAX = 12;
   PopupMenu _pin_menu;
   uint8_t   _pin_keys[PIN_PICKER_MAX][NodePrefs::FAVOURITE_PREFIX_LEN];
-  char      _pin_labels[PIN_PICKER_MAX][22];
+  char      _pin_labels[PIN_PICKER_MAX][32]; // ContactInfo::name, retained as UTF-8
   int       _pin_count = 0;
   int       _pin_target_slot = -1;
 
@@ -668,18 +668,16 @@ public:
     // Shared carousel top bar: node name, live radio power, status indicators
     // and battery. Clock content now starts below the same header as every page.
     display.setColor(DisplayDriver::LIGHT);
-    char filtered_name[sizeof(_node_prefs->node_name)];
-    display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
     int rightEdge = renderBatteryIndicator(display, _task->getBattMilliVolts());
     display.setColor(DisplayDriver::LIGHT);
     if (the_mesh.apcActive()) {
       char pwr_buf[8];
       snprintf(pwr_buf, sizeof(pwr_buf), "%ddB", (int)radio_driver.getTxPower());
       int pwr_w = display.getTextWidth(pwr_buf);
-      display.drawTextEllipsized(0, 0, rightEdge - 2 - pwr_w - 2, filtered_name);
+      display.drawTextEllipsized(0, 0, rightEdge - 2 - pwr_w - 2, _node_prefs->node_name);
       display.drawTextRightAlign(rightEdge - 2, 0, pwr_buf);
     } else {
-      display.drawTextEllipsized(0, 0, rightEdge - 2, filtered_name);
+      display.drawTextEllipsized(0, 0, rightEdge - 2, _node_prefs->node_name);
     }
 
     // ensure current page is visible (e.g. after settings change)
@@ -940,9 +938,6 @@ public:
         }
 
         if (has_contact) {
-          char name[24];
-          display.translateUTF8ToBlocks(name, ci.name, sizeof(name));
-
           // Reserve space for the unread badge so the name's ellipsis lands
           // before it instead of underneath. Badge and name share one baseline.
           uint8_t unread = _task->getDMUnread(ci.id.pub_key);
@@ -950,7 +945,7 @@ public:
           int name_y     = cy + (cell_h - line_h) / 2;
           int name_max_w = cell_w - 4 - bw;
           if (name_max_w < 6) name_max_w = 6;
-          display.drawTextEllipsized(cx + 2, name_y, name_max_w, name);
+          display.drawTextEllipsized(cx + 2, name_y, name_max_w, ci.name);
           if (unread > 0)
             display.drawUnreadBadge(cx + cell_w - 2, name_y, unread, sel);
         } else {
@@ -1362,7 +1357,7 @@ int UITask::getSettingsSectionCount() const {
 }
 const char* UITask::getSettingsSectionLabel(int index) const {
   int section_count = ((SettingsScreen*)settings)->sectionCount();
-  if (index == section_count) return "Auto-Advert";
+  if (index == section_count) return "Advert";
   return ((SettingsScreen*)settings)->sectionLabel(index);
 }
 void UITask::openSettingsSection(int index) {
@@ -1961,21 +1956,20 @@ void UITask::notify(UIEventType event) {
   // paths use incomingMessage(), which supplies the required identity.
   solo::NotificationDecision decision = solo::NotificationPolicy::decide(
       notificationAllowed(event), isQuietTimeActive(), notificationQuietAffected(event));
-  if (decision.present()) presentNotification(event);
+  if (decision.present())
+    presentNotification(event, decision.play_sound, decision.vibrate);
 }
 
-void UITask::presentNotification(UIEventType t) {
+void UITask::presentNotification(UIEventType t, bool play_sound, bool vibrate) {
 #if defined(PIN_BUZZER)
-{
+if (play_sound) {
   SoundNotifier sn(buzzer, _node_prefs, _notif_mel_buf, sizeof(_notif_mel_buf));
   switch(t){
   case UIEventType::contactMessage:
     sn.playDM(_last_notif_dm_valid, _last_notif_dm_prefix);
-    _last_notif_dm_valid = false;
     break;
   case UIEventType::channelMessage:
     sn.playCH(_last_notif_ch_idx);
-    _last_notif_ch_idx = -1;
     break;
   case UIEventType::roomMessage:
     // Rooms have many authors and no per-room melody pref, so use the default DM
@@ -1994,13 +1988,22 @@ void UITask::presentNotification(UIEventType t) {
     break;
   }
 }
+#else
+  (void)play_sound;
 #endif
+
+  // Sender/channel sound context belongs to this event even when Quiet Time
+  // suppresses playback. Do not let it leak into the next audible message.
+  if (t == UIEventType::contactMessage) _last_notif_dm_valid = false;
+  if (t == UIEventType::channelMessage) _last_notif_ch_idx = -1;
 
 #ifdef PIN_VIBRATION
   // Trigger vibration for all UI events except none
-  if (t != UIEventType::none) {
+  if (vibrate && t != UIEventType::none) {
     vibration.trigger();
   }
+#else
+  (void)vibrate;
 #endif
 }
 
@@ -2015,8 +2018,9 @@ void UITask::msgRead(int msgcount) {
 }
 
 void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, int msgcount, uint8_t contact_type, const uint8_t* pub_key) {
-  handleNewMsg(path_len, from_name, text, msgcount, contact_type, pub_key,
-               !isQuietTimeActive());
+  // Legacy callers split message presentation and sound into newMsg()/notify().
+  // Quiet Time therefore belongs to notify(); the visual message path remains.
+  handleNewMsg(path_len, from_name, text, msgcount, contact_type, pub_key, true);
 }
 
 void UITask::incomingMessage(UIEventType event, uint8_t path_len,
@@ -2030,7 +2034,7 @@ void UITask::incomingMessage(UIEventType event, uint8_t path_len,
     handleNewMsg(path_len, from_name, text, msgcount, contact_type, pub_key,
                  decision.show_visual);
   if (decision.play_sound || decision.vibrate) {
-    presentNotification(event);
+    presentNotification(event, decision.play_sound, decision.vibrate);
   } else {
     _last_notif_dm_valid = false;
     _last_notif_ch_idx = -1;
@@ -2153,8 +2157,7 @@ void UITask::renderAlertOverlay() {
   const int pad   = 3;
   const int box_w = _display->width() - 8;
   const int box_x = 4;
-  _display->translateUTF8ToBlocks(s_wrap_trans, _alert, sizeof(s_wrap_trans));
-  int nl = FullscreenMsgView::wrapLines(*_display, s_wrap_trans, box_w - pad * 2, s_wrap_lines, 3);
+  int nl = FullscreenMsgView::wrapLines(*_display, _alert, box_w - pad * 2, s_wrap_lines, 3);
   if (nl < 1) nl = 1;
   int box_h = nl * lh + pad * 2;
   int box_y = (_display->height() - box_h) / 2;

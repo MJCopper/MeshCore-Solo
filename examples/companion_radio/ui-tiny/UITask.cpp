@@ -155,15 +155,6 @@ public:
     char tmp[80];
 
     if (_page == HomePage::FIRST) {
-      // // node name
-      // display.setTextSize(1);
-      // display.setColor(DisplayDriver::GREEN);
-      // char filtered_name[sizeof(_node_prefs->node_name)];
-      // display.translateUTF8ToBlocks(filtered_name, _node_prefs->node_name, sizeof(filtered_name));
-      // display.setCursor(0, 0);
-      // display.print(filtered_name);
-
-
       display.setColor(UIColor::primary_txt);
       display.setTextSize(2);
       sprintf(tmp, "MSG: %d", _task->getMsgCount());
@@ -210,9 +201,7 @@ public:
         int timestamp_width = display.getTextWidth(tmp);
         int max_name_width = display.width() - timestamp_width - 1;
 
-        char filtered_recent_name[sizeof(a->name)];
-        display.translateUTF8ToBlocks(filtered_recent_name, a->name, sizeof(filtered_recent_name));
-        display.drawTextEllipsized(0, y, max_name_width, filtered_recent_name);
+        display.drawTextEllipsized(0, y, max_name_width, a->name);
         display.setCursor(display.width() - timestamp_width - 1, y);
         display.print(tmp);
       }

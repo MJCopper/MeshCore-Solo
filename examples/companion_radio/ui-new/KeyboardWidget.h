@@ -32,7 +32,7 @@ static const char KB_CHARS[KB_PAGES][4][10] = {
 };
 static const int KB_ROWS_CHAR  = 4;
 static const int KB_COLS_CHAR  = 10;
-static const int KB_SPECIAL    = 6;   // ⇧ ⎵ ⌫ {} #@/abc ✓
+static const int KB_SPECIAL    = 6;   // ⇧ ⎵ ⌫ 🙂 #@/abc ✓
 
 // T9 layout (Settings › Keyboard). Message fields use predictive input on keys
 // 2-9; key 1, the symbols page, and literal fields retain multi-tap. The page
@@ -532,11 +532,8 @@ struct KeyboardWidget {
     }
   }
 
-  // Opens the placeholder picker directly -- same as navigating the grid to
-  // the special row's {} cell and pressing Enter (see handleInput's KEY_ENTER
-  // special-row case 3, which now calls this too). Used by CardKB's Compact
-  // mode (UITask::pollCardKB(), plain Tab) so a placeholder is reachable
-  // without ever seeing or navigating the grid.
+  // Opens the completion/placeholder picker directly. Used by Hold Enter in
+  // message editors and CardKB's Compact mode (plain Tab).
   bool openPlaceholders() {
     if (!inPlainGridState()) return false;
     t9_cell = -1;   // finalize any pending multi-tap cycle -- the pick below moves the
@@ -632,8 +629,7 @@ struct KeyboardWidget {
     // multi-byte accented character as more than one -- reducing the usable
     // line width and, worse, letting a break land inside a codepoint, which
     // reaches print() as a truncated sequence and draws as garbage (both
-    // display drivers are permanently single-font, so translateUTF8ToBlocks()
-    // passes UTF-8 straight through). Everything else in this widget already
+    // display drivers decode UTF-8 directly). Everything else in this widget already
     // works in codepoints via the kbUtf8*() helpers; this was the last
     // byte-based holdout.
     int cpl = display.width() / cw;  // chars per preview line
@@ -677,10 +673,8 @@ struct KeyboardWidget {
       } else {
         linebuf[0] = '\0';
       }
-      char linebuf_t[KB_PREVIEW_BYTES + 2];
-      display.translateUTF8ToBlocks(linebuf_t, linebuf, sizeof(linebuf_t));
       display.setCursor(0, pl * lh);
-      display.print(linebuf_t);
+      display.print(linebuf);
       // The full on-screen keyboard previews the untyped remainder after the
       // cursor. CardKB's compact editor keeps the text area literal and shows
       // its completion only in the dedicated Tab hint below.
@@ -690,9 +684,7 @@ struct KeyboardWidget {
         if (before_n < 0) before_n = 0;
         if (before_n > line_end - ps) before_n = line_end - ps;
         snprintf(before, sizeof(before), "%.*s", before_n, buf + ps);
-        char before_t[KB_PREVIEW_BYTES + 1];
-        display.translateUTF8ToBlocks(before_t, before, sizeof(before_t));
-        int ghost_x = display.getTextWidth(before_t) + cw;
+        int ghost_x = display.getTextWidth(before) + cw;
         int room = (display.width() - ghost_x) / cw;
         if (room > 0) {
           char ghost[16];
@@ -789,7 +781,7 @@ struct KeyboardWidget {
         }
       }
 
-      // special row: caps ⇧ · space ⎵ · delete ⌫ · placeholders {} (text) · OK ✓
+      // special row: caps ⇧ · space ⎵ · delete ⌫ · emoji 🙂 · page · OK ✓
       const int s   = miniIconScale(display);
       const int icy = spec_y + (cell_h - lh) / 2;   // centre icons within the cell
       for (int i = 0; i < KB_SPECIAL; i++) {
@@ -797,13 +789,13 @@ struct KeyboardWidget {
         bool active = (i == 0 && caps);
         int sx = i * spec_w;
         display.drawSelectionRow(sx, spec_y - 1, spec_w - 1, cell_h, sel || active);
-        if (i == 3 || i == 4) {               // text keys: {} picker, page toggle
+        if (i == 3 || i == 4) {               // text keys: emoji picker, page toggle
           // Shows what pressing it lands on next, same "reads as the
           // destination" convention as the original 2-page abc<->#@ toggle,
           // generalized to however many pages are in the cycle right now.
           const char* lbl;
           if (i == 3) {
-            lbl = "{}";
+            lbl = "\xF0\x9F\x99\x82";       // U+1F642 slightly smiling face
           } else {
 #if SOLO_FEAT_AUTOCOMPLETE
             if (_predictive_t9_enabled && isT9()) {
@@ -1044,18 +1036,18 @@ struct KeyboardWidget {
     const int rows = gridRows();
     const int cols = gridCols();
 
-    // Hold-Enter is normally "cancel", but three places give it a more useful
-    // meaning instead: Shift -> toggle a persistent caps-lock (a plain tap is
-    // one-shot -- see the commit sites below); Backspace -> clear the whole
-    // field in one action instead of holding it down; a Latin-page letter cell
-    // with accented variants -> open the accent popup (see accent_active
-    // above). Every other special-row cell keeps hold-to-cancel; any other
-    // letter/symbol cell (a plain letter with no accents, or any T9/alt-
-    // alphabet/symbols cell) is a silent no-op instead, so it can't
-    // accidentally close the keyboard. Cursor mode itself moved off Hold-Enter
-    // entirely -- see the KEY_UP block below, where UP from row 0 now enters
-    // it instead.
+    // In a completion-enabled message field Hold-Enter is a direct shortcut to the
+    // same completion/placeholder dialogue as the {} cell. It is deliberately
+    // independent of the highlighted grid cell: the held physical button is a
+    // text action here, not a long-press action on that cell.
+    //
+    // Elsewhere Hold-Enter is normally "cancel", with three cell-specific
+    // exceptions: Shift toggles caps-lock, Backspace clears the field, and a
+    // Latin-page letter with variants opens the accent popup.
     if (c == KEY_CONTEXT_MENU) {
+#if SOLO_FEAT_AUTOCOMPLETE
+      if (_predictive_t9_enabled && openPlaceholders()) return NONE;
+#endif
       if (row == rows && col == 0) {          // Shift
         caps_lock = !caps_lock;
         caps = caps_lock;
@@ -1068,7 +1060,7 @@ struct KeyboardWidget {
         commitT9Prediction();
         return NONE;
       }
-      if (row == rows && col == 4 && openEmojiPicker()) return NONE; // #@ / abc
+      if (row == rows && col == 3 && openEmojiPicker()) return NONE;
       if (row < rows) {
         if (!isT9() && !pageIsSymbols(page)) {
           int gi = findAccentGroup(cellStr(row, col)[0]);
@@ -1209,7 +1201,7 @@ struct KeyboardWidget {
             }
             break;
           case 3:
-            openPlaceholders();
+            openEmojiPicker();
             break;
           case 4:
             commitT9Prediction();

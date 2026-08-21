@@ -385,7 +385,7 @@ public:
   void showAlert(const char* text, int duration_millis);
   bool notificationAllowed(UIEventType event, uint8_t contact_type = 0,
                            const uint8_t* pub_key = nullptr, int channel_idx = -1) const;
-  void presentNotification(UIEventType event);
+  void presentNotification(UIEventType event, bool play_sound, bool vibrate);
   void handleNewMsg(uint8_t path_len, const char* from_name, const char* text,
                     int msgcount, uint8_t contact_type, const uint8_t* pub_key,
                     bool present);
