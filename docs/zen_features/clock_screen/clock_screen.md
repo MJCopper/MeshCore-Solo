@@ -28,8 +28,10 @@ supported. Conversations unavailable under Child Mode are skipped.
 Time is synchronized from GPS or via the companion app. The initial GPS attempt
 may run for five minutes. While the clock remains unsynchronised, a GPS receiver
 configured off is then retried once per hour for up to 90 seconds, with all
-automatic retries stopping 24 hours after boot. The receiver is powered down
-between attempts. Timezone offset is applied from **Settings › System**.
+automatic retries stopping 48 hours after boot. The receiver is powered down
+between attempts. If no time source succeeds during that window, **SYNC** stays
+on screen and can still be cleared by a later GPS, companion or network time
+update. Timezone offset is applied from **Settings › System**.
 
 Until an authoritative time source succeeds, only the clock and date region is
 replaced by **SYNC**. The separator and unread-message line remain visible.
@@ -48,10 +50,6 @@ replaced by **SYNC**. The separator and unread-message line remain visible.
 One fixed line is shown below the date separator. **Messages** displays the
 total unread count across direct messages, channels and room servers. This
 line is always present and is not configurable.
-
----
-
-Alarm, Timer and Stopwatch are intentionally not included in Zen.
 
 ---
 

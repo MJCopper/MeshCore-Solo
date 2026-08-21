@@ -54,7 +54,7 @@ TEST(BootTimeSync, RetriesTemporaryGpsHourlyUntilTimeIsSet) {
   EXPECT_TRUE(sync.pending());
 }
 
-TEST(BootTimeSync, StopsRetryingAfterTwentyFourHours) {
+TEST(BootTimeSync, StopsRetryingAfterFortyEightHours) {
   solo::BootTimeSync sync;
   sync.begin(4, true, false, 100);
   sync.tick(4, false, true, 100 + solo::BootTimeSync::GPS_TIMEOUT_MS);
@@ -66,6 +66,20 @@ TEST(BootTimeSync, StopsRetryingAfterTwentyFourHours) {
   EXPECT_EQ(sync.tick(4, false, true,
                       100 + solo::BootTimeSync::RETRY_WINDOW_MS),
             solo::BootTimeSync::Action::STOP_TEMP_GPS);
+  EXPECT_TRUE(sync.pending());
+
+  // The retry window has closed: waiting longer must not restart GPS, while
+  // the display-facing pending state remains until a live time source arrives.
+  EXPECT_EQ(sync.tick(4, false, false,
+                      100 + solo::BootTimeSync::RETRY_WINDOW_MS +
+                      solo::BootTimeSync::RETRY_INTERVAL_MS),
+            solo::BootTimeSync::Action::NONE);
+  EXPECT_TRUE(sync.pending());
+
+  EXPECT_EQ(sync.tick(5, false, false,
+                      100 + solo::BootTimeSync::RETRY_WINDOW_MS +
+                      solo::BootTimeSync::RETRY_INTERVAL_MS + 1),
+            solo::BootTimeSync::Action::NONE);
   EXPECT_FALSE(sync.pending());
 }
 

@@ -24,12 +24,6 @@ under which those versions were originally published.
 - Settings save on exit only when values changed; Zen preferences remain
   isolated from the upstream MeshCore preference layout.
 
-### Removed from Zen
-
-Map, Trail, Live Share, Locator, Compass, Remote Bot, GPIO, Clock Tools,
-Sensors, Shutdown and on-device remote Admin screens are not included. Sensor
-drivers remain available for telemetry, dashboard values and placeholders.
-
 ---
 
 ## MeshCore Solo Companion Firmware v1.23.1

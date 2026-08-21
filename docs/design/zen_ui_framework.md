@@ -179,7 +179,7 @@ Its page cycle is predictive T9 → symbols → literal multi-tap → predictive
 so out-of-dictionary words can still be entered. Literal fields such as names
 and passwords use multi-tap rather than predictive replacement.
 The historical main/additional-script preference bytes remain serialized for
-configuration compatibility but are no longer exposed or read by the keyboard.
+configuration compatibility. Zen text entry uses the EN-US layouts above.
 Latin-diacritic letters are available from the corresponding ABC letter through
 the shared accent popup. In completion-enabled message fields, Hold Enter opens
 the completion dialog. The smiley special key opens the four-entry emoji picker;
@@ -214,9 +214,6 @@ across a yield — see §9).
 - `fmtDist(buf,n,km,imperial)` — "850m"/"2.3km" or feet/miles.
 - `fmtAgeShort(buf,n,now,ts)` — compact "12s"/"5m"/"3h"/"2d" tag, "" for unknown.
   **This is the one age formatter** — don't reimplement the s/m/h ladder.
-
-Zen does not compile the Map, Trail, Live Share, Locator, Compass or Waypoint
-interfaces. New Zen features must not depend on their legacy screen fragments.
 
 **Message reply prefix:** `msgReplyBody(text, nick?, n?)` (`FullscreenMsgView.h`)
 parses a leading `@[nick] ` reply marker, returning the body and optionally the

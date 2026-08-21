@@ -12,10 +12,11 @@ public:
   static constexpr uint32_t GPS_TIMEOUT_MS = 5UL * 60UL * 1000UL;
   static constexpr uint32_t GPS_RETRY_TIMEOUT_MS = 90UL * 1000UL;
   static constexpr uint32_t RETRY_INTERVAL_MS = 60UL * 60UL * 1000UL;
-  static constexpr uint32_t RETRY_WINDOW_MS = 24UL * 60UL * 60UL * 1000UL;
+  static constexpr uint32_t RETRY_WINDOW_MS = 48UL * 60UL * 60UL * 1000UL;
 
 private:
   bool _pending = false;
+  bool _retry_window_open = false;
   bool _has_gps = false;
   bool _owns_gps = false;
   uint32_t _generation = 0;
@@ -26,6 +27,7 @@ private:
 public:
   void begin(uint32_t generation, bool has_gps, bool gps_configured_on, uint32_t now) {
     _pending = true;
+    _retry_window_open = true;
     _has_gps = has_gps;
     _generation = generation;
     _owns_gps = has_gps && !gps_configured_on;
@@ -47,10 +49,11 @@ public:
       return stop ? Action::STOP_TEMP_GPS : Action::NONE;
     }
 
-    // Give up after one day. If a retry owns the receiver at the boundary,
-    // release it just as we would at the normal attempt deadline.
-    if ((int32_t)(now - _stop_at) >= 0) {
-      _pending = false;
+    // Stop automatic GPS retries after two days, but keep the sync pending
+    // until an authoritative source actually updates the RTC. This leaves the
+    // Clock screen on SYNC while allowing the receiver to remain powered down.
+    if (_retry_window_open && (int32_t)(now - _stop_at) >= 0) {
+      _retry_window_open = false;
       bool stop = _owns_gps && !gps_configured_on;
       _owns_gps = false;
       return stop ? Action::STOP_TEMP_GPS : Action::NONE;
@@ -68,7 +71,7 @@ public:
     // Still unsynchronised: once per hour, retry the same bounded temporary GPS
     // claim used at boot. GPS configured on is already the user's responsibility;
     // never toggle it behind their back.
-    if (_has_gps && !_owns_gps && !gps_configured_on && !gps_enabled &&
+    if (_retry_window_open && _has_gps && !_owns_gps && !gps_configured_on && !gps_enabled &&
         (int32_t)(now - _retry_at) >= 0) {
       _owns_gps = true;
       _deadline = now + GPS_RETRY_TIMEOUT_MS;

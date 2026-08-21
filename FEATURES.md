@@ -17,7 +17,7 @@ Current Zen release: **v2.26**, based on **MeshCore v1.17.1**.
 | Emoji display | Monochrome rendering for common emoji with a diamond fallback for unsupported glyphs |
 | CardKB | Boot detection on Grove I2C, direct text input, compact editor layout and polling only while the display is awake |
 | Favourites | Four-entry single-column dial with unread badges and long-press Add/Change/Remove actions |
-| Clock and GPS | Boot-time time synchronisation, hourly bounded retries for 24 hours, timed GPS modes, timezone handling and unread-message shortcut |
+| Clock and GPS | Boot-time time synchronisation, hourly bounded retries for 48 hours, persistent SYNC indication until time is set, timed GPS modes, timezone handling and unread-message shortcut |
 | Notifications | Per-contact/channel controls, custom melodies, five-second notification wake, Quiet Time sound suppression and Child Mode filtering |
 | Child Mode | Parent PIN, favourite-only contacts and rooms, optional favourited private channels, optional Favourites page and disabled BLE/USB companion access while locked |
 | Advert | Off/1 h/3 h/6 h automatic interval, shared GPS privacy policy and a steady five-second sent-advert indicator |
@@ -26,16 +26,6 @@ Current Zen release: **v2.26**, based on **MeshCore v1.17.1**.
 | Tools | Nearby Nodes, Repeater, Ringtone Editor and Diagnostics |
 | Display | OLED and e-ink layouts, rotation controls where supported, screen lock, auto-lock and power-aware refresh scheduling |
 | Persistence | Save-on-exit settings with writes only when values changed; Zen preferences are isolated from the upstream MeshCore preference layout |
-
-## Deliberately excluded
-
-Zen does not include the Map, Trail, Live Share, Locator, Compass, Remote Bot,
-GPIO, Clock Tools, Sensors, Shutdown or on-device remote Admin screens. Sensor
-drivers can still supply telemetry, dashboard values and message placeholders;
-only the standalone Sensors page is absent.
-
-RX power-saving controls are also not exposed. Companion and repeater reception
-retain the corresponding upstream MeshCore behaviour.
 
 ## Documentation
 

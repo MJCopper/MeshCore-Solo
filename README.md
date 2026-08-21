@@ -31,7 +31,7 @@ All firmware files are published on the [releases page](https://github.com/MJCop
 
 - Predictive T9 and ABC on-screen keyboards, a 2,500-word Australianised completion dictionary, four insertable chat emoji, and common European Latin accents
 
-- Sensor support for dashboard fields, telemetry, and message placeholders without a standalone Sensors page
+- Sensor support for dashboard fields, telemetry and message placeholders
 
 - [Messages Screen](./docs/zen_features/message_screen/message_screen.md) — full-message transcripts, replies, quick messages, delivery status, manual resend, notification controls, and on-device channel management
 
@@ -49,15 +49,13 @@ All firmware files are published on the [releases page](https://github.com/MJCop
 
 - [Quiet Time](./docs/zen_features/quiet_time/quiet_time.md) — silence notification sounds on a daily local-time schedule while visual alerts, vibration and unread counts continue
 
-- [Tools Screen](./docs/zen_features/tools_screen/tools_screen.md) — nearby nodes, fixed-profile companion repeater, ringtone editor and diagnostics
+- [Tools Screen](./docs/zen_features/tools_screen/tools_screen.md) — nearby nodes, companion repeater, ringtone editor and diagnostics
 
 - GPS time synchronisation at boot, timed low-power GPS modes, advert location privacy, hard-coded delivery retry policy, and automatic return to Clock after five idle minutes
 
-Zen intentionally omits Map, Trail, Live Share, Locator, Compass, Remote Bot,
-GPIO, Clock Tools, Sensors, Shutdown and on-device remote Admin screens.
-
-- **Battery saving (radio)** — two optional, independent toggles under Settings › Radio:
-  - **Auto pwr** — Adaptive Power Control: trims actual TX power on strong links (from ACK SNR) and ramps back up to the configured ceiling on weak/lost links; the home screen shows the live power
+- **Battery saving (radio)** — **Auto pwr** Adaptive Power Control trims actual
+  TX power on strong links and ramps back up to the configured ceiling on
+  weak or lost links; the home screen shows the live power
 
 ### E-ink Display (Wio Tracker L1)
 
