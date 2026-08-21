@@ -43,7 +43,7 @@ The editor enforces MeshCore's encoded message limit as text is entered. UTF-8
 characters and emoji consume their actual encoded byte length, so they may use
 more capacity than plain ASCII while still moving and deleting as one glyph.
 
-While typing, **UP** from the top letter row enters cursor mode (LEFT/RIGHT move the insertion point; UP/DOWN jump to start/end, then continue on to the special row / letter grid if pressed again once already there; Enter/Cancel exit immediately from anywhere) so you can edit or insert in the middle of what you've typed instead of only at the end. **Hold Enter** opens completion choices in message fields. On the ABC layout, holding a Latin letter with accented variants instead opens that letter's accent choices when completion is unavailable. See the [Zen UI framework guide](../../design/zen_ui_framework.md) for the shared keyboard behaviour.
+While typing, **UP** from the top letter row enters cursor mode (LEFT/RIGHT move the insertion point; UP/DOWN jump to start/end, then continue on to the special row / letter grid if pressed again once already there; Enter/Cancel exit immediately from anywhere) so you can edit or insert in the middle of what you've typed instead of only at the end. **Hold Enter** opens completion choices in message fields. See the [Zen UI framework guide](../../design/zen_ui_framework.md) for the shared keyboard behaviour.
 
 Message editors also provide a small emoji picker. Select the smiley key on the
 keyboard, or press **Fn+M** on CardKB, then choose 👍, 👎, 🙂, or 🙁. Emoji count
@@ -83,8 +83,8 @@ Posting to a **room server** requires a login handshake first, so the device can
 - **Log out** with **Hold Enter** on a room you're currently logged into → **Logout** (only offered once logged in). Forgets the saved password on the device, so the next time you open that room it prompts for one again instead of silently reusing the old one.
 - Passwords set from the **phone app** are saved on the device too, so it can post to that room standalone after a reboot.
 
-> The on-screen keyboard is EN-US. European Latin accents and the initial emoji
-> picker are available locally; other characters can still be entered from the
+> The on-screen keyboard is EN-US. The initial emoji picker is available
+> locally; other characters can still be entered from the
 > phone app and are stored and replayed byte-for-byte.
 
 ---
@@ -113,13 +113,18 @@ through the viewport instead of being truncated or requiring a separate reader;
 scrolling up eventually reveals the sender row and every earlier line. The same
 layout and navigation apply to direct messages, rooms and channels.
 
-Press **Enter** to compose a custom message. Hold **Enter** to open quick
-messages.
+Press **Enter** to compose a custom message. In a channel or room, hold
+**Enter** and choose **Reply to…** to select one of the six most recent unique
+participants in that transcript. The picker is newest-first, excludes your own
+messages and opens the editor with `@[name] ` already inserted. Reply messages
+show a compact `To: name` row in history. These remain ordinary group messages;
+the prefix identifies the intended participant but does not make delivery
+private. Hold **Enter** also provides **Quick messages**.
 
-If the newest outgoing direct message exhausts automatic delivery attempts,
-Hold **Enter** in its transcript and choose **Resend failed**. For channels the
-equivalent action is **Resend anyway**, because a missing repeater echo is not
-proof that every recipient missed the original packet.
+If the newest outgoing direct or room message exhausts automatic delivery
+attempts, hold **Enter** in its transcript and choose **Resend failed**. For
+channels the equivalent action is **Resend anyway**, because a missing repeater
+echo is not proof that every recipient missed the original packet.
 
 Unread state is tracked per direct contact, room and channel. A message is
 marked read immediately only when its matching transcript is physically visible

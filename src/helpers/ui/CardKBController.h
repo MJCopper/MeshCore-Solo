@@ -8,7 +8,7 @@
 // keyboard's I2C protocol, Fn scan codes, debounce rules or sleep boundary.
 class CardKBController {
 public:
-  enum EventType : uint8_t { NONE, KEY, SUBMIT, HOLD, LOCK_TOGGLE, ACCENT };
+  enum EventType : uint8_t { NONE, KEY, SUBMIT, HOLD, LOCK_TOGGLE, EMOJI };
 
   struct Event {
     EventType type = NONE;
@@ -32,17 +32,6 @@ private:
 
   static bool due(uint32_t now, uint32_t deadline) {
     return (int32_t)(now - deadline) >= 0;
-  }
-
-  static char fnLetter(uint8_t raw) {
-    // CardKB's Fn scan codes are 0x80 plus the physical key-map index.
-    static const char BASE[48] = {
-      0,0,0,0,0,0,0,0,0,0,0,0,0,
-      'q','w','e','r','t','y','u','i','o','p',0,0,0,
-      'a','s','d','f','g','h','j','k','l',0,0,0,
-      'z','x','c','v','b','n','m',0,0,0
-    };
-    return raw >= 0x80 && raw <= 0xAF ? BASE[raw - 0x80] : 0;
   }
 
   bool readRaw(uint8_t& raw) {
@@ -106,11 +95,8 @@ public:
     if (raw == 0xA3) event.type = SUBMIT;       // Fn+Enter
     else if (raw == 0x09) event.type = HOLD;    // Tab
     else if (raw == 0x80) event.type = LOCK_TOGGLE; // Fn+Esc
-    else {
-      char base = fnLetter(raw);
-      if (base) { event.type = ACCENT; event.key = base; }
-      else if (raw < 0x80 || raw > 0xAF) { event.type = KEY; event.key = (char)raw; }
-    }
+    else if (raw == 0xAC) event.type = EMOJI; // Fn+M
+    else if (raw < 0x80 || raw > 0xAF) { event.type = KEY; event.key = (char)raw; }
     return event.type != NONE;
   }
 };

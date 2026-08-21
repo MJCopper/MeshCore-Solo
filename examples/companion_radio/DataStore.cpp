@@ -386,7 +386,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.trail_show_pace,     sizeof(_prefs.trail_show_pace));
   rd(&_prefs.advert_sound_scope,  sizeof(_prefs.advert_sound_scope));
   rd(&_prefs.reserved_rx_powersave, sizeof(_prefs.reserved_rx_powersave));
-  rd(&_prefs.tx_apc,              sizeof(_prefs.tx_apc));
+  rd(&_prefs.reserved_radio_power, sizeof(_prefs.reserved_radio_power));
   rd(&_prefs.reserved_dm_resend_count, sizeof(_prefs.reserved_dm_resend_count));
   rd(&_prefs.bot_commands_enabled, sizeof(_prefs.bot_commands_enabled));
   rd(&_prefs.bot_quiet_start,     sizeof(_prefs.bot_quiet_start));
@@ -482,7 +482,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   if (_prefs.trail_show_pace > 1) _prefs.trail_show_pace = 0;
   if (_prefs.advert_sound_scope > 1) _prefs.advert_sound_scope = ADVERT_SOUND_SCOPE_ALL;
   _prefs.reserved_rx_powersave = 0;
-  if (_prefs.tx_apc          > 1) _prefs.tx_apc          = 0;
+  _prefs.reserved_radio_power = 0;
 
   // → 0xC0DE0019: page_order grew 11 → 13 so Shutdown and Map become reorderable.
   // The extra slots are appended here at the tail (not inline) so a pre-0x19 save,
@@ -685,8 +685,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     // tail (notif_melody_ad + units_imperial + trail_show_pace). Older files
     // leave stray/old bytes in these fields; they're clamped above, so
     // upgraders fall back to built-in advert sound + metric + speed + All.
-    // → 0xC0DE0009: append tx_apc after the reserved RX-power byte.
-    // upgraders fall back to APC off (fixed tx power).
+    // → 0xC0DE0009: appended the byte now reserved as reserved_radio_power.
     // → 0xC0DE000C: split out a per-channel trigger (was shared with the DM
     // trigger). Pre-0x0C files have no bot_trigger_ch; seed it from bot_trigger
     // so an existing channel bot keeps reacting to the same word after upgrade.
@@ -790,7 +789,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.trail_show_pace,     sizeof(_prefs.trail_show_pace));
     file.write((uint8_t *)&_prefs.advert_sound_scope,  sizeof(_prefs.advert_sound_scope));
     file.write((uint8_t *)&_prefs.reserved_rx_powersave, sizeof(_prefs.reserved_rx_powersave));
-    file.write((uint8_t *)&_prefs.tx_apc,              sizeof(_prefs.tx_apc));
+    file.write((uint8_t *)&_prefs.reserved_radio_power, sizeof(_prefs.reserved_radio_power));
     file.write((uint8_t *)&_prefs.reserved_dm_resend_count, sizeof(_prefs.reserved_dm_resend_count));
     file.write((uint8_t *)&_prefs.bot_commands_enabled, sizeof(_prefs.bot_commands_enabled));
     file.write((uint8_t *)&_prefs.bot_quiet_start,     sizeof(_prefs.bot_quiet_start));

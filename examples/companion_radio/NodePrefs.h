@@ -149,11 +149,9 @@ struct NodePrefs {  // persisted to file
   // operation use continuous receive; retain this byte only so existing Solo
   // preference files remain aligned.
   uint8_t  reserved_rx_powersave;
-  // Adaptive Power Control: 0=off (fixed tx_power_dbm, default), 1=on. When on,
-  // tx_power_dbm is treated as a ceiling and the radio's actual power is lowered
-  // at runtime on strong links (good ACK SNR), saving TX energy. Never persisted
-  // below the ceiling, so disabling restores the user's configured power.
-  uint8_t  tx_apc;
+  // Reserved former adaptive-power byte. Retained only so existing Zen
+  // preferences keep the same on-flash layout.
+  uint8_t  reserved_radio_power;
 
   // Retained only to preserve the existing preferences-file layout. On-device
   // DM delivery now uses the fixed policy in solo/DmRetryPolicy.h.

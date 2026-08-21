@@ -27,8 +27,7 @@ enum DeliveryRoute : uint8_t {
 // History text holds a full received message. Channel messages carry the sender
 // embedded as "Name: body" in the payload, so a message can be up to the
 // over-the-air maximum (MAX_TEXT_LEN). Size the buffers to that + NUL, otherwise
-// long messages (and Polish text, where each accented char is two UTF-8 bytes)
-// get their tail clipped.
+// long messages containing multi-byte UTF-8 get their tail clipped.
 static const int MSG_TEXT_BUF = MAX_TEXT_LEN + 1;
 
 struct ChHistEntry {

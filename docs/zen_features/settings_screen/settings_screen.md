@@ -79,6 +79,8 @@ Lists the configurable home screen pages. For each entry:
 **Clock** is always the first home screen and is not shown in this list.
 **Settings** and **Messages** are always visible and cannot be disabled.
 Position numbers begin at **1** for the first configurable page after Clock.
+The default order is **Messages**, **Favourites**, **GPS**, **Advert**,
+**Bluetooth**, **Radio**, **Tools**, then **Settings**.
 
 ---
 
@@ -86,13 +88,12 @@ Position numbers begin at **1** for the first configurable page after Clock.
 
 | Setting   | Options    | Notes                                                                                                                                                              |
 | --------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| TX Pwr    | 2–22 dBm   | LEFT/RIGHT. With **Auto pwr** on this is the *ceiling* — the radio may transmit lower. |
+| TX Pwr    | 2–22 dBm   | LEFT/RIGHT. Sets the fixed transmission power. |
 | Preset    | named presets | LEFT/RIGHT cycles community RF presets (region frequency + bandwidth/SF/CR). **Enter** opens a popup to pick one, save the current settings as a named preset, or delete a saved one. Applies frequency, bandwidth, SF and CR together. |
 | Freq      | chip range | **Enter** opens a digit-by-digit editor: LEFT/RIGHT moves between decimal places, UP/DOWN steps that digit. Bounds come from the radio chip's own validated range, so a value the radio would reject can't be entered. |
 | SF        | 5–12       | LEFT/RIGHT. Spreading factor. |
 | BW        | 7.8–500 kHz | LEFT/RIGHT cycles the standard LoRa bandwidths. |
 | CR        | 5–8        | LEFT/RIGHT. Coding rate (4/5–4/8). |
-| Auto Pwr  | On / Off   | **Adaptive Power Control.** Lowers actual TX power on strong links to save energy, ramping back up — to the **TX Pwr** ceiling — on weak or lost links. Link quality comes from direct-message ACK SNR and, for channel messages (no ACK), from hearing a repeater rebroadcast your packet. The radio page / name bar shows the live power. Default Off (fixed TX power). **Suppressed (shown as `--`) while the repeater is on** — a repeater holds full TX power for consistent relay reach; your setting is restored when the repeater is switched off. |
 
 The **repeater** mode and radio timing controls live on their own screen — see **Tools › Repeater**.
 
@@ -156,10 +157,7 @@ Key 1 and the symbols page also retain multi-tap. Predictive entry is limited
 to message text; names, passwords and other literal fields always use
 multi-tap in T9 layout. CardKB remains direct QWERTY input in either setting.
 
-The smiley special key opens the emoji picker for 👍, 👎, 🙂 and 🙁. European
-Latin-diacritic letters remain available from ABC letters that have accented
-variants (`a c d e i l n o r s t u y z`); **LEFT/RIGHT** selects an accent,
-**Enter** inserts it, and **Cancel** dismisses it.
+The smiley special key opens the emoji picker for 👍, 👎, 🙂 and 🙁.
 
 See [CardKB](../cardkb/cardkb.md) for connection, controls and polling behaviour.
 

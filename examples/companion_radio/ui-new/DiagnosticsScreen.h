@@ -20,7 +20,7 @@ extern MyMesh the_mesh;
 //   System — static device identity: firmware version + build date, device
 //            model, node name, and the active radio parameters.
 //   Font   — a rendering test card: one sample line per script the UI font
-//            claims to cover (Latin, diacritics, Greek, Cyrillic, digits,
+//            claims to cover (Latin, Greek, Cyrillic, digits,
 //            symbols), so the on-device font can be eyeballed for coverage.
 // The packet counts are built from Dispatcher's per-type counters — grouped
 // into a handful of categories rather than all 16 raw PAYLOAD_TYPE_* values,
@@ -172,17 +172,10 @@ class DiagnosticsScreen : public UIScreen {
     }
   }
 
-  // One sample line per script/keyboard alphabet the UI font claims to cover
-  // (all inside the U+0020-04FF glyph range the OLED misc-fixed / e-ink Lemon
-  // fonts carry), so the font's coverage can be checked by eye on real
-  // hardware. "Acc" samples one variant from each KeyboardWidget.h
-  // KB_ACCENT_VARIANTS group (the Hold-Enter accent popup that replaced the
-  // old per-language alt-alphabet pages) so every accented letter actually
-  // reachable in the UI still gets an eyeball check.
+  // Representative font samples for checking the display on real hardware.
   void buildFontLines() {
     _line_count = 0;
     addLine("Latin ABCabc xyz");
-    addLine("Acc áçďéíłñóřśťúýź");
     addLine("Grk ΑΒΓ αβγξω");          // ΑΒΓ αβγξω
     addLine("Cyr АБВ абвжя");          // АБВ абвжя
     addLine("Num 0123456789");

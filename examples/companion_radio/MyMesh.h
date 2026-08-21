@@ -197,13 +197,6 @@ protected:
   uint32_t calcFloodTimeoutMillisFor(uint32_t pkt_airtime_millis) const override;
   uint32_t calcDirectTimeoutMillisFor(uint32_t pkt_airtime_millis, uint8_t path_len) const override;
   void onSendTimeout() override;
-  void onAckRecv(mesh::Packet* packet, uint32_t ack_crc) override;          // APC: ACK SNR sample
-  // APC internals (see MyMesh.cpp): one reverse-link SNR sample, a lost-confirmation
-  // ramp-up, and tracking an originated flood so its echo (or absence) can be scored.
-  // The heard-echo sampling itself lives in filterRecvFloodPacket() (declared below).
-  void apcSampleSnr(float snr);
-  void apcOnFailure();
-  void apcTrackFloodSend(const mesh::Packet* pkt);
   void trackRelaySend(const mesh::Packet* pkt);   // arm the UI relayed-into-mesh tracker
 public:
   // Seq of the most recently tracked channel send — the UI records it on the
@@ -286,13 +279,6 @@ public:
   void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
   void saveRTCTime() { _store->saveRTCTime(); }
   DataStore* getDataStore() const { return _store; }
-  void applyApc();   // (re)initialise Adaptive Power Control from prefs
-  // Adaptive Power Control is suppressed while repeating: a repeater wants full,
-  // consistent TX power for relay reach, and its feedback sources (own ACKs /
-  // own flood echoes) don't fire on forwarded traffic anyway. applyApc() then
-  // pins power to the ceiling.
-  bool apcActive() const { return _prefs.tx_apc && !_prefs.client_repeat; }
-
   // Apply the companion radio parameters. Repeater mode shares this network.
   void applyRadioParams();
 
@@ -399,14 +385,7 @@ private:
   uint32_t _active_ble_pin;
   bool _iter_started;
   bool _cli_rescue;
-  int8_t _apc_cur_dbm;       // APC current TX power (≤ tx_power_dbm ceiling) when tx_apc on
-  float _apc_margin_ewma;    // APC smoothed reverse-link SNR margin above the SF demod floor
-  uint8_t _apc_fail_count;   // APC consecutive lost-confirmation count (graduated ramp-up)
-  uint8_t _apc_flood_hash[MAX_HASH_SIZE];  // hash of the channel/flood send awaiting a repeater echo
-  uint16_t _apc_flood_len;                 // its payload length — cheap pre-filter before hashing
-  uint32_t _apc_flood_deadline;            // echo-wait deadline for that send
-  bool _apc_flood_pending;                 // a tracked flood send is awaiting its echo
-  // UI "relayed into mesh" tracker for channel sends — independent of APC. A small
+  // UI "relayed into mesh" tracker for channel sends. A small
   // ring so a quick burst of channel sends are each tracked (not just the latest).
   // Hashing on receive only runs while at least one slot is pending, so the hot
   // flood-recv path is untouched otherwise.

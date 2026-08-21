@@ -633,6 +633,15 @@ public:
 
   void onShow() override { noteHomeInteraction(); }
 
+  // Shared by the home carousel and lock screen so status visibility, priority
+  // and battery formatting cannot drift between the two clock layouts.
+  void renderTopBar(DisplayDriver& display) {
+    display.setColor(DisplayDriver::LIGHT);
+    int right_edge = renderBatteryIndicator(display, _task->getBattMilliVolts());
+    display.setColor(DisplayDriver::LIGHT);
+    display.drawTextEllipsized(0, 0, right_edge - 2, _node_prefs->node_name);
+  }
+
   // Small 5x5 glyph shown in the page-indicator row for each HomePage.
   static const MiniIcon* pageIcon(int page) {
     switch (page) {
@@ -665,20 +674,8 @@ public:
     const int dots_y    = lh + pg_half + 1;       // icon-row centre, below the header
     const int content_y = dots_y + pg_half + 3;   // first content row, below the icons
 
-    // Shared carousel top bar: node name, live radio power, status indicators
-    // and battery. Clock content now starts below the same header as every page.
-    display.setColor(DisplayDriver::LIGHT);
-    int rightEdge = renderBatteryIndicator(display, _task->getBattMilliVolts());
-    display.setColor(DisplayDriver::LIGHT);
-    if (the_mesh.apcActive()) {
-      char pwr_buf[8];
-      snprintf(pwr_buf, sizeof(pwr_buf), "%ddB", (int)radio_driver.getTxPower());
-      int pwr_w = display.getTextWidth(pwr_buf);
-      display.drawTextEllipsized(0, 0, rightEdge - 2 - pwr_w - 2, _node_prefs->node_name);
-      display.drawTextRightAlign(rightEdge - 2, 0, pwr_buf);
-    } else {
-      display.drawTextEllipsized(0, 0, rightEdge - 2, _node_prefs->node_name);
-    }
+    // Shared carousel top bar: node name, status indicators and battery.
+    renderTopBar(display);
 
     // ensure current page is visible (e.g. after settings change)
     if (!isPageVisible(_page)) _page = navPage(_page, +1);
@@ -769,7 +766,7 @@ public:
 
       // tx power, noise floor
       display.setCursor(0, content_y + step * 2);
-      snprintf(tmp, sizeof(tmp),"TX: %ddBm", radio_driver.getTxPower());   // live value (reflects APC)
+      snprintf(tmp, sizeof(tmp),"TX: %ddBm", radio_driver.getTxPower());
       display.print(tmp);
       display.setCursor(0, content_y + step * 3);
       if (radio_driver.getPowerSaving()) {   // duty-cycle RX doesn't sample the floor
@@ -2305,9 +2302,8 @@ void UITask::turnDisplayOff() {
 // centre button/joystick (grid commit/navigate) -- except in Compact mode's
 // plain grid state (see below), which is designed to need no joystick at all.
 // Tab (0x09, otherwise unused) is the Hold-Enter equivalent everywhere,
-// including the ~30 non-keyboard Hold-Enter menus (message reply/navigate,
-// Bot/Admin/Repeater, ...) and inside the on-screen keyboard itself (shift-
-// lock, clear-all, accent popup on whatever cell is selected) -- it used to
+// including the non-keyboard Hold-Enter menus and inside the on-screen
+// keyboard itself (shift-lock, clear-all and emoji picker) -- it used to
 // need a separate Fn+Tab for the latter, but that was pure redundancy: plain
 // Tab already covered every case Fn+Tab did, just not while the keyboard was
 // showing, so the carve-out was dropped instead of the shortcut. In Compact
@@ -2315,11 +2311,10 @@ void UITask::turnDisplayOff() {
 // placeholder picker directly -- see below). Fn still gives two other clean,
 // stateless modifiers:
 //  - Fn+Enter (0xA3) submits the field (KEY_KB_ENTER) without needing to
-//    navigate to the special row's DONE cell. The placeholder/accent popups
-//    are modal and consume it first (dismiss them with Enter/Esc), same as
+//    navigate to the special row's DONE cell. The placeholder and emoji
+//    popups are modal and consume it first (dismiss them with Enter/Esc), same as
 //    they consume every other key.
-//  - Fn+<letter> opens the accent popup for that base letter directly
-//    (KeyboardWidget::openAccentFor()) -- no arrow-hunting across the grid.
+//  - Fn+M opens the message emoji picker.
 // Transport, debounce, Fn decoding and suspend/resume state live in
 // CardKBController; this function only applies UI-context-specific behaviour.
 void UITask::pollCardKB() {
@@ -2339,11 +2334,11 @@ void UITask::pollCardKB() {
   // directly instead of a grid selection nobody could see anyway, and plain
   // Tab opens the placeholder picker directly instead of the row/col-dependent
   // Hold-Enter dispatch (which would be meaningless here -- row/col are never
-  // deliberately navigated to in this mode). Cursor mode / the accent /
-  // placeholder popups all render their own visible feedback regardless of
+  // deliberately navigated to in this mode). Cursor mode and the placeholder
+  // and emoji popups all render their own visible feedback regardless of
   // Compact, so none of this applies once inPlainGridState() is false --
   // arrows/Tab fall through to their normal meaning there (e.g. arrows drive
-  // the placeholder/accent popup's own selection).
+  // the active popup's own selection).
   bool compact_grid = isCardKBConnected() && _kb.inPlainGridState();
 
   char key;
@@ -2367,7 +2362,7 @@ void UITask::pollCardKB() {
     // directly (unlike the physical Hold-Back+3xEnter combo's 3-press
     // sequence), so it works to unlock a locked device after a Tracker button
     // has woken the display. Every other CardKB key is correctly discarded
-    // while locked (see the Fn+<letter> branch below). Esc, not the adjacent
+    // while locked (see the direct emoji branch below). Esc, not the adjacent
     // Fn+Backspace, on purpose: Fn and
     // Backspace sit right next to each other on CardKB's layout, making that
     // combo too easy to hit by accident; Esc is on the opposite side of the
@@ -2383,22 +2378,13 @@ void UITask::pollCardKB() {
     }
     _next_refresh = 0;
     return;
-  } else if (event.type == CardKBController::ACCENT) {
-    char base = event.key;
-    char woke = checkDisplayOn(base);
+  } else if (event.type == CardKBController::EMOJI) {
+    char woke = checkDisplayOn(KEY_CONTEXT_MENU);
     // Every other key here goes through enqueueKey(), so it's naturally eaten
     // while locked (see the dequeue-time "if (!_locked && curr)" gate in
-    // loop()). This path calls into the keyboard widget directly instead, so
-    // it needs its own _locked check -- otherwise a stray Fn+letter (e.g. the
-    // keyboard was left open before the device locked, or brushed against in
-    // a pocket) could pop the accent popup while the screen is supposed to
-    // ignore all input.
-    if (woke && !_locked) {
-      // M has no accent group, making Fn+M a conflict-free mnemonic shortcut
-      // to the message-only emoji picker in Compact mode.
-      if (base == 'm' && _kb.openEmojiPicker()) return;
-      _kb.openAccentFor(base);
-    }
+    // loop()). This path calls into the keyboard widget directly, so
+    // it needs its own _locked check.
+    if (woke && !_locked) _kb.openEmojiPicker();
     return;
   } else {
     // Plain Enter would otherwise commit whatever grid cell row/col happen to
@@ -2579,52 +2565,69 @@ void UITask::loop() {
       turnDisplayOff();
     } else if (_locked && millis() >= _next_refresh) {
       _display->startFrame();
-      // Lock screen: clock + unlock hint popup
+      // Lock screen: Clock content with the shared top bar but without the
+      // carousel navigation row, followed by a full-width inverted banner.
       uint32_t unix_ts = rtc_clock.getCurrentTime();
       _display->setColor(DisplayDriver::LIGHT);
       _display->setTextSize(1);
       const int lk_lh   = _display->getLineHeight();
-      const int lk_step = _display->lineStep();
-      if (unix_ts < 1000000000UL) {
-        _display->drawTextCentered(_display->width() / 2, _display->height() / 2 - lk_step, "No time sync");
+      ((HomeScreen*)home)->renderTopBar(*_display);
+      const int clock_y = lk_lh + 2;
+      int date_y = 0;
+      bool show_message_count = true;
+      if (isTimeSyncPending()) {
+        bool h12 = _node_prefs && _node_prefs->clock_12h;
+        date_y = drawClockSync(*_display, clock_y, h12);
+      } else if (unix_ts < 1000000000UL) {
+        show_message_count = false;
+        const int step = _display->lineStep();
+        _display->drawTextCentered(_display->width() / 2, clock_y, "! No time sync");
+        _display->drawTextCentered(_display->width() / 2, clock_y + step, "Enable GPS or");
+        _display->drawTextCentered(_display->width() / 2, clock_y + step * 2, "connect app");
+        date_y = clock_y + step * 3;
       } else {
         int8_t tz = _node_prefs ? _node_prefs->tz_offset_hours : 0;
         unix_ts += (int32_t)tz * 3600;
         time_t t = (time_t)unix_ts;
         struct tm* ti = gmtime(&t);
-        char buf[12];
-        const int clk_y = 2;
+        char buf[24];
         bool h12 = _node_prefs && _node_prefs->clock_12h;
-        int date_y = drawClockTime(*_display, clk_y, ti, h12, /*show_sec*/false);
+        bool show_sec = !Features::IS_EINK && (!_node_prefs || !_node_prefs->clock_hide_seconds);
+        date_y = drawClockTime(*_display, clock_y, ti, h12, show_sec);
         _display->setTextSize(1);
         static const char* wd[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
         static const char* mo[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
-        snprintf(buf, sizeof(buf),"%s %d %s", wd[ti->tm_wday], ti->tm_mday, mo[ti->tm_mon]);
+        snprintf(buf, sizeof(buf),"%s %d %s %d", wd[ti->tm_wday], ti->tm_mday,
+                 mo[ti->tm_mon], 1900 + ti->tm_year);
         _display->drawTextCentered(_display->width() / 2, date_y, buf);
-
-        char unread_text[24];
-        int unread = getDMUnreadTotal() + getChannelUnreadCount() + getRoomUnreadCount();
-        snprintf(unread_text, sizeof(unread_text), "Messages: %d", unread);
-        _display->drawTextCentered(_display->width() / 2, date_y + lk_step, unread_text);
       }
-      // Hint popup at bottom (like alert style)
+
+      int banner_y;
+      if (show_message_count) {
+        int sep_y = date_y + lk_lh + 1;
+        int msg_y = sep_y + _display->sepH() + 2;
+        _display->fillRect(0, sep_y, _display->width(), _display->sepH());
+        _display->setCursor(0, msg_y);
+        _display->print("Messages");
+        char unread_text[8];
+        int unread = getDMUnreadTotal() + getChannelUnreadCount() + getRoomUnreadCount();
+        snprintf(unread_text, sizeof(unread_text), "%d", unread);
+        _display->setCursor(_display->width() - _display->getTextWidth(unread_text) - 1, msg_y);
+        _display->print(unread_text);
+        banner_y = msg_y + lk_lh + 2;
+      } else {
+        banner_y = date_y + 2;
+      }
+
+      // The banner follows Messages rather than floating at the panel edge.
       _display->setTextSize(1);
-#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
-      const char* hint = _lock_seq_count == 0 ? (isCardKBConnected() ? "Back+3xEnter/Fn+Esc" : "Hold Back + 3xEnter") :
-                         _lock_seq_count == 1 ? "Enter x2 more..."   : "Enter x1 more...";
-#else
       const char* hint = _lock_seq_count == 0 ? "Hold Back + 3xEnter" :
                          _lock_seq_count == 1 ? "Enter x2 more..."   : "Enter x1 more...";
-#endif
-      int p = 3;
-      int hy = _display->height() - lk_lh - p * 2;
-      int hw = _display->getTextWidth(hint);
-      int hx = (_display->width() - hw) / 2;
       _display->setColor(DisplayDriver::LIGHT);
-      _display->fillRect(hx - p, hy - p, hw + p*2, lk_lh + p*2);
+      _display->fillRect(0, banner_y, _display->width(), lk_lh + 2);
       _display->setColor(DisplayDriver::DARK);
-      _display->setCursor(hx, hy);
-      _display->print(hint);
+      _display->drawTextCentered(_display->width() / 2, banner_y + 1, hint);
+      _display->setColor(DisplayDriver::LIGHT);
       // Alert overlay on top — without this a ringing alarm on a locked device
       // played its melody against a screen that never said what was ringing.
       if (millis() < _alert_expiry) renderAlertOverlay();
@@ -3500,14 +3503,7 @@ bool UITask::botGetGPIOAnalog(int idx, int& millivolts) {
 
 void UITask::applyTxPower() {
   if (_node_prefs == NULL) return;
-  // With APC on, tx_power_dbm is the ceiling — re-baseline the controller to it
-  // (which also sets the radio) so the live power tracks the new ceiling at once.
-  if (_node_prefs->tx_apc) { the_mesh.applyApc(); return; }
   radio_driver.setTxPower(_node_prefs->tx_power_dbm);
-}
-
-void UITask::applyApc() {
-  the_mesh.applyApc();   // (re)initialise Adaptive Power Control from prefs
 }
 
 void UITask::applyRadioParams() {

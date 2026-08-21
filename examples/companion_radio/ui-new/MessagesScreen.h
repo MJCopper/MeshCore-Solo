@@ -8,6 +8,7 @@
 #include "MessageEditorSupport.h"
 #include "../solo/NotificationPreferences.h"
 #include "MessageTranscriptView.h"
+#include "RecentParticipants.h"
 
 class MessagesScreen : public UIScreen {
   UITask* _task;
@@ -71,8 +72,13 @@ class MessagesScreen : public UIScreen {
   char      _ctx_ch_fav_item[12]; // "Fav" or "Unfav"
   char      _pin_slot_labels[NodePrefs::FAVOURITES_COUNT][40];  // "Slot N: " + full UTF-8 contact name
   bool      _pin_picker_active;  // true while the slot-picker submenu is open
-  bool      _retry_menu_active = false; // transcript Hold-Enter retry/quick menu
+  bool      _retry_menu_active = false; // transcript Hold-Enter action menu
+  bool      _participant_picker_active = false;
   int       _retry_hist_pos = -1;       // frozen row selected when menu opened
+  enum TranscriptAct : uint8_t { TRANS_REPLY_TO, TRANS_RESEND, TRANS_QUICK };
+  uint8_t   _transcript_act[3];
+  int       _transcript_act_n = 0;
+  RecentParticipants _recent_participants;
   bool      _dm_direct_entry;    // entered DM_HIST via Favourites shortcut; CANCEL returns home
   bool      _channel_direct_entry = false; // Clock shortcut opened CHANNEL_HIST directly
   char      _reply_prefix[36];   // "@[nick] " built when reply is triggered
@@ -140,9 +146,11 @@ class MessagesScreen : public UIScreen {
                 &sensors, batt);
   }
 
-  // Strip the "@[nick] " reply prefix for compact list display (body only).
-  // Shares the one parser with the fullscreen view — see msgReplyBody().
-  static const char* skipReplyPrefix(const char* text) { return msgReplyBody(text); }
+  bool buildReplyPrefixForName(const char* name) {
+    if (!name || !name[0] || strcmp(name, "Me") == 0) return false;
+    snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", name);
+    return true;
+  }
 
   // Split a DM-history entry into the name to show as the author and the body to
   // show beneath it. Room servers carry many guests, so incoming room posts are
@@ -150,16 +158,8 @@ class MessagesScreen : public UIScreen {
   // attributed to its guest. Outgoing → "Me"; plain DMs (or no separator) keep
   // the contact name and the text unchanged.
   //
-  // Does NOT strip a leading "@[nick] " reply prefix — that's the caller's call,
-  // and it must be made exactly once: FullscreenMsgView::render() parses it
-  // itself (for the "To:" header), so callers feeding it must pass this
-  // function's result straight through; the compact list view has no such
-  // parsing of its own, so those callers must wrap the result in
-  // skipReplyPrefix(). Stripping it in here unconditionally used to double-strip
-  // the DM case (hiding FullscreenMsgView's "To:" header entirely) while never
-  // stripping the room case (the split happens after this used to run), which is
-  // why replies' addressee went undetected inconsistently between DM/room/list/
-  // fullscreen.
+  // Does NOT strip a leading "@[nick] " reply prefix. Both transcript and
+  // fullscreen renderers parse it so they can show the addressee separately.
   const char* dmDisplayParts(const DmHistEntry& e, bool is_room, const char* contact_name,
                              char* sender_buf, int sender_cap) const {
     const char* body = e.text;
@@ -189,9 +189,11 @@ class MessagesScreen : public UIScreen {
     if (!sep) return false;
     int slen = (int)(sep - text);
     if (slen == 2 && strncmp(text, "Me", 2) == 0) return false;
-    if (slen > 31) slen = 31;
-    snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.*s] ", slen, text);
-    return true;
+    char nick[32];
+    if (slen > (int)sizeof(nick) - 1) slen = sizeof(nick) - 1;
+    memcpy(nick, text, slen);
+    nick[slen] = '\0';
+    return buildReplyPrefixForName(nick);
   }
 
   // Build "@[nick] " into _reply_prefix for a reply to a DM/room post, raw
@@ -204,7 +206,7 @@ class MessagesScreen : public UIScreen {
   void buildDmReplyPrefix(const DmHistEntry& e) {
     char nick[32];
     dmDisplayParts(e, _sel_contact.type == ADV_TYPE_ROOM, _sel_contact.name, nick, sizeof(nick));
-    snprintf(_reply_prefix, sizeof(_reply_prefix), "@[%.31s] ", nick);
+    buildReplyPrefixForName(nick);
   }
 
   void startReply(bool to_channel) {
@@ -241,6 +243,8 @@ class MessagesScreen : public UIScreen {
     int csel = _ctx_menu.selectedIndex();
     FsAct a = (FsAct)_fs_act[(csel >= 0 && csel < _fs_act_n) ? csel : 0];
     _ctx_menu.active = false;
+    _retry_menu_active = false;
+    _participant_picker_active = false;
     if (a == FS_REPLY) {
       (channel ? _fs : _dm_fs).active = false;
       startReply(channel);
@@ -302,26 +306,85 @@ class MessagesScreen : public UIScreen {
     _phase = MSG_PICK;
   }
 
+  int collectRecentParticipants(bool channel) {
+    _recent_participants.clear();
+    if (channel) {
+      int count = _history.histCountForChannel(_sel_channel_idx);
+      for (int i = 0; i < count && _recent_participants.count() < RecentParticipants::MAX_PARTICIPANTS; i++) {
+        int pos = _history.histEntryForChannel(_sel_channel_idx, i);
+        if (pos < 0) continue;
+        const char* text = _history.chAtPos(pos).text;
+        const char* sep = strstr(text, ": ");
+        if (sep) _recent_participants.add(text, (int)(sep - text));
+      }
+    } else if (_sel_contact.type == ADV_TYPE_ROOM) {
+      int count = _history.dmHistCountForContact(_sel_contact.id.pub_key);
+      for (int i = 0; i < count && _recent_participants.count() < RecentParticipants::MAX_PARTICIPANTS; i++) {
+        int pos = _history.dmHistEntryForContact(_sel_contact.id.pub_key, i);
+        if (pos < 0) continue;
+        const DmHistEntry& e = _history.dmAtPos(pos);
+        if (e.outgoing) continue;
+        const char* sep = strstr(e.text, ": ");
+        if (sep) _recent_participants.add(e.text, (int)(sep - e.text));
+      }
+    }
+    return _recent_participants.count();
+  }
+
+  void openParticipantPicker() {
+    _participant_picker_active = true;
+    _ctx_menu.begin("Reply to", RecentParticipants::MAX_PARTICIPANTS);
+    for (int i = 0; i < _recent_participants.count(); i++)
+      _ctx_menu.addItem(_recent_participants.name(i));
+  }
+
+  void dispatchParticipantPicker(bool channel) {
+    int selected = _ctx_menu.selectedIndex();
+    _ctx_menu.active = false;
+    _participant_picker_active = false;
+    if (selected < 0 || selected >= _recent_participants.count() ||
+        !buildReplyPrefixForName(_recent_participants.name(selected))) return;
+    startReply(channel);
+  }
+
   void beginTranscriptActions(bool channel) {
     int failed = channel ? _history.latestFailedChannel(_sel_channel_idx)
                          : _history.latestFailedDMForContact(_sel_contact.id.pub_key);
-    if (failed < 0) {
+    bool group_conversation = channel || _sel_contact.type == ADV_TYPE_ROOM;
+    int recent = group_conversation ? collectRecentParticipants(channel) : 0;
+    if (!group_conversation && failed < 0) {
       _sending_to_channel = channel;
       beginQuickMessagePick();
       return;
     }
     _retry_hist_pos = failed;
     _retry_menu_active = true;
-    _ctx_menu.begin("Send options", 2);
-    _ctx_menu.addItem(channel ? "Resend anyway" : "Resend failed");
+    _participant_picker_active = false;
+    _transcript_act_n = 0;
+    _ctx_menu.begin("Send options", 3);
+    if (recent > 0) {
+      _ctx_menu.addItem("Reply to...");
+      _transcript_act[_transcript_act_n++] = TRANS_REPLY_TO;
+    }
+    if (failed >= 0) {
+      _ctx_menu.addItem(channel ? "Resend anyway" : "Resend failed");
+      _transcript_act[_transcript_act_n++] = TRANS_RESEND;
+    }
     _ctx_menu.addItem("Quick messages");
+    _transcript_act[_transcript_act_n++] = TRANS_QUICK;
   }
 
   void dispatchTranscriptAction(bool channel) {
     int selected = _ctx_menu.selectedIndex();
+    TranscriptAct action = (TranscriptAct)_transcript_act[
+        (selected >= 0 && selected < _transcript_act_n) ? selected : 0];
     _ctx_menu.active = false;
     _retry_menu_active = false;
-    if (selected == 1) {
+    if (action == TRANS_REPLY_TO) {
+      openParticipantPicker();
+      return;
+    }
+    if (action == TRANS_QUICK) {
       _sending_to_channel = channel;
       beginQuickMessagePick();
       return;
@@ -823,6 +886,8 @@ public:
     buildChannelList();
 
     _ctx_menu.active = false;
+    _retry_menu_active = false;
+    _participant_picker_active = false;
     _ctx_dirty = false;
     _nav_active = false;
     _share_mode = false;
@@ -1153,8 +1218,8 @@ public:
             if (ring_pos < 0) return false;
             const DmHistEntry& e = _history.dmAtPos(ring_pos);
             char sender[33];
-            const char* body = skipReplyPrefix(
-                dmDisplayParts(e, is_room, contact_name, sender, sizeof(sender)));
+            const char* raw_body = dmDisplayParts(e, is_room, contact_name, sender, sizeof(sender));
+            const char* body = msgReplyBody(raw_body, msg.reply_to, sizeof(msg.reply_to));
             strncpy(msg.sender, sender, sizeof(msg.sender) - 1);
             msg.sender[sizeof(msg.sender) - 1] = '\0';
             strncpy(msg.body, body, sizeof(msg.body) - 1);
@@ -1239,7 +1304,8 @@ public:
             } else {
               strcpy(msg.sender, "?");
             }
-            const char* body = skipReplyPrefix(sep ? sep + 2 : e.text);
+            const char* body = msgReplyBody(sep ? sep + 2 : e.text,
+                                            msg.reply_to, sizeof(msg.reply_to));
             strncpy(msg.body, body, sizeof(msg.body) - 1);
             msg.body[sizeof(msg.body) - 1] = '\0';
             geo::fmtAgeShort(msg.age, sizeof(msg.age), now_ts, e.timestamp);
@@ -1727,11 +1793,13 @@ public:
       if (_ctx_menu.active) {
         auto res = _ctx_menu.handleInput(c);
         if (res == PopupMenu::SELECTED) {
-          if (_retry_menu_active) dispatchTranscriptAction(false);
+          if (_participant_picker_active) dispatchParticipantPicker(false);
+          else if (_retry_menu_active) dispatchTranscriptAction(false);
           else dispatchFsAction(false);
         } else if (res != PopupMenu::NONE) {
           _ctx_menu.active = false;
           _retry_menu_active = false;
+          _participant_picker_active = false;
         }
         return true;
       }
@@ -1785,11 +1853,13 @@ public:
       if (_ctx_menu.active) {
         auto res = _ctx_menu.handleInput(c);
         if (res == PopupMenu::SELECTED) {
-          if (_retry_menu_active) dispatchTranscriptAction(true);
+          if (_participant_picker_active) dispatchParticipantPicker(true);
+          else if (_retry_menu_active) dispatchTranscriptAction(true);
           else dispatchFsAction(true);
         } else if (res != PopupMenu::NONE) {
           _ctx_menu.active = false;
           _retry_menu_active = false;
+          _participant_picker_active = false;
         }
         return true;
       }

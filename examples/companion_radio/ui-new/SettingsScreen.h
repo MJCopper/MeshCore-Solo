@@ -56,18 +56,16 @@ class SettingsScreen : public UIScreen {
 #endif
     // Home pages section
     SECTION_HOME_PAGES,
-    HOME_FAVOURITES, HOME_RADIO, HOME_BT, HOME_ADVERT,
+    HOME_QUICK_MSG, HOME_FAVOURITES,
 #if ENV_INCLUDE_GPS == 1
     HOME_GPS,
 #endif
-    HOME_SETTINGS, HOME_QUICK_MSG,
-    HOME_TOOLS,
+    HOME_ADVERT, HOME_BT, HOME_RADIO, HOME_TOOLS, HOME_SETTINGS,
     // Radio section
     SECTION_RADIO,
     TX_POWER,
     RADIO_PRESET,
     CUSTOM_FREQ, CUSTOM_SF, CUSTOM_BW, CUSTOM_CR,
-    TX_APC,
     // System section
     SECTION_SYSTEM,
     DEVICE_NAME,
@@ -443,12 +441,6 @@ class SettingsScreen : public UIScreen {
       snprintf(buf, sizeof(buf), "%d", p ? (int)p->cr : 0);
       display.setCursor(valCol(display), y);
       display.print(buf);
-    } else if (item == TX_APC) {
-      display.print("Auto Pwr");
-      display.setCursor(valCol(display), y);
-      // Suppressed (and locked) while repeating — a repeater holds full TX power.
-      if (p && p->client_repeat) display.print("--");
-      else display.print((p && p->tx_apc) ? "On" : "Off");
 #if AUTO_OFF_MILLIS > 0
     } else if (item == AUTO_OFF) {
       display.print("Auto-off");
@@ -932,13 +924,6 @@ public:
     if (_selected == CUSTOM_SF && p && dir && RadioParamsEditor::stepSF(p->sf, dir)) { _task->applyRadioParams(); _dirty = true; return true; }
     if (_selected == CUSTOM_BW && p && dir && RadioParamsEditor::stepBW(p->bw, dir)) { _task->applyRadioParams(); _dirty = true; return true; }
     if (_selected == CUSTOM_CR && p && dir && RadioParamsEditor::stepCR(p->cr, dir)) { _task->applyRadioParams(); _dirty = true; return true; }
-    if (_selected == TX_APC && p && (left || right || enter)) {
-      if (p->client_repeat) { _task->showAlert("Off while repeating", 900); return true; }
-      p->tx_apc ^= 1;
-      _task->applyApc();
-      _dirty = true;
-      return true;
-    }
 #if AUTO_OFF_MILLIS > 0
     if (_selected == AUTO_OFF && p) {
       int idx = autoOffIndex();

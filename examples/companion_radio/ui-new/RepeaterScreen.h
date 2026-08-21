@@ -83,7 +83,6 @@ public:
 
     if (item == IT_REPEATER && (left || right || enter)) {
       p->client_repeat ^= 1;
-      _task->applyApc();               // pin TX power to the ceiling while repeating (APC suppressed)
       _dirty = true;
       return true;
     }

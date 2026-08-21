@@ -62,46 +62,18 @@ static const int KB_PREVIEW_CAP = 46;
 static const int KB_PREVIEW_BYTES = KB_PREVIEW_CAP * 4;
 
 // ── UTF-8 helpers ────────────────────────────────────────────────────────────
-// The EN-US grid is ASCII, but the accent picker and externally supplied text
-// can contain UTF-8. Editing therefore remains codepoint-aware.
+// The EN-US grid is ASCII, but emoji and externally supplied text can contain
+// UTF-8. Editing therefore remains codepoint-aware.
 
-// Apply Shift/caps to every codepoint in a UTF-8 string, writing the result
-// (same codepoint count, each independently shifted) into `out`. Every script
-// here pairs lower/uppercase differently, so each gets its own rule:
-//  - ASCII a-z: flat -0x20 codepoint offset.
-//  - Latin-1 Supplement à-þ (U+00E0-00FE, used by every Latin-diacritic
-//    alphabet below — ö/ü/é/á/etc.): also a flat -0x20 offset, same as ASCII —
-//    the block was designed as parallel case pairs. U+00F7 (÷, division sign)
-//    sits in that numeric range but isn't a letter; excluded. ß (U+00DF) has
-//    no simple uppercase in this range (its uppercase ẞ is U+1E9E, outside
-//    Lemon's U+0020-04FF) — left as-is. ÿ (U+00FF, French) is the one letter
-//    in this block whose uppercase Ÿ (U+0178) falls outside it entirely —
-//    special-cased before the range rule.
-//  - Latin Extended-A (ą/č/ĺ/œ/etc., U+0100-017F): NOT a flat offset like
-//    Latin-1 — this block alternates even=uppercase/odd=lowercase in adjacent
-//    pairs, so lowercase - 1 = uppercase. But the parity flips around the
-//    unpaired codepoints ĸ (U+0138), ŉ (U+0149) and Ÿ (U+0178), so a single
-//    "odd=lower" rule is wrong for U+0139-0148 and U+0179-017E (this broke
-//    ł ń ź ż among others). Verified exhaustively over the whole
-//    U+0100-U+017F block — see the four sub-ranges below; ı and ſ are the
-//    only remaining exceptions and appear in no keyboard table here.
-// Used both for a single cell (one codepoint) and a whole T9 group label/string.
+// Apply Shift/caps to ASCII letters while preserving any other UTF-8 supplied
+// by an existing field value.
 static void kbApplyCapsUtf8(const char* in, bool caps, char* out, size_t out_size) {
   size_t o = 0;
   const uint8_t* p = (const uint8_t*)in;
   while (*p && o + 2 < out_size) {
     uint32_t cp = DisplayDriver::decodeCodepoint(p);
     if (caps) {
-      if (cp == 0x00FF)                                    cp = 0x0178;  // ÿ -> Ÿ
-      else if (cp >= 0x00E0 && cp <= 0x00FE && cp != 0x00F7) cp -= 0x20;  // à-þ -> À-Þ
-      // ą-ż (Latin Extended-A): pairing parity flips around the unpaired
-      // codepoints ĸ (U+0138), ŉ (U+0149), Ÿ (U+0178) -- verified exhaustively
-      // over the whole U+0100-U+017F block, resolves ł ń ź ż + ĺ ľ ň ž too.
-      else if (cp >= 0x0100 && cp <= 0x0137 && (cp & 1) == 1) cp -= 1;     // odd=lower
-      else if (cp >= 0x0139 && cp <= 0x0148 && (cp & 1) == 0) cp -= 1;     // even=lower
-      else if (cp >= 0x014A && cp <= 0x0177 && (cp & 1) == 1) cp -= 1;     // odd=lower
-      else if (cp >= 0x0179 && cp <= 0x017E && (cp & 1) == 0) cp -= 1;     // even=lower
-      else if (cp >= 'a' && cp <= 'z')                      cp -= 0x20;   // a-z -> A-Z
+      if (cp >= 'a' && cp <= 'z') cp -= 0x20;
     }
     if (cp < 0x80) {
       out[o++] = (char)cp;
@@ -165,41 +137,6 @@ static int kbUtf8CharBytesAt(const char* buf, int pos, int len) {
   return n;
 }
 
-// Accented variants of a Latin base letter, reachable by Hold-Enter on that
-// letter's cell on the plain Latin ABC page (see handleInput's KEY_CONTEXT_MENU
-// block and the accent_active state machine). Replaces the old per-language
-// full alt-alphabet pages (Polish/Czech/Slovak/German/French/Spanish/
-// Portuguese/Nordic) with one popup covering the union of all their accented
-// letters -- closer to a phone keyboard's long-press accent picker than a
-// second full page per language. Each entry is one UTF-8 string of
-// concatenated variants (like KB_T9_GROUPS_* group strings), read with the
-// same kbUtf8Len()/kbUtf8CharAt() helpers used there.
-// Ligature/non-diacritic letters are filed under their conventional key, same
-// as a phone keyboard's long-press: ß (German) -> s, œ (French) -> o. ĺ/ŕ
-// (Slovak) are l/r with an acute, not i/e variants, so they're filed there.
-static const char KB_ACCENT_BASES[] = "acdeilnorstuyz";
-static const char* const KB_ACCENT_VARIANTS[] = {
-  "áàâãäåą",  // a
-  "çćč",      // c
-  "ď",        // d
-  "éèêëěę",   // e
-  "íîï",      // i
-  "łĺľ",      // l
-  "ñńň",      // n
-  "óòôõöøœ",  // o
-  "řŕ",       // r
-  "śšß",      // s
-  "ť",        // t
-  "úùûüů",    // u
-  "ýÿ",       // y
-  "źżž",      // z
-};
-static const int KB_ACCENT_COUNT = sizeof(KB_ACCENT_BASES) - 1;   // exclude the trailing NUL
-static int findAccentGroup(char base) {
-  for (int i = 0; i < KB_ACCENT_COUNT; i++) if (KB_ACCENT_BASES[i] == base) return i;
-  return -1;
-}
-
 static const int KB_PH_MAX     = 20;  // max placeholders in list (PopupMenu::PM_MAX_ITEMS=24 is the hard ceiling)
 static const int KB_PH_LEN     = 30;  // max placeholder string length incl. null -- sized for the longest
                                        // CLI-command candidate (AdminScreen), not just the short {x} tokens
@@ -224,9 +161,6 @@ struct KeyboardWidget {
   int  max_len;
   int  cursor_pos;    // insertion point into buf, in bytes; defaults to len (append)
   bool cursor_mode;   // true while UP-from-row-0 has parked the grid to reposition cursor_pos
-  bool accent_active = false;   // true while the Hold-Enter accent popup is open
-  int  accent_group  = -1;      // index into KB_ACCENT_VARIANTS for the held cell's base letter
-  int  accent_sel    = 0;       // selected variant within that group
   int  row, col;
   int  page;        // 0 = letters, 1 = symbols
   bool caps;
@@ -249,14 +183,14 @@ struct KeyboardWidget {
   bool isCompact() const { return _external_keyboard_connected; }
 
   // True while the plain letter/symbol grid is the active input surface --
-  // showing, no placeholder/accent popup open, not mid cursor-reposition.
+  // showing, no popup open, not mid cursor-reposition.
   // Used by CardKB's Compact-mode handling (UITask::pollCardKB()) to tell
   // "grid navigation" apart from every other state arrows/Enter already mean
   // something else in (those all render their own visible feedback, so they
   // don't need Compact's special-casing).
   bool inPlainGridState() const {
     return isVisible() && !_ph_menu.active && !_emoji_picker.active() &&
-           !cursor_mode && !accent_active;
+           !cursor_mode;
   }
   void setEmojiEnabled(bool enabled) { _emoji_enabled = enabled; }
 
@@ -435,11 +369,8 @@ struct KeyboardWidget {
     len = strlen(buf);
     cursor_pos = len;
     cursor_mode = false;
-    accent_active = false;
     _emoji_enabled = false;
     _emoji_picker.close();
-    accent_group = -1;
-    accent_sel = 0;
     row = col = 0;
     page = 0;
     caps = false;
@@ -465,10 +396,7 @@ struct KeyboardWidget {
     _ph_count = 0;
   }
 
-  // Insert one UTF-8 codepoint (a grid cell's own glyph, or a picked accent
-  // variant) at cursor_pos, applying Shift/caps-lock the same way every cell
-  // commit does. Shared by the plain-Latin-cell commit below and the accent
-  // popup's Enter commit, so the two paths can't drift apart.
+  // Insert one grid glyph at cursor_pos, applying Shift/caps-lock.
   void insertGlyph(const char* one, bool use_caps) {
     char shown[5];
     kbApplyCapsUtf8(one, use_caps, shown, sizeof(shown));
@@ -512,9 +440,7 @@ struct KeyboardWidget {
   // works in codepoints, not bytes. Such a layout belongs on its own setting,
   // a dedicated physical-layout setting: it describes the keycaps, which are
   // independent of the on-screen grid. Digits/punctuation
-  // should keep passing through unmapped, and Fn+letter accents
-  // (openAccentFor()) stay Latin-only -- they're meaningless under non-Latin
-  // keycaps.
+  // should keep passing through unmapped.
   void insertTyped(char c) {
     t9_cell = -1;   // otherwise a same-cell T9 tap within KB_T9_TIMEOUT_MS would
                     // overwrite this character instead of inserting a new one
@@ -598,9 +524,9 @@ struct KeyboardWidget {
     bool compact_ui = isCompact();
     // The normal compact editor needs only the Tab hint row, placing the
     // separator and hint as low as the display allows.
-    // Cursor and accent modes temporarily restore the old four-line region so
-    // their multi-line controls remain fully visible.
-    const bool compact_modal = cursor_mode || accent_active;
+    // Cursor mode temporarily restores the old four-line region so its
+    // multi-line controls remain fully visible.
+    const bool compact_modal = cursor_mode;
     const int kb_h = compact_ui ? (compact_modal ? (KB_T9_ROWS + 1) * lh : lh)
                                 : (rows + 1) * lh;
     const int preview_h = display.height() - kb_h - display.sepH();
@@ -626,7 +552,7 @@ struct KeyboardWidget {
     // the preview scrolls to keep the repositioned cursor in view).
     // Line breaks are counted in CODEPOINTS, not bytes: cpl is how many
     // characters physically fit, so dividing byte offsets by it would count a
-    // multi-byte accented character as more than one -- reducing the usable
+    // multi-byte character as more than one -- reducing the usable
     // line width and, worse, letting a break land inside a codepoint, which
     // reaches print() as a truncated sequence and draws as garbage (both
     // display drivers decode UTF-8 directly). Everything else in this widget already
@@ -717,14 +643,11 @@ struct KeyboardWidget {
     // typist never looks at the letter grid or special-row icons, so skip
     // drawing them entirely -- no status line either, since nothing it could
     // show (script/page, T9-vs-ABC, caps) is actually actionable from CardKB:
-    // typing is always plain Latin ASCII regardless of keyboard_type
-    // (direct-typing passthrough, see
-    // UITask::pollCardKB()), Fn+letter's accent popup now works the same way
-    // regardless of them too (see openAccentFor()), and caps-lock has no
+    // typing is always plain ASCII regardless of keyboard_type
+    // (direct-typing passthrough, see UITask::pollCardKB()), and caps-lock has no
     // CardKB gesture to toggle it at all. Just the two shortcuts that still do
     // something here (arrows/Enter are self-explanatory -- cursor movement and
-    // submit -- so they get no hint of their own). The Fn+letter accent
-    // shortcut remains available but is no longer advertised in the editor.
+    // submit -- so they get no hint of their own).
     // Physical buttons (if used
     // instead of/alongside CardKB) still drive row/col/page as normal; it
     // just won't be visible on this screen which cell is selected.
@@ -835,74 +758,10 @@ struct KeyboardWidget {
       }
     }
 
-    // Accent popup: floats over the still-visible grid (same idea as the
-    // placeholder overlay just below), anchored on the held letter's own row
-    // so it reads as "popping out of" that key instead of taking over the
-    // whole keyboard. LEFT/RIGHT picks, Enter commits, Cancel dismisses.
-    // In Compact there's no grid drawn and `row` was never deliberately
-    // navigated to, so anchoring on it would just park the popup at an
-    // arbitrary height (and possibly over a hint line) -- it gets a fixed slot
-    // under the two hints instead.
-    if (accent_active) {
-      const char* group = KB_ACCENT_VARIANTS[accent_group];
-      int n = kbUtf8Len(group);
-      const int pad = 3;
-      int seg_w = cw * 2 + pad;
-      int bw = n * seg_w;
-      int max_bw = display.width() - 4;
-      if (bw > max_bw) { bw = max_bw; seg_w = bw / n; }
-      int bx = (display.width() - bw) / 2;
-      int by = compact_ui ? (chars_y + 2 * lh + 2) : (chars_y + row * cell_h - 1);
-      int bh = compact_ui ? (lh + 2) : (cell_h + 1);
-      display.setColor(DisplayDriver::DARK);
-      display.fillRect(bx, by, bw, bh);
-      display.setColor(DisplayDriver::LIGHT);
-      display.drawRect(bx, by, bw, bh);
-      for (int i = 0; i < n; i++) {
-        char one[5]; kbUtf8CharAt(group, i, one);
-        char shown[5]; kbApplyCapsUtf8(one, caps, shown, sizeof(shown));
-        int x = bx + i * seg_w;
-        if (i == accent_sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(x + 1, by + 1, seg_w - 1, bh - 2);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-        }
-        int tw = display.getTextWidth(shown);
-        display.setCursor(x + (seg_w - tw) / 2, by + 1);
-        display.print(shown);
-      }
-      display.setColor(DisplayDriver::LIGHT);
-    }
-
     // placeholder picker overlay (drawn on top of keyboard)
     if (_ph_menu.active) _ph_menu.render(display);
     _emoji_picker.render(display);
     return 50;
-  }
-
-  // CardKB's Fn+letter ("alt") gesture, see UITask::pollCardKB(): open the
-  // accent popup for this base Latin letter directly, skipping the
-  // arrow-hunt to find its cell first. `base` always comes from CardKB's own
-  // physical QWERTY layout -- CardKB is a Latin keyboard, so it always types
-  // plain ASCII regardless of the on-screen grid's current page/ABC/T9
-  // setting (those only govern what the grid shows for physical-button
-  // navigation, a completely separate input path with its own copy of this
-  // same gate at the Hold-Enter-on-a-letter-cell site in handleInput()).
-  // Gating this one on the grid's page/T9 state would make Fn+letter silently
-  // stop working when keyboard_type is T9, even though CardKB types Latin text
-  // just fine -- so this only checks that no other exclusive input mode
-  // (popup/cursor-move) is already in progress, same as inPlainGridState().
-  bool openAccentFor(char base) {
-    if (!isVisible() || _ph_menu.active || cursor_mode || accent_active) return false;
-    int gi = findAccentGroup(base);
-    if (gi < 0) return false;
-    accent_active = true;
-    accent_group = gi;
-    accent_sel = 0;
-    t9_cell = -1;
-    return true;
   }
 
   Result handleInput(char c) {
@@ -985,22 +844,6 @@ struct KeyboardWidget {
       return NONE;
     }
 
-    if (accent_active) {
-      const char* group = KB_ACCENT_VARIANTS[accent_group];
-      int n = kbUtf8Len(group);
-      if (keyIsPrev(c)) { accent_sel = (accent_sel > 0) ? accent_sel - 1 : n - 1; return NONE; }
-      if (keyIsNext(c)) { accent_sel = (accent_sel < n - 1) ? accent_sel + 1 : 0; return NONE; }
-      if (c == KEY_ENTER) {
-        char one[5]; kbUtf8CharAt(group, accent_sel, one);
-        insertGlyph(one, caps);
-        if (caps && !caps_lock) caps = false;
-        accent_active = false;
-        return NONE;
-      }
-      if (c == KEY_CANCEL) { accent_active = false; return NONE; }
-      return NONE;
-    }
-
     if (c == KEY_CANCEL) return CANCELLED;
 
     // Direct-typing passthrough (CardKB or similar literal-ASCII input
@@ -1041,9 +884,8 @@ struct KeyboardWidget {
     // independent of the highlighted grid cell: the held physical button is a
     // text action here, not a long-press action on that cell.
     //
-    // Elsewhere Hold-Enter is normally "cancel", with three cell-specific
-    // exceptions: Shift toggles caps-lock, Backspace clears the field, and a
-    // Latin-page letter with variants opens the accent popup.
+    // Elsewhere Hold-Enter is normally "cancel", with cell-specific
+    // exceptions for Shift, Backspace and the emoji picker.
     if (c == KEY_CONTEXT_MENU) {
 #if SOLO_FEAT_AUTOCOMPLETE
       if (_predictive_t9_enabled && openPlaceholders()) return NONE;
@@ -1061,13 +903,7 @@ struct KeyboardWidget {
         return NONE;
       }
       if (row == rows && col == 3 && openEmojiPicker()) return NONE;
-      if (row < rows) {
-        if (!isT9() && !pageIsSymbols(page)) {
-          int gi = findAccentGroup(cellStr(row, col)[0]);
-          if (gi >= 0) { accent_active = true; accent_group = gi; accent_sel = 0; t9_cell = -1; return NONE; }
-        }
-        return NONE;   // no variants for this cell, or T9/non-Latin/symbols page
-      }
+      if (row < rows) return NONE;
       return CANCELLED;
     }
 

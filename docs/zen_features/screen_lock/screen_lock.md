@@ -20,11 +20,11 @@ On boards with an optional CardKB (I2C keyboard) attached, a single **Fn+Esc** d
 
 If the display is off when the sequence begins, it turns on automatically so the hint is visible. Each press in the physical sequence extends the display-on timer by 5 seconds.
 
-The hint popup at the bottom of the lock screen guides through the physical sequence:
+The inverted banner beneath **Messages** guides through the physical sequence:
 
 | Step           | Hint                                                        |
 | -------------- | ------------------------------------------------------------ |
-| Not started    | _Hold Back + 3×Enter_ (_Back+3xEnter/Fn+Esc_ with CardKB attached) |
+| Not started    | _Hold Back + 3×Enter_                                      |
 | 1 press done   | _Enter ×2 more…_                                              |
 | 2 presses done | _Enter ×1 more…_                                              |
 
@@ -38,11 +38,15 @@ If no press is made for 3 seconds, the counter resets.
 | :-----------------------: | :-----------------------: |
 | ![](./screen_oled.png) | ![](./screen_eink.png) |
 
-A brief press of any button wakes the display and shows the lock screen. It displays:
+A brief press of any button wakes the display and shows a version of the Clock
+screen with the normal top status bar but without the carousel navigation row.
+It displays:
 
+- **Top bar** — node name, active status indicators and battery
 - **Time** — large, same format as the Clock page (24 h / 12 h from Settings)
 - **Date** — day-of-week, day, month
 - **Messages** — total unread direct, channel and room message count
+- **Unlock banner** — black text on a white banner directly below Messages
 
 The display turns off again automatically after 5 seconds of inactivity (or 2 seconds immediately after locking).
 

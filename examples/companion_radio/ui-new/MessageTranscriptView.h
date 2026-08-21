@@ -9,6 +9,7 @@
 // exactly the same wrapping, scrolling and drawing implementation.
 struct TranscriptMessage {
   char sender[33];
+  char reply_to[32];
   char body[256];
   char age[6];
   uint8_t delivery;  // AckState value: 0 none, 1 pending, 2 delivered, 3 failed
@@ -55,7 +56,8 @@ public:
       TranscriptMessage msg;
       for (int i = 0; i < count; i++) {
         if (!provide(i, msg)) continue;
-        total += 1 + wrappedLines(d, msg.body, d.width() - 6 - reserve);
+        total += 1 + (msg.reply_to[0] ? 1 : 0) +
+                 wrappedLines(d, msg.body, d.width() - 6 - reserve);
       }
       return total;
     };
@@ -74,7 +76,8 @@ public:
       int n = _pending_added < count ? _pending_added : count;
       for (int i = 0; i < n; i++)
         if (provide(i, added))
-          _scroll_lines += 1 + wrappedLines(d, added.body, d.width() - 6 - reserve);
+          _scroll_lines += 1 + (added.reply_to[0] ? 1 : 0) +
+                           wrappedLines(d, added.body, d.width() - 6 - reserve);
     }
     _pending_added = 0;
     int max_scroll = total > visible_lines ? total - visible_lines : 0;
@@ -87,7 +90,8 @@ public:
       int body_lines = FullscreenMsgView::wrapLines(
           d, msg.body, d.width() - 6 - reserve, s_wrap_lines, MSG_WRAP_LINES_MAX);
       if (body_lines < 1) { s_wrap_lines[0][0] = '\0'; body_lines = 1; }
-      int rows = 1 + body_lines;
+      int reply_lines = msg.reply_to[0] ? 1 : 0;
+      int rows = 1 + reply_lines + body_lines;
       int item_top = item_bottom - rows * lh;
       bool visible = false;
 
@@ -112,8 +116,19 @@ public:
         visible = true;
       }
 
+      if (reply_lines) {
+        int y = item_top + lh;
+        if (y >= view_top && y + lh <= d.height()) {
+          char to_line[38];
+          snprintf(to_line, sizeof(to_line), "To: %s", msg.reply_to);
+          d.setColor(DisplayDriver::LIGHT);
+          d.drawTextEllipsized(2, y, d.width() - 4 - reserve, to_line);
+          visible = true;
+        }
+      }
+
       for (int line = 0; line < body_lines; line++) {
-        int y = item_top + (line + 1) * lh;
+        int y = item_top + (line + 1 + reply_lines) * lh;
         if (y < view_top || y + lh > d.height()) continue;
         d.setColor(DisplayDriver::LIGHT);
         d.setCursor(2, y);

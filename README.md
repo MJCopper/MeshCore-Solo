@@ -29,7 +29,7 @@ All firmware files are published on the [releases page](https://github.com/MJCop
 
 - Native UTF-8 text and emoji rendering, including compact monochrome fallbacks for common emoji
 
-- Predictive T9 and ABC on-screen keyboards, a 2,500-word Australianised completion dictionary, four insertable chat emoji, and common European Latin accents
+- Predictive T9 and ABC on-screen keyboards, a 2,500-word Australianised completion dictionary, and four insertable chat emoji
 
 - Sensor support for dashboard fields, telemetry and message placeholders
 
@@ -52,10 +52,6 @@ All firmware files are published on the [releases page](https://github.com/MJCop
 - [Tools Screen](./docs/zen_features/tools_screen/tools_screen.md) — nearby nodes, companion repeater, ringtone editor and diagnostics
 
 - GPS time synchronisation at boot, timed low-power GPS modes, advert location privacy, hard-coded delivery retry policy, and automatic return to Clock after five idle minutes
-
-- **Battery saving (radio)** — **Auto pwr** Adaptive Power Control trims actual
-  TX power on strong links and ramps back up to the configured ceiling on
-  weak or lost links; the home screen shows the live power
 
 ### E-ink Display (Wio Tracker L1)
 

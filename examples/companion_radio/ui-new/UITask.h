@@ -517,7 +517,6 @@ public:
   void setBuzzerVolumeLevel(uint8_t level);
   uint8_t getBuzzerVolume() const { return _node_prefs ? _node_prefs->buzzer_volume : 4; }
   void applyTxPower();
-  void applyApc();         // Adaptive Power Control on/off from prefs
   void applyRadioParams(); // freq/bw/sf/cr from prefs (radio preset change)
   // Save-on-exit helper for the screen `_dirty` pattern: persists NodePrefs once
   // only if `dirty`, then clears the flag. Standardises the screens' exit paths

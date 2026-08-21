@@ -180,8 +180,7 @@ so out-of-dictionary words can still be entered. Literal fields such as names
 and passwords use multi-tap rather than predictive replacement.
 The historical main/additional-script preference bytes remain serialized for
 configuration compatibility. Zen text entry uses the EN-US layouts above.
-Latin-diacritic letters are available from the corresponding ABC letter through
-the shared accent popup. In completion-enabled message fields, Hold Enter opens
+In completion-enabled message fields, Hold Enter opens
 the completion dialog. The smiley special key opens the four-entry emoji picker;
 CardKB uses Fn+M.
 Shift is one-shot by default (capitalises the next letter, including whichever
@@ -192,12 +191,7 @@ start/end, then — pressed again once already at that boundary — continue on
 to the special row / letter grid, the same destinations the plain grid wrap
 used to reach directly) so edits/inserts can target any point in the typed
 text, not just the end; Enter/Cancel exit immediately from anywhere.
-Hold-Enter on a Latin letter cell with accented variants instead opens
-the **accent popup**: one horizontal row of `KB_ACCENT_VARIANTS[group]`
-(a UTF-8 string per base letter, same shape as a T9 group string), LEFT/RIGHT
-to pick, Enter to insert via the shared `insertGlyph()` helper, Cancel to
-dismiss. Holding a letter with no variants, or any T9/symbols
-cell, is a no-op.
+Holding an ordinary letter or a T9/symbols cell is a no-op.
 
 `FullscreenMsgView::wrapLines()` is a standalone pixel-accurate word-wrapper
 (O(n), variable-width-font aware) reusable by any multi-line layout; it writes
