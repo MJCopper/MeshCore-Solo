@@ -50,21 +50,84 @@ void MyMesh::addSystemPost(const char *postData) {
   storePost(self_id, postData);
 }
 
-void MyMesh::storePost(const mesh::Identity &author, const char *postData) {
+void MyMesh::storePost(const mesh::Identity &author, const char *postData, bool schedule_push,
+                       uint32_t source_timestamp) {
   int idx = next_post_idx;
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+  uint32_t archive_previous = source_timestamp ? newestPostTimestamp() : 0;
+#endif
   // TODO: suggested postData format: <title>/<descrption>
   posts[idx].author = author; // add to cyclic queue
   StrHelper::strncpy(posts[idx].text, postData, MAX_POST_TEXT_LEN);
 
-  posts[idx].post_timestamp = getRTCClock()->getCurrentTimeUnique();
+  posts[idx].post_timestamp = source_timestamp ? source_timestamp : getRTCClock()->getCurrentTimeUnique();
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+  if (source_timestamp) {
+    if (posts[idx].post_timestamp <= archive_previous)
+      posts[idx].post_timestamp = archive_previous + 1;
+  }
+#endif
   MESH_DEBUG_PRINTLN("room.post: storePost idx=%d text=%s", idx, posts[idx].text);
   MESH_DEBUG_PRINTLN("room.post: timestamp=%u", posts[idx].post_timestamp);
   next_post_idx = (next_post_idx + 1) % MAX_UNSYNCED_POSTS;
 
-  next_push = futureMillis(PUSH_NOTIFY_DELAY_MILLIS);
+  if (schedule_push) next_push = futureMillis(PUSH_NOTIFY_DELAY_MILLIS);
   _num_posted++; // stats
   MESH_DEBUG_PRINTLN("room.post: next_post_idx=%d num_posted=%d push scheduled", next_post_idx, _num_posted);
 }
+
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+int MyMesh::clientIndex(const ClientInfo* client) {
+  if (!client) return -1;
+  for (int i = 0; i < acl.getNumClients(); i++)
+    if (acl.getClientByIdx(i) == client) return i;
+  return -1;
+}
+
+uint32_t MyMesh::newestPostTimestamp() const {
+  uint32_t newest = 0;
+  for (int i = 0; i < MAX_UNSYNCED_POSTS; i++)
+    if (posts[i].post_timestamp > newest) newest = posts[i].post_timestamp;
+  return newest;
+}
+
+uint32_t MyMesh::historyFloorForLimit(uint32_t cutoff, uint8_t limit) const {
+  uint32_t cursor = cutoff;
+  uint32_t oldest_included = 0;
+  bool include_cursor = true;
+
+  for (uint8_t n = 0; n < limit; n++) {
+    uint32_t next = 0;
+    for (int i = 0; i < MAX_UNSYNCED_POSTS; i++) {
+      uint32_t timestamp = posts[i].post_timestamp;
+      if (timestamp > next && (timestamp < cursor || (include_cursor && timestamp == cursor)))
+        next = timestamp;
+    }
+    if (next == 0) return 0;
+    oldest_included = next;
+    cursor = next;
+    include_cursor = false;
+  }
+
+  return oldest_included > 0 ? oldest_included - 1 : 0;
+}
+
+int MyMesh::searchChannelsByHash(const uint8_t* hash, mesh::GroupChannel channels[], int max_matches) {
+  return public_archive.find(hash, channels, max_matches);
+}
+
+void MyMesh::onGroupDataRecv(mesh::Packet*, uint8_t type, const mesh::GroupChannel&,
+                             uint8_t* data, size_t len) {
+  uint32_t timestamp;
+  const char* text;
+  if (!public_archive.extractText(type, data, len, timestamp, text)) return;
+
+  // Public messages contain a claimed "name: message" string, not an
+  // authenticated author identity. Preserve it and attribute the signed room
+  // envelope to the archive itself.
+  storePost(self_id, text, false, timestamp);
+}
+#endif
 
 void MyMesh::pushPostToClient(ClientInfo *client, PostInfo &post) {
   MESH_DEBUG_PRINTLN("room.post: pushPostToClient text=%s", post.text);
@@ -332,6 +395,7 @@ void MyMesh::onAnonDataRecv(mesh::Packet *packet, const uint8_t *secret, const m
     data[len] = 0;                                        // ensure null terminator
 
     ClientInfo* client = NULL;
+#ifndef PUBLIC_CHANNEL_ARCHIVE
     if (data[8] == 0) {   // blank password, just check if sender is in ACL
       client = acl.getClient(sender.pub_key, PUB_KEY_SIZE);
       if (client == NULL) {
@@ -340,6 +404,7 @@ void MyMesh::onAnonDataRecv(mesh::Packet *packet, const uint8_t *secret, const m
       #endif
       }
     }
+#endif
     if (client == NULL) {
       uint8_t perm;
       if (strcmp((char *)&data[8], _prefs.password) == 0) { // check for valid admin password
@@ -354,7 +419,11 @@ void MyMesh::onAnonDataRecv(mesh::Packet *packet, const uint8_t *secret, const m
           return; // no response. Client will timeout
         }
       }
-
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+      // Only the admin password grants an elevated role. Guest, blank and
+      // incorrect passwords all use MeshCore's limited read-only guest UI.
+      if (perm != PERM_ACL_ADMIN) perm = PERM_ACL_GUEST;
+#endif
       client = acl.putClient(sender, 0);  // add to known clients (if not already known)
       if (sender_timestamp <= client->last_timestamp) {
         MESH_DEBUG_PRINTLN("possible replay attack!");
@@ -374,6 +443,21 @@ void MyMesh::onAnonDataRecv(mesh::Packet *packet, const uint8_t *secret, const m
 
       dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
     }
+
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+    int archive_client_idx = clientIndex(client);
+    if (archive_client_idx >= 0) {
+      uint32_t cutoff = newestPostTimestamp();
+      uint8_t hops = packet->isRouteFlood()
+          ? packet->getPathHashCount()
+          : (client->out_path_len == OUT_PATH_UNKNOWN ? 0 : client->out_path_len & 63);
+      archive_session_cutoff[archive_client_idx] = cutoff;
+      archive_session_floor[archive_client_idx] = hops >= 2
+          ? historyFloorForLimit(cutoff, 20)
+          : 0;
+      archive_session_active[archive_client_idx] = true;
+    }
+#endif
 
     if (packet->isRouteFlood()) {
       client->out_path_len = OUT_PATH_UNKNOWN;  // need to rediscover out_path
@@ -477,6 +561,12 @@ void MyMesh::onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx, 
           send_ack = false; // and no ACK...  user shoudn't be sending these
         }
       } else { // TXT_TYPE_PLAIN
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+        // Archive history is populated only by the Public channel listener.
+        // Direct room posts are rejected for every ACL role, including admins.
+        temp[5] = 0;
+        send_ack = false;
+#else
         if ((client->permissions & PERM_ACL_ROLE_MASK) == PERM_ACL_GUEST) {
           temp[5] = 0;      // no reply
           send_ack = false; // no ACK
@@ -487,6 +577,7 @@ void MyMesh::onPeerDataRecv(mesh::Packet *packet, uint8_t type, int sender_idx, 
           temp[5] = 0; // no reply (ACK is enough)
           send_ack = true;
         }
+#endif
       }
 
       uint32_t delay_millis;
@@ -688,6 +779,11 @@ MyMesh::MyMesh(mesh::MainBoard &board, mesh::Radio &radio, mesh::MillisecondCloc
   next_client_idx = 0;
   next_push = 0;
   memset(posts, 0, sizeof(posts));
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+  memset(archive_session_cutoff, 0, sizeof(archive_session_cutoff));
+  memset(archive_session_floor, 0, sizeof(archive_session_floor));
+  memset(archive_session_active, 0, sizeof(archive_session_active));
+#endif
   _num_posted = _num_post_pushes = 0;
 
   memset(default_scope.key, 0, sizeof(default_scope.key));
@@ -698,6 +794,13 @@ void MyMesh::begin(FILESYSTEM *fs) {
   _fs = fs;
   // load persisted prefs
   _cli.loadPrefs(_fs);
+
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+  // Archive policy is fixed: a prefs file from a standard room server cannot
+  // enable forwarding or writing to this room.
+  _prefs.disable_fwd = 1;
+  _prefs.allow_read_only = 1;
+#endif
 
   acl.load(_fs, self_id);
   region_map.load(_fs);
@@ -975,6 +1078,9 @@ void MyMesh::handleCommand(uint32_t sender_timestamp, char *command, char *reply
     }
     reply[0] = 0;
   } else if (strncmp(command, "room.post", 9) == 0) {
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+    snprintf(reply, MAX_POST_TEXT_LEN, "ERR archive is read-only");
+#else
     char* msg = command + 9;
     while (*msg == ' ') msg++;
     if (*msg == 0) {
@@ -983,6 +1089,7 @@ void MyMesh::handleCommand(uint32_t sender_timestamp, char *command, char *reply
       addSystemPost(msg);
       snprintf(reply, MAX_POST_TEXT_LEN, "OK");
     }
+#endif
   } else{
     _cli.handleCommand(sender_timestamp, command, reply);  // common CLI commands
   }
@@ -1006,16 +1113,29 @@ void MyMesh::loop() {
       }
     }
     // check next Round-Robin client, and sync next new post
-    auto client = acl.getClientByIdx(next_client_idx);
+    int client_idx = next_client_idx;
+    auto client = acl.getClientByIdx(client_idx);
     bool did_push = false;
     if (client->extra.room.pending_ack == 0 && client->last_activity != 0 &&
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+        archive_session_active[client_idx] &&
+#endif
         client->extra.room.push_failures < 3) { // not already waiting for ACK, AND not evicted, AND retries not max
       MESH_DEBUG_PRINTLN("loop - checking for client %02X", (uint32_t)client->id.pub_key[0]);
       uint32_t now = getRTCClock()->getCurrentTime();
       for (int k = 0, idx = next_post_idx; k < MAX_UNSYNCED_POSTS; k++) {
         auto p = &posts[idx];
-        if (now >= p->post_timestamp + POST_SYNC_DELAY_SECS &&
-            p->post_timestamp > client->extra.room.sync_since // is new post for this Client?
+        bool ready =
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+            true; // a snapshot contains only messages received before login
+#else
+            now >= p->post_timestamp + POST_SYNC_DELAY_SECS;
+#endif
+        if (ready && p->post_timestamp > client->extra.room.sync_since // is new post for this Client?
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+            && p->post_timestamp <= archive_session_cutoff[client_idx]
+            && p->post_timestamp > archive_session_floor[client_idx]
+#endif
             && !p->author.matches(client->id)) {   // don't push posts to the author
           // push this post to Client, then wait for ACK
           pushPostToClient(client, *p);
@@ -1033,6 +1153,16 @@ void MyMesh::loop() {
     if (did_push) {
       next_push = futureMillis(SYNC_PUSH_INTERVAL);
     } else {
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+      // The login snapshot is complete. Later Public messages remain silent
+      // until this client deliberately logs in again.
+      if (client->extra.room.pending_ack == 0 && archive_session_active[client_idx]) {
+        archive_session_cutoff[client_idx] = 0;
+        archive_session_floor[client_idx] = 0;
+        archive_session_active[client_idx] = false;
+        client->last_activity = 0;
+      }
+#endif
       // were no unsynced posts for curr client, so process next client much quicker! (in next loop())
       next_push = futureMillis(SYNC_PUSH_INTERVAL / 8);
     }

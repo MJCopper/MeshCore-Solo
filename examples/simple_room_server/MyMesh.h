@@ -25,6 +25,10 @@
 #include <RTClib.h>
 #include <target.h>
 
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+  #include "PublicChannelArchive.h"
+#endif
+
 /* ------------------------------ Config -------------------------------- */
 
 #ifndef FIRMWARE_BUILD_DATE
@@ -120,13 +124,25 @@ class MyMesh : public mesh::Mesh, public CommonCLICallbacks {
   int  matching_peer_indexes[MAX_CLIENTS];
 
   void addPost(ClientInfo* client, const char* postData);
-  void storePost(const mesh::Identity& author, const char* postData);
+  void storePost(const mesh::Identity& author, const char* postData, bool schedule_push = true,
+                 uint32_t source_timestamp = 0);
   void pushPostToClient(ClientInfo* client, PostInfo& post);
   uint8_t getUnsyncedCount(ClientInfo* client);
   bool processAck(const uint8_t *data);
   mesh::Packet* createSelfAdvert();
   File openAppend(const char* fname);
   int handleRequest(ClientInfo* sender, uint32_t sender_timestamp, uint8_t* payload, size_t payload_len);
+
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+  PublicChannelArchive public_archive;
+  uint32_t archive_session_cutoff[MAX_CLIENTS];
+  uint32_t archive_session_floor[MAX_CLIENTS];
+  bool archive_session_active[MAX_CLIENTS];
+
+  int clientIndex(const ClientInfo* client);
+  uint32_t newestPostTimestamp() const;
+  uint32_t historyFloorForLimit(uint32_t cutoff, uint8_t limit) const;
+#endif
 
 protected:
   float getAirtimeBudgetFactor() const override {
@@ -161,6 +177,11 @@ protected:
   bool allowPacketForward(const mesh::Packet* packet) override;
   void onAnonDataRecv(mesh::Packet* packet, const uint8_t* secret, const mesh::Identity& sender, uint8_t* data, size_t len) override;
   int searchPeersByHash(const uint8_t* hash) override ;
+#ifdef PUBLIC_CHANNEL_ARCHIVE
+  int searchChannelsByHash(const uint8_t* hash, mesh::GroupChannel channels[], int max_matches) override;
+  void onGroupDataRecv(mesh::Packet* packet, uint8_t type, const mesh::GroupChannel& channel,
+                       uint8_t* data, size_t len) override;
+#endif
   void getPeerSharedSecret(uint8_t* dest_secret, int peer_idx) override;
   void onPeerDataRecv(mesh::Packet* packet, uint8_t type, int sender_idx, const uint8_t* secret, uint8_t* data, size_t len) override;
   bool onPeerPathRecv(mesh::Packet* packet, int sender_idx, const uint8_t* secret, uint8_t* path, uint8_t path_len, uint8_t extra_type, uint8_t* extra, uint8_t extra_len) override;
