@@ -1,8 +1,36 @@
 #include "SensorMesh.h"
 
+#ifdef PUBLIC_CHANNEL_SENSOR_BOT
+  #include "PublicChannelSensorBot.h"
+#endif
+
 #ifdef DISPLAY_CLASS
   #include "UITask.h"
   static UITask ui_task(display);
+#endif
+
+#ifdef PUBLIC_CHANNEL_SENSOR_BOT
+static const char* airQualityLabel(float score) {
+  return score <= 50 ? "Good" :
+         score <= 100 ? "Moderate" :
+         score <= 150 ? "Poor" :
+         score <= 200 ? "Unhealthy" :
+         score <= 300 ? "Very poor" : "Hazardous";
+}
+
+static void formatAirQuality(char* dest, size_t size, float score, uint8_t sample_count) {
+  if (sample_count < 10) {
+    snprintf(dest, size, "Air Quality: Warming Up (%u/10)", sample_count);
+  } else {
+    snprintf(dest, size, "Air Quality: %.0f/500 (%s)", score, airQualityLabel(score));
+  }
+}
+
+static void appendResponseLine(char* response, size_t size, const char* line) {
+  size_t used = strlen(response);
+  if (used && used < size - 1) response[used++] = '\n';
+  if (used < size - 1) StrHelper::strncpy(&response[used], line, size - used);
+}
 #endif
 
 class MyMesh : public SensorMesh {
@@ -17,6 +45,15 @@ protected:
   /* ========================== custom logic here ========================== */
   Trigger low_batt, critical_batt;
   TimeSeriesData  battery_data;
+#ifdef PUBLIC_CHANNEL_SENSOR_BOT
+  PublicChannelSensorBot public_bot;
+  float bme_temperature = NAN;
+  float bme_humidity = NAN;
+  float bme_pressure = NAN;
+  float bme_air_quality = NAN;
+  bool bme_data_ready = false;
+  uint8_t bme_sample_count = 0;
+#endif
 
   void onSensorDataRead() override {
     float batt_voltage = getVoltage(TELEM_CHANNEL_SELF);
@@ -24,6 +61,17 @@ protected:
     battery_data.recordData(getRTCClock(), batt_voltage);   // record battery
     alertIf(batt_voltage < 3.4f, critical_batt, HIGH_PRI_ALERT, "Battery is critical!");
     alertIf(batt_voltage < 3.6f, low_batt, LOW_PRI_ALERT, "Battery is low");
+#ifdef PUBLIC_CHANNEL_SENSOR_BOT
+    // This build enables only the BME680, so it occupies telemetry channel 2.
+    bme_temperature = getTemperature(2);
+    bme_humidity = getRelativeHumidity(2);
+    bme_pressure = getBarometricPressure(2);
+    bme_air_quality = getTelemValue(2, LPP_GENERIC_SENSOR);
+    // getTelemValue() returns zero for a missing field. Pressure is strictly
+    // positive for a successful BME680 reading, while AQ zero is valid.
+    bme_data_ready = bme_pressure > 0.0f;
+    if (bme_data_ready && bme_sample_count < 10) bme_sample_count++;
+#endif
   }
 
   int querySeriesData(uint32_t start_secs_ago, uint32_t end_secs_ago, MinMaxAvg dest[], int max_num) override {
@@ -32,12 +80,75 @@ protected:
   }
 
   bool handleCustomCommand(uint32_t sender_timestamp, char* command, char* reply) override {
+#ifdef PUBLIC_CHANNEL_SENSOR_BOT
+    if (strcmp(command, "get repeat") == 0) {
+      strcpy(reply, "> off");
+      return true;
+    }
+    if (strncmp(command, "set repeat ", 11) == 0) {
+      strcpy(reply, "OK - repeat is fixed OFF");
+      return true;
+    }
+#endif
     if (strcmp(command, "magic") == 0) {    // example 'custom' command handling
       strcpy(reply, "**Magic now done**");
       return true;   // handled
     }
     return false;  // not handled
   }
+
+#ifdef PUBLIC_CHANNEL_SENSOR_BOT
+  bool allowPacketForward(const mesh::Packet*) override { return false; }
+
+  int searchChannelsByHash(const uint8_t* hash, mesh::GroupChannel channels[], int max_matches) override {
+    return public_bot.findChannel(hash, channels, max_matches);
+  }
+
+  void onGroupDataRecv(mesh::Packet*, uint8_t type, const mesh::GroupChannel&,
+                       uint8_t* data, size_t len) override {
+    uint8_t metric_mask;
+    if (!public_bot.accept(type, data, len, millis(), metric_mask)) return;
+
+    char response[MAX_PACKET_PAYLOAD];
+    char air_quality[48];
+    formatAirQuality(air_quality, sizeof(air_quality), bme_air_quality, bme_sample_count);
+    if (!bme_data_ready) {
+      StrHelper::strncpy(response, "Sensor data is not ready", sizeof(response));
+    } else {
+      response[0] = 0;
+      char line[64];
+      if (metric_mask & PublicChannelSensorBot::METRIC_TEMPERATURE) {
+        snprintf(line, sizeof(line), "Temperature: %.1f C", bme_temperature);
+        appendResponseLine(response, sizeof(response), line);
+      }
+      if (metric_mask & PublicChannelSensorBot::METRIC_HUMIDITY) {
+        snprintf(line, sizeof(line), "Humidity: %.1f%%", bme_humidity);
+        appendResponseLine(response, sizeof(response), line);
+      }
+      if (metric_mask & PublicChannelSensorBot::METRIC_PRESSURE) {
+        snprintf(line, sizeof(line), "Pressure: %.1f hPa", bme_pressure);
+        appendResponseLine(response, sizeof(response), line);
+      }
+      if (metric_mask & PublicChannelSensorBot::METRIC_AIR_QUALITY)
+        appendResponseLine(response, sizeof(response), air_quality);
+    }
+
+    uint8_t payload[MAX_PACKET_PAYLOAD];
+    uint32_t timestamp = getRTCClock()->getCurrentTimeUnique();
+    memcpy(payload, &timestamp, sizeof(timestamp));
+    payload[4] = 0;
+    int prefix_len = snprintf(reinterpret_cast<char*>(&payload[5]), sizeof(payload) - 5,
+                              "%s: ", getNodeName());
+    int response_len = strlen(response);
+    int available = sizeof(payload) - 5 - prefix_len;
+    if (response_len > available) response_len = available;
+    memcpy(&payload[5 + prefix_len], response, response_len);
+
+    auto packet = createGroupDatagram(PAYLOAD_TYPE_GRP_TXT, public_bot.channel(), payload,
+                                      5 + prefix_len + response_len);
+    if (packet) sendFlood(packet, getRNG()->nextInt(500, 2001));
+  }
+#endif
   /* ======================================================================= */
 };
 

@@ -118,6 +118,31 @@ ClientInfo* ClientACL::putClient(const mesh::Identity& id, uint8_t init_perms) {
   return c;
 }
 
+ClientInfo* ClientACL::putClientPreservingAdmins(const mesh::Identity& id, uint8_t init_perms) {
+  uint32_t min_time = 0xFFFFFFFF;
+  ClientInfo* oldest = NULL;
+  for (int i = 0; i < num_clients; i++) {
+    if (id.matches(clients[i].id)) return &clients[i];
+    if (!clients[i].isAdmin() && clients[i].last_activity < min_time) {
+      oldest = &clients[i];
+      min_time = oldest->last_activity;
+    }
+  }
+
+  ClientInfo* c;
+  if (num_clients < MAX_CLIENTS) {
+    c = &clients[num_clients++];
+  } else {
+    if (oldest == NULL) return NULL;
+    c = oldest;
+  }
+  memset(c, 0, sizeof(*c));
+  c->permissions = init_perms;
+  c->id = id;
+  c->out_path_len = OUT_PATH_UNKNOWN;
+  return c;
+}
+
 bool ClientACL::applyPermissions(const mesh::LocalIdentity& self_id, const uint8_t* pubkey, int key_len, uint8_t perms) {
   ClientInfo* c;
   if ((perms & PERM_ACL_ROLE_MASK) == PERM_ACL_GUEST) {  // guest role is not persisted in contacts
