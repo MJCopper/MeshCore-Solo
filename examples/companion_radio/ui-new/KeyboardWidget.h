@@ -245,10 +245,19 @@ struct KeyboardWidget {
   bool     _predictive_t9_enabled = false; // opted in by message-text fields
   bool     _t9_literal_mode = false;       // in-editor fallback for names/new words
   char     _t9_digits[solo::WordCompleter::MAX_WORD_LEN] = {};
+  char     _t9_candidate[solo::WordCompleter::MAX_WORD_LEN] = {};
+  char     _t9_cached_digits[solo::WordCompleter::MAX_WORD_LEN] = {};
+  char     _t9_cached_candidates[solo::WordCompleter::MAX_SUGGESTIONS]
+                                [solo::WordCompleter::MAX_WORD_LEN] = {};
   uint8_t  _t9_digit_count = 0;
+  uint8_t  _t9_cached_count = 0;
   int      _t9_word_start = 0;
   int      _t9_word_end = 0;
   bool     _t9_predict_caps = false;
+  bool     _t9_cached_caps = false;
+  bool     _t9_cache_valid = false;
+  bool     _t9_no_match = false;
+  bool     _ph_t9_actions = false;
 
   bool predictiveT9Ready() const {
     return _predictive_t9_enabled && isT9() && !isCompact() &&
@@ -256,10 +265,19 @@ struct KeyboardWidget {
   }
   bool predictiveT9Active() const { return predictiveT9Ready() && _t9_digit_count > 0; }
 
-  void commitT9Prediction() {
+  void invalidateT9Cache() {
+    _t9_cache_valid = false;
+    _t9_cached_count = 0;
+    _t9_cached_digits[0] = '\0';
+  }
+
+  void resetT9Prediction() {
     _t9_digit_count = 0;
     _t9_digits[0] = '\0';
+    _t9_candidate[0] = '\0';
+    _t9_no_match = false;
     _t9_word_start = _t9_word_end = cursor_pos;
+    invalidateT9Cache();
   }
 
   void formatT9Candidate(const char* word, char* out, size_t out_size) const {
@@ -269,16 +287,28 @@ struct KeyboardWidget {
   }
 
   uint8_t getT9Candidates(
-      char out[][solo::WordCompleter::MAX_WORD_LEN], uint8_t max_results) const {
-    char raw[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
-    uint8_t count = solo::T9Predictor::suggest(
-        _t9_digits, _t9_digit_count, raw, max_results);
+      char out[][solo::WordCompleter::MAX_WORD_LEN], uint8_t max_results) {
+    if (max_results > solo::WordCompleter::MAX_SUGGESTIONS)
+      max_results = solo::WordCompleter::MAX_SUGGESTIONS;
+    if (!_t9_cache_valid || _t9_cached_caps != _t9_predict_caps ||
+        strcmp(_t9_cached_digits, _t9_digits) != 0) {
+      char raw[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
+      _t9_cached_count = solo::T9Predictor::suggest(
+          _t9_digits, _t9_digit_count, raw, solo::WordCompleter::MAX_SUGGESTIONS);
+      for (uint8_t i = 0; i < _t9_cached_count; i++)
+        formatT9Candidate(raw[i], _t9_cached_candidates[i],
+                          solo::WordCompleter::MAX_WORD_LEN);
+      snprintf(_t9_cached_digits, sizeof(_t9_cached_digits), "%s", _t9_digits);
+      _t9_cached_caps = _t9_predict_caps;
+      _t9_cache_valid = true;
+    }
+    uint8_t count = _t9_cached_count < max_results ? _t9_cached_count : max_results;
     for (uint8_t i = 0; i < count; i++)
-      formatT9Candidate(raw[i], out[i], solo::WordCompleter::MAX_WORD_LEN);
+      memcpy(out[i], _t9_cached_candidates[i], solo::WordCompleter::MAX_WORD_LEN);
     return count;
   }
 
-  bool replaceT9Prediction(const char* word) {
+  bool replaceT9Text(const char* word) {
     int word_len = word ? (int)strlen(word) : 0;
     int tail_len = len - _t9_word_end;
     int new_len = _t9_word_start + word_len + tail_len;
@@ -292,6 +322,46 @@ struct KeyboardWidget {
     return true;
   }
 
+  bool showT9Candidate(const char* word) {
+    if (!word) return false;
+    int tail_len = len - _t9_word_end;
+    if (_t9_word_start + (int)strlen(word) + tail_len > max_len) return false;
+    snprintf(_t9_candidate, sizeof(_t9_candidate), "%s", word);
+    size_t visible = solo::T9Predictor::prefixBytes(word, _t9_digit_count);
+    char prefix[solo::WordCompleter::MAX_WORD_LEN];
+    if (visible >= sizeof(prefix)) visible = sizeof(prefix) - 1;
+    memcpy(prefix, word, visible);
+    prefix[visible] = '\0';
+    _t9_no_match = false;
+    return replaceT9Text(prefix);
+  }
+
+  void commitT9Prediction() {
+    if (_t9_digit_count && !_t9_no_match && _t9_candidate[0]) {
+      if (replaceT9Text(_t9_candidate)) solo::T9Predictor::remember(_t9_candidate);
+    }
+    resetT9Prediction();
+  }
+
+  bool acceptT9WordAndSpace() {
+    if (!predictiveT9Active() || _t9_no_match) return false;
+    commitT9Prediction();
+    if (len < max_len) {
+      memmove(buf + cursor_pos + 1, buf + cursor_pos, len - cursor_pos);
+      buf[cursor_pos++] = ' ';
+      len++;
+      buf[len] = '\0';
+    }
+    return true;
+  }
+
+  const char* t9GhostSuffix() const {
+    if (!predictiveT9Active() || _t9_no_match || !_t9_candidate[0]) return "";
+    size_t visible = solo::T9Predictor::prefixBytes(_t9_candidate, _t9_digit_count);
+    size_t length = strlen(_t9_candidate);
+    return visible < length ? _t9_candidate + visible : "";
+  }
+
   bool appendT9Digit(char digit) {
     if (!predictiveT9Ready() || _t9_digit_count + 1 >= sizeof(_t9_digits)) return false;
     bool starting = _t9_digit_count == 0;
@@ -303,11 +373,14 @@ struct KeyboardWidget {
     _t9_digits[_t9_digit_count] = '\0';
     char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
     uint8_t count = getT9Candidates(matches, solo::WordCompleter::MAX_SUGGESTIONS);
-    if (count == 0 || !replaceT9Prediction(matches[0])) {
-      _t9_digit_count--;
-      _t9_digits[_t9_digit_count] = '\0';
-      if (starting) commitT9Prediction();
-      return false;
+    if (count == 0 || !showT9Candidate(matches[0])) {
+      // Retain the complete digit sequence and remove the provisional word.
+      // Hold Enter now offers an explicit literal-entry recovery instead of
+      // silently discarding the final key.
+      replaceT9Text("");
+      _t9_candidate[0] = '\0';
+      _t9_no_match = true;
+      return true;
     }
     if (starting && caps && !caps_lock) caps = false;
     return true;
@@ -318,19 +391,27 @@ struct KeyboardWidget {
     _t9_digit_count--;
     _t9_digits[_t9_digit_count] = '\0';
     if (_t9_digit_count == 0) {
-      replaceT9Prediction("");
-      commitT9Prediction();
+      replaceT9Text("");
+      resetT9Prediction();
       return true;
     }
     char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
     uint8_t count = getT9Candidates(matches, solo::WordCompleter::MAX_SUGGESTIONS);
-    if (count) replaceT9Prediction(matches[0]);
+    if (count) showT9Candidate(matches[0]);
+    else {
+      replaceT9Text("");
+      _t9_candidate[0] = '\0';
+      _t9_no_match = true;
+    }
     return true;
   }
 #else
   bool predictiveT9Ready() const { return false; }
   bool predictiveT9Active() const { return false; }
+  void resetT9Prediction() { }
   void commitT9Prediction() { }
+  bool acceptT9WordAndSpace() { return false; }
+  const char* t9GhostSuffix() const { return ""; }
   bool appendT9Digit(char) { return false; }
   bool backspaceT9Prediction() { return false; }
 #endif
@@ -381,7 +462,7 @@ struct KeyboardWidget {
     _predictive_t9_enabled = false;
     _t9_literal_mode = false;
     _t9_predict_caps = false;
-    commitT9Prediction();
+    resetT9Prediction();
 #endif
     _ph_menu.active = false;
     _ph_refresh = nullptr;      // opt-in per session -- the owning screen re-sets it if it wants
@@ -465,17 +546,24 @@ struct KeyboardWidget {
     t9_cell = -1;   // finalize any pending multi-tap cycle -- the pick below moves the
                     // cursor, so a later same-cell tap must not "continue" onto it
     _ph_range_set = false;
+    _ph_t9_actions = false;
 #if SOLO_FEAT_AUTOCOMPLETE
     if (predictiveT9Active()) {
       clearPlaceholders();
       setCompletionRange(_t9_word_start, _t9_word_end);
-      char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
-      uint8_t count = getT9Candidates(matches, solo::WordCompleter::MAX_SUGGESTIONS);
-      for (uint8_t i = 0; i < count; i++) addPlaceholder(matches[i]);
+      if (_t9_no_match) {
+        _ph_t9_actions = true;
+        addPlaceholder("Spell word");
+        addPlaceholder("Cancel word");
+      } else {
+        char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
+        uint8_t count = getT9Candidates(matches, solo::WordCompleter::MAX_SUGGESTIONS);
+        for (uint8_t i = 0; i < count; i++) addPlaceholder(matches[i]);
+      }
     } else
 #endif
     if (_ph_refresh) _ph_refresh(*this, _ph_refresh_ctx);   // contextual repopulate, if wired up
-    _ph_menu.begin(_ph_title, KB_PH_VISIBLE);
+    _ph_menu.begin(_ph_t9_actions ? "No match" : _ph_title, KB_PH_VISIBLE);
     for (int i = 0; i < _ph_count; i++) _ph_menu.addItem(_ph_buf[i]);
     return true;
   }
@@ -530,8 +618,14 @@ struct KeyboardWidget {
     const int kb_h = compact_ui ? (compact_modal ? (KB_T9_ROWS + 1) * lh : lh)
                                 : (rows + 1) * lh;
     const int preview_h = display.height() - kb_h - display.sepH();
-    const int prev_lines = (preview_h / lh) > 1 ? (preview_h / lh) : 1;
-    const int sep_y   = prev_lines * lh;
+    const int preview_lines = (preview_h / lh) > 1 ? (preview_h / lh) : 1;
+    // Only a failed lookup needs an instruction row. Normal predictive entry
+    // uses the extra line for message text; Back/alternative-word behaviour
+    // remains available without permanently advertising it on-screen.
+    const bool t9_no_match_hint = predictiveT9Active() && _t9_no_match &&
+                                  !compact_ui && preview_lines > 1;
+    const int prev_lines = t9_no_match_hint ? preview_lines - 1 : preview_lines;
+    const int sep_y   = preview_lines * lh;
     const int chars_y = sep_y + display.sepH();
     const int cell_h  = (display.height() - chars_y) / (rows + 1);
     const int spec_y  = chars_y + rows * cell_h;
@@ -545,6 +639,8 @@ struct KeyboardWidget {
                             completion_word, sizeof(completion_word),
                             completion_suffix, sizeof(completion_suffix),
                             completion_candidates, sizeof(completion_candidates));
+    const char* preview_suffix = predictiveT9Active() ? t9GhostSuffix()
+                                                      : completion_suffix;
 
     // Multi-line text preview: the view follows cursor_pos (normally == len,
     // i.e. the end — so this is identical to the old "always the last line"
@@ -604,7 +700,7 @@ struct KeyboardWidget {
       // The full on-screen keyboard previews the untyped remainder after the
       // cursor. CardKB's compact editor keeps the text area literal and shows
       // its completion only in the dedicated Tab hint below.
-      if (!compact_ui && cursor_here && has_completion && completion_suffix[0]) {
+      if (!compact_ui && cursor_here && preview_suffix[0]) {
         char before[KB_PREVIEW_BYTES + 1];
         int before_n = cursor_pos - ps;
         if (before_n < 0) before_n = 0;
@@ -614,12 +710,16 @@ struct KeyboardWidget {
         int room = (display.width() - ghost_x) / cw;
         if (room > 0) {
           char ghost[16];
-          snprintf(ghost, sizeof(ghost), "%.*s", room, completion_suffix);
+          snprintf(ghost, sizeof(ghost), "%.*s", room, preview_suffix);
           display.setCursor(ghost_x, pl * lh);
           display.print(ghost);
         }
       }
       ps = pe;
+    }
+    if (t9_no_match_hint) {
+      display.setCursor(0, prev_lines * lh);
+      display.print("No match - Hold Enter");
     }
     display.fillRect(0, sep_y, display.width(), display.sepH());
 
@@ -776,6 +876,18 @@ struct KeyboardWidget {
       auto res = _ph_menu.handleInput(c);
       if (res == PopupMenu::SELECTED) {
         int idx = _ph_menu.selectedIndex();
+        if (_ph_t9_actions) {
+          // Both actions discard the unmatched digit sequence. Spell keeps the
+          // editor on the literal abc page so the user can enter the missing
+          // word without changing their saved T9 preference.
+          resetT9Prediction();
+          if (idx == 0) {
+            page = 0;
+            _t9_literal_mode = true;
+          }
+          _ph_t9_actions = false;
+          return NONE;
+        }
         const char* ph = _ph_buf[idx];
         int ph_len = strlen(ph);
         // Contextual (refresh-hook) fields complete the in-progress word --
@@ -797,6 +909,8 @@ struct KeyboardWidget {
         // and do not append spaces to dynamic placeholders such as {loc}.
         bool append_space = _ph_append_space && ph_len > 0 && ph[0] != '{' &&
                             (replace_end == len || buf[replace_end] != ' ');
+        if (append_space && replace_start + ph_len + 1 + tail_len > max_len)
+          append_space = false;  // accept a final full-length word without its separator
         int insert_len = ph_len + (append_space ? 1 : 0);
         if (replace_start + insert_len + tail_len <= max_len) {
           memmove(buf + replace_start + insert_len, buf + replace_end, tail_len);
@@ -806,7 +920,10 @@ struct KeyboardWidget {
           cursor_pos = replace_start + insert_len;
           buf[len] = '\0';
         }
-        if (selecting_t9_prediction) commitT9Prediction();
+        if (selecting_t9_prediction) {
+          solo::T9Predictor::remember(ph);
+          resetT9Prediction();
+        }
       }
       return NONE;
     }
@@ -844,7 +961,19 @@ struct KeyboardWidget {
       return NONE;
     }
 
-    if (c == KEY_CANCEL) return CANCELLED;
+    if (c == KEY_CANCEL) {
+#if SOLO_FEAT_AUTOCOMPLETE
+      // In predictive T9, Back is the missing dedicated phone-keypad 0 key:
+      // accept the current word and insert its separator without driving the
+      // grid down to Space and back. Outside an active word it remains Cancel.
+      if (acceptT9WordAndSpace()) return NONE;
+      if (predictiveT9Active() && _t9_no_match) {
+        openPlaceholders();
+        return NONE;
+      }
+#endif
+      return CANCELLED;
+    }
 
     // Direct-typing passthrough (CardKB or similar literal-ASCII input
     // source, see UITask::pollCardKB()). Printable characters insert

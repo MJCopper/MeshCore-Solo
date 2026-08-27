@@ -29,7 +29,7 @@ All firmware files are published on the [releases page](https://github.com/MJCop
 
 - Native UTF-8 text and emoji rendering, including compact monochrome fallbacks for common emoji
 
-- Predictive T9 and ABC on-screen keyboards, a 2,500-word Australianised completion dictionary, and four insertable chat emoji
+- Predictive T9 and ABC on-screen keyboards, a 4,000-word Australianised completion dictionary, and four insertable chat emoji
 
 - Sensor support for dashboard fields, telemetry and message placeholders
 

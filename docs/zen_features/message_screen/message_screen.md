@@ -43,7 +43,7 @@ The editor enforces MeshCore's encoded message limit as text is entered. UTF-8
 characters and emoji consume their actual encoded byte length, so they may use
 more capacity than plain ASCII while still moving and deleting as one glyph.
 
-While typing, **UP** from the top letter row enters cursor mode (LEFT/RIGHT move the insertion point; UP/DOWN jump to start/end, then continue on to the special row / letter grid if pressed again once already there; Enter/Cancel exit immediately from anywhere) so you can edit or insert in the middle of what you've typed instead of only at the end. **Hold Enter** opens completion choices in message fields. See the [Zen UI framework guide](../../design/zen_ui_framework.md) for the shared keyboard behaviour.
+While typing, **UP** from the top letter row enters cursor mode (LEFT/RIGHT move the insertion point; UP/DOWN jump to start/end, then continue on to the special row / letter grid if pressed again once already there; Enter/Cancel exit immediately from anywhere) so you can edit or insert in the middle of what you've typed instead of only at the end. In predictive T9, **Back** accepts the active word and inserts a space without moving away from the number grid. **Hold Enter** opens completion or alternative-word choices in message fields. See the [Zen UI framework guide](../../design/zen_ui_framework.md) for the shared keyboard behaviour.
 
 Message editors also provide a small emoji picker. Select the smiley key on the
 keyboard, or press **Fn+M** on CardKB, then choose 👍, 👎, 🙂, or 🙁. Emoji count

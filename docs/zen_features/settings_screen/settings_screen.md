@@ -142,20 +142,30 @@ Type the beginning of a word, then hold **Enter** (or press **Tab** on CardKB)
 to see up to eight matches under **Complete:**. Selecting one replaces the
 whole word at the cursor and appends a space. Completion is limited to message
 text; passwords, names and configuration fields are never suggested or
-modified. The dictionary contains 2,500 frequency-ranked conversational words,
+modified. The dictionary contains 4,000 frequency-ranked conversational words,
 based on the SUBTLEX-US spoken-English corpus with a 130-entry Australian
 localisation layer covering spellings and everyday vocabulary. Proper names,
 corpus fragments, profanity and explicit adult or violent terms are excluded.
 
 With the full on-screen **T9** layout, pressing keys 2–9 builds a predictive
-digit sequence and displays the highest-ranked matching word immediately. Hold
-**Enter** shows up to eight alternatives. Space, Done, cursor movement, a
-page change or choosing an alternative commits the provisional word;
-Backspace removes the latest digit. The page key cycles **T9 → #@ → abc → T9**,
-where `abc` is traditional multi-tap for spelling words outside the dictionary.
-Key 1 and the symbols page also retain multi-tap. Predictive entry is limited
-to message text; names, passwords and other literal fields always use
-multi-tap in T9 layout. CardKB remains direct QWERTY input in either setting.
+digit sequence. Characters covered by the entered digits are shown normally and
+the remainder of a longer completion is shown after the cursor as a ghost
+suffix. Exact-length words are preferred over longer completions. Press
+**Back** while a prediction is active to accept it and insert a space without
+navigating away from the number grid. Hold **Enter** to choose from up to eight
+alternatives; choosing one also inserts a space. The hint line shows the next
+alternatives that fit.
+
+Backspace removes the latest digit. Space, Done, cursor movement or a page
+change commits the provisional word. An unmatched sequence opens **Spell word**
+and **Cancel word** recovery choices instead of silently rejecting its final
+key. **Spell word** enters the existing literal multi-tap mode. The page key
+cycles **T9 → #@ → abc → T9**, and key 1 and the symbols page retain multi-tap.
+Common contractions are predicted without requiring an apostrophe key, and up
+to eight words selected during the current session receive ranking priority;
+this temporary history is never written to flash. Predictive entry is limited
+to message text; names, passwords and other literal fields always use multi-tap
+in T9 layout. CardKB remains direct QWERTY input in either setting.
 
 The smiley special key opens the emoji picker for 👍, 👎, 🙂 and 🙁.
 

@@ -29,8 +29,8 @@ TEST(SoloWordCompleter, SkipsExactWordAndReturnsLongerCompletions) {
   for (uint8_t i = 0; i < count; i++) EXPECT_STRNE("he", matches[i]);
 }
 
-TEST(SoloWordCompleter, DictionaryHasExactlyTwoThousandFiveHundredUniqueBoundedWords) {
-  ASSERT_EQ(2500u, solo::WordCompleter::dictionarySize());
+TEST(SoloWordCompleter, DictionaryHasExactlyFourThousandUniqueBoundedWords) {
+  ASSERT_EQ(4000u, solo::WordCompleter::dictionarySize());
   std::set<std::string> unique;
   for (size_t i = 0; i < solo::WordCompleter::dictionarySize(); i++) {
     const char* word = solo::WordCompleter::wordAt(i);
@@ -51,13 +51,15 @@ TEST(SoloWordCompleter, UsesAustralianSpellingsAndEverydayTerms) {
   const char* expected[] = {
     "mum", "colour", "favourite", "centre", "theatre", "neighbourhood",
     "realise", "apologise", "defence", "licence", "arvo", "brekkie",
-    "servo", "mozzie", "footy", "bushwalk"
+    "servo", "mozzie", "footy", "bushwalk", "humour", "judgement",
+    "aeroplane", "counsellor", "practising", "maths"
   };
   for (const char* word : expected) EXPECT_EQ(1u, words.count(word)) << word;
 
   const char* replaced[] = {
     "mom", "color", "favorite", "center", "theater", "neighborhood",
-    "realize", "apologize", "defense"
+    "realize", "apologize", "defense", "humor", "judgment", "airplane",
+    "counselor", "practicing", "math"
   };
   for (const char* word : replaced) EXPECT_EQ(0u, words.count(word)) << word;
 }
@@ -96,6 +98,37 @@ TEST(SoloT9Predictor, ReturnsFrequencyRankedAlternatives) {
                                               solo::WordCompleter::MAX_SUGGESTIONS);
   ASSERT_GE(count, 2u);
   EXPECT_STREQ("good", matches[0]);
+}
+
+TEST(SoloT9Predictor, PrefersExactWordsBeforeLongerCompletions) {
+  char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN] = {};
+  uint8_t count = solo::T9Predictor::suggest("43", 2, matches,
+                                              solo::WordCompleter::MAX_SUGGESTIONS);
+  ASSERT_GT(count, 0u);
+  EXPECT_EQ(2u, solo::T9Predictor::digitLength(matches[0]));
+}
+
+TEST(SoloT9Predictor, MatchesContractionsWithoutAnApostropheKey) {
+  char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN] = {};
+  uint8_t count = solo::T9Predictor::suggest("3668", 4, matches,
+                                              solo::WordCompleter::MAX_SUGGESTIONS);
+  ASSERT_GT(count, 0u);
+  bool found = false;
+  for (uint8_t i = 0; i < count; i++) found |= std::strcmp(matches[i], "don't") == 0;
+  EXPECT_TRUE(found);
+}
+
+TEST(SoloT9Predictor, FindsVisiblePrefixBeforeGhostCompletion) {
+  EXPECT_EQ(2u, solo::T9Predictor::prefixBytes("hello", 2));
+  EXPECT_EQ(3u, solo::T9Predictor::prefixBytes("I'm", 2));
+}
+
+TEST(SoloT9Predictor, RecentlyAcceptedWordsLeadTheirSequence) {
+  solo::T9Predictor::remember("home");
+  char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN] = {};
+  ASSERT_GT(solo::T9Predictor::suggest("4663", 4, matches,
+                                       solo::WordCompleter::MAX_SUGGESTIONS), 0u);
+  EXPECT_STREQ("home", matches[0]);
 }
 
 int main(int argc, char** argv) {

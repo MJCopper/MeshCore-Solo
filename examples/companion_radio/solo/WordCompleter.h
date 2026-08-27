@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "ZenWordDictionaryExtra.h"
+
 namespace solo {
 
 // Small, allocation-free prefix completer for conversational text. The word
@@ -16,7 +18,10 @@ public:
 
   static size_t dictionarySize() { return WORD_COUNT; }
   static const char* wordAt(size_t index) {
-    return index < WORD_COUNT ? words()[index] : nullptr;
+    if (index < BASE_WORD_COUNT) return words()[index];
+    index -= BASE_WORD_COUNT;
+    return index < zen_dictionary::EXTRA_WORD_COUNT
+        ? zen_dictionary::EXTRA_WORDS[index] : nullptr;
   }
 
   struct WordRange {
@@ -42,15 +47,15 @@ public:
     if (!prefix || prefix_len == 0 || max_results == 0) return 0;
     if (max_results > MAX_SUGGESTIONS) max_results = MAX_SUGGESTIONS;
     uint8_t count = 0;
-    const char* const* dictionary = words();
     for (size_t i = 0; i < WORD_COUNT && count < max_results; i++) {
-      if (!startsWith(dictionary[i], prefix, prefix_len)) continue;
-      size_t n = strLength(dictionary[i]);
+      const char* word = wordAt(i);
+      if (!startsWith(word, prefix, prefix_len)) continue;
+      size_t n = strLength(word);
       // An exact match adds nothing and can hide longer, useful completions
       // that occur later in the frequency-ranked dictionary.
       if (n <= prefix_len) continue;
       if (n >= MAX_WORD_LEN) n = MAX_WORD_LEN - 1;
-      for (size_t j = 0; j < n; j++) results[count][j] = dictionary[i][j];
+      for (size_t j = 0; j < n; j++) results[count][j] = word[j];
       results[count][n] = '\0';
       if (isUpper(prefix[0])) results[count][0] = toUpper(results[count][0]);
       count++;
@@ -78,13 +83,14 @@ private:
     return true;
   }
 
-  static const size_t WORD_COUNT = 2500;
+  static const size_t BASE_WORD_COUNT = 2500;
+  static const size_t WORD_COUNT = BASE_WORD_COUNT + zen_dictionary::EXTRA_WORD_COUNT;
   static const char* const* words() {
     // Frequency-ranked conversational English derived from the ISC-licensed
     // SUBTLEX-US spoken corpus, then localised with Australian spellings and
     // everyday vocabulary. Fragments, proper names, profanity and explicit
     // adult/violent terms are omitted for this child-friendly device.
-    static const char* const WORDS[WORD_COUNT] = {
+    static const char* const WORDS[BASE_WORD_COUNT] = {
       "you", "the", "to", "it", "that", "and", "of", "what",
       "in", "me", "is", "we", "this", "he", "on", "for",
       "my", "your", "have", "do", "no", "be", "know", "was",

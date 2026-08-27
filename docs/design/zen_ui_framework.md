@@ -174,7 +174,15 @@ the board's sensors actually provide. Expand them with `expandMsg()` at send tim
 
 Two EN-US layouts share the text engine: **ABC** (one key per letter) and
 **predictive T9**. In message fields, T9 turns phone-keypad digit sequences into
-ranked words from Zen's 2,500-word Australianised conversational dictionary.
+ranked words from Zen's 4,000-word Australianised conversational dictionary.
+The buffer contains only the portion covered by entered digits; a longer
+candidate's unentered remainder is rendered as a ghost suffix. While a word is
+active, Back accepts it and inserts a space without moving the grid selection,
+and Hold Enter opens the alternative-word dialog. Exact-length candidates rank
+ahead of completions, common contractions ignore their apostrophe during digit
+matching, and a small RAM-only recent-word list improves choices without flash
+writes. An unmatched sequence offers literal spelling or cancellation rather
+than dropping the final key.
 Its page cycle is predictive T9 → symbols → literal multi-tap → predictive T9,
 so out-of-dictionary words can still be entered. Literal fields such as names
 and passwords use multi-tap rather than predictive replacement.
