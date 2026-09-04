@@ -13,7 +13,7 @@
 class MessagesScreen : public UIScreen {
   UITask* _task;
 
-  enum Phase { MODE_SELECT, CONTACT_PICK, DM_HIST, MSG_PICK, CHANNEL_PICK, CHANNEL_HIST, KEYBOARD };
+  enum Phase { MODE_SELECT, CONTACT_PICK, ROOM_LOGIN_WAIT, DM_HIST, MSG_PICK, CHANNEL_PICK, CHANNEL_HIST, KEYBOARD };
   Phase _phase;
 
   // MODE_SELECT
@@ -718,95 +718,44 @@ public:
   }
   void markDmDelivered(uint32_t ack_crc) { _history.markDmDelivered(ack_crc); }
 
-  // Rooms successfully logged in to this power-on session. RAM-only — the
-  // server's ACL (see ClientACL) is the real permission store and survives
-  // reboot on its own, but the device has no way to query it, so this is just
-  // a local memo to skip re-prompting for a password already entered this
-  // session when the same room is picked again.
-  static const int ROOM_LOGIN_TABLE_SIZE = 8;
-  uint8_t _room_login_prefix[ROOM_LOGIN_TABLE_SIZE][4];
-  int _room_login_head = 0, _room_login_count = 0;
-
   bool isRoomLoggedIn(const uint8_t* pub_key) const {
-    // Indices are relative to _room_login_head, same as forgetRoomLoggedIn() --
-    // direct 0.._room_login_count indexing only happens to work before the
-    // ring has wrapped once (head==0); after that it silently checks the wrong
-    // slots.
-    for (int i = 0; i < _room_login_count; i++) {
-      int pos = (_room_login_head + i) % ROOM_LOGIN_TABLE_SIZE;
-      if (memcmp(_room_login_prefix[pos], pub_key, 4) == 0) return true;
-    }
-    return false;
+    return _task->isRoomLoggedIn(pub_key);
   }
 
-  void markRoomLoggedIn(const uint8_t* pub_key) {
-    if (isRoomLoggedIn(pub_key)) return;
-    int pos;
-    if (_room_login_count < ROOM_LOGIN_TABLE_SIZE) {
-      pos = (_room_login_head + _room_login_count) % ROOM_LOGIN_TABLE_SIZE;
-      _room_login_count++;
-    } else {
-      pos = _room_login_head;
-      _room_login_head = (_room_login_head + 1) % ROOM_LOGIN_TABLE_SIZE;
-    }
-    memcpy(_room_login_prefix[pos], pub_key, 4);
+  bool startRoomLogin(const char* password, bool used_saved_password = false) {
+    bool sent = _task->startRoomLogin(solo::RoomLoginCoordinator::MESSAGES,
+                                      _sel_contact, password, used_saved_password);
+    _task->showAlert(sent ? "Logging in..." : (_task->roomLoginBusy() ? "Login busy" : "Login failed"),
+                     sent ? 800 : 1500);
+    if (sent) _phase = ROOM_LOGIN_WAIT;
+    return sent;
   }
 
-  // Reverses markRoomLoggedIn() on explicit Logout -- shifts the ring buffer
-  // closed over the removed slot so isRoomLoggedIn() goes back to false and
-  // the next room open prompts for a password instead of skipping it.
-  void forgetRoomLoggedIn(const uint8_t* pub_key) {
-    for (int i = 0; i < _room_login_count; i++) {
-      int pos = (_room_login_head + i) % ROOM_LOGIN_TABLE_SIZE;
-      if (memcmp(_room_login_prefix[pos], pub_key, 4) == 0) {
-        for (int j = i; j < _room_login_count - 1; j++) {
-          int from = (_room_login_head + j + 1) % ROOM_LOGIN_TABLE_SIZE;
-          int to   = (_room_login_head + j) % ROOM_LOGIN_TABLE_SIZE;
-          memcpy(_room_login_prefix[to], _room_login_prefix[from], 4);
-        }
-        _room_login_count--;
-        return;
-      }
-    }
-  }
-
-  // Password of the room-login attempt currently in flight -- set right
-  // before sendRoomLogin(), read back in onRoomLoginResult() so a successful
-  // attempt can be persisted (see MyMesh::saveRoomPassword()).
-  char _login_pw[16];
-
-  void startRoomLogin(const char* password) {
-    strncpy(_login_pw, password, sizeof(_login_pw) - 1);
-    _login_pw[sizeof(_login_pw) - 1] = 0;
-    uint32_t est_timeout = 0;   // this screen's login isn't a blocking wait (see
-                                // onRoomLoginResult() below), so no deadline needed
-    bool sent = the_mesh.sendRoomLogin(_sel_contact, password, est_timeout);
-    _task->showAlert(sent ? "Logging in..." : "Login failed", sent ? 1000 : 1500);
-  }
-
-  // Result of an on-device sendRoomLogin() (MyMesh::onContactResponse(), routed
-  // via AbstractUITask::onRoomLoginResult()). Surfaces as a transient alert.
+  // Routed by the shared owner-aware coordinator, even if another screen has
+  // become current since this attempt began.
   void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
     (void)permissions;
+    if (_phase != ROOM_LOGIN_WAIT || memcmp(_sel_contact.id.pub_key, pub_key, 4) != 0) return;
     if (success) {
-      markRoomLoggedIn(pub_key);
-      the_mesh.saveRoomPassword(pub_key, _login_pw);
-      // Auto-enter the room's chat right after a successful login so the user
-      // doesn't have to press Enter a second time. The login result is async,
-      // so only do it if they're still sitting on this same room in the picker
-      // (didn't navigate away, open a menu, or enter a share/pick sub-flow).
-      if (_phase == CONTACT_PICK && _room_mode && !_ctx_menu.active
-          && !_share_mode && !_pick_target && !_pick_bot_room
-          && memcmp(_sel_contact.id.pub_key, pub_key, 4) == 0) {
-        openDmHistory();
-      }
+      if (_pick_bot_room) { commitPickBotRoom(_sel_contact); return; }
+      openDmHistory();
+      if (_share_mode) beginShareCompose(false);
     } else {
-      // Saved password (if any) no longer works -- forget it so the next
-      // ENTER on this room falls back to a manual prompt instead of
-      // silently retrying the same bad password forever.
-      the_mesh.forgetRoomPassword(pub_key);
+      _login_mode = true;
+      _kb->begin("", 15);
+      _kb->clearPlaceholders();
+      _phase = KEYBOARD;
     }
     _task->showAlert(success ? "Login OK" : "Login failed", 1200);
+  }
+
+  void onRoomLoginTimeout(const uint8_t* pub_key) {
+    if (_phase != ROOM_LOGIN_WAIT || memcmp(_sel_contact.id.pub_key, pub_key, 4) != 0) return;
+    _login_mode = true;
+    _kb->begin("", 15);
+    _kb->clearPlaceholders();
+    _phase = KEYBOARD;
+    _task->showAlert("No response", 1400);
   }
 
   // Open the message history for the currently selected contact/room and reset
@@ -1138,6 +1087,11 @@ public:
       // Context menu overlay
       if (_ctx_menu.active) _ctx_menu.render(display);
 
+    } else if (_phase == ROOM_LOGIN_WAIT) {
+      display.drawCenteredHeader("ROOM LOGIN");
+      display.drawTextEllipsized(2, start_y, display.width() - 4, _sel_contact.name);
+      display.drawTextCentered(display.width() / 2, start_y + item_h * 2, "Logging in...");
+
     } else if (_phase == CHANNEL_PICK) {
       display.drawCenteredHeader("SELECT CHANNEL", true, _ctx_menu.active);
 
@@ -1438,8 +1392,7 @@ public:
                 _phase = KEYBOARD;
               } else {
                 // Logout: only reachable when isRoomLoggedIn() added this item.
-                the_mesh.logoutRoom(_sel_contact.id.pub_key);
-                forgetRoomLoggedIn(_sel_contact.id.pub_key);
+                _task->logoutRoom(_sel_contact.id.pub_key);
                 _task->showAlert("Logged out", 1000);
               }
             }
@@ -1554,13 +1507,13 @@ public:
           if (_pick_target) { commitPickTargetDM(_sel_contact); return true; }
           if (_pick_bot_room) {
             if (!isRoomLoggedIn(_sel_contact.id.pub_key)) {
-              char saved_pw[sizeof(_login_pw)];
+              char saved_pw[16];
               if (the_mesh.getRoomPassword(_sel_contact.id.pub_key, saved_pw, sizeof(saved_pw))) {
                 // Known password, just not re-established this boot — retry
                 // silently in the background; the bot target is set below
                 // regardless of this attempt's outcome (self-heals like any
                 // other saved room password would on the next real open).
-                startRoomLogin(saved_pw);
+                startRoomLogin(saved_pw, true);
               } else {
                 // Never logged in — the bot could never post here without a
                 // password, so prompt for one now instead of picking an
@@ -1573,6 +1526,7 @@ public:
                 return true;
               }
             }
+            if (!isRoomLoggedIn(_sel_contact.id.pub_key)) return true;
             commitPickBotRoom(_sel_contact);
             return true;
           }
@@ -1580,11 +1534,11 @@ public:
             // Posting to a room requires a login handshake first (even with a
             // blank password) — go straight to the password prompt instead of
             // a history view that would silently fail to send.
-            char saved_pw[sizeof(_login_pw)];
+            char saved_pw[16];
             if (the_mesh.getRoomPassword(_sel_contact.id.pub_key, saved_pw, sizeof(saved_pw))) {
               // Logged in to this room before, on an earlier boot -- retry
               // with the remembered password instead of prompting again.
-              startRoomLogin(saved_pw);
+              startRoomLogin(saved_pw, true);
             } else {
               _login_mode = true;
               _kb->begin("", 15); // room/repeater password: max 15 chars
@@ -1884,6 +1838,12 @@ public:
         return true;
       }
 
+    } else if (_phase == ROOM_LOGIN_WAIT) {
+      if (c == KEY_CANCEL) {
+        _task->cancelRoomLogin(solo::RoomLoginCoordinator::MESSAGES, _sel_contact.id.pub_key);
+        _phase = CONTACT_PICK;
+      }
+      return true;
     } else if (_phase == KEYBOARD) {
       auto res = _kb->handleInput(c);
       if (_login_mode) {
@@ -1894,10 +1854,10 @@ public:
           // Blank password is valid (guest/no-password rooms) — unlike normal
           // message text, an empty submit here is a deliberate "log in with no
           // password" attempt, so it isn't suppressed like an empty message is.
-          _login_mode = false;
-          startRoomLogin(_kb->buf);
-          if (_pick_bot_room) { commitPickBotRoom(_sel_contact); return true; }
-          _phase = CONTACT_PICK;
+          // Keep this as a password editor if the packet cannot be queued.
+          // Previously _login_mode was cleared first, leaving an identical
+          // looking keyboard that was actually handling normal message text.
+          if (startRoomLogin(_kb->buf)) _login_mode = false;
         }
         return true;
       }

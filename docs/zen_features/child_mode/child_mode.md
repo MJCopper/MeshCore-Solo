@@ -67,9 +67,3 @@ Notification filtering is active only while the child interface is locked, so a 
 Select **Settings** and enter the six-digit PIN to start a parent session. This temporarily restores the full home-page set and enables Bluetooth and USB companion access.
 
 The device returns to the restricted interface when the parent leaves Settings, the display sleeps, or the device restarts. Disabling Child Mode leaves Bluetooth and USB enabled; it does not restore an earlier disabled state.
-
----
-
-### Child Mode and Screen Lock
-
-[Screen Lock](../screen_lock/screen_lock.md) prevents accidental keypresses and uses a button sequence to unlock. Child Mode controls which pages and conversations are available and requires a parent PIN. The two features can be used together.

@@ -12,7 +12,6 @@ Below are a few quick start guides.
 - [Clock Screen](./zen_features/clock_screen/clock_screen.md)
 - [Settings Screen](./zen_features/settings_screen/settings_screen.md)
 - [CardKB](./zen_features/cardkb/cardkb.md)
-- [Screen Lock](./zen_features/screen_lock/screen_lock.md)
 - [Child Mode](./zen_features/child_mode/child_mode.md)
 - [Quiet Time](./zen_features/quiet_time/quiet_time.md)
 - [Tools Screen](./zen_features/tools_screen/tools_screen.md)

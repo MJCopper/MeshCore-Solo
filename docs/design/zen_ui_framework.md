@@ -175,6 +175,10 @@ the board's sensors actually provide. Expand them with `expandMsg()` at send tim
 Two EN-US layouts share the text engine: **ABC** (one key per letter) and
 **predictive T9**. In message fields, T9 turns phone-keypad digit sequences into
 ranked words from Zen's 4,000-word Australianised conversational dictionary.
+
+When the Wio Tracker display is off, Back is the only physical control that
+wakes it. Enter and joystick presses are discarded while the panel is dark;
+message notifications and alarms retain their independent display-wake paths.
 The buffer contains only the portion covered by entered digits; a longer
 candidate's unentered remainder is rendered as a ghost suffix. While a word is
 active, Back accepts it and inserts a space without moving the grid selection,

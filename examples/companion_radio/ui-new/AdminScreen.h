@@ -55,12 +55,8 @@ class AdminScreen : public UIScreen {
   // was submitted. Distinct from the keyboard being open (kb().render()/
   // handleInput() only run while this is false).
   bool _login_waiting = false;
-  // Deadline for _login_waiting, mirroring _cmd_deadline_ms/_waiting in the
-  // COMMAND phase below -- without it, a login reply that never arrives (e.g.
-  // the remote's password changed since it was saved, and it silently drops
-  // instead of nacking) leaves the screen stuck on "Logging in..." forever
-  // with only a manual Cancel to escape. See poll().
-  uint32_t _login_deadline_ms = 0;
+  // Timeout and request ownership live in UITask's shared room-login
+  // coordinator, so this screen cannot consume another screen's response.
 
   // One-slot memo: the last contact successfully admin-logged-into this visit,
   // so re-entering COMMAND for the same target right after doesn't require
@@ -157,10 +153,10 @@ class AdminScreen : public UIScreen {
   void startLoginWithSaved(const char* password) {
     strncpy(_login_pw, password, sizeof(_login_pw) - 1);
     _login_pw[sizeof(_login_pw) - 1] = '\0';
-    uint32_t est_timeout = 0;
-    bool sent = the_mesh.sendRoomLogin(_target, _login_pw, est_timeout);
+    bool sent = _task->startRoomLogin(solo::RoomLoginCoordinator::ADMIN,
+                                      _target, _login_pw, true);
     _task->showAlert(sent ? "Logging in..." : "Login failed", sent ? 1000 : 1500);
-    if (sent) { _login_waiting = true; _login_deadline_ms = millis() + est_timeout + 4000; _phase = LOGIN; }
+    if (sent) { _login_waiting = true; _phase = LOGIN; }
   }
 
   void sendCommand() {
@@ -371,7 +367,6 @@ public:
     if (success && (permissions & PERM_ACL_ROLE_MASK) == PERM_ACL_ADMIN) {
       memcpy(_admin_ok_prefix, pub_key, 4);
       _admin_ok = true;
-      the_mesh.saveRoomPassword(pub_key, _login_pw);   // remember it -- same logic as room login
       _tab = ATAB_SYSTEM;
       _row_sel = _row_scroll = 0;
       _phase = COMMAND;
@@ -382,12 +377,17 @@ public:
       _task->showAlert("Not admin on this node", 1600);
       returnToOrigin();
     } else {
-      // Wrong/stale password -- forget it so the next attempt prompts fresh,
-      // same self-healing behaviour as a room login.
-      the_mesh.forgetRoomPassword(pub_key);
       _task->showAlert("Login failed", 1400);
       returnToOrigin();
     }
+  }
+
+  void onRoomLoginTimeout(const uint8_t* pub_key) {
+    if (_phase != LOGIN || !_login_waiting
+        || memcmp(_target.id.pub_key, pub_key, 4) != 0) return;
+    _login_waiting = false;
+    startLogin();
+    _task->showAlert("No response", 1400);
   }
 
   // Async CLI reply, routed here from UITask::onAdminReply().
@@ -443,23 +443,6 @@ public:
   }
 
   void poll() override {
-    if (_phase == LOGIN && _login_waiting && (int32_t)(millis() - _login_deadline_ms) >= 0) {
-      _login_waiting = false;
-      // Stop tracking this request on the MyMesh side too -- otherwise a reply
-      // that still arrives after we've given up gets misrouted to whatever
-      // screen the user is on by then (see cancelUiPendingLogin()'s comment),
-      // corrupting that screen's unrelated login state with our answer.
-      the_mesh.cancelUiPendingLogin(_target.id.pub_key);
-      // No response at all is ambiguous (could be a wrong/stale password, could
-      // just be out of range) -- but a saved password that's gone stale (the
-      // remote's password changed) is exactly this: silence, not a nack. Treat
-      // it the same as onRoomLoginResult()'s explicit-failure branch: forget it
-      // so the next attempt prompts fresh instead of retrying the same dead
-      // password forever.
-      the_mesh.forgetRoomPassword(_target.id.pub_key);
-      _task->showAlert("Login failed (timeout)", 1400);
-      returnToOrigin();
-    }
     if (_phase == COMMAND && _waiting && (int32_t)(millis() - _cmd_deadline_ms) >= 0) {
       _waiting = false;
       if (_fetch_for_edit)       { fallBackToBlankEdit(); _task->showAlert("Fetch failed - enter value", 1400); }
@@ -531,7 +514,7 @@ public:
       if (_login_waiting) {
         if (c == KEY_CANCEL) {
           _login_waiting = false;
-          the_mesh.cancelUiPendingLogin(_target.id.pub_key);   // see cancelUiPendingLogin()'s comment
+          _task->cancelRoomLogin(solo::RoomLoginCoordinator::ADMIN, _target.id.pub_key);
           returnToOrigin();
         }
         return true;
@@ -542,10 +525,10 @@ public:
       } else if (r == KeyboardWidget::DONE) {
         strncpy(_login_pw, kb().buf, sizeof(_login_pw) - 1);
         _login_pw[sizeof(_login_pw) - 1] = '\0';
-        uint32_t est_timeout = 0;
-        bool sent = the_mesh.sendRoomLogin(_target, _login_pw, est_timeout);
+        bool sent = _task->startRoomLogin(solo::RoomLoginCoordinator::ADMIN,
+                                          _target, _login_pw, false);
         _task->showAlert(sent ? "Logging in..." : "Login failed", sent ? 1000 : 1500);
-        if (sent) { _login_waiting = true; _login_deadline_ms = millis() + est_timeout + 4000; } else returnToOrigin();
+        if (sent) _login_waiting = true; else returnToOrigin();
         // else: stay in LOGIN until onRoomLoginResult() fires above.
       }
       return true;

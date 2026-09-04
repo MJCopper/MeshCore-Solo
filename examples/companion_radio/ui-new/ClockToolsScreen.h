@@ -275,7 +275,7 @@ class ClockToolsScreen : public UIScreen {
       return true;
     }
     // Armed: a plain on/off toggle, but still answers LEFT/RIGHT as well as
-    // Enter (same as every boolean field in Settings — e.g. Auto-lock, Units,
+    // Enter (same as every boolean field in Settings — e.g. Units,
     // Power save — flips either way rather than reserving direction for
     // "increase/decrease").
     if (_sel == 2 && (keyIsPrev(c) || keyIsNext(c) || c == KEY_ENTER)) {

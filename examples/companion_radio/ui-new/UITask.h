@@ -28,6 +28,7 @@
 #include "../solo/SoloRuntime.h"
 #include "../solo/BootTimeSync.h"
 #include "../solo/GpsMode.h"
+#include "../solo/RoomLoginCoordinator.h"
 #include "KeyboardWidget.h"
 #if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
   #include <helpers/ui/CardKBController.h>
@@ -45,12 +46,8 @@ class UITask : public AbstractUITask {
   unsigned long _next_refresh, _auto_off;
   bool _notification_wake_active;
   NodePrefs* _node_prefs;
-  bool _locked;
   solo::Runtime _solo;
-  unsigned long _lock_wake_until;  // when to blank screen again after locked wake (5s)
-  int  _lock_seq_count;            // Enter presses while Back held (lock/unlock sequence)
-  unsigned long _lock_seq_ms;      // millis() of last lock-sequence press (for timeout)
-  bool _lock_seq_used;             // true = suppress next back_btn CLICK (post-sequence release)
+  solo::RoomLoginCoordinator _room_login;
   char _alert[80];
   char _notif_mel_buf[220];  // persistent RTTTL buffer for custom notification melodies
   // Persistent RTTTL buffer for the bot !buzz command (see botBuzz()) -- sized
@@ -191,8 +188,10 @@ class UITask : public AbstractUITask {
   void userLedHandler();
 
   // Button action handlers
-  char checkDisplayOn(char c);
-  char handleLongPress(char c);
+  // allow_wake is false for Wio joystick/Enter input: only its dedicated Back
+  // control is allowed to turn an intentionally blank display back on.
+  char checkDisplayOn(char c, bool allow_wake = true);
+  char handleLongPress(char c, bool allow_wake = true);
   char handleDoubleClick(char c);
   char handleTripleClick(char c);
 
@@ -223,8 +222,7 @@ class UITask : public AbstractUITask {
 
   // Centred alert overlay (the showAlert() box). Wraps long text to up to
   // three lines inside the box instead of letting it overflow the border.
-  // Shared by the normal render path and the lock screen (so a ringing
-  // alarm's label is visible while locked).
+  // Shared by every normal screen that can show a transient alert.
   void renderAlertOverlay();
 
 public:
@@ -235,9 +233,6 @@ public:
     _batt_mv = 0;
     _msgcount = 0;
     _notification_wake_active = false;
-    _locked = false;
-    _lock_wake_until = 0;
-    _lock_seq_count = 0; _lock_seq_ms = 0; _lock_seq_used = false;
     _last_notif_ch_idx = -1;
     _last_notif_dm_valid = false;
     memset(_last_notif_dm_prefix, 0, sizeof(_last_notif_dm_prefix));
@@ -397,6 +392,12 @@ public:
   void onChannelRelayed(uint32_t seq) override;
   void onChannelRelayExpired(uint32_t seq) override;
   void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) override;
+  bool startRoomLogin(solo::RoomLoginCoordinator::Owner owner, const ContactInfo& contact,
+                      const char* password, bool used_saved_password = false);
+  bool roomLoginBusy() const { return _room_login.active(); }
+  void cancelRoomLogin(solo::RoomLoginCoordinator::Owner owner, const uint8_t* pub_key);
+  bool isRoomLoggedIn(const uint8_t* pub_key) const { return _room_login.isLoggedIn(pub_key); }
+  void logoutRoom(const uint8_t* pub_key);
   void onAdminReply(const uint8_t* pub_key, const char* text) override;
   int  getDMUnreadTotal() const;
   int  getMsgCount() const { return _msgcount; }
@@ -427,7 +428,7 @@ public:
   // A screen remains selected while the panel is asleep. Treat it as visible
   // only while it is actually current and the physical display is powered.
   bool isMessagesScreenVisible() const {
-    return !_locked && curr == messages_screen && _display != NULL && _display->isOn();
+    return curr == messages_screen && _display != NULL && _display->isOn();
   }
   void forgetDMContact(const uint8_t* pub_key) {
     for (int i = 0; i < DM_UNREAD_TABLE_SIZE; i++)

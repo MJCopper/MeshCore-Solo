@@ -43,8 +43,6 @@ All firmware files are published on the [releases page](https://github.com/MJCop
 
 - [Clock Screen](./docs/zen_features/clock_screen/clock_screen.md) — fixed first page with time synchronisation, date, unread count and latest-conversation shortcut
 
-- [Screen Lock](./docs/zen_features/screen_lock/screen_lock.md) — prevent accidental input while retaining a compact time, date and unread display
-
 - [Child Mode](./docs/zen_features/child_mode/child_mode.md) — PIN-protected favourite-only messaging with optional private channels and disabled companion access
 
 - [Quiet Time](./docs/zen_features/quiet_time/quiet_time.md) — silence notification sounds on a daily local-time schedule while visual alerts, vibration and unread counts continue
@@ -95,7 +93,6 @@ Updating to a newer version usually does not require erasing flash unless the re
 | [Clock Screen](./docs/zen_features/clock_screen/clock_screen.md)          | Clock, time sync, date, unread count and conversation shortcut         |
 | [Settings Screen](./docs/zen_features/settings_screen/settings_screen.md) | Current settings sections, values and save-on-exit behaviour           |
 | [CardKB](./docs/zen_features/cardkb/cardkb.md)                            | External keyboard controls, status and low-power polling               |
-| [Screen Lock](./docs/zen_features/screen_lock/screen_lock.md)             | Lock/unlock sequence, lock screen and auto-lock                        |
 | [Child Mode](./docs/zen_features/child_mode/child_mode.md)                | Parent PIN, allowed conversations, transport restrictions and recovery |
 | [Quiet Time](./docs/zen_features/quiet_time/quiet_time.md)                | Daily local-time sound suppression with retained notifications         |
 | [Tools Screen](./docs/zen_features/tools_screen/tools_screen.md)          | Nearby nodes, repeater, ringtone editor and diagnostics                |

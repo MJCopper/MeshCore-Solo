@@ -22,7 +22,6 @@ cycling a value back to its original choice does not cause a flash write.
 | ------------------------------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Brightness                           | 1–5                              | LEFT/RIGHT; preview applies immediately                                                               |
 | Auto-off                             | 5 s / 15 s / 30 s / 60 s / Never | LEFT/RIGHT                                                                                            |
-| Auto-lock                            | On / Off                         | Locks device when display turns off                                                                   |
 | Battery                              | Icon / % / V                     | Display mode for the top-bar battery indicator                                                        |
 | Clock seconds                        | On / Off                         | Turning seconds off reduces OLED refresh from 1 s to 60 s                                             |
 | Clock format                         | 24 h / 12 h                      | 12 h appends AM/PM                                                                                    |

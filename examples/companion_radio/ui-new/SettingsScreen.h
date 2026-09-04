@@ -26,7 +26,6 @@ class SettingsScreen : public UIScreen {
 #if AUTO_OFF_MILLIS > 0
     AUTO_OFF,
 #endif
-    AUTO_LOCK,
     BATT_DISPLAY,
 #if FEAT_CLOCK_SECONDS_SETTING
     CLOCK_SECONDS,
@@ -447,10 +446,6 @@ class SettingsScreen : public UIScreen {
       display.setCursor(valCol(display), y);
       display.print(AUTO_OFF_LABELS[autoOffIndex()]);
 #endif
-    } else if (item == AUTO_LOCK) {
-      display.print("Auto-lock");
-      display.setCursor(valCol(display), y);
-      display.print((p && p->auto_lock) ? "On" : "Off");
     } else if (item == TIMEZONE) {
       display.print("Timezone");
       char buf[8];
@@ -932,11 +927,6 @@ public:
       if (left || right) { p->auto_off_secs = AUTO_OFF_OPTS[idx]; _dirty = true; return true; }
     }
 #endif
-    if (_selected == AUTO_LOCK && p && (left || right || enter)) {
-      p->auto_lock ^= 1;
-      _dirty = true;
-      return true;
-    }
     if (_selected == TIMEZONE && p) {
       if (right && p->tz_offset_hours < 14)  { p->tz_offset_hours++; _dirty = true; return true; }
       if (left  && p->tz_offset_hours > -12) { p->tz_offset_hours--; _dirty = true; return true; }

@@ -633,8 +633,8 @@ public:
 
   void onShow() override { noteHomeInteraction(); }
 
-  // Shared by the home carousel and lock screen so status visibility, priority
-  // and battery formatting cannot drift between the two clock layouts.
+  // Shared top bar keeps status visibility, priority and battery formatting
+  // consistent across the home carousel.
   void renderTopBar(DisplayDriver& display) {
     display.setColor(DisplayDriver::LIGHT);
     int right_edge = renderBatteryIndicator(display, _task->getBattMilliVolts());
@@ -1445,11 +1445,6 @@ static const uint32_t CLOCK_ALARM_CATCHUP_SECS = 6 * 3600;  // fire late up to 6
 
 void UITask::wakeForAlarm() {
   if (_display != NULL) turnDisplayOn();
-  // Locked: the lock-screen blanking check (loop()) turns the display straight
-  // back off once _lock_wake_until is in the past — which it always is by the
-  // time an alarm fires. Hold the wake window open for the whole ring so the
-  // lock screen (and its alert overlay) stays visible while ringing.
-  if (_locked) _lock_wake_until = millis() + CLOCK_RING_MS;
   _next_refresh = 0;   // draw the alert overlay immediately
 }
 
@@ -1794,11 +1789,17 @@ void UITask::onChannelRelayExpired(uint32_t seq) {
 }
 
 void UITask::onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
-  // Only one on-device login can be in flight at a time (MyMesh::ui_pending_login
-  // is a single slot) -- route the result to whichever of the two screens that
-  // can trigger a login is currently active, rather than always MessagesScreen.
+  solo::RoomLoginCoordinator::Attempt attempt;
+  if (!_room_login.complete(pub_key, attempt)) return;
+  if (success) {
+    _room_login.markLoggedIn(pub_key);
+    the_mesh.saveRoomPassword(pub_key, attempt.password);
+  } else if (attempt.used_saved_password) {
+    the_mesh.forgetRoomPassword(pub_key);
+  }
 #if SOLO_FEAT_ADMIN
-  if (curr == admin_screen) ((AdminScreen*)admin_screen)->onRoomLoginResult(pub_key, success, permissions);
+  if (attempt.owner == solo::RoomLoginCoordinator::ADMIN)
+    ((AdminScreen*)admin_screen)->onRoomLoginResult(pub_key, success, permissions);
   else
 #endif
     ((MessagesScreen*)messages_screen)->onRoomLoginResult(pub_key, success, permissions);
@@ -1807,6 +1808,27 @@ void UITask::onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t per
   // forcing one, the alert's short expiry can lapse before the next scheduled
   // refresh ever draws it.
   _next_refresh = 0;
+}
+
+bool UITask::startRoomLogin(solo::RoomLoginCoordinator::Owner owner,
+                            const ContactInfo& contact, const char* password,
+                            bool used_saved_password) {
+  if (_room_login.active()) return false;
+  uint32_t est_timeout = 0;
+  if (!the_mesh.sendRoomLogin(contact, password, est_timeout)) return false;
+  if (_room_login.begin(owner, contact.id.pub_key, password, used_saved_password,
+                        millis() + est_timeout + 4000)) return true;
+  the_mesh.cancelUiPendingLogin(contact.id.pub_key);
+  return false;
+}
+
+void UITask::cancelRoomLogin(solo::RoomLoginCoordinator::Owner owner, const uint8_t* pub_key) {
+  if (_room_login.cancel(owner, pub_key)) the_mesh.cancelUiPendingLogin(pub_key);
+}
+
+void UITask::logoutRoom(const uint8_t* pub_key) {
+  _room_login.forgetLoggedIn(pub_key);
+  the_mesh.logoutRoom(pub_key);
 }
 
 void UITask::onAdminReply(const uint8_t* pub_key, const char* text) {
@@ -2105,7 +2127,7 @@ void UITask::handleNewMsg(uint8_t path_len, const char* from_name, const char* t
   snprintf(alert_buf, sizeof(alert_buf), "Msg: %.20s", from_name);
   showAlert(alert_buf, 3000);
 
-  if (_display != NULL && !_locked) {
+  if (_display != NULL) {
     if (!_display->isOn() && !isClientConnected()) {   // wake for the msg unless an app (BLE/USB) is already showing it
       turnDisplayOn();
       _notification_wake_active = true;
@@ -2347,44 +2369,19 @@ void UITask::pollCardKB() {
   } else if (event.type == CardKBController::KEY && compact_grid &&
              (raw == KEY_LEFT || raw == KEY_UP || raw == KEY_DOWN || raw == KEY_RIGHT)) {
     char woke = checkDisplayOn((char)raw);   // already sets _next_refresh=0 when the display was on
-    if (woke && !_locked) _kb.moveCursorDirect((char)raw);
+    if (woke) _kb.moveCursorDirect((char)raw);
     return;
   } else if (event.type == CardKBController::HOLD) {
     // While either virtual-keyboard layout is active, Tab opens its completion
     // picker directly. Elsewhere it remains the normal Hold-Enter action.
-    if (!_locked && _kb.openPlaceholders()) {
+    if (_kb.openPlaceholders()) {
       checkDisplayOn(KEY_CONTEXT_MENU);
       return;
     }
     key = KEY_CONTEXT_MENU;
-  } else if (event.type == CardKBController::LOCK_TOGGLE) {
-    // Fn+Esc -- CardKB's lock/unlock gesture: a single press toggles _locked
-    // directly (unlike the physical Hold-Back+3xEnter combo's 3-press
-    // sequence), so it works to unlock a locked device after a Tracker button
-    // has woken the display. Every other CardKB key is correctly discarded
-    // while locked (see the direct emoji branch below). Esc, not the adjacent
-    // Fn+Backspace, on purpose: Fn and
-    // Backspace sit right next to each other on CardKB's layout, making that
-    // combo too easy to hit by accident; Esc is on the opposite side of the
-    // keyboard. One press is enough -- Fn+Esc is already a deliberate
-    // two-key combo, so it doesn't need the physical combo's extra 3x
-    // repetition to guard against accidental triggering.
-    _locked = !_locked;
-    if (_locked) {
-      _lock_wake_until = millis() + 2000;
-    } else {
-      uint32_t aoff = autoOffMillis();
-      if (aoff > 0) _auto_off = millis() + aoff;
-    }
-    _next_refresh = 0;
-    return;
   } else if (event.type == CardKBController::EMOJI) {
     char woke = checkDisplayOn(KEY_CONTEXT_MENU);
-    // Every other key here goes through enqueueKey(), so it's naturally eaten
-    // while locked (see the dequeue-time "if (!_locked && curr)" gate in
-    // loop()). This path calls into the keyboard widget directly, so
-    // it needs its own _locked check.
-    if (woke && !_locked) _kb.openEmojiPicker();
+    if (woke) _kb.openEmojiPicker();
     return;
   } else {
     // Plain Enter would otherwise commit whatever grid cell row/col happen to
@@ -2399,6 +2396,29 @@ void UITask::pollCardKB() {
 
 void UITask::loop() {
   tickBootTimeSync();
+  solo::RoomLoginCoordinator::Attempt login_timeout;
+  if (_room_login.takeTimeout(millis(), login_timeout)) {
+    the_mesh.cancelUiPendingLogin(login_timeout.pub_key);
+#if SOLO_FEAT_ADMIN
+    if (login_timeout.owner == solo::RoomLoginCoordinator::ADMIN)
+      ((AdminScreen*)admin_screen)->onRoomLoginTimeout(login_timeout.pub_key);
+    else
+#endif
+    if (login_timeout.owner == solo::RoomLoginCoordinator::MESSAGES
+        && login_timeout.password[0] == '\0') {
+      // A blank room credential means "authenticate from the server ACL".
+      // Room servers silently discard unauthorised anonymous requests, so no
+      // response cannot prove that the credential itself was wrong. Let the
+      // user enter provisionally after the normal reply window; the server's
+      // ACL remains authoritative for every message and cannot be bypassed by
+      // this local UI state.
+      _room_login.markLoggedIn(login_timeout.pub_key);
+      ((MessagesScreen*)messages_screen)->onRoomLoginResult(login_timeout.pub_key, true, 0);
+    } else {
+      ((MessagesScreen*)messages_screen)->onRoomLoginTimeout(login_timeout.pub_key);
+    }
+    _next_refresh = 0;
+  }
   // Background delivery: resend pending on-device DMs whose ACK timed out, and
   // finalise the ✗ marker — runs regardless of which screen is active.
   ((MessagesScreen*)messages_screen)->tickDmResends();
@@ -2406,66 +2426,32 @@ void UITask::loop() {
   uint8_t joy_rot = _node_prefs ? _node_prefs->joystick_rotation : JOYSTICK_ROTATION;
   int ev = user_btn.check();
   if (ev == BUTTON_EVENT_CLICK) {
-    if (back_btn.isPressed()) {
-      // Enter clicked while Back is held — lock/unlock sequence
-      if (_display && !_display->isOn()) {
-        turnDisplayOn();  // turn on display so hints are visible
-      }
-      _lock_wake_until = millis() + 5000;  // keep display on during sequence
-      if (millis() - _lock_seq_ms > 3000) _lock_seq_count = 0;  // timeout reset
-      _lock_seq_count++;
-      _lock_seq_ms = millis();
-      _next_refresh = 0;  // update hint immediately on each press
-      if (_lock_seq_count >= 3) {
-        _lock_seq_count = 0;
-        _lock_seq_used = true;  // suppress Back release click
-        _locked = !_locked;
-        if (_locked) {
-          _lock_wake_until = millis() + 2000;
-        } else {
-          if (_display && !_display->isOn()) turnDisplayOn();
-          uint32_t aoff = autoOffMillis();
-          if (aoff > 0) _auto_off = millis() + aoff;
-        }
-      }
-      // eat the Enter — don't pass to curr
-    } else {
-      enqueueKey(checkDisplayOn(KEY_ENTER));
-    }
+    enqueueKey(checkDisplayOn(KEY_ENTER, false));
   } else if (ev == BUTTON_EVENT_LONG_PRESS) {
-    enqueueKey(handleLongPress(KEY_ENTER));  // REVISIT: could be mapped to different key code
+    enqueueKey(handleLongPress(KEY_ENTER, false));  // REVISIT: could be mapped to different key code
   }
   // Drain each direction fully: a burst of taps captured during a blocking
   // refresh replays as several CLICKs, queued here and applied before one
   // redraw (see enqueueKey / the dispatch at the end of loop()).
 #if UI_HAS_JOYSTICK_UPDOWN
   while (joystick_up.check() == BUTTON_EVENT_CLICK)
-    enqueueKey(checkDisplayOn(rotateJoystickKey(KEY_UP, joy_rot)));
+    enqueueKey(checkDisplayOn(rotateJoystickKey(KEY_UP, joy_rot), false));
   while (joystick_down.check() == BUTTON_EVENT_CLICK)
-    enqueueKey(checkDisplayOn(rotateJoystickKey(KEY_DOWN, joy_rot)));
+    enqueueKey(checkDisplayOn(rotateJoystickKey(KEY_DOWN, joy_rot), false));
 #endif
   while ((ev = joystick_left.check()) != BUTTON_EVENT_NONE) {
-    if (ev == BUTTON_EVENT_CLICK) enqueueKey(checkDisplayOn(rotateJoystickKey(KEY_LEFT, joy_rot)));
-    else { if (ev == BUTTON_EVENT_LONG_PRESS) enqueueKey(handleLongPress(rotateJoystickKey(KEY_LEFT, joy_rot))); break; }
+    if (ev == BUTTON_EVENT_CLICK) enqueueKey(checkDisplayOn(rotateJoystickKey(KEY_LEFT, joy_rot), false));
+    else { if (ev == BUTTON_EVENT_LONG_PRESS) enqueueKey(handleLongPress(rotateJoystickKey(KEY_LEFT, joy_rot), false)); break; }
   }
   while ((ev = joystick_right.check()) != BUTTON_EVENT_NONE) {
-    if (ev == BUTTON_EVENT_CLICK) enqueueKey(checkDisplayOn(rotateJoystickKey(KEY_RIGHT, joy_rot)));
-    else { if (ev == BUTTON_EVENT_LONG_PRESS) enqueueKey(handleLongPress(rotateJoystickKey(KEY_RIGHT, joy_rot))); break; }
-  }
-  if (_lock_seq_used && millis() - _lock_seq_ms > 5000) {
-    _lock_seq_used = false;  // safety reset if Back release event was missed
+    if (ev == BUTTON_EVENT_CLICK) enqueueKey(checkDisplayOn(rotateJoystickKey(KEY_RIGHT, joy_rot), false));
+    else { if (ev == BUTTON_EVENT_LONG_PRESS) enqueueKey(handleLongPress(rotateJoystickKey(KEY_RIGHT, joy_rot), false)); break; }
   }
   ev = back_btn.check();
   if (ev == BUTTON_EVENT_CLICK) {
-    if (_lock_seq_count > 0 || _lock_seq_used) {
-      // Back released mid-sequence or after completing it — cancel/suppress
-      _lock_seq_count = 0;
-      _lock_seq_used = false;
-    } else {
-      enqueueKey(checkDisplayOn(KEY_CANCEL));
-    }
+    enqueueKey(checkDisplayOn(KEY_CANCEL));
   } else if (ev == BUTTON_EVENT_TRIPLE_CLICK) {
-    if (!_locked) enqueueKey(handleTripleClick(KEY_SELECT));
+    enqueueKey(handleTripleClick(KEY_SELECT));
   }
 #elif defined(PIN_USER_BTN)
   int ev = user_btn.check();
@@ -2476,7 +2462,7 @@ void UITask::loop() {
   } else if (ev == BUTTON_EVENT_DOUBLE_CLICK) {
     enqueueKey(handleDoubleClick(KEY_PREV));
   } else if (ev == BUTTON_EVENT_TRIPLE_CLICK) {
-    if (!_locked) enqueueKey(handleTripleClick(KEY_SELECT));
+    enqueueKey(handleTripleClick(KEY_SELECT));
   }
 #endif
 #if defined(PIN_USER_BTN_ANA)
@@ -2489,7 +2475,7 @@ void UITask::loop() {
     } else if (ev == BUTTON_EVENT_DOUBLE_CLICK) {
       enqueueKey(handleDoubleClick(KEY_PREV));
     } else if (ev == BUTTON_EVENT_TRIPLE_CLICK) {
-      if (!_locked) enqueueKey(handleTripleClick(KEY_SELECT));
+      enqueueKey(handleTripleClick(KEY_SELECT));
     }
     _analogue_pin_read_millis = millis();
   }
@@ -2510,19 +2496,16 @@ void UITask::loop() {
   }
 #endif
 
-  // A ringing alarm/timer is dismissed by ANY key, even when locked or on another
-  // screen — and the queued keys are swallowed so they don't also act on the view.
+  // A ringing alarm/timer is dismissed by any key, and the queued keys are
+  // swallowed so they do not also act on the current screen.
   if (_kq_head != _kq_tail && isRinging()) {
     dismissRing();
     _kq_head = _kq_tail = 0;
     _next_refresh = 0;
-    // Locked: wakeForAlarm() held the wake window open for the whole ring;
-    // once dismissed, fall back to the usual brief lock-screen glance.
-    if (_locked) _lock_wake_until = millis() + 5000;
   }
 
   if (_kq_head != _kq_tail) {
-    if (!_locked && curr) {
+    if (curr) {
       // Apply the whole queued burst, then redraw once — N taps captured during
       // a blocking refresh become N navigation steps at the cost of one refresh.
       char k;
@@ -2532,11 +2515,7 @@ void UITask::loop() {
       // notes directly — see buzzer.cpp), so a redraw right after a keypress
       // can't clip a note; no need to hold it back while buzzer.isPlaying().
       _next_refresh = 100;  // trigger refresh immediately
-    } else {
-      _kq_head = _kq_tail = 0;  // locked or no screen: eat all queued keys
-      // Locked: wake window is set only when display first turns on
-      if (_locked) _next_refresh = 0;
-    }
+    } else _kq_head = _kq_tail = 0;
   }
 
   userLedHandler();
@@ -2561,79 +2540,7 @@ void UITask::loop() {
 #endif
 
   if (_display != NULL && _display->isOn()) {
-    if (_locked && (int32_t)(millis() - _lock_wake_until) >= 0) {
-      turnDisplayOff();
-    } else if (_locked && millis() >= _next_refresh) {
-      _display->startFrame();
-      // Lock screen: Clock content with the shared top bar but without the
-      // carousel navigation row, followed by a full-width inverted banner.
-      uint32_t unix_ts = rtc_clock.getCurrentTime();
-      _display->setColor(DisplayDriver::LIGHT);
-      _display->setTextSize(1);
-      const int lk_lh   = _display->getLineHeight();
-      ((HomeScreen*)home)->renderTopBar(*_display);
-      const int clock_y = lk_lh + 2;
-      int date_y = 0;
-      bool show_message_count = true;
-      if (isTimeSyncPending()) {
-        bool h12 = _node_prefs && _node_prefs->clock_12h;
-        date_y = drawClockSync(*_display, clock_y, h12);
-      } else if (unix_ts < 1000000000UL) {
-        show_message_count = false;
-        const int step = _display->lineStep();
-        _display->drawTextCentered(_display->width() / 2, clock_y, "! No time sync");
-        _display->drawTextCentered(_display->width() / 2, clock_y + step, "Enable GPS or");
-        _display->drawTextCentered(_display->width() / 2, clock_y + step * 2, "connect app");
-        date_y = clock_y + step * 3;
-      } else {
-        int8_t tz = _node_prefs ? _node_prefs->tz_offset_hours : 0;
-        unix_ts += (int32_t)tz * 3600;
-        time_t t = (time_t)unix_ts;
-        struct tm* ti = gmtime(&t);
-        char buf[24];
-        bool h12 = _node_prefs && _node_prefs->clock_12h;
-        bool show_sec = !Features::IS_EINK && (!_node_prefs || !_node_prefs->clock_hide_seconds);
-        date_y = drawClockTime(*_display, clock_y, ti, h12, show_sec);
-        _display->setTextSize(1);
-        static const char* wd[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
-        static const char* mo[] = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"};
-        snprintf(buf, sizeof(buf),"%s %d %s %d", wd[ti->tm_wday], ti->tm_mday,
-                 mo[ti->tm_mon], 1900 + ti->tm_year);
-        _display->drawTextCentered(_display->width() / 2, date_y, buf);
-      }
-
-      int banner_y;
-      if (show_message_count) {
-        int sep_y = date_y + lk_lh + 1;
-        int msg_y = sep_y + _display->sepH() + 2;
-        _display->fillRect(0, sep_y, _display->width(), _display->sepH());
-        _display->setCursor(0, msg_y);
-        _display->print("Messages");
-        char unread_text[8];
-        int unread = getDMUnreadTotal() + getChannelUnreadCount() + getRoomUnreadCount();
-        snprintf(unread_text, sizeof(unread_text), "%d", unread);
-        _display->setCursor(_display->width() - _display->getTextWidth(unread_text) - 1, msg_y);
-        _display->print(unread_text);
-        banner_y = msg_y + lk_lh + 2;
-      } else {
-        banner_y = date_y + 2;
-      }
-
-      // The banner follows Messages rather than floating at the panel edge.
-      _display->setTextSize(1);
-      const char* hint = _lock_seq_count == 0 ? "Hold Back + 3xEnter" :
-                         _lock_seq_count == 1 ? "Enter x2 more..."   : "Enter x1 more...";
-      _display->setColor(DisplayDriver::LIGHT);
-      _display->fillRect(0, banner_y, _display->width(), lk_lh + 2);
-      _display->setColor(DisplayDriver::DARK);
-      _display->drawTextCentered(_display->width() / 2, banner_y + 1, hint);
-      _display->setColor(DisplayDriver::LIGHT);
-      // Alert overlay on top — without this a ringing alarm on a locked device
-      // played its melody against a screen that never said what was ringing.
-      if (millis() < _alert_expiry) renderAlertOverlay();
-      _display->endFrame();
-      _next_refresh = millis() + Features::LOCKSCREEN_REFRESH_MS;
-    } else if (!_locked && millis() >= _next_refresh && curr) {
+    if (millis() >= _next_refresh && curr) {
       _display->startFrame();
       _kb.beginFrame();
       int delay_millis = curr->render(*_display);
@@ -2666,7 +2573,7 @@ void UITask::loop() {
       _auto_off = millis() + AUTO_OFF_MILLIS;
     }
 #endif
-    if (!_locked && (_notification_wake_active || autoOffMillis() > 0) &&
+    if ((_notification_wake_active || autoOffMillis() > 0) &&
         (int32_t)(millis() - _auto_off) >= 0 && !isRinging()) {
       turnDisplayOff();
 #ifdef PIN_LED
@@ -2676,10 +2583,6 @@ void UITask::loop() {
       // both companion transports before the device can be woken by the child.
       if (_node_prefs && _node_prefs->child_mode_enabled && _solo.parentUnlocked())
         setChildAdminUnlocked(false);
-      if (_node_prefs && _node_prefs->auto_lock) {
-        _locked = true;
-        _lock_wake_until = 0;
-      }
     }
 #endif
   }
@@ -3173,41 +3076,37 @@ bool UITask::addWaypoint(int32_t lat, int32_t lon, const char* label) {
   return addWaypoint(lat, lon, (uint32_t)rtc_clock.getCurrentTime(), label);
 }
 
-char UITask::checkDisplayOn(char c) {
+char UITask::checkDisplayOn(char c, bool allow_wake) {
   if (_display != NULL) {
     if (!_display->isOn()) {
+      // Joystick directions and Enter still generate short GPIO interrupts so
+      // their click state remains correct, but they must not light the panel or
+      // leak an action into the selected screen. Back is routed here with
+      // allow_wake=true; notification/alarm wake uses turnDisplayOn() directly.
+      if (!allow_wake) return 0;
       turnDisplayOn();
 #ifdef PIN_LED
       digitalWrite(PIN_LED, LOW);  // ensure LED is off when waking display (userLedHandler takes over)
 #endif
-      if (_locked) {
-        _lock_wake_until = millis() + 5000;
-        _next_refresh = 0;
-        return 0;  // eat the waking key press
-      }
-      _lock_seq_count = 0;
-      _lock_seq_used = false;
       c = 0;
     }
-    if (!_locked) {
-      // Any physical interaction takes ownership of a notification-only wake
-      // and restores the user's normal display timeout.
-      _notification_wake_active = false;
-      uint32_t aoff = autoOffMillis();
-      if (aoff > 0) _auto_off = millis() + aoff;  // extend auto-off timer
-    }
+    // Any physical interaction takes ownership of a notification-only wake
+    // and restores the user's normal display timeout.
+    _notification_wake_active = false;
+    uint32_t aoff = autoOffMillis();
+    if (aoff > 0) _auto_off = millis() + aoff;  // extend auto-off timer
     _next_refresh = 0;  // trigger refresh
   }
   return c;
 }
 
-char UITask::handleLongPress(char c) {
+char UITask::handleLongPress(char c, bool allow_wake) {
   // Same checkDisplayOn() gate every other input path goes through (see
   // pollCardKB()'s Fn+letter handling for the same shape) -- without it, a long
   // press while the display is off neither wakes it nor extends auto-off, and
-  // while unlocked it delivers KEY_CONTEXT_MENU to the invisible screen (found
-  // already open at the next wake instead of the press being consumed as a wake).
-  c = checkDisplayOn(c);
+  // it delivers KEY_CONTEXT_MENU to the invisible screen (found already open
+  // at the next wake instead of the press being consumed as a wake).
+  c = checkDisplayOn(c, allow_wake);
   if (c == 0) return 0;
   if (millis() - ui_started_at < 8000 &&
       solo::Policy::recoveryAllowed(isChildModeLocked())) {   // startup long press -> CLI/rescue

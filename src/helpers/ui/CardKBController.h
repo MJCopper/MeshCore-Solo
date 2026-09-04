@@ -8,7 +8,7 @@
 // keyboard's I2C protocol, Fn scan codes, debounce rules or sleep boundary.
 class CardKBController {
 public:
-  enum EventType : uint8_t { NONE, KEY, SUBMIT, HOLD, LOCK_TOGGLE, EMOJI };
+  enum EventType : uint8_t { NONE, KEY, SUBMIT, HOLD, EMOJI };
 
   struct Event {
     EventType type = NONE;
@@ -94,7 +94,6 @@ public:
 
     if (raw == 0xA3) event.type = SUBMIT;       // Fn+Enter
     else if (raw == 0x09) event.type = HOLD;    // Tab
-    else if (raw == 0x80) event.type = LOCK_TOGGLE; // Fn+Esc
     else if (raw == 0xAC) event.type = EMOJI; // Fn+M
     else if (raw < 0x80 || raw > 0xAF) { event.type = KEY; event.key = (char)raw; }
     return event.type != NONE;

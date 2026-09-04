@@ -352,7 +352,9 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   rd(&_prefs.ch_notif_melody_set,       sizeof(_prefs.ch_notif_melody_set));
   rd(&_prefs.ch_notif_melody_2,         sizeof(_prefs.ch_notif_melody_2));
   rd(_prefs.dm_melody,                  sizeof(_prefs.dm_melody));
-  rd(&_prefs.auto_lock,                 sizeof(_prefs.auto_lock));
+  // Reserved legacy byte. Keep consuming it so all later extension fields
+  // retain their established offsets in existing preference files.
+  rd(pad,                                1);
   rd(&_prefs.clock_12h,                 sizeof(_prefs.clock_12h));
   rd(&_prefs.use_lemon_font,            sizeof(_prefs.use_lemon_font));
   rd(&_prefs.display_rotation,          sizeof(_prefs.display_rotation));
@@ -770,7 +772,7 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.ch_notif_melody_set, sizeof(_prefs.ch_notif_melody_set));
     file.write((uint8_t *)&_prefs.ch_notif_melody_2, sizeof(_prefs.ch_notif_melody_2));
     file.write((uint8_t *)_prefs.dm_melody, sizeof(_prefs.dm_melody));
-    file.write((uint8_t *)&_prefs.auto_lock, sizeof(_prefs.auto_lock));
+    file.write(pad, 1);  // reserved legacy byte
     file.write((uint8_t *)&_prefs.clock_12h, sizeof(_prefs.clock_12h));
     file.write((uint8_t *)&_prefs.use_lemon_font, sizeof(_prefs.use_lemon_font));
     file.write((uint8_t *)&_prefs.display_rotation, sizeof(_prefs.display_rotation));

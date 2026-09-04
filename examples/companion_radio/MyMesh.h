@@ -224,21 +224,20 @@ public:
   // path uses; the async result lands in onContactResponse() and is pushed to
   // the UI via AbstractUITask::onRoomLoginResult().
   bool sendRoomLogin(const ContactInfo& contact, const char* password, uint32_t& est_timeout) {
+    // UI requests must never cancel an app/USB request (or another UI login).
+    // The app path deliberately retains its upstream single-request behaviour.
+    // Only another login is ambiguous with this response. Status, telemetry
+    // and binary requests have their own response matching and must not make a
+    // standalone room login appear to fail merely because an app request is
+    // still pending.
+    if (ui_pending_login || pending_login) return false;
     if (sendLogin(contact, password, est_timeout) == MSG_SEND_FAILED) return false;
-    clearPendingReqs();
     memcpy(&ui_pending_login, contact.id.pub_key, 4); // match this in onContactResponse()
     return true;
   }
 
-  // Called by a screen that gave up waiting on its own sendRoomLogin() (Cancel
-  // or a timeout) so a reply that arrives after doesn't get misrouted:
-  // UITask::onRoomLoginResult() dispatches by whichever screen is *currently*
-  // showing, not by who actually sent the request, so a late reply landing
-  // after the requester navigated away is delivered to whatever screen the
-  // user is on instead -- which then persists its own unrelated login state
-  // (e.g. a different screen's _login_pw) as if it were that reply's answer.
-  // Pubkey-guarded so this is a no-op if a newer request (this screen retrying,
-  // or a different screen entirely) has since overwritten ui_pending_login.
+  // Pubkey-guarded cancellation for the UI coordinator. Late replies are then
+  // ignored instead of being attributed to a newer attempt.
   void cancelUiPendingLogin(const uint8_t* pub_key) {
     if (ui_pending_login && memcmp(&ui_pending_login, pub_key, 4) == 0) ui_pending_login = 0;
   }

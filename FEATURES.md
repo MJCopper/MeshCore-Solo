@@ -24,7 +24,7 @@ Current Zen release: **v2.26**, based on **MeshCore v1.17.1**.
 | Radio | Presets, manual LoRa parameters, TX power and Adaptive Power Control; base MeshCore RX behaviour is retained |
 | Repeater | Companion repeater using the current radio settings with fixed standard-backend timing, Yield x2 and duplicate suppression enabled |
 | Tools | Nearby Nodes, Repeater, Ringtone Editor and Diagnostics |
-| Display | OLED and e-ink layouts, rotation controls where supported, screen lock, auto-lock and power-aware refresh scheduling |
+| Display | OLED and e-ink layouts, rotation controls where supported and power-aware refresh scheduling |
 | Persistence | Save-on-exit settings with writes only when values changed; Zen preferences are isolated from the upstream MeshCore preference layout |
 
 ## Documentation
@@ -37,7 +37,6 @@ Current Zen release: **v2.26**, based on **MeshCore v1.17.1**.
 - [CardKB](./docs/zen_features/cardkb/cardkb.md)
 - [Clock](./docs/zen_features/clock_screen/clock_screen.md)
 - [Favourites Dial](./docs/zen_features/favourites_dial/favourites_dial.md)
-- [Screen Lock](./docs/zen_features/screen_lock/screen_lock.md)
 - [Tools and repeater](./docs/zen_features/tools_screen/tools_screen.md)
 - [Zen UI developer guide](./docs/design/zen_ui_framework.md)
 
