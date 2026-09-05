@@ -1,70 +1,22 @@
-## Tools Screen
+# Tools
 
-[Go back](../../../README.md)
-
-### Overview
-
-|           OLED            |           E-Ink           |
-| :-----------------------: | :-----------------------: |
-| ![](./overview_oled.png) | ![](./overview_eink.png) |
-
-The Tools home card is a flat list of the utilities included in this focused Wio Tracker build. Navigate with **UP/DOWN** and press **Enter** to open the selected tool. **Cancel/Back** from the tool returns directly to the home carousel.
+[Back to README](../../../README.md)
 
 | Tool | Purpose |
 | ---- | ------- |
-| Nodes | Browse recently advertised nodes, inspect their details, ping known nodes, manage contacts and run discovery scans |
-| Repeater | Enable or disable the companion repeater backend using Zen's fixed forwarding policy |
-| Ringtone Editor | Edit and preview the notification melody |
-| Diagnostics | Inspect device, radio, mesh and runtime information |
+| Discover Repeaters | Scan for zero-hop repeaters and add results as contacts |
+| Node List | Browse, filter, inspect, ping and manage known nodes |
+| Repeater Mode | Toggle the companion repeater backend |
+| Ringtone Editor | Edit and preview notification melodies |
+| Diagnostics | View device, radio, mesh and runtime information |
 
----
+Node List opens on **All**. Use Left/Right for the Fav, All, Comp, Rpt, Room and
+Snsr filters; hold Enter for actions available to the selected node.
 
-## Nearby Nodes
+Discover Repeaters starts a repeater-only scan immediately. Hold Enter on a
+result to manage it or rescan.
 
-Browse nodes that have recently advertised on the mesh. **LEFT/RIGHT** changes the type filter and **UP/DOWN** selects a node.
-
-| Filter | Shows |
-| ------ | ----- |
-| All | All known nodes |
-| Fav | Favourited contacts only |
-| Comp | Companion/chat nodes |
-| Rpt | Repeaters |
-| Room | Room servers |
-| Snsr | Sensor nodes |
-
-Press **Enter** to inspect the selected node. **Hold Enter** opens the available actions for that entry:
-
-- **Ping** — send a direct mesh ping when a public key is known.
-- **Add contact / Favourite / Unfavourite / Delete contact** — manage stored contacts where applicable.
-- **Sort: Dist/Recent** — change the stored-node ordering.
-- **Discover scan / Rescan** — find zero-hop repeaters, sensors and room servers.
-
----
-
-## Repeater
-
-When repeater support is enabled, it always uses the current radio settings from **Settings › Radio**. The Repeater screen contains only the **Repeater** on/off control. Operation continues in the background after leaving Tools. Adverts and valid message floods are forwarded without user-defined SNR or global hop filters; automatic loop detection and the standard eight-hop advert limit remain active.
-
-Its radio timing follows the standard MeshCore repeater backend and is fixed:
-**RX delay** is `10`, **Flood TX** and **Direct TX** use airtime factors of `0.5`
-and `0.3`, and **Yield** is `x2`. Multi-ACK behaviour is shared with the
-companion's existing radio configuration.
-
-Duplicate suppression is always **ON**. Together with the fixed Yield, this gives
-another repeater time to forward a flood first and cancels the pending duplicate
-when that retransmission is overheard.
-
-Repeater mode reuses the current companion radio settings and the fixed backend
-values above.
-
----
-
-## Ringtone Editor
-
-Edit the notification melody, tempo and notes, then preview it through the device buzzer. Saving updates the ringtone used for message notifications.
-
----
-
-## Diagnostics
-
-View read-only device, radio, mesh and runtime statistics. **LEFT/RIGHT** changes diagnostic tabs and **UP/DOWN** scrolls when a tab does not fit on screen.
+Repeater Mode uses the current **Settings › Radio** configuration. Its fixed
+backend values are RX delay `10`, flood/direct airtime factors `0.5`/`0.3`,
+Yield `x2`, and duplicate suppression On. It continues in the background after
+leaving Tools.

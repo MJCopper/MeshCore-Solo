@@ -1,12 +1,8 @@
-# Introduction
-
-Welcome to the MeshCore documentation.
-
-Below are a few quick start guides.
+# Documentation
 
 ### Zen firmware
 
-- [Zen feature overview](../README.md#feature-highlights)
+- [Zen overview](../README.md)
 - [Messages Screen](./zen_features/message_screen/message_screen.md)
 - [Favourites Dial](./zen_features/favourites_dial/favourites_dial.md)
 - [Clock Screen](./zen_features/clock_screen/clock_screen.md)
@@ -25,6 +21,4 @@ Below are a few quick start guides.
 - [Packet Format](./packet_format.md)
 - [QR Codes](./qr_codes.md)
 
-If you find a mistake in any of our documentation, or find something is missing, please feel free to open a pull request for us to review.
-
-- [Documentation Source](https://github.com/meshcore-dev/MeshCore/tree/main/docs)
+Corrections and focused additions are welcome through pull requests.

@@ -9,7 +9,7 @@ class ToolsScreen : public UIScreen {
   UITask* _task;
 
   enum Action {
-    ACT_NEARBY,
+    ACT_NEARBY, ACT_DISCOVER,
 #if SOLO_FEAT_NAVIGATION && SOLO_FEAT_LOCATION_TOOLS
     ACT_LIVESHARE, ACT_TRAIL, ACT_LOCATOR, ACT_COMPASS,
 #endif
@@ -41,6 +41,7 @@ class ToolsScreen : public UIScreen {
   void dispatch(Action a) {
     switch (a) {
       case ACT_NEARBY:      _task->gotoNearbyScreen();      break;
+      case ACT_DISCOVER:    _task->gotoDiscoverScreen();    break;
 #if SOLO_FEAT_NAVIGATION && SOLO_FEAT_LOCATION_TOOLS
       case ACT_LIVESHARE:   _task->gotoLiveShareScreen();   break;
       case ACT_TRAIL:       _task->gotoTrailScreen();       break;
@@ -115,7 +116,8 @@ public:
 };
 
 const ToolsScreen::Tool ToolsScreen::TOOLS[] = {
-  { "Nodes",           &ICON_MAP_CONTACT, ACT_NEARBY },
+  { "Discover Repeaters", &ICON_MAP_CONTACT, ACT_DISCOVER },
+  { "Node List",          &ICON_MAP_CONTACT, ACT_NEARBY },
 #if SOLO_FEAT_NAVIGATION && SOLO_FEAT_LOCATION_TOOLS
   { "Live Share",      &ICON_GPS,          ACT_LIVESHARE },
   { "Trail",           &ICON_TRAIL,        ACT_TRAIL },
@@ -126,7 +128,7 @@ const ToolsScreen::Tool ToolsScreen::TOOLS[] = {
   { "Remote Bot",      &ICON_BOT,          ACT_BOT },
 #endif
 #if SOLO_FEAT_REPEATER
-  { "Repeater",        &ICON_REPEATER,     ACT_REPEATER },
+  { "Repeater Mode",   &ICON_REPEATER,     ACT_REPEATER },
 #endif
 #if SOLO_FEAT_ADMIN
   { "Admin",           &ICON_GEAR,         ACT_ADMIN },

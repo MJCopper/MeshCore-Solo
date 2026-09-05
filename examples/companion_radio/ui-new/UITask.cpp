@@ -308,7 +308,7 @@ static int drawClockSync(DisplayDriver& d, int top_y, bool h12) {
   d.setTextSize(2);
   int region_bottom = date_y + d.lineStep();
   int y = top_y + (region_bottom - top_y - d.getLineHeight()) / 2;
-  d.drawTextCentered(d.width() / 2, y, "SYNC");
+  d.drawTextCentered(d.width() / 2, y, "SYNC TIME");
   d.setTextSize(1);
   return date_y;
 }
@@ -1407,6 +1407,10 @@ void UITask::openToolsItem(int index) {
 }
 void UITask::gotoBotScreen()       { if (solo::Features::REMOTE_BOT) setCurrScreen(bot_screen); }
 void UITask::gotoNearbyScreen()    { setCurrScreen(nearby_screen); }
+void UITask::gotoDiscoverScreen() {
+  setCurrScreen(nearby_screen);
+  ((NearbyScreen*)nearby_screen)->startDiscoverScan();
+}
 
 void UITask::pickAdminTarget() {
 #if SOLO_FEAT_ADMIN
@@ -2531,6 +2535,14 @@ void UITask::loop() {
   if (buzzer.isPlaying())  buzzer.loop();
 #endif
 
+  // Shortcut settings should feel immediate. Persist after the alert has had
+  // time to render; repeated toggles inside the window collapse to one write.
+  if (_deferred_prefs_save
+      && (int32_t)(millis() - _deferred_prefs_save_ms) >= 0) {
+    _deferred_prefs_save = false;
+    the_mesh.savePrefs();
+  }
+
   if (curr) curr->poll();
 
   // Alarm + countdown run regardless of the current screen / display state, so
@@ -3462,9 +3474,10 @@ void UITask::toggleBuzzer() {
       buzzer.quiet(true);
     }
     if (_node_prefs) _node_prefs->buzzer_quiet = buzzer.isQuiet();
-    the_mesh.savePrefs();
     showAlert(buzzer.isQuiet() ? "Buzzer: OFF" : "Buzzer: ON", 800);
     _next_refresh = 0;
+    _deferred_prefs_save = true;
+    _deferred_prefs_save_ms = millis() + 1000;
   #endif
 }
 

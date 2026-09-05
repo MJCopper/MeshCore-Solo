@@ -1,67 +1,18 @@
-## Favourites Dial
+# Favourites Dial
 
-[Go back](../../../README.md)
+[Back to README](../../../README.md)
 
-### Overview
+The Favourites home page holds four contact shortcuts in one column. Each entry
+shows its unread DM count.
 
-|            OLED            |           E-Ink            |
-| :------------------------: | :------------------------: |
-| ![](./overview_oled.png) | ![](./overview_eink.png) |
+- **Enter** on a contact opens its transcript.
+- **Enter** on `+` opens the contact picker.
+- **Hold Enter** offers Add, Change or Remove.
+- A DM context menu can pin, move or unpin its contact.
 
-A dedicated home page showing four pinned contacts for quick access. Contacts are displayed as a single full-width column with compact vertical spacing on every display orientation.
+The picker lists starred contacts first, recent DM contacts next, then other
+chat contacts. Moving an existing favourite does not duplicate it. A deleted
+contact frees its slot automatically.
 
----
-
-### Navigation
-
-Navigate entries with **UP / DOWN**. **LEFT / RIGHT** switches to the adjacent home page.
-
-**Enter on a filled tile** — opens that contact's DM directly.
-
-**Enter on an empty tile (`+`)** — opens a contact picker to fill the slot.
-
----
-
-### Unread badge
-
-Filled tiles show an unread message count in the top-right corner when there are unread DMs from that contact. The contact name is ellipsized to make room for the badge.
-
-If a pinned contact is removed from the contacts list — explicitly, or auto-evicted to make room when the table is full — its slot is freed automatically and goes back to an empty `+` tile.
-
----
-
-### Pinning a contact
-
-**From the Favourites Dial** — press **Enter** on an empty tile (`+`). A picker opens showing:
-
-1. Contacts marked as favourites in the upstream app (starred contacts) — listed first
-2. Recent DM contacts — listed after
-3. All remaining chat contacts — fallback when the first two tiers are empty (e.g. fresh install before any DMs)
-
-Select a contact to pin it to that slot.
-
-Hold **Enter** on any tile to open its standard action menu. An empty tile offers
-**Add**; a populated tile offers **Change** and **Remove**. These actions are
-blocked while Child Mode is locked.
-
-**From a DM conversation** — **Hold Enter** › context menu › **Pin to dial**, then choose a slot from the slot picker (Slot 1–4, showing the current occupant name or "empty").
-
-If the selected contact is already pinned in another slot, it is moved to the new slot automatically.
-
----
-
-### Unpinning a contact
-
-Open the contact's DM, **Hold Enter** › context menu › **Unpin (slot N)**.
-
----
-
-### Reordering the Favourites page
-
-The position of the Favourites Dial in the home page navigation sequence can be changed in **Settings › Home Pages** — press **LEFT / RIGHT** on the Favourites entry to move it earlier or later.
-
----
-
-### Child Mode
-
-The Favourites page is enabled by default in [Child Mode](../child_mode/child_mode.md), but a parent can hide it under **Settings › Child Mode**. While locked, the child can open and message contacts already pinned to the dial, but cannot add, move, or remove pins. Prepare the four slots before enabling Child Mode.
+The page can be reordered under **Settings › Home Pages**. Child Mode can hide
+the page and blocks all editing while locked.

@@ -1,69 +1,40 @@
-## Child Mode
+# Child Mode
 
-[Go back](../../../README.md)
+[Back to README](../../../README.md)
 
-### Overview
+Child Mode provides a PIN-protected interface with favourite-only messaging.
+It is a UI lock, not protection against someone who can erase or replace the
+firmware.
 
-Child Mode provides a PIN-protected, restricted interface for a device given to a child. It keeps the normal standalone messaging experience while hiding configuration pages, disabling companion access, and limiting which conversations are available.
+## Setup
 
-> [!IMPORTANT]
-> Child Mode is a practical user-interface lock, not tamper-proof security. Anyone with physical access to the bootloader can erase or replace the firmware.
+1. Configure the device and favourite the permitted contacts and rooms.
+2. Favourite any permitted private channels.
+3. Open **Settings › Child Mode**, set and confirm a six-digit PIN.
+4. Choose whether Channels and the Favourites page are visible.
+5. Enable Child Mode, accept the warning, then leave Settings.
 
----
+| Setting | Default | Behaviour |
+| ------- | ------- | --------- |
+| Enabled | Off | Enables restrictions after confirmation |
+| Set PIN | — | Sets or replaces the hidden six-digit PIN |
+| Channels | Off | Shows favourited private channels only |
+| Favourites | On | Shows the Favourites Dial |
 
-### Preparing the device
+While locked:
 
-Configure the device before enabling Child Mode:
+- Messages lists only favourited contacts and rooms, plus enabled favourited
+  private channels.
+- Favourite, contact and channel editing is blocked.
+- Other messages are stored but do not alert, wake the display or count as
+  child-visible unread messages.
+- Bluetooth and USB companion access are disabled.
+- Parent-controlled Settings, Tools, Radio, GPS and Advert pages are hidden.
+- Mesh routing and acknowledgements continue normally.
 
-1. Add and favourite the contacts, rooms, and channels the child may use. Contacts pinned to the Favourites Dial can also be opened directly.
-2. Configure GPS, location-sharing ACLs, radio settings, sensors, and other parent-controlled features.
-3. Open **Settings › Child Mode** and choose **Set PIN**.
-4. Enter the six-digit PIN twice. The active digit is shown with a white background and black text.
-5. Choose which optional home pages the child may see.
-6. Set **Enabled** to **ON**, acknowledge the recovery warning, then leave Settings to lock the device.
-
-The PIN is not displayed on the Settings screen after it is saved.
+Opening Settings asks for the PIN. A successful entry restores parent access
+until Settings is closed, the display sleeps or the device restarts.
 
 > [!WARNING]
-> There is no forgotten-PIN recovery menu. If you forget the PIN, the device must be **ERASED & REFLASHED**. Erasing also removes the device identity, contacts, channels, messages, and settings, so keep a current backup.
-
----
-
-### Settings and defaults
-
-| Setting    | Default | Notes                                                              |
-| ---------- | ------- | ------------------------------------------------------------------ |
-| Enabled    | Off     | Enables the restrictions after the warning is accepted             |
-| Set PIN    | —       | Sets or replaces the six-digit parent PIN; it must be entered twice |
-| Channels   | Off     | Shows favourited private channels; Public and # channels stay hidden |
-| Favourites | On      | Shows the Favourites Dial                                           |
-
-The Clock, Messages, and Settings entries remain available. Opening Settings while locked presents the parent PIN screen.
-
----
-
-### Restrictions while locked
-
-| Area                 | Behaviour                                                                                               |
-| -------------------- | ------------------------------------------------------------------------------------------------------- |
-| Messages             | Lists only upstream-starred contacts and rooms; optional Channels lists favourited private channels only |
-| Favourites Dial      | Opens the contacts already pinned to its four slots; adding, moving, and removing pins is blocked       |
-| Message context menus | Contact, room, and channel editing actions are blocked; channels cannot be added or favourited          |
-| Notifications        | Favourited contacts and rooms notify normally; enabled, favourited private channels also notify normally |
-| Other messages       | Still received and stored, but do not alert, wake, sound, vibrate, or add to child-visible unread counts |
-| Radio                | Page hidden; the configured radio settings continue to operate                                          |
-| Bluetooth / USB      | Both companion protocol transports are disabled; USB power and charging are unaffected                  |
-| Advert               | Manual Advert page hidden; received adverts are processed without alerts, sound, vibration, or display wake |
-| GPS and mapping      | GPS controls are hidden; configured GPS, telemetry, and ACL behaviour continues |
-| Tools                | Page hidden, including GPS and location-sharing configuration                                           |
-
-Child Mode does not delete or rewrite the hidden settings. A parent can unlock Settings and adjust them normally.
-Notification filtering is active only while the child interface is locked, so a parent can test normal notifications during an unlocked Settings session. It does not reject mesh packets or alter routing, acknowledgements, or the companion offline queue.
-
----
-
-### Parent access and relocking
-
-Select **Settings** and enter the six-digit PIN to start a parent session. This temporarily restores the full home-page set and enables Bluetooth and USB companion access.
-
-The device returns to the restricted interface when the parent leaves Settings, the display sleeps, or the device restarts. Disabling Child Mode leaves Bluetooth and USB enabled; it does not restore an earlier disabled state.
+> If you forget the PIN, the device must be **ERASED & REFLASHED**. Erasing also
+> removes identity, contacts, channels, messages and settings.

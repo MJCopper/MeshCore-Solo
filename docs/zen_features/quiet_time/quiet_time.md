@@ -1,33 +1,17 @@
-## Quiet Time
+# Quiet Time
 
-[Go back](../../../README.md)
+[Back to README](../../../README.md)
 
-Quiet Time silences incoming notification sounds during a daily local-time
-interval. Messages continue to be received, stored and counted as unread. An
-eligible notification still shows its pop-up, triggers vibration where fitted,
-and wakes a sleeping display for five seconds, but does not sound the buzzer.
+Quiet Time suppresses incoming notification sounds during a daily local-time
+period. Messages are still received, stored and counted. Eligible notifications
+still appear, vibrate where supported, and wake the display for five seconds.
 
-Configure it under **Settings › Sound**:
+Configure **Quiet Time**, **Quiet from** and **Quiet until** under
+**Settings › Sound**. Defaults are Off, 21:00 and 07:00.
 
-| Setting     | Default | Description                                |
-| ----------- | ------- | ------------------------------------------ |
-| Quiet Time  | Off     | Enables or disables the daily schedule     |
-| Quiet from  | 21:00   | Start of the quiet interval, in local time |
-| Quiet until | 07:00   | End of the quiet interval, in local time   |
+The schedule uses the timezone in **Settings › System** and may cross midnight.
+Equal start and end times disable the interval. Quiet Time remains inactive
+until the clock has valid time.
 
-Press **Enter** on either time, use **LEFT/RIGHT** to select a digit, **UP/DOWN** to change it, then press **Enter** to accept or **Cancel** to discard the edit.
-
-The device RTC stores UTC. Quiet Time applies the timezone configured under **Settings › System › TimeZone** before comparing the schedule. For example, with `UTC+10`, a configured start of `21:00` begins when the RTC reaches `11:00 UTC`.
-
-An interval such as `21:00–07:00` crosses midnight. An interval such as `09:00–15:00` starts and ends on the same local day. Equal start and end times disable the interval even when Quiet Time is set to On.
-
-Quiet Time remains inactive until the RTC has a valid synchronised time. This prevents an unset clock from unexpectedly silencing the device.
-
-### What is silenced
-
-Quiet Time suppresses buzzer sounds for incoming direct messages, room messages,
-channel messages and received adverts. Their visual presentation, vibration,
-normal message history and unread state remain available.
-
-Delivery acknowledgements and key feedback are not silenced. Message routing,
-acknowledgements and the companion offline queue are unchanged.
+Delivery acknowledgements, key feedback, routing and companion queues are not
+affected.

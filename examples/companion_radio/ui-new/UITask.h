@@ -48,6 +48,8 @@ class UITask : public AbstractUITask {
   NodePrefs* _node_prefs;
   solo::Runtime _solo;
   solo::RoomLoginCoordinator _room_login;
+  bool _deferred_prefs_save = false;
+  uint32_t _deferred_prefs_save_ms = 0;
   char _alert[80];
   char _notif_mel_buf[220];  // persistent RTTTL buffer for custom notification melodies
   // Persistent RTTTL buffer for the bot !buzz command (see botBuzz()) -- sized
@@ -282,6 +284,7 @@ public:
   void pickAdminTarget();                  // Admin is remote-only: open Nodes to pick a repeater/room
   void openAdminFor(const ContactInfo& ci, bool from_picker); // canonical Admin entry for a specific target (Nodes' Hold-Enter menu or the picker above)
   void gotoNearbyScreen();
+  void gotoDiscoverScreen();
   void gotoAutoAdvertScreen();
   void gotoLiveShareScreen();
   void gotoLocatorScreen();

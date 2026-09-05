@@ -1,13 +1,11 @@
-# Local Documentation
+# Local documentation
 
-This document explains how to build and view the MeshCore documentation locally.
+Install MkDocs and serve the site locally:
 
-## Building and viewing Docs
-
-```
+```sh
 pip install mkdocs
 pip install mkdocs-material
+mkdocs serve
 ```
 
-- `mkdocs serve` - Start the live-reloading docs server.
-- `mkdocs build` - Build the documentation site.
+Use `mkdocs build` to create a static site.

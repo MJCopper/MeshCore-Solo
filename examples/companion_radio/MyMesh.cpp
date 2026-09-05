@@ -1153,7 +1153,10 @@ bool MyMesh::onContactPathRecv(ContactInfo& contact, uint8_t* in_path, uint8_t i
 void MyMesh::sendNodeDiscoverReq() {
   uint8_t data[10];
   data[0] = CTL_TYPE_NODE_DISCOVER_REQ;
-  data[1] = (1 << ADV_TYPE_REPEATER) | (1 << ADV_TYPE_SENSOR) | (1 << ADV_TYPE_ROOM);
+  // Zen's on-device Discover screen is repeater-only. Keep this standalone
+  // request narrow so sensors do not spend airtime and power replying to
+  // results the UI will discard. App/USB discovery uses its existing path.
+  data[1] = (1 << ADV_TYPE_REPEATER);
   getRNG()->random(&data[2], 4);
   memcpy(&_pending_node_discover_tag, &data[2], 4);
   _pending_node_discover_until = futureMillis(8000);

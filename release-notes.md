@@ -1,145 +1,20 @@
-## MeshCore Zen v2.26
+# MeshCore Zen v2.27
 
-Zen v2.26 is based on MeshCore v1.17.1 and completes the project rename from
-Solo to Zen. Historical Solo release headings below are retained as the names
-under which those versions were originally published.
+Based on MeshCore v1.17.1 for the Seeed Wio Tracker L1.
 
-### Highlights
+## Highlights
 
-- Full-message DM, room and channel transcripts with one-line scrolling,
-  targeted replies, unread-state repair, route/transmission markers and manual
-  resend of the latest failed outgoing message.
-- Predictive T9, ABC, a 2,500-word Australianised completion dictionary, native
-  UTF-8 rendering, common monochrome emoji and four insertable chat emoji.
-- Optional low-power CardKB input with compact composition and polling limited
-  to periods when the display is awake.
-- Four-entry editable Favourites Dial, PIN-protected Child Mode and daily Quiet
-  Time that suppresses sound while retaining visual alerts and vibration.
-- Boot-time GPS clock sync, bounded hourly retry, timed GPS modes and a fixed
-  Clock home page with unread-message shortcut.
-- Advert intervals of Off/1 h/3 h/6 h, shared GPS privacy policy and a steady
-  five-second sent-advert indicator.
-- Companion repeater mode using current radio settings and fixed backend timing,
-  Yield x2 and duplicate suppression.
-- Settings save on exit only when values changed; Zen preferences remain
-  isolated from the upstream MeshCore preference layout.
+- Full-message direct, channel and room transcripts with line-by-line scrolling.
+- Predictive T9 and ABC entry with a 4,000-word Australianised dictionary.
+- UTF-8 and monochrome emoji rendering, plus four insertable chat emoji.
+- Automatic direct-message path/flood retries, delivery markers and manual resend.
+- Room login from the device, including saved passwords and ACL-only rooms.
+- Editable four-contact Favourites Dial.
+- Optional CardKB input with screen-aware polling.
+- PIN-protected Child Mode and scheduled Quiet Time.
+- Boot GPS time sync, timed GPS modes and persistent `SYNC TIME` status.
+- Configurable adverts with a shared GPS privacy setting.
+- Companion repeater mode using the active radio configuration.
+- Settings saved on exit only when changed.
 
----
-
-## MeshCore Solo Companion Firmware v1.23.1
-
-### Fixes
-
-- **Tools › Admin login could get stuck on "Logging in..." forever** if the remote node never sent back a reply — most commonly after its admin/room password was changed, since the on-device UI auto-retries the old saved password with no timeout to fall back on. It now gives up after the same estimated-timeout window the rest of Admin's commands use, forgets the stale saved password, and returns you to the picker to try again with the new one.
-- **Changing a remote's admin password from Tools › Admin › System didn't update this device's own saved copy** — the very next login attempt to that node retried the password you'd just replaced, hitting the "stuck on Logging in…" case above. The confirmation the remote echoes back is now saved as the new on-device password to match.
-- **A slow-to-arrive Admin login reply, after you'd already given up on it (Cancel or the new timeout above), could get delivered to whatever screen you'd since moved to and silently overwrite your saved password for that node with unrelated data.** Giving up on a login now also stops tracking it mesh-side, so a late reply is simply dropped instead of misrouted.
-- **Opening Admin on a second, password-less node while an earlier room/repeater login elsewhere was still in flight could wrongly show you as logged in as admin on the new node** — a reply meant for the earlier login was accepted as this node's own since both merely looked like "a login is pending," without checking it actually named this node. Now checked.
-
----
-
-## MeshCore Solo Companion Firmware v1.23
-
-### What's new
-
-- **Nodes is now the single node hub.** "Nearby Nodes" is renamed **Nodes** and gains on-device contact management — no phone app needed: **Hold Enter** on a row opens **Add contact** (for a scanned-but-unknown node), **Favourite/Unfavourite** (pins to the first free Favourites Dial slot, shown as a star in the list), and **Delete contact** (confirm first, defaults to Cancel). The filter strip (**LEFT/RIGHT**) is now a visible, wraparound tab carousel instead of a hidden mode. The old read-only **Recent adverts** home page is retired — its passively-heard nodes now simply show up in the Nodes list (All filter) — so there's one list instead of two.
-- **On-device channel management.** Messages › Channels gets a **"+ Add channel"** row and per-channel **Edit**/**Delete** — no phone app required. Adding a channel now starts with a **type picker**, matching the phone app: **Public** (re-adds the well-known default channel, no typing needed), **Hashtag** (type just a topic name, e.g. `test` — the channel name and secret are both derived from it, same convention as the app's `#topic` channels), or **Private** (manual Name + Secret, typing either a passphrase hashed to the channel secret, or the exact 32-hex-character key from a channel QR code).
-- **Tools › Admin — administer a remote repeater/room from the device.** Log into a node you have admin rights on (same self-healing saved-password handshake as room logins) and browse its settings in category tabs — **System** (name, owner info), **Radio** (Frequency/Bandwidth/Spreading factor/Coding rate/TX power), **Routing** (Repeat/Advert interval/Flood advert interval/Max hops), **Actions** (reboot, send advert, sync clock, …) — plus a free-text **Custom command…** escape hatch (with **{}**-key command-name completion) for anything not covered. Radio and Routing fields use a type-appropriate editor instead of raw text — a digit-cursor for Frequency (the same widget Settings' own Radio screen uses locally), discrete-set stepping for Bandwidth/Spreading factor/Coding rate, plain number steppers for the rest, and an ON/OFF toggle for Repeat — adjusting a value costs no mesh traffic until you actually confirm it with **Enter** (**Cancel** sends nothing). Reachable either from **Tools › Admin** (opens the same Nodes list to pick a target) or directly via a repeater/room's own **Hold Enter › Admin** action.
-- **Auto-Reply Bot gains a third target: room servers**, alongside DM and Channel, with its own trigger/reply/commands — the screen is redesigned as a circular tab carousel (**Direct/Channel/Room/Other**, **LEFT/RIGHT** to switch, **UP/DOWN** within a tab) instead of one long list. Each target's **Enable** and **Commands** toggle is now fully independent (they used to secretly share the DM tab's setting for Channel/Room too). New `{name}`/`{hops}` reply placeholders, a DM allow-list (all chat contacts or favourites only), and a dedicated stepper for Quiet Hours.
-- **Keyboard: accent popup, selectable main script, better editing.** Holding **Enter** on a Latin letter with accented variants (`a c d e i l n o r s t u y z`) now opens a one-row popup of that letter's accents — e.g. holding `a` offers `á à â ã ä å ą` — covering every European Latin-diacritic letter (Polish, Czech, Slovak, German, French, Spanish, Portuguese, Nordic, …) from one popup instead of a separate page per language. **Settings › Keyboard** splits **Alphabet** into **Main** and **Additional**: Main picks which script (Latin/Cyrillic/Greek) the keyboard opens on by default, Additional picks the second one reached via the **#@/abc** cycle key — so a Cyrillic or Greek typist can make their own script the default instead of always landing on Latin first. Shift is now **one-shot** by default (capitalises just the next letter; **Hold Enter** on Shift toggles the old sticky caps-lock back on), **Hold Enter** on Backspace clears the whole field, and **UP** from the top letter row enters a cursor-positioning mode (**LEFT/RIGHT** move; **UP/DOWN** jump to start/end, then continue on to the special row / letter grid if pressed again once already there) so you can edit or insert anywhere in what you've typed, not just at the end.
-- **Messages get a messenger-style history.** History bubbles are now sized to their content and anchored **right** (outgoing) / **left** (incoming); the list runs **newest at the bottom**, growing upward as you scroll into the past; the **[+ send]** compose button moved to the right edge to match.
-- **Clock Tools: alarm repeat.** The Alarm screen gains a **Repeat** row (Off/Daily/Weekdays/Weekends) — Hour/Minute merge into one **Time** row edited with an HH:MM digit cursor, and **Repeat**/**Armed** now respond to **LEFT/RIGHT** like every other Settings field instead of Enter-only.
-- **Diagnostics becomes a tab carousel** (Live/System/Font): **System** adds firmware version + build date, device model and the active radio parameters; **Font** is a rendering test card with one sample line per script the on-device font covers, so coverage can be eyeballed directly.
-- **One unified display font.** OLED and e-ink now both draw a single misc-fixed 6×9 font (full Latin/Greek/Cyrillic coverage) generated by a new BDF-to-GFX converter (`tools/bdf2gfx.py`), retiring the old Default/Lemon switch and the keyboard's per-render font-swap workaround.
-- **Discoverable context menus.** Every screen with a **Hold Enter** action menu now shows a small **≡** glyph in its header, which highlights while the menu is open — so the shortcut no longer has to be guessed.
-- **Status bar and list polish** — background-mode icons (Bluetooth/GPS fix/alarm/mute/auto-advert/trail/live-share/repeater/battery) now drop by priority once space runs out, instead of crushing the node name down to a couple of characters; unread counts everywhere are drawn as a filled pill badge; DM/Channel history headers match every other screen's header style; the default home-page carousel is trimmed to Clock/Tools/Shutdown/Favourites/Map (Recent/Radio/BT/Advert/GPS/Sensors are still available, just opt-in under Settings › Home Pages — existing users' saved layouts are unaffected).
-- **On-device room Logout** — Messages' room context menu gains a **Logout** entry (mirrors the app's own logout) alongside the existing **Login…**, forgetting the saved password so the next open prompts for one again.
-
-### Fixes
-
-- **Admin's typed Radio/Routing fields could get stuck on an unreachable value** — a field fetched from a node whose real value sat outside this screen's declared range (e.g. set by a different firmware/build) rejected every further adjustment in both directions. Fetched values are now clamped into range on entry.
-- **Admin: the CLI's `"> "` reply-decoration prefix leaked into the pre-filled keyboard** when editing Name/Owner info (and the old single Radio-string field) — stripped once, consistently, before either the typed editors or the keyboard consume a reply.
-- **Admin: Cancel / a failed login always dropped you onto the "pick a node" list**, even if you'd opened Admin directly from a node's own Hold Enter action while just browsing Nodes — it now returns to wherever you actually came from.
-- **A message arriving while you'd scrolled up to an older one could silently swap in a different message at the same on-screen position** — history entries are numbered newest-first, so an insert used to shift every older message's index without updating your selection. The selection now shifts with it, so you keep looking at the same message.
-- **One-shot Shift + T9 multi-tap didn't capitalise the letter you actually landed on** — Shift was consumed after the first tap of a cell, so cycling to the 2nd/3rd/etc. candidate always came out lowercase regardless of Shift. It now capitalises whichever candidate you settle on.
-- **Deleting a channel could leave stale notification/favourite state behind** for whatever channel later got added into that freed slot — channel delete now also clears the per-channel notification override/mute and favourite flag, matching the existing cleanup for the bot/live-share/melody fields.
-- **A hex channel secret of all zeros silently self-deleted the channel you'd just saved** — that value is reserved internally as the empty-slot marker. Now rejected up front ("Invalid secret") instead of failing invisibly after the save.
-- **A room's logged-in status could be misreported after 8+ distinct rooms were logged into in one session** — the tracking ring's lookup didn't account for wraparound (only its insert/remove paths did), which the new on-device Logout now depends on for showing the right menu item.
-- **Bot screen's tab order** now reliably starts on **Channel** even after the later room-target tabs were added (double-checked against the earlier "starts on Channel" fix, which the tab reshuffle could otherwise have silently undone).
-- Reverted **corner-anchored context-menu popups** back to centred — looked bad on some screens; the header's **≡** discoverability hint stays.
-- **Unread pill badge digits weren't centred** — the classic built-in OLED font always pads a measured string by one trailing column regardless of the glyph, throwing off centring math that assumed symmetric padding.
-- **Status bar battery icon** stood 2px taller than its neighbours and its charge nub could drift off-centre at certain box heights — now sized and centred consistently with the rest of the row.
-- Removed the now-inert **Settings › Display › Font** toggle, a leftover from the font unification above with no remaining effect.
-
-### Under the hood
-
-- **Shared `TabBar.h`** extracted from Nodes/Bot's independently duplicated tab-carousel rendering (Admin and Diagnostics are now the 3rd/4th consumers) — also fixes a tab that didn't quite fit vanishing outright instead of ellipsizing.
-- **`MyMesh::setChannelLocal()`** factors out the setChannel/saveChannels/onChannelRemoved sequence previously duplicated across the BLE app's two `CMD_SET_CHANNEL` branches, now shared with the new on-device channel editor.
-- **One canonical Admin entry point** — `UITask::openAdminFor()` / `AdminScreen::startFor()` — reached identically whether Admin is opened from Nodes' Hold-Enter action or the target picker.
-- **`KeyboardWidget` reworked to UTF-8 codepoints** throughout (insert, backspace, T9 in-place cycling), so a multi-byte alt-alphabet character can never be split.
-- **`NodePrefs` schema grew twice this cycle** — `alarm_repeat_mask`/`keyboard_alt_alphabet`, then the bot room-target/per-target-independence fields — each verified via a standalone host compile and `sizeof`/`offsetof` check, with the schema sentinel bumped both times; existing users' prefs upgrade in place with safe defaults.
-
-
-
-### What's new
-
-- **T9 on-screen keyboard** — a new keyboard option under **Settings › Keyboard**. Alongside the existing alphabetical **ABC** grid, pick **T9** for phone-keypad-style entry: each key is labelled with its digit and a letter group (e.g. `2abc`), and repeated **Enter** presses cycle through the letters and then the digit. (The alphabetical grid was previously mislabelled *QWERTY* in Settings — it's always been a-b-c order and is now correctly named **ABC**.)
-- **Auto-save GPS trail on shutdown** — a new **Tools › Trail › Settings › Auto-save** toggle (default off). With it on, the live trail is written to flash automatically at power-off, so a **low-battery auto-shutdown** no longer loses the whole route. It only writes when the trail actually has points, so an empty trail can't overwrite a previously saved one. Saves to the same `/trail` file as the manual **Trail › Save**.
-- **Clock Tools from the Tools menu** — the Alarm / Timer / Stopwatch screen (reachable by pressing **Enter** on the Clock home page) now also has its own entry under **Tools › System**, so it's discoverable without first finding it on the clock face.
-- **Map & Shutdown pages are reorderable** — the **Map** home page shipped with no entry under **Settings › Home Pages**, so it was always shown and couldn't be moved. It's now a first-class page there: **toggle its visibility** and **reorder it** like any other (visible by default; existing users keep it on). Reordering also now covers the **Shutdown** page, which was previously pinned to the end of the carousel.
-
-### Fixes
-
-- **Battery reads high and jittery on Wio Tracker L1** — a power-saving change had switched the battery-voltage divider on for only ~10 ms before each reading, too short for the high-impedance divider node to settle, so a full LiPo could report 4.6–5.0 V. The divider is now held on continuously again (a negligible ~2 µA on the 2×1 MΩ divider), giving stable, accurate readings. The CPU-sleep and LED energy savings from the same optimisation pass are untouched.
-- **Home page visibility no longer resets on update** — the prefs schema-migration that turned the **Favourites** page on ran on *every* firmware update (any schema-version bump), so a page you'd deliberately hidden kept coming back after each release. It's now gated to the single upgrade that introduced Favourites, so your hidden pages stay hidden.
-- **A batch of solo-mode fixes** from a UI audit:
-  - **background-mode status icons vanished when Bluetooth was off** — the auto-advert / live-share / trail / repeater indicators were nested inside the "BT on" check and are now always shown while their mode is active.
-  - a **long alert message** ("GPS on, tracking started") spilled past its box on a narrow screen — it now wraps to up to three lines and the box grows to fit.
-  - a **contact name pushed from the phone app** wasn't guaranteed to be NUL-terminated.
-  - the **timer / alarm could mis-fire** for a deadline landing past the ~49-day `millis()` rollover.
-  - toggling a **channel's favourite from its context menu** could retarget the menu onto a different channel once the list re-sorted.
-- **A repeater could appear twice** on the discovery scan and in the app — a discover response often arrives more than once (the direct copy plus a re-flooded copy carry different packet hashes, so the mesh's duplicate filter passes both), and each copy was listed. Duplicate copies of the same response are now dropped for a few seconds after the first.
-- **Favourites self-heal** — a pinned favourite whose contact no longer exists (e.g. after clearing contacts) now reverts to an empty **+** tile instead of showing **(gone)**, and the stale pin is cleared from prefs.
-- **Radio preset names no longer seed `{loc}`/`{time}` placeholders** — those only make sense in a message; the preset-name keyboard (Settings › Radio and Tools › Repeater "+ Save current…") now opens empty. The message-slot editor still keeps them. The room-login **password** keyboard drops them too.
-- **Room chat opens automatically after a successful login** — logging in to a room server (first-time or a remembered password) used to drop you back on the room list, needing a second **Enter** to actually open the chat. The chat now opens on its own once the login succeeds, as long as you're still on that room in the picker.
-
-### Under the hood
-
-- **OLED draws less** — the SH1106 driver now skips pushing a frame over I²C when it's byte-identical to the last one, cutting redundant traffic and a little power on the static screens (clock, home) that don't change between updates.
-
-## MeshCore Solo Companion Firmware v1.21
-
-### What's new
-
-- **Live Location Sharing** — broadcast your position over the mesh as `[LOC]` messages, **movement-gated**, to a channel or a single contact. Others who share theirs show up as pins on the map with live **distance/bearing in Nearby Nodes**, and a **status-bar indicator** appears while your own share is active. `[LOC]` is parsed in DMs, channel messages **and room messages**; DM shares name the sender.
-- **Locator** (geofence) — arm a geofence around a **target** — a saved waypoint *or* a person (their live `[LOC]` or last-known position) — and get an alert when you **arrive/leave** or they get **near/far**, with an optional **homing beeper** that ticks faster the closer you get (and overrides a muted buzzer). Arm it from **Tools › Locator** or straight from **Nearby Nodes** / **Waypoints**; pick the target from a list (favourites first, then any contact), and clear it via a **"None"** entry. The active target is drawn as a **flag** on the map.
-- **One active target across Locator / Navigate / Map** — a single **"Set as target"** action everywhere, backed by a shared resolver that prefers a live `[LOC]` share over the last-advertised GPS, so the three features always agree on where you're headed.
-- **Follow live contacts** — **Navigate** to a contact who is live-sharing and the view **follows them as they move**, adding an **ETA** line. **Quick-share** your own position straight from the Map.
-- **Map & status-bar upgrades** — the home mini-map gains a **north marker** and a **scale tick**; the status line shows the tracked-node count and, with a fix, an **arrow + distance to the nearest tracked contact** (e.g. `Track:3 →120m`); a **GPS fix icon** sits in the top status bar (boxed once a fix is valid, plain while searching), shown only on GPS boards while **GPS** is enabled in Settings.
-- **Trail auto-pause** — recording **freezes on stops** (banking elapsed time and breaking the map line across the idle gap) and **resumes on movement** without ending the session; the home-screen blink keeps going while paused.
-- **Collapsible Tools** — tools are grouped into fold-in-place **Location / Comms / System** sections, the same model as Settings (Tools always opens folded to the section list), and the home carousel now uses **page-indicator icons** instead of dots.
-- **Clock tools — alarm, timer, stopwatch** — press **Enter** on the Clock page for three time utilities: a **one-shot wake alarm** (set hour/minute with the digit editor; a **bell** marks it on the clock face and the status bar while armed), a **countdown timer** (full **HH:MM:SS**, single-digit cursor), and a **stopwatch**. The alarm and timer **ring with a melody — overriding mute** — and are silenced by **any key**. They keep running with the display off or locked, and the alarm is scheduled as an **absolute instant** so it survives the clock re-syncs the mesh / app / GPS / CLI can trigger at any time (it can't wake the device from a full Shutdown, where the CPU is off).
-- **Waypoint coordinate editor** — add a waypoint by scroll-editing its latitude/longitude digit by digit.
-- **On-device room login with saved passwords** — log in to a room server straight from the device (no phone app): pick the room and the password prompt appears automatically (a blank password works for open rooms), or re-login any time via the room's **context-menu "Login…"**. The password is **remembered across reboots**, so a room you've used before logs back in without retyping; a failed login (e.g. the server's password changed) forgets the stale password so the next attempt prompts again. Room passwords entered via the **phone app** are saved on the device too, so it can post to that room standalone after a reboot. Saved passwords are written with the same atomic, crash-safe persistence as contacts and channels.
-
-### Fixes
-
-- **Critical — low-heap hang and contact loss on RAM-tight builds.** With `MAX_CONTACTS=350` and `OFFLINE_QUEUE_SIZE=256` the device ran with very little free heap; an allocation in the input/menu path could then fail and **hang the UI** (notably when entering Diagnostics), and a crash or reset mid-save could **wipe all contacts**. Fixed by two independent changes:
-  - **Right-sized message-history rings** — the on-device scrollback rings were halved (96→48 channel, 64→32 DM), recovering **~14 KB of free heap** (measured 3 → 17 KB). History is RAM-only, so the only cost is shorter on-device scrollback.
-  - **Atomic persistence** — contacts, channels and prefs are now written to a temp file and **atomically renamed** into place; an interrupted save (crash, reset, full flash) leaves the previous good file intact instead of truncating it.
-- **USB host stall** — `Serial.write()` is bounded so a stalled USB host can no longer hang the device indefinitely.
-- **Nearby Nodes** — live `[LOC]` senders now respect the type filter and sort by their shared position; the distance-sorted list refreshes so live shares bubble to the top.
-- **Map** — live contacts are labelled before waypoints, so a person's name shows rather than a nearby waypoint's.
-- **GPS status icon** is hidden when GPS is turned off in Settings, instead of sitting there empty.
-- **Trail — start with GPS off** now prompts **"GPS is off — Enable GPS & start"** instead of silently starting a session that shows "Waiting for GPS fix" forever and records nothing.
-- Null-guarded the Locator target picker and clamped the loc-share channel index on load.
-- **e-ink button responsiveness** — joystick and Back presses are no longer dropped during a slow panel refresh. The directional buttons were never initialised for interrupt edge-capture (only the user button was), so they silently stayed on the polling path; now every button is initialised, and a burst of taps captured while the panel is refreshing replays as **discrete navigation steps** instead of collapsing into a single ignored multi-click. Edge capture and the live-pin self-heal are both debounced, so **contact bounce can't surface one press as a double-tap** (e.g. start+stop on the stopwatch).
-
-### Under the hood
-
-- **Streaming trail simplification** — GPS points are simplified as they're recorded via a fixed-corridor (Reumann–Witkam) pass: straight runs collapse to their two endpoints while curves stay bounded to within the **Min dist** tolerance of the real track, so the 512-point buffer covers a far longer route than a flat point budget would suggest. The buffer is kept at 512 points to bound the static RAM footprint on nRF52.
-- A UITask-decoupled active-target resolver (`resolvePersonPos` / `activeTargetPos`) replaces the duplicated target-resolution logic that lived separately in the Locator, Navigate and Map entry points.
-- `-Os` size optimisation on the e-ink solo environment to keep it within the flash budget.
-- **Input edge-capture + key queue** — on e-ink, button edges are latched by a GPIO interrupt during the blocking `endFrame()` refresh and replayed once the loop runs again; `loop()` then drains the whole burst into a small key FIFO and applies every key before a **single** redraw. Rapid navigation neither gets lost nor costs one slow refresh per step. (Buttons fall back to polling automatically if no GPIOTE channel is free.)
-- **Ringtone player on a hardware timer** — note advance moved off the `loop()` poll onto an nRF52 TIMER1 compare interrupt, so a blocking e-ink refresh can no longer stretch or skip a note; alarm/timer melodies stay on tempo regardless of render cadence.
-
-> **Upgrade note:** if a previous version lost your contacts after a hang, you'll need to re-add them once — the atomic-save protection applies from this release onward.
+See [README.md](./README.md) and [FEATURES.md](./FEATURES.md) for current behaviour.

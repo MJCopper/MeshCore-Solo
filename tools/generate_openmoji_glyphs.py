@@ -12,6 +12,8 @@ import struct
 import zlib
 from pathlib import Path
 
+from retune_emoji_glyphs import retune_bitmap
+
 
 # Preserve the original trial set while expanding the collection. New entries
 # are selected reproducibly from OpenMoji's metadata using the quotas below.
@@ -217,7 +219,7 @@ def write_header(input_dir, output):
         path = input_dir / f"{name}.png"
         if not path.exists():
             raise FileNotFoundError(path)
-        bitmaps.append(tiny_bitmap(read_indexed_png(path)))
+        bitmaps.append(retune_bitmap(cp, tiny_bitmap(read_indexed_png(path))))
     bitmaps.extend(FLAG_BITMAPS)
     lines = [
         "#pragma once", "", "#include <stdint.h>", "",

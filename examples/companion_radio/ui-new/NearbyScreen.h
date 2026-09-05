@@ -24,7 +24,7 @@ class NearbyScreen : public UIScreen {
   enum Source : uint8_t { SRC_STORED, SRC_SCAN };
 
   // ── action-menu actions (matched by id, not by row index) ────────────────────
-  enum Action : uint8_t { ACT_NAV, ACT_PING, ACT_WAYPOINT, ACT_LOCATOR,
+  enum Action : uint8_t { ACT_NAV, ACT_PING, ACT_LOCATOR,
                           ACT_ADD, ACT_DELETE, ACT_FAV, ACT_ADMIN, ACT_SORT, ACT_SCAN };
 
   // Set by UITask::pickAdminTarget() (Tools > Admin, which is remote-only):
@@ -35,6 +35,8 @@ class NearbyScreen : public UIScreen {
   // this screen for anything else. Mirrors MessagesScreen's
   // startPickBotChannel()/startPickBotRoom() pick-mode idiom.
   bool _pick_admin_target = false;
+  bool _discover_entry = false; // entered from the dedicated Tools item
+  uint8_t _discover_prev_filter = F_ALL;
 
   // ── unified list entry ───────────────────────────────────────────────────────
   struct Entry {
@@ -392,14 +394,6 @@ class NearbyScreen : public UIScreen {
     refreshStored();
   }
 
-  // Save the currently-selected entry as a waypoint (its name as label).
-  void saveSelectedWaypoint() {
-    const Entry* e = selected();
-    if (!e) return;
-    if (e->lat_e6 == 0 && e->lon_e6 == 0) { _task->showAlert("No node GPS", 1000); return; }
-    _task->addWaypoint(e->lat_e6, e->lon_e6, e->name);   // WaypointStore truncates the label
-  }
-
   // Toggle the given contact in the Favourites dial: unpin if already pinned, else
   // pin to the first empty slot. Persisted immediately (same as the Messages picker).
   void toggleFavourite(const uint8_t* pub_key) {
@@ -567,7 +561,6 @@ class NearbyScreen : public UIScreen {
     if (has_gps) add("Navigate",      ACT_NAV);
 #endif
     if (has_key) add("Ping",          ACT_PING);
-    if (has_gps) add("Save waypoint", ACT_WAYPOINT);
     // Needs both a position and a stable identity — a person target is keyed
     // by pubkey prefix, so a name-only live-scan/channel row can't offer this.
 #if SOLO_FEAT_LOCATION_TOOLS
@@ -580,7 +573,7 @@ class NearbyScreen : public UIScreen {
 #endif
     if (is_contact && has_key) add("Delete contact", ACT_DELETE);
     if (stored) add(_sort_label, ACT_SORT);   // sort is meaningless for live-scan rows
-    add(stored ? "Discover scan" : "Rescan", ACT_SCAN);
+    if (!stored) add("Rescan", ACT_SCAN);
   }
 
   void runAction(Action a) {
@@ -598,7 +591,6 @@ class NearbyScreen : public UIScreen {
         if (e && e->has_key) startPingForKey(e->pub_key);
         break;
       }
-      case ACT_WAYPOINT: saveSelectedWaypoint(); break;
       case ACT_LOCATOR: {
         const Entry* e = selected();
         if (e && e->has_key && (e->lat_e6 != 0 || e->lon_e6 != 0))
@@ -745,13 +737,15 @@ public:
     _detail = false;
     _nav = false;
     _source = SRC_STORED;
-    // _filter / _sort persist across enter() — set once in the constructor
+    _filter = F_ALL;
+    // Sort persists across visits; Nodes always starts on the All filter.
     _scanning = false;
     _menu.active = false;
     _ping_menu.active = false;
     _confirm.active = false;
     _pinging = false;
     _pick_admin_target = false;   // stale pick-mode from a previous visit shouldn't linger
+    _discover_entry = false;
     resetPingLines();
     _task->clearPing();
     refreshStored();
@@ -760,6 +754,14 @@ public:
   // Entered via UITask::pickAdminTarget() right after setCurrScreen(this) has
   // already run onShow()'s reset above -- just arms the pick-mode flag.
   void startPickAdminTarget() { _pick_admin_target = true; }
+
+  // Entered from Tools > Discover after onShow() resets the shared Nodes view.
+  void startDiscoverScan() {
+    _discover_entry = true;
+    _discover_prev_filter = _filter;
+    _filter = F_RPT;
+    enterScan();
+  }
 
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
@@ -806,15 +808,17 @@ public:
       _list_refresh_ms = millis();
     }
 
-    int item_h   = display.lineStep();
-    int dist_col = display.width() - display.getCharWidth() * 7;
+    int item_h = display.lineStep();
 
     display.setColor(DisplayDriver::LIGHT);
     const char* flt = (_filter != F_ALL) ? FILTER_LABELS[_filter] : nullptr;
     if (_source == SRC_SCAN) {
       char title[28];
       const char* base = _scanning ? "SCANNING" : "SCAN";
-      if (flt) {
+      if (_discover_entry) {
+        if (!_scanning && _count == 0) snprintf(title, sizeof(title), "NO REPEATERS");
+        else                           snprintf(title, sizeof(title), "%s (%d)", base, _count);
+      } else if (flt) {
         if (!_scanning && _count == 0) snprintf(title, sizeof(title), "SCAN %s: none", flt);
         else                           snprintf(title, sizeof(title), "%s %s (%d)", base, flt, _count);
       } else if (_scanning)            snprintf(title, sizeof(title), "SCANNING (%d)", _count);
@@ -830,7 +834,7 @@ public:
       char empty[24];
       if (_source == SRC_SCAN) {
         const char* msg;
-        if (_scanning)   msg = "Waiting for replies...";
+        if (_scanning)   msg = "Waiting...";
         else if (flt)  { snprintf(empty, sizeof(empty), "No %s nodes", flt); msg = empty; }
         else             msg = "No nodes found";
         display.drawTextCentered(display.width() / 2, display.height() / 2, msg);
@@ -869,20 +873,20 @@ public:
           snprintf(fallback, sizeof(fallback), "[%s]", typeName(e.type));
           shown = fallback;
         }
-        display.drawTextEllipsized(tx, y, dist_col - tx - 2, shown);
-
-        display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
-        char right[10];
+        // Stored Nodes devote the complete row to the name. Discovery retains
+        // its RSSI column because signal strength is specific to scan results.
         if (_source == SRC_SCAN) {
+          // Signed RSSI fits in four characters (for example, -123). Reserve
+          // only that much so repeater names retain the rest of the row.
+          int rssi_col = display.width() - display.getCharWidth() * 4;
+          display.drawTextEllipsized(tx, y, rssi_col - tx - 2, shown);
+          display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
+          char right[10];
           snprintf(right, sizeof(right), "%d", (int)e.rssi);
-        } else if (_sort == SORT_TIME) {
-          geo::fmtAgeShort(right, sizeof(right), rtc_clock.getCurrentTime(), e.lastmod);
-          if (!right[0]) snprintf(right, sizeof(right), "?");   // unknown / RTC not synced
+          display.drawTextRightAlign(display.width() - reserve - 2, y, right);
         } else {
-          if (e.dist_km >= 0.0f) geo::fmtDist(right, sizeof(right), e.dist_km, useImperial());
-          else                   strncpy(right, "?GPS", sizeof(right));
+          display.drawTextEllipsized(tx, y, display.width() - reserve - tx - 2, shown);
         }
-        display.drawTextRightAlign(display.width() - reserve - 2, y, right);
       });
     }
 
@@ -942,7 +946,11 @@ public:
     // ── list view ───────────────────────────────────────────────────────────
     if (c == KEY_CANCEL) {
       if (_pick_admin_target) { _pick_admin_target = false; _task->gotoToolsScreen(); return true; }
-      if (_source == SRC_SCAN) leaveScan();
+      if (_source == SRC_SCAN && _discover_entry) {
+        _filter = _discover_prev_filter;
+        _discover_entry = false;
+        _task->gotoToolsScreen();
+      } else if (_source == SRC_SCAN) leaveScan();
       else                     _task->gotoToolsScreen();
       return true;
     }
@@ -962,13 +970,13 @@ public:
         // else: row isn't an eligible admin target -- ignore, stay on the picker.
         return true;
       }
-      if (_count == 0) { if (_source == SRC_STORED) enterScan(); return true; }
+      if (_count == 0) return true;
       _detail = true;
       _detail_refresh_ms = millis();
       return true;
     }
-    if (keyIsPrev(c)) { _filter = (_filter + F_COUNT - 1) % F_COUNT; refresh(); return true; }
-    if (keyIsNext(c)) { _filter = (_filter + 1) % F_COUNT;          refresh(); return true; }
+    if (!_discover_entry && keyIsPrev(c)) { _filter = (_filter + F_COUNT - 1) % F_COUNT; refresh(); return true; }
+    if (!_discover_entry && keyIsNext(c)) { _filter = (_filter + 1) % F_COUNT;          refresh(); return true; }
     return false;
   }
 };
