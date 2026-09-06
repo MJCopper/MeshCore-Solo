@@ -48,6 +48,13 @@ public:
   // An end-to-end ACK (CRC) arrived for one of our sent messages — drives the
   // DM delivery-status marker. Default no-op for UIs that don't track it.
   virtual void onMsgAck(uint32_t ack_crc) { (void)ack_crc; }
+  virtual void onRoomLoginCancelled(const uint8_t* prefix) { (void)prefix; }
+  // Return the four-byte contact prefix when an on-device send owns this ACK.
+  virtual bool matchMsgAck(uint32_t ack_crc, uint8_t* prefix) {
+    onMsgAck(ack_crc);
+    (void)prefix;
+    return false;
+  }
   // A repeater rebroadcast of one of our channel sends was heard (seq from
   // lastChannelRelaySeq()) — drives the channel "relayed into mesh" marker.
   virtual void onChannelRelayed(uint32_t seq) { (void)seq; }
@@ -59,6 +66,7 @@ public:
   // Text reply to an on-device-UI-triggered MyMesh::sendAdminCommand() arrived
   // (see AdminScreen). pub_key is the contact's key prefix (>=4 bytes valid).
   virtual void onAdminReply(const uint8_t* pub_key, const char* text) { (void)pub_key; (void)text; }
+  virtual void onSensorTelemetry() { }
   // Bot action commands (!gps/!buzz, see MyMesh::botCommandReply) -- device
   // state changes triggered remotely, gated by the bot_actions_* prefs.
   // Default no-op so UI variants that don't wire these up just ignore them.

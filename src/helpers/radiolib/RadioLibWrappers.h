@@ -50,6 +50,8 @@ public:
   void setPowerSaving(bool en) { _power_save = en; }
   bool getPowerSaving() const { return _power_save; }
   virtual void powerOff() { _radio->sleep(); }
+  void suspend() override;
+  void resume() override;
   int recvRaw(uint8_t* bytes, int sz) override;
   uint32_t getEstAirtimeFor(int len_bytes) override;
   bool startSendRaw(const uint8_t* bytes, int len) override;

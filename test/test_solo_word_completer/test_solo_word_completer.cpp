@@ -6,6 +6,14 @@
 #include "../../examples/companion_radio/solo/WordCompleter.h"
 #include "../../examples/companion_radio/solo/T9Predictor.h"
 
+TEST(T9Predictor, ChoosesShorterWordWhenContractionCannotFit) {
+  char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN]{};
+  ASSERT_GT(solo::T9Predictor::suggest("46", 2, matches, 8, 2), 0);
+  for (const auto& word : matches) EXPECT_LE(strlen(word), 2u);
+  EXPECT_EQ(0, solo::T9Predictor::suggest("46", 2, matches, 8, 1));
+  EXPECT_GT(solo::T9Predictor::suggest("46", 2, matches, 8), 0);
+}
+
 TEST(SoloWordCompleter, HonoursRequestedResultLimit) {
   char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN] = {};
   uint8_t count = solo::WordCompleter::suggest("th", 2, matches, 3);

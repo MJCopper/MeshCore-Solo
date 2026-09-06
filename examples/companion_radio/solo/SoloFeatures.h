@@ -28,7 +28,7 @@
 #define SOLO_FEAT_NAVIGATION 0
 // Retained separately as a clear boundary for the removed location tools.
 #define SOLO_FEAT_LOCATION_TOOLS 0
-#define SOLO_FEAT_ADMIN 0
+#define SOLO_FEAT_ADMIN 1
 #define SOLO_FEAT_CLOCK_TOOLS 0
 // Remote Bot is intentionally excluded from this Wio Tracker-focused fork.
 // Keep the switch fixed off so saved bot settings cannot continue operating

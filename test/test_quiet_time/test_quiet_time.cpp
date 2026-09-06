@@ -1,6 +1,22 @@
 #include <gtest/gtest.h>
+#include <Stream.h>
 
 #include "../../examples/companion_radio/ui-new/QuietTimePolicy.h"
+#include "../../examples/companion_radio/ui-new/QuietTime.h"
+
+TEST(QuietTime, RequiresLiveSyncEvenWithPlausibleRestoredTimestamp) {
+  NodePrefs prefs = {};
+  prefs.quiet_time_enabled = 1;
+  prefs.quiet_time_start_min = 21 * 60;
+  prefs.quiet_time_end_min = 7 * 60;
+  prefs.tz_offset_hours = 10;
+  const uint32_t utc = 20000UL * 86400 + 12 * 3600; // 22:00 local
+  EXPECT_FALSE(quiettime::active(&prefs, utc, false));
+  EXPECT_TRUE(quiettime::active(&prefs, utc, true));
+  EXPECT_FALSE(quiettime::active(&prefs, 0, true));
+  prefs.quiet_time_enabled = 0;
+  EXPECT_FALSE(quiettime::active(&prefs, utc, true));
+}
 
 TEST(QuietTime, HandlesSameDayIntervalBoundaries) {
   EXPECT_FALSE(quiettime::intervalActive(8 * 60 + 59, 9 * 60, 17 * 60));

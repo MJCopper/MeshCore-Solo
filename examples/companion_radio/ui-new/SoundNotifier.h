@@ -57,6 +57,11 @@ public:
     playSlot(slot, force, "MsgRcv3:d=4,o=6,b=200:32e,32g,32b,16c7");
   }
 
+  void playLowBattery() {
+    // Single 62 ms note, respecting the global buzzer mode and volume.
+    _buz.play("LowBat:d=32,o=6,b=120:c");
+  }
+
   void playCH(int ch_idx) {
     bool play = false, force = false;
     if (ch_idx >= 0 && ch_idx < 64 && _prefs) {

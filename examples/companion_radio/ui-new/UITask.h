@@ -34,6 +34,8 @@
   #include <helpers/ui/CardKBController.h>
 #endif
 
+#include "../solo/BatteryPolicy.h"
+
 class UITask : public AbstractUITask {
   DisplayDriver* _display;
   SensorManager* _sensors;
@@ -45,6 +47,15 @@ class UITask : public AbstractUITask {
 #endif
   unsigned long _next_refresh, _auto_off;
   bool _notification_wake_active;
+  solo::LowBatteryReminder _low_battery_reminder;
+  solo::LowPowerLatch _low_power_latch;
+  solo::EmergencyWindow _emergency_window;
+  bool _low_power_mode = false;
+  bool _emergency_gps_on = false;
+  void wakeForNotification();
+  void notifyLowBattery();
+  void setLowPowerMode(bool active);
+  void setEmergencyMode(bool active);
   NodePrefs* _node_prefs;
   solo::Runtime _solo;
   solo::RoomLoginCoordinator _room_login;
@@ -244,6 +255,7 @@ public:
   }
   void begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* node_prefs);
   void onBLEDisconnected() override { _next_refresh = 0; }
+  void onSensorTelemetry() override { _next_refresh = 0; } // redraw, never wake
 
   NodePrefs* getNodePrefs() const { return _node_prefs; }
   bool isChildModeLocked() const { return _solo.childLocked(_node_prefs); }
@@ -281,8 +293,8 @@ public:
   void openToolsItem(int index);
   void gotoRingtoneEditor(int slot = 0);
   void gotoBotScreen();
-  void pickAdminTarget();                  // Admin is remote-only: open Nodes to pick a repeater/room
-  void openAdminFor(const ContactInfo& ci, bool from_picker); // canonical Admin entry for a specific target (Nodes' Hold-Enter menu or the picker above)
+  void openAdminFor(const ContactInfo& ci); // selected Node List repeater/room
+  void returnFromAdmin();
   void gotoNearbyScreen();
   void gotoDiscoverScreen();
   void gotoAutoAdvertScreen();
@@ -389,9 +401,18 @@ public:
                     bool present);
   bool notificationQuietAffected(UIEventType event) const;
   bool isQuietTimeActive() const;
+  bool isLowPowerMode() const { return _low_power_mode; }
+  bool isEmergencyMode() const { return _emergency_window.active(); }
+  uint32_t emergencyRemainingSeconds() const {
+    return _emergency_window.remainingSeconds(millis());
+  }
+  void beginEmergencyMode() { setEmergencyMode(true); }
+  void endEmergencyMode() { setEmergencyMode(false); }
   void addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp = 0) override;
   bool addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) override;
   void onMsgAck(uint32_t ack_crc) override;
+  bool matchMsgAck(uint32_t ack_crc, uint8_t* prefix) override;
+  void onRoomLoginCancelled(const uint8_t* prefix) override;
   void onChannelRelayed(uint32_t seq) override;
   void onChannelRelayExpired(uint32_t seq) override;
   void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) override;
@@ -530,6 +551,7 @@ public:
   void applyRotation();
   void applyFullRefreshInterval();
   uint32_t autoOffMillis() const {
+    if (_low_power_mode) return 5000;
     if (!_node_prefs || _node_prefs->auto_off_secs == 0) return 0;
     return (uint32_t)_node_prefs->auto_off_secs * 1000UL;
   }

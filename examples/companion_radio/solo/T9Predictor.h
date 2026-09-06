@@ -35,8 +35,9 @@ class T9Predictor {
 
   static bool appendResult(const char* word,
                            char results[][WordCompleter::MAX_WORD_LEN],
-                           uint8_t& count, uint8_t max_results) {
+                           uint8_t& count, uint8_t max_results, size_t max_bytes) {
     if (!word || !word[0] || count >= max_results ||
+        strlen(word) > max_bytes ||
         alreadyAdded(word, results, count)) return false;
     size_t n = 0;
     while (word[n] && n + 1 < WordCompleter::MAX_WORD_LEN) {
@@ -112,7 +113,8 @@ public:
 
   static uint8_t suggest(const char* digits, size_t digit_count,
                          char results[][WordCompleter::MAX_WORD_LEN],
-                         uint8_t max_results) {
+                         uint8_t max_results,
+                         size_t max_bytes = WordCompleter::MAX_WORD_LEN - 1) {
     if (!digits || digit_count == 0 || !results || max_results == 0) return 0;
     if (max_results > WordCompleter::MAX_SUGGESTIONS)
       max_results = WordCompleter::MAX_SUGGESTIONS;
@@ -130,20 +132,20 @@ public:
       for (uint8_t i = 0; i < RECENT_COUNT && count < max_results; i++) {
         if (!recent[i][0] || (digitLength(recent[i]) == digit_count) != exact ||
             !matches(recent[i], digits, digit_count)) continue;
-        appendResult(recent[i], results, count, max_results);
+        appendResult(recent[i], results, count, max_results, max_bytes);
       }
       for (size_t i = 0; i < sizeof(CONTRACTIONS) / sizeof(CONTRACTIONS[0]) &&
                          count < max_results; i++) {
         const char* word = CONTRACTIONS[i];
         if ((digitLength(word) == digit_count) != exact ||
             !matches(word, digits, digit_count)) continue;
-        appendResult(word, results, count, max_results);
+        appendResult(word, results, count, max_results, max_bytes);
       }
       for (size_t i = 0; i < WordCompleter::dictionarySize() && count < max_results; i++) {
         const char* word = WordCompleter::wordAt(i);
         if ((digitLength(word) == digit_count) != exact ||
             !matches(word, digits, digit_count)) continue;
-        appendResult(word, results, count, max_results);
+        appendResult(word, results, count, max_results, max_bytes);
       }
     }
     return count;

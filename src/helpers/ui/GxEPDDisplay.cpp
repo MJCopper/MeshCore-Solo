@@ -1,5 +1,6 @@
 #include "GxEPDDisplay.h"
 #include "LemonIcons.h"
+#include "MiscFixedRenderer.h"
 
 // This driver retains the monochrome UI's semantic colour mapping: DARK means
 // white paper/background and LIGHT means black ink/foreground (see setColor).
@@ -35,60 +36,8 @@ static int fontAscender(int sz, int scale) {
   return 0;                                     // GFX built-in font: cursor is top-left of cell
 }
 
-// y is the GFX baseline (display.getCursorY()), which equals original_y + 8*sc.
-// Pixels are placed at y + yo*sc + row*sc — identical to how GFX would render
-// a scaled GFX font, but bypassing GFX so multi-byte UTF-8 is decoded correctly.
-int16_t GxEPDDisplay::drawGlyph(int16_t x, int16_t y, uint32_t cp, int sc) {
-  int16_t emoji_index = emojiGlyphIndex(cp);
-  if (emoji_index >= 0 || emojiIsCodepoint(cp))
-    return emojiDrawGlyph(display, x, y - 7 * sc, emoji_index, sc, _curr_color);
-  for (uint8_t i = 0; i < lemonIconCount; i++) {
-    if (pgm_read_dword(&lemonIconCPs[i]) == cp) {
-      const GFXglyph* g = &lemonIconGlyphs[i];
-      uint8_t w = pgm_read_byte(&g->width), h = pgm_read_byte(&g->height);
-      int8_t  xo = (int8_t)pgm_read_byte(&g->xOffset), yo = (int8_t)pgm_read_byte(&g->yOffset);
-      uint8_t xa = pgm_read_byte(&g->xAdvance);
-      uint16_t bo = pgm_read_word(&g->bitmapOffset);
-      uint8_t bits = 0, bit = 0;
-      for (uint8_t row = 0; row < h; row++)
-        for (uint8_t col = 0; col < w; col++) {
-          if (!bit) { bits = pgm_read_byte(&lemonIconBitmaps[bo++]); bit = 0x80; }
-          if (bits & bit) {
-            if (sc == 1) display.drawPixel(x + xo + col, y + yo + row, _curr_color);
-            else display.fillRect(x + xo*sc + col*sc, y + yo*sc + row*sc, sc, sc, _curr_color);
-          }
-          bit >>= 1;
-        }
-      return x + xa * sc;
-    }
-  }
-  if (cp < MiscFixed.first || cp > MiscFixed.last) {
-    if (cp >= 0x20) display.fillRect(x + sc, y - 7*sc, 4*sc, 6*sc, _curr_color);
-    return x + 6 * sc;
-  }
-  const GFXglyph* g = &MiscFixedGlyphs[cp - MiscFixed.first];
-  uint8_t w = pgm_read_byte(&g->width), h = pgm_read_byte(&g->height);
-  int8_t  xo = (int8_t)pgm_read_byte(&g->xOffset), yo = (int8_t)pgm_read_byte(&g->yOffset);
-  uint8_t xa = pgm_read_byte(&g->xAdvance);
-  uint16_t bo = pgm_read_word(&g->bitmapOffset);
-  uint8_t bits = 0, bit = 0;
-  for (uint8_t row = 0; row < h; row++)
-    for (uint8_t col = 0; col < w; col++) {
-      if (!bit) { bits = pgm_read_byte(&MiscFixedBitmaps[bo++]); bit = 0x80; }
-      if (bits & bit) {
-        if (sc == 1) display.drawPixel(x + xo + col, y + yo + row, _curr_color);
-        else display.fillRect(x + xo*sc + col*sc, y + yo*sc + row*sc, sc, sc, _curr_color);
-      }
-      bit >>= 1;
-    }
-  return x + xa * sc;
-}
-
 uint8_t GxEPDDisplay::glyphXAdvance(uint32_t cp, int sc) {
-  uint8_t xa;
-  if (cp < MiscFixed.first || cp > MiscFixed.last) xa = 6;
-  else xa = pgm_read_byte(&MiscFixedGlyphs[cp - MiscFixed.first].xAdvance);
-  return xa * sc;
+  return miscFixedXAdvance(cp, sc);
 }
 
 bool GxEPDDisplay::begin() {
@@ -200,28 +149,11 @@ void GxEPDDisplay::print(const char* str) {
   display_crc.update<char>(str, strlen(str));
   // misc-fixed path only for sz=1 — setTextSize(2/3) switches GFX to other fonts.
   if (_text_sz == 1) {
-    int16_t cx = display.getCursorX();
-    int16_t cy = display.getCursorY();
     const int sc = scale();
-    const uint8_t* p = (const uint8_t*)str;
-    while (*p) {
-      uint32_t cp = decodeCodepoint(p);
-      if (cp == '\n') { cy += MiscFixed.yAdvance * sc; cx = 0; }
-      else if (emojiIsVariation(cp) || emojiIsModifier(cp) || cp == 0x200D) { }
-      else if (emojiConsumeKeycap(p, cp)) {
-        cx = emojiDrawGlyph(display, cx, cy - 7 * sc, -1, sc, _curr_color);
-      } else {
-        int16_t index = emojiGlyphIndex(cp);
-        if (index >= 0 || emojiIsCodepoint(cp)) {
-          if (emojiIsRegionalIndicator(cp)) index = emojiFlagGlyphIndex(cp, p);
-          emojiConsumeSuffix(p, cp);
-          cx = emojiDrawGlyph(display, cx, cy - 7 * sc, index, sc, _curr_color);
-        } else {
-          cx = drawGlyph(cx, cy, cp, sc);
-        }
-      }
-    }
-    display.setCursor(cx, cy);
+    // Adapt the GFX baseline to the shared renderer's top-of-row coordinates.
+    display.setCursor(display.getCursorX(), display.getCursorY() - 7 * sc);
+    miscFixedPrint(display, str, sc, _curr_color);
+    display.setCursor(display.getCursorX(), display.getCursorY() + 7 * sc);
     return;
   }
   int sc = scale();
@@ -278,16 +210,7 @@ void GxEPDDisplay::drawXbm(int x, int y, const uint8_t* bits, int w, int h) {
 
 uint16_t GxEPDDisplay::getTextWidth(const char* str) {
   if (_text_sz == 1) {
-    uint16_t total = 0;
-    const int sc = scale();
-    const uint8_t* p = (const uint8_t*)str;
-    while (*p) {
-      uint32_t cp = decodeCodepoint(p);
-      if (emojiIsVariation(cp) || emojiIsModifier(cp) || cp == 0x200D) continue;
-      if (!emojiConsumeKeycap(p, cp) && emojiIsCodepoint(cp)) emojiConsumeSuffix(p, cp);
-      total += glyphXAdvance(cp, sc);
-    }
-    return total;
+    return miscFixedTextWidth(str, scale());
   }
   display.setTextWrap(false);
   int16_t x1, y1;

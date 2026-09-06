@@ -11,6 +11,7 @@
 // phase machine in MessagesScreen keeps referring to them unqualified.
 
 #include "../solo/DmRetryPolicy.h"
+#include "../solo/MessageAckTracker.h"
 
 // Outgoing-message delivery state. DM: a real end-to-end ACK (✓ delivered to
 // the recipient). Channel: only a "relayed into mesh" echo from a repeater (no
@@ -49,6 +50,7 @@ struct DmHistEntry {
   uint8_t  ack_status;       // AckState; meaningful only when outgoing
   uint8_t  delivery_route;   // DeliveryRoute used by the latest transmission
   uint32_t ack_tag;          // expected_ack CRC to match against onMsgAck()
+  solo::MessageAckTracker acknowledgements;
   uint32_t ack_deadline_ms;  // millis() by which a pending ACK must arrive
   // Sender-perspective message timestamp: the send timestamp for outgoing
   // (reused verbatim on resend so the recipient treats it as a retry), or the
@@ -244,6 +246,8 @@ public:
     _dm_hist[pos].ack_status      = (outgoing && ack_tag) ? ACK_PENDING : ACK_NONE;
     _dm_hist[pos].delivery_route  = outgoing ? initial_route : DELIVERY_ROUTE_NONE;
     _dm_hist[pos].ack_tag         = ack_tag;
+    _dm_hist[pos].acknowledgements = solo::MessageAckTracker();
+    _dm_hist[pos].acknowledgements.record(0, ack_tag, initial_route);
     _dm_hist[pos].ack_deadline_ms = ack_deadline_ms;
     _dm_hist[pos].msg_ts          = msg_ts;
     _dm_hist[pos].attempt         = 0;
@@ -354,6 +358,7 @@ public:
     e.delivery_route = direct
         ? (c.out_path_len == 0 ? DELIVERY_ROUTE_DIRECT : DELIVERY_ROUTE_PATH)
         : DELIVERY_ROUTE_FLOOD;
+    e.acknowledgements.record(e.attempt, expected_ack, e.delivery_route);
     e.direct_retries_left = direct
         ? solo::DmRetryPolicy::DIRECT_RETRIES_AFTER_INITIAL : 0;
     e.flood_retries_left = direct
@@ -386,16 +391,21 @@ public:
 
   // Called when an end-to-end ACK arrives (routed from MyMesh::onAckRecv).
   // Marks the matching pending outgoing DM as delivered.
-  void markDmDelivered(uint32_t ack_crc) {
-    if (ack_crc == 0) return;
+  bool markDmDelivered(uint32_t ack_crc, uint8_t* matched_prefix = nullptr) {
+    if (ack_crc == 0) return false;
     for (int i = 0; i < _dm_hist_count; i++) {
       DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
-      if (e.outgoing && e.ack_status == ACK_PENDING && e.ack_tag == ack_crc) {
+      uint8_t route;
+      if (e.outgoing && e.acknowledgements.match(ack_crc, route)) {
+        if (matched_prefix) memcpy(matched_prefix, e.prefix, sizeof(e.prefix));
         e.ack_status = ACK_OK;
+        e.delivery_route = route;
+        e.direct_retries_left = e.flood_retries_left = 0;
         scheduleDmMaintenance();
-        return;
+        return true;
       }
     }
+    return false;
   }
 
   // Periodic resend driver for outgoing DMs whose ACK deadline lapsed with no
@@ -436,6 +446,7 @@ public:
         e.delivery_route = send_direct
             ? (c.out_path_len == 0 ? DELIVERY_ROUTE_DIRECT : DELIVERY_ROUTE_PATH)
             : DELIVERY_ROUTE_FLOOD;
+        e.acknowledgements.record(e.attempt, expected_ack, e.delivery_route);
         if (send_direct) e.direct_retries_left--;
         else e.flood_retries_left--;
       } else {
@@ -443,6 +454,19 @@ public:
       }
     }
     scheduleDmMaintenance();
+  }
+
+  // Low power deliberately ends automatic delivery. Rows remain failed and
+  // therefore retain the existing manual-resend action after power returns.
+  void cancelDmResends() {
+    for (int i = 0; i < _dm_hist_count; i++) {
+      DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
+      if (e.outgoing && e.ack_status == ACK_PENDING) {
+        e.ack_status = ACK_FAIL;
+        e.direct_retries_left = e.flood_retries_left = 0;
+      }
+    }
+    _dm_maintenance_pending = false;
   }
 
   // Recent DM contacts, newest first, deduped. Resolves the 4-byte _dm_hist

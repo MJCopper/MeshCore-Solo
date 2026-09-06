@@ -8,6 +8,7 @@
 #include "KeyboardWidget.h"
 #include "SensorPlaceholders.h"
 #include "../Features.h"
+#include "../solo/MessageTextPolicy.h"
 #if SOLO_FEAT_AUTOCOMPLETE
 #include "../solo/WordCompleter.h"
 #endif

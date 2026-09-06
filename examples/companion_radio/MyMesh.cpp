@@ -488,7 +488,8 @@ ContactInfo*  MyMesh::processAck(const uint8_t *data) {
   // UI incorrectly retries a message that was already delivered.
   uint32_t ack_crc;
   memcpy(&ack_crc, data, sizeof(ack_crc));
-  if (_ui) _ui->onMsgAck(ack_crc);
+  uint8_t ui_prefix[4];
+  bool ui_matched = _ui && _ui->matchMsgAck(ack_crc, ui_prefix);
 
   // see if matches any in a table
   for (int i = 0; i < EXPECTED_ACK_TABLE_SIZE; i++) {
@@ -507,7 +508,12 @@ ContactInfo*  MyMesh::processAck(const uint8_t *data) {
       return contact;
     }
   }
-  return checkConnectionsAck(data);
+  ContactInfo* connection = checkConnectionsAck(data);
+  if (ui_matched) {
+    ContactInfo* contact = lookupContactByPubKey(ui_prefix, sizeof(ui_prefix));
+    if (contact) return contact;
+  }
+  return connection;
 }
 
 void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packet *pkt,
@@ -714,9 +720,8 @@ void MyMesh::onCommandDataRecv(const ContactInfo &from, mesh::Packet *pkt, uint3
   // never displays TXT_TYPE_CLI_DATA on-device (see should_display), since that
   // path also serves the app's terminal, which must keep working unaffected.
 #if SOLO_FEAT_ADMIN
-  if (_ui && ui_pending_admin_reply && memcmp(&ui_pending_admin_reply, from.id.pub_key, 4) == 0) {
-    ui_pending_admin_reply = 0;
-    _ui->onAdminReply(from.id.pub_key, text);
+  if (_ui && _admin_session.complete(from.id.pub_key, text, millis())) {
+    _ui->onAdminReply(from.id.pub_key, text + 3);
   }
 #endif
 }
@@ -916,8 +921,18 @@ uint8_t MyMesh::onContactRequest(const ContactInfo &contact, uint32_t sender_tim
 }
 
 void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, uint8_t len) {
+  if (len < 4) return;
   uint32_t tag;
   memcpy(&tag, data, 4);
+
+  // UI telemetry owns its tag and full identity, independently of app requests.
+  if (sensorReplyState() == SENSOR_WAITING && tag == _sensor_tag &&
+      memcmp(_sensor_key, contact.id.pub_key, PUB_KEY_SIZE) == 0) {
+    sensorTelemetry.load(data + 4, len - 4);
+    _sensor_state = SENSOR_READY;
+    if (_ui) _ui->onSensorTelemetry();
+    return;
+  }
 
   if (pending_login && memcmp(&pending_login, contact.id.pub_key, 4) == 0) { // check for login response
     // yes, is response to pending sendLogin()
@@ -925,13 +940,13 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
 
     int i = 0;
     bool login_ok = false;
-    if (memcmp(&data[4], "OK", 2) == 0) { // legacy Repeater login OK response
+    if (len >= 6 && memcmp(&data[4], "OK", 2) == 0) { // legacy Repeater login OK response
       out_frame[i++] = PUSH_CODE_LOGIN_SUCCESS;
       out_frame[i++] = 0; // legacy: is_admin = false
       memcpy(&out_frame[i], contact.id.pub_key, 6);
       i += 6;                                     // pub_key_prefix
       login_ok = true;
-    } else if (data[4] == RESP_SERVER_LOGIN_OK) { // new login response
+    } else if (len >= 13 && data[4] == RESP_SERVER_LOGIN_OK) { // new login response
       uint16_t keep_alive_secs = ((uint16_t)data[5]) * 16;
       if (keep_alive_secs > 0) {
         startConnection(contact, keep_alive_secs);
@@ -960,7 +975,10 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
       else          forgetRoomPassword(contact.id.pub_key);
     }
     _serial->writeFrame(out_frame, i);
-  } else if (ui_pending_login && memcmp(&ui_pending_login, contact.id.pub_key, 4) == 0) { // check for on-device UI login response
+  } else if (ui_pending_login && memcmp(&ui_pending_login, contact.id.pub_key, 4) == 0
+      && !(pending_telemetry && tag == pending_telemetry)
+      && !(pending_req && tag == pending_req)
+      && solo::RoomLoginResponse::valid(data, len)) {
     ui_pending_login = 0;
 
     bool success;
@@ -1048,6 +1066,11 @@ bool MyMesh::getRoomPassword(const uint8_t* pub_key, char* out_password, uint8_t
 }
 
 bool MyMesh::saveRoomPassword(const uint8_t* pub_key, const char* password) {
+  RoomPwRec new_rec;
+  memcpy(new_rec.key, pub_key, 4);
+  strncpy(new_rec.pw, password, sizeof(new_rec.pw) - 1);
+  new_rec.pw[sizeof(new_rec.pw) - 1] = 0;
+
   // The table is tiny (<= MAX_SAVED_ROOM_PASSWORDS * 20 bytes), so just load
   // it whole, update/append/evict in RAM, then rewrite -- simpler and just
   // as crash-safe as a record seek given how rarely this runs (once per new
@@ -1058,17 +1081,17 @@ bool MyMesh::saveRoomPassword(const uint8_t* pub_key, const char* password) {
   if (rf) {
     RoomPwRec rec;
     while (count < MAX_SAVED_ROOM_PASSWORDS && rf.read((uint8_t *)&rec, sizeof(rec)) == sizeof(rec)) {
+      if (memcmp(rec.key, pub_key, 4) == 0 &&
+          strncmp(rec.pw, new_rec.pw, sizeof(rec.pw)) == 0) {
+        rf.close();
+        return true;  // reconnecting with the same password needs no flash write
+      }
       if (memcmp(rec.key, pub_key, 4) != 0) { // drop stale entry for this key -- replaced below
         recs[count++] = rec;
       }
     }
     rf.close();
   }
-
-  RoomPwRec new_rec;
-  memcpy(new_rec.key, pub_key, 4);
-  strncpy(new_rec.pw, password, sizeof(new_rec.pw) - 1);
-  new_rec.pw[sizeof(new_rec.pw) - 1] = 0;
 
   if (count < MAX_SAVED_ROOM_PASSWORDS) {
     recs[count++] = new_rec;
@@ -1550,7 +1573,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.auto_off_secs = 15;    // 15 seconds auto-off by default
   _prefs.clock_hide_seconds = Features::CLOCK_HIDE_SECONDS_DEFAULT ? 1 : 0;
   _prefs.tz_offset_hours = 0;  // UTC by default
-  _prefs.low_batt_mv = 3400;  // auto-shutdown at 3.4V by default
+  _prefs.low_batt_mv = 0;  // reserved legacy field; ignored by BatteryPolicy
   _prefs.batt_display_mode = 0; // icon by default
   //_prefs.rx_delay_base = 10.0f;  enable once new algo fixed
 #if defined(USE_SX1262) || defined(USE_SX1268)
@@ -1790,8 +1813,15 @@ void MyMesh::handleCmdFrame(size_t len) {
       int result;
       uint32_t expected_ack;
       if (txt_type == TXT_TYPE_CLI_DATA) {
+        // Do not reject or consume the app's request. Stop the local wait,
+        // so app and local edits cannot race, and drain late replies.
+        bool local_waiting = _admin_session.pending();
+        uint8_t local_key[PUB_KEY_SIZE];
+        memcpy(local_key, _admin_session.key(), sizeof(local_key));
         msg_timestamp = getRTCClock()->getCurrentTimeUnique(); // Use node's RTC instead of app timestamp to avoid tripping replay protection
         result = sendCommandData(*recipient, msg_timestamp, attempt, text, est_timeout);
+        _admin_session.appCommand(millis(), result == MSG_SEND_FAILED ? 0 : est_timeout + 4000);
+        if (local_waiting && _ui) _ui->onAdminReply(local_key, "App command active; result uncertain");
         expected_ack = 0; // no Ack expected
       } else {
         result = sendMessage(*recipient, msg_timestamp, attempt, text, expected_ack, est_timeout);
@@ -2210,6 +2240,14 @@ void MyMesh::handleCmdFrame(size_t len) {
       } else {
         clearPendingReqs();
         memcpy(&pending_login, recipient->id.pub_key, 4); // match this to onContactResponse()
+        // App login takes priority over an ambiguous UI login. Cancel the UI
+        // wait explicitly without treating its saved credential as rejected.
+        if (ui_pending_login) {
+          uint32_t cancelled = ui_pending_login;
+          ui_pending_login = 0;
+          _ui->onRoomLoginCancelled((const uint8_t*)&cancelled);
+        }
+        _app_login_deadline = millis() + est_timeout + 4000;
         strncpy(pending_login_pw, password, sizeof(pending_login_pw) - 1); // saved on success if it's a room
         pending_login_pw[sizeof(pending_login_pw) - 1] = 0;
         out_frame[0] = RESP_CODE_SENT;
@@ -2981,6 +3019,8 @@ void MyMesh::checkSerialInterface() {
 void MyMesh::loop() {
   BaseChatMesh::loop();
 
+  if (_low_power_mode && !_emergency_mode) return;
+
   // Close UI relay-count windows. A zero count becomes a failed-to-hear marker;
   // one or more echoes retain their final count.
   if (_relay_active > 0) {
@@ -3009,7 +3049,7 @@ void MyMesh::loop() {
     dirty_contacts_expiry = 0;
   }
 
-  if (_prefs.advert_auto_interval_sec > 0 && millisHasNowPassed(_next_auto_advert_ms)) {
+  if (!_low_power_mode && _prefs.advert_auto_interval_sec > 0 && millisHasNowPassed(_next_auto_advert_ms)) {
     sendConfiguredSelfAdvert(false);
     _next_auto_advert_ms = futureMillis(_prefs.advert_auto_interval_sec * 1000UL);
   }
@@ -3025,6 +3065,7 @@ void MyMesh::loop() {
 }
 
 bool MyMesh::advert() {
+  if (_low_power_mode) return false;
   return sendConfiguredSelfAdvert(false);
 }
 

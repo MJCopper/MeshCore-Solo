@@ -21,7 +21,7 @@ static inline bool childOptional(uint8_t bit) {
 static inline bool childHidden(uint8_t bit) {
   return bit == NodePrefs::HPB_RADIO || bit == NodePrefs::HPB_BLUETOOTH ||
          bit == NodePrefs::HPB_ADVERT || bit == NodePrefs::HPB_GPS ||
-         bit == NodePrefs::HPB_TOOLS;
+         bit == NodePrefs::HPB_TOOLS || bit == NodePrefs::HPB_SENSORS;
 }
 
 static inline bool visible(const NodePrefs* prefs, uint8_t bit, bool child_locked) {
@@ -44,7 +44,7 @@ static inline int defaultOrder(uint8_t* order, int capacity) {
     NodePrefs::HPB_GPS,
 #endif
     NodePrefs::HPB_ADVERT, NodePrefs::HPB_BLUETOOTH, NodePrefs::HPB_RADIO,
-    NodePrefs::HPB_TOOLS, NodePrefs::HPB_SETTINGS,
+    NodePrefs::HPB_SENSORS, NodePrefs::HPB_TOOLS, NodePrefs::HPB_SETTINGS,
   };
   int count = 0;
   for (int i = 0; i < (int)(sizeof(BITS) / sizeof(BITS[0])) && count < capacity; i++)

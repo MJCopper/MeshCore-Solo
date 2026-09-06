@@ -59,7 +59,7 @@ class SettingsScreen : public UIScreen {
 #if ENV_INCLUDE_GPS == 1
     HOME_GPS,
 #endif
-    HOME_ADVERT, HOME_BT, HOME_RADIO, HOME_TOOLS, HOME_SETTINGS,
+    HOME_ADVERT, HOME_BT, HOME_RADIO, HOME_SENSORS, HOME_TOOLS, HOME_SETTINGS,
     // Radio section
     SECTION_RADIO,
     TX_POWER,
@@ -73,7 +73,6 @@ class SettingsScreen : public UIScreen {
     GPS_MODE,
 #endif
     BLUETOOTH_ENABLED,
-    LOW_BAT,
     UNITS,
     REBOOT,
     // Keyboard section
@@ -105,6 +104,7 @@ class SettingsScreen : public UIScreen {
 #if ENV_INCLUDE_GPS == 1
   bool _gps_dirty = false; // staged until this settings screen is closed
   uint8_t _gps_initial_mode = 0;
+  uint8_t _gps_pending_mode = 0;
 #endif
   bool _bluetooth_dirty = false; // staged with GPS; applied and saved on exit
   uint8_t _bluetooth_initial = 1;
@@ -125,9 +125,6 @@ class SettingsScreen : public UIScreen {
   static const char* AUTO_OFF_LABELS[5];
   static const int AUTO_OFF_COUNT = 5;
 #endif
-  static const uint16_t LOW_BAT_OPTS[7];
-  static const char* LOW_BAT_LABELS[7];
-  static const int LOW_BAT_COUNT = 7;
   static const char* BATT_DISPLAY_LABELS[3];
   static const int BATT_DISPLAY_COUNT = 3;
   static const char* SOUND_LABELS[4];
@@ -138,14 +135,6 @@ class SettingsScreen : public UIScreen {
   static const char* EINK_FULL_REFRESH_LABELS[5];
   static const int   EINK_FULL_REFRESH_COUNT = 5;
 #endif
-
-  int lowBatIndex() {
-    NodePrefs* p = _task->getNodePrefs();
-    if (!p) return 0;
-    for (int i = 0; i < LOW_BAT_COUNT; i++)
-      if (LOW_BAT_OPTS[i] == p->low_batt_mv) return i;
-    return 0;
-  }
 
   // The companion's own radio fields, as the shared preset picker's target
   // (Tools › Repeater points the same picker at the dedicated repeater profile).
@@ -236,7 +225,7 @@ class SettingsScreen : public UIScreen {
     return item == HOME_RADIO      || item == HOME_BT      ||
            item == HOME_ADVERT   || item == HOME_TOOLS      ||
            item == HOME_SETTINGS   || item == HOME_QUICK_MSG ||
-           item == HOME_FAVOURITES
+           item == HOME_FAVOURITES || item == HOME_SENSORS
 #if ENV_INCLUDE_GPS == 1
            || item == HOME_GPS
 #endif
@@ -271,6 +260,7 @@ class SettingsScreen : public UIScreen {
   // Returns the bit-index used in page_order for this SettingItem, or -1.
   // Bit-index values are defined once in NodePrefs::HomePageBit.
   int homePageBitIndex(int item) const {
+    if (item == HOME_SENSORS)   return NodePrefs::HPB_SENSORS;
     if (item == HOME_FAVOURITES) return NodePrefs::HPB_FAVOURITES;
     if (item == HOME_RADIO)     return NodePrefs::HPB_RADIO;
     if (item == HOME_BT)        return NodePrefs::HPB_BLUETOOTH;
@@ -458,16 +448,12 @@ class SettingsScreen : public UIScreen {
     } else if (item == GPS_MODE) {
       display.print("GPS");
       display.setCursor(valCol(display), y);
-      display.print(solo::GpsMode::label(_task->getGPSMode()));
+      display.print(solo::GpsMode::label(_gps_pending_mode));
 #endif
     } else if (item == BLUETOOTH_ENABLED) {
       display.print("Bluetooth");
       display.setCursor(valCol(display), y);
       display.print((p && p->bluetooth_enabled) ? "On" : "Off");
-    } else if (item == LOW_BAT) {
-      display.print("Low Battery");
-      display.setCursor(valCol(display), y);
-      display.print(LOW_BAT_LABELS[lowBatIndex()]);
     } else if (item == UNITS) {
       display.print("Units");
       display.setCursor(valCol(display), y);
@@ -587,7 +573,12 @@ class SettingsScreen : public UIScreen {
     bool gps_changed = false;
 #if ENV_INCLUDE_GPS == 1
     gps_changed = _gps_dirty;
-    if (gps_changed) _task->applyGpsPrefs();
+    if (gps_changed) {
+      NodePrefs* p = _task->getNodePrefs();
+      p->gps_enabled = _gps_pending_mode != 0;
+      p->gps_interval = solo::GpsMode::interval(_gps_pending_mode);
+      _task->applyGpsPrefs();
+    }
 #endif
     bool bluetooth_changed = _bluetooth_dirty;
     if (bluetooth_changed) _task->applyBluetoothPrefs();
@@ -618,10 +609,19 @@ public:
 #if ENV_INCLUDE_GPS == 1
     _gps_dirty = false;
     _gps_initial_mode = _task->getGPSMode();
+    _gps_pending_mode = _gps_initial_mode;
 #endif
     _bluetooth_dirty = false;
     _bluetooth_initial = p ? p->bluetooth_enabled : 1;
     _edit_name = false;
+    _edit_slot = -1;
+    _picker.menu.active = false;
+    _picker.saving = false;
+    _picker.deleting = false;
+    _child_pin.active = false;
+    _child_pin_confirming = false;
+    _child_pin_first_hash = 0;
+    _child_warning_active = false;
     _quiet_edit_item = -1;
     _quiet_editor.editing = false;
     _active_section = (_open_section >= 0 && _open_section < _num_sections)
@@ -679,13 +679,21 @@ public:
   }
 
   bool handleInput(char c) override {
+    if (_task->isChildModeLocked()) {
+      _task->gotoHomeScreen();
+      return true;
+    }
     if (_child_warning_active) {
       if (keyIsPrev(c) || keyIsNext(c) || c == KEY_UP || c == KEY_DOWN) {
         _child_warning_enable = !_child_warning_enable;
       } else if (c == KEY_ENTER) {
         if (_child_warning_enable) {
           NodePrefs* p = _task->getNodePrefs();
-          if (p) { p->child_mode_enabled = 1; _dirty = true; }
+          if (p) {
+            _task->setChildAdminUnlocked(true);  // finish this authenticated settings visit
+            p->child_mode_enabled = 1;
+            _dirty = true;
+          }
         }
         _child_warning_active = false;
       } else if (c == KEY_CANCEL) {
@@ -933,11 +941,10 @@ public:
     }
 #if ENV_INCLUDE_GPS == 1
     if (_selected == GPS_MODE && p && (left || right || enter)) {
-      int mode = _task->getGPSMode();
+      int mode = _gps_pending_mode;
       if (left) mode = (mode + solo::GpsMode::COUNT - 1) % solo::GpsMode::COUNT;
       else mode = (mode + 1) % solo::GpsMode::COUNT;
-      p->gps_enabled = mode == 0 ? 0 : 1;
-      p->gps_interval = solo::GpsMode::interval((uint8_t)mode);
+      _gps_pending_mode = (uint8_t)mode;
       _gps_dirty = (uint8_t)mode != _gps_initial_mode;
       return true;
     }
@@ -946,12 +953,6 @@ public:
       p->bluetooth_enabled ^= 1;
       _bluetooth_dirty = p->bluetooth_enabled != _bluetooth_initial;
       return true;
-    }
-    if (_selected == LOW_BAT && p) {
-      int idx = lowBatIndex();
-      if (right) idx = (idx + 1) % LOW_BAT_COUNT;
-      if (left)  idx = (idx + LOW_BAT_COUNT - 1) % LOW_BAT_COUNT;
-      if (left || right) { p->low_batt_mv = LOW_BAT_OPTS[idx]; _dirty = true; return true; }
     }
     if (_selected == UNITS && p && (left || right || enter)) {
       p->units_imperial ^= 1;
@@ -1086,8 +1087,6 @@ public:
 const uint16_t SettingsScreen::AUTO_OFF_OPTS[5]   = { 5, 15, 30, 60, 0 };
 const char*    SettingsScreen::AUTO_OFF_LABELS[5]  = { "5s", "15s", "30s", "60s", "Never" };
 #endif
-const uint16_t SettingsScreen::LOW_BAT_OPTS[7]   = { 0, 3000, 3100, 3200, 3300, 3400, 3500 };
-const char*    SettingsScreen::LOW_BAT_LABELS[7]  = { "Off", "3.0V", "3.1V", "3.2V", "3.3V", "3.4V", "3.5V" };
 const char*    SettingsScreen::BATT_DISPLAY_LABELS[3] = { "Icon", "%", "V" };
 const char*    SettingsScreen::SOUND_LABELS[4] = { "Built-in", "M1", "M2", "None" };
 const char*    SettingsScreen::AD_SCOPE_LABELS[2] = { "All", "Zero-hop" };

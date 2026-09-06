@@ -291,11 +291,16 @@ class MessagesScreen : public UIScreen {
   // Conversation controls deliberately avoid a selectable compose row: a short
   // Enter opens the editor. Hold Enter opens saved quick messages directly,
   // except when this transcript has a failed send and needs a resend action.
+  int sendTextLimit() const {
+    return (int)solo::MessageTextPolicy::limit(MAX_TEXT_LEN,
+        _sending_to_channel ? the_mesh.getNodeName() : nullptr);
+  }
+
   void beginCustomMessage(bool replying = false) {
     _reply_mode = replying;
     _quick_msgs_bypassed = true;
     messageeditor::begin(*_kb, replying ? _reply_prefix : "",
-                         messageeditor::SEND_TEXT_LIMIT, &sensors);
+                         sendTextLimit(), &sensors);
     _phase = KEYBOARD;
   }
 
@@ -470,6 +475,7 @@ class MessagesScreen : public UIScreen {
     _last_ack_deadline_ms = 0;
     _last_send_ts = 0;
     _last_send_route = DELIVERY_ROUTE_NONE;
+    if (strlen(msg) > (size_t)sendTextLimit()) return false;
     if (_sending_to_channel) {
       ChannelDetails ch;
       if (!the_mesh.getChannel(_sel_channel_idx, ch)) return false;
@@ -478,6 +484,12 @@ class MessagesScreen : public UIScreen {
       return the_mesh.sendGroupMessage(rtc_clock.getCurrentTime(), ch.channel,
                                        the_mesh.getNodeName(), msg, strlen(msg));
     } else {
+      // Paths and favourites may have changed since this transcript opened.
+      ContactInfo* current = the_mesh.lookupContactByPubKey(_sel_contact.id.pub_key, PUB_KEY_SIZE);
+      if (!current || !solo::Policy::contactAllowed(_task->getNodePrefs(),
+                                                    _task->isChildModeLocked(), current))
+        return false;
+      _sel_contact = *current;
       uint32_t send_ts = rtc_clock.getCurrentTime();
       uint32_t expected_ack = 0, est_timeout = 0;
       _last_send_route = _sel_contact.out_path_len == OUT_PATH_UNKNOWN
@@ -716,7 +728,9 @@ public:
         && _phase == DM_HIST
         && memcmp(_sel_contact.id.pub_key, pub_key, 4) == 0;
   }
-  void markDmDelivered(uint32_t ack_crc) { _history.markDmDelivered(ack_crc); }
+  bool markDmDelivered(uint32_t ack_crc, uint8_t* prefix = nullptr) {
+    return _history.markDmDelivered(ack_crc, prefix);
+  }
 
   bool isRoomLoggedIn(const uint8_t* pub_key) const {
     return _task->isRoomLoggedIn(pub_key);
@@ -775,6 +789,7 @@ public:
   // Background tick (called every UI loop, regardless of the active screen) that
   // drives auto-resend of on-device DMs — forwarded to the history store.
   void tickDmResends() { _history.tickDmResends(); }
+  void cancelDmResends() { _history.cancelDmResends(); }
 
   int getDMUnreadTotal() const {
     return _task->getDMUnreadTotal();
@@ -1885,6 +1900,7 @@ public:
           } else {
             expandMsg(_kb->buf, expanded, sizeof(expanded));
           }
+          solo::MessageTextPolicy::trim(expanded, sendTextLimit());
           bool ok = sendText(expanded);
           afterSend(ok, expanded);
         }
@@ -1908,6 +1924,7 @@ public:
         const char* tmpl = p ? p->custom_msgs[slot] : "OK";
         char msg[MSG_TEXT_BUF];
         expandMsg(tmpl, msg, sizeof(msg));
+        solo::MessageTextPolicy::trim(msg, sendTextLimit());
         bool ok = sendText(msg);
         afterSend(ok, msg);
         return true;

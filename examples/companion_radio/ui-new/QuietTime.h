@@ -17,8 +17,9 @@ static inline uint16_t localMinuteOfDay(uint32_t utc_time, int8_t tz_offset_hour
   return (uint16_t)(seconds / 60);
 }
 
-static inline bool active(const NodePrefs* prefs, uint32_t utc_time) {
-  if (!prefs || !prefs->quiet_time_enabled || utc_time < MIN_VALID_UNIX_TIME)
+static inline bool active(const NodePrefs* prefs, uint32_t utc_time, bool time_synced) {
+  // A restored shutdown timestamp is plausible, but not a live clock sync.
+  if (!time_synced || !prefs || !prefs->quiet_time_enabled || utc_time < MIN_VALID_UNIX_TIME)
     return false;
 
   uint16_t start = prefs->quiet_time_start_min;

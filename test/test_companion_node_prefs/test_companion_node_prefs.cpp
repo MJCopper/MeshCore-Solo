@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <Stream.h>
 
 #include "../../examples/companion_radio/NodePrefs.h"
 

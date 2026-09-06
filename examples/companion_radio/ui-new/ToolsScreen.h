@@ -19,9 +19,6 @@ class ToolsScreen : public UIScreen {
 #if SOLO_FEAT_REPEATER
     ACT_REPEATER,
 #endif
-#if SOLO_FEAT_ADMIN
-    ACT_ADMIN,
-#endif
 #if SOLO_FEAT_CLOCK_TOOLS
     ACT_CLOCK,
 #endif
@@ -53,9 +50,6 @@ class ToolsScreen : public UIScreen {
 #endif
 #if SOLO_FEAT_REPEATER
       case ACT_REPEATER:    _task->gotoRepeaterScreen();    break;
-#endif
-#if SOLO_FEAT_ADMIN
-      case ACT_ADMIN:       _task->pickAdminTarget();       break;
 #endif
 #if SOLO_FEAT_CLOCK_TOOLS
       case ACT_CLOCK:       _task->gotoClockTools();        break;
@@ -129,9 +123,6 @@ const ToolsScreen::Tool ToolsScreen::TOOLS[] = {
 #endif
 #if SOLO_FEAT_REPEATER
   { "Repeater Mode",   &ICON_REPEATER,     ACT_REPEATER },
-#endif
-#if SOLO_FEAT_ADMIN
-  { "Admin",           &ICON_GEAR,         ACT_ADMIN },
 #endif
 #if SOLO_FEAT_CLOCK_TOOLS
   { "Clock Tools",     &ICON_ALARM,        ACT_CLOCK },

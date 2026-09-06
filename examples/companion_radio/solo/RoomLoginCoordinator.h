@@ -46,6 +46,7 @@ public:
   bool complete(const uint8_t* pub_key, Attempt& completed) {
     if (!_active || !pub_key || memcmp(_attempt.pub_key, pub_key, 4) != 0) return false;
     completed = _attempt;
+    memset(&_attempt, 0, sizeof(_attempt));
     _active = false;
     return true;
   }
@@ -54,6 +55,7 @@ public:
     if (!_active || _attempt.owner != owner || !pub_key
         || memcmp(_attempt.pub_key, pub_key, 4) != 0) return false;
     if (cancelled) *cancelled = _attempt;
+    memset(&_attempt, 0, sizeof(_attempt));
     _active = false;
     return true;
   }
@@ -61,6 +63,7 @@ public:
   bool takeTimeout(uint32_t now, Attempt& timed_out) {
     if (!_active || (int32_t)(now - _deadline_ms) < 0) return false;
     timed_out = _attempt;
+    memset(&_attempt, 0, sizeof(_attempt));
     _active = false;
     return true;
   }

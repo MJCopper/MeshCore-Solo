@@ -27,6 +27,8 @@ Both builds support BLE and USB serial. Firmware is available from the
 - PIN-protected Child Mode and scheduled Quiet Time.
 - On-device radio, advert, notification and home-page settings.
 - Node discovery, companion repeater mode, ringtone editor and diagnostics.
+- Remote repeater and room administration from the Node List action menu.
+- Sensors carousel with on-demand remote telemetry.
 
 See [FEATURES.md](./FEATURES.md) for the compact feature summary.
 

@@ -56,7 +56,7 @@ struct NodePrefs {  // persisted to file
   uint8_t display_brightness;   // 0=min..4=max, default 2 (medium)
   uint16_t auto_off_secs;       // display auto-off: 0=never, else seconds (default 15)
   int8_t tz_offset_hours;       // timezone offset from UTC, -12..+14 (default 0)
-  uint16_t low_batt_mv;         // auto-shutdown threshold: 0=disabled, 3000-3500 mV
+  uint16_t low_batt_mv;         // reserved legacy field; shutdown uses BatteryPolicy
   uint8_t batt_display_mode;   // 0=icon, 1=percent, 2=voltage
   char custom_msgs[10][140];   // user-defined quick messages (supports {loc}, {time})
   uint64_t ch_notif_override;  // bitmask: bit i = channel i has explicit notification setting [del→onChannelRemoved]
@@ -504,17 +504,17 @@ struct NodePrefs {  // persisted to file
   // in active masks or exposed as labels.
   static const uint16_t HP_ALL        = HP_CLOCK | HP_RECENT | HP_RADIO |
                                         HP_BLUETOOTH | HP_ADVERT | HP_GPS |
-                                        HP_TOOLS | HP_FAVOURITES;
+                                        HP_TOOLS | HP_FAVOURITES | HP_SENSORS;
   // Messages and Settings have no mask bit and are always visible. Recent,
   // Radio, Bluetooth, Advert and GPS remain opt-in through Home Pages.
-  static const uint16_t HP_DEFAULT    = HP_CLOCK | HP_TOOLS | HP_FAVOURITES;
+  static const uint16_t HP_DEFAULT    = HP_CLOCK | HP_TOOLS | HP_FAVOURITES | HP_SENSORS;
 
   // Label for home page by bit-index; returns "" for out-of-range.
   // Array indices match HomePageBit values.
   static const char* homePageLabel(uint8_t bit) {
     static const char* labels[HPB_COUNT] = {
       "Clock", "Recent", "Radio", "Bluetooth", "Advert",
-      "GPS", "", "Tools", "", "Settings", "Messages", "Favourites", ""
+      "GPS", "Sensors", "Tools", "", "Settings", "Messages", "Favourites", ""
     };
     return (bit < HPB_COUNT) ? labels[bit] : "";
   }

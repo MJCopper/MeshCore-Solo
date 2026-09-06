@@ -4,6 +4,9 @@
 #include <Mesh.h>
 #include "AbstractUITask.h"
 #include "solo/SoloPolicy.h"
+#include "solo/RoomLoginResponse.h"
+#include "solo/AdminSession.h"
+#include "solo/SensorTelemetry.h"
 #include <helpers/ui/DisplayDriver.h>
 
 // Forward declaration for UITask
@@ -95,6 +98,49 @@ struct DiscoverResult {
 
 class MyMesh : public BaseChatMesh, public DataStoreHost {
 public:
+  void setLowPowerMode(bool active) {
+    if (_low_power_mode == active) return;
+    _low_power_mode = active;
+    if (!active) _emergency_mode = false;
+    if (active) clearPendingReqs();
+    setRadioSuspended(active && !_emergency_mode);
+    if (!active) {
+      applyRadioParams();
+      _next_auto_advert_ms = _prefs.advert_auto_interval_sec
+          ? futureMillis(_prefs.advert_auto_interval_sec * 1000UL) : 0;
+    }
+  }
+  bool isLowPowerMode() const { return _low_power_mode; }
+  void setEmergencyMode(bool active) {
+    active = active && _low_power_mode;
+    if (_emergency_mode == active) return;
+    _emergency_mode = active;
+    setRadioSuspended(_low_power_mode && !_emergency_mode);
+    if (_emergency_mode) applyRadioParams();
+  }
+  bool isEmergencyMode() const { return _emergency_mode; }
+  bool radioAvailable() const { return !_low_power_mode || _emergency_mode; }
+  int sendMessage(const ContactInfo& recipient, uint32_t timestamp, uint8_t attempt,
+                  const char* text, uint32_t& expected_ack, uint32_t& est_timeout) {
+    return !radioAvailable() ? MSG_SEND_FAILED
+                           : BaseChatMesh::sendMessage(recipient, timestamp, attempt, text,
+                                                       expected_ack, est_timeout);
+  }
+  bool sendGroupMessage(uint32_t timestamp, mesh::GroupChannel& channel,
+                        const char* sender_name, const char* text, int text_len) {
+    return radioAvailable() && BaseChatMesh::sendGroupMessage(timestamp, channel,
+                                                               sender_name, text, text_len);
+  }
+  int sendRequest(const ContactInfo& recipient, uint8_t req_type,
+                  uint32_t& tag, uint32_t& est_timeout) {
+    return !radioAvailable() ? MSG_SEND_FAILED
+                           : BaseChatMesh::sendRequest(recipient, req_type, tag, est_timeout);
+  }
+  int sendRequest(const ContactInfo& recipient, const uint8_t* data, uint8_t len,
+                  uint32_t& tag, uint32_t& est_timeout) {
+    return !radioAvailable() ? MSG_SEND_FAILED
+                           : BaseChatMesh::sendRequest(recipient, data, len, tag, est_timeout);
+  }
   MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMeshTables &tables, DataStore& store, AbstractUITask* ui=NULL);
 
   void begin(bool has_display);
@@ -214,10 +260,34 @@ private:
   bool getChannelForSave(uint8_t channel_idx, ChannelDetails& ch) override { return getChannel(channel_idx, ch); }
 
   void clearPendingReqs() {
-    pending_login = pending_status = pending_telemetry = pending_discovery = pending_req = ui_pending_login = 0;
+    pending_login = pending_status = pending_telemetry = pending_discovery = pending_req = 0;
   }
 
 public:
+  // Local sensor view uses an independent request; never clear app requests.
+  solo::SensorTelemetry sensorTelemetry;
+  enum SensorReplyState { SENSOR_IDLE, SENSOR_WAITING, SENSOR_READY, SENSOR_FAILED };
+  SensorReplyState sensorReplyState() {
+    if (_sensor_state == SENSOR_WAITING && (int32_t)(millis() - _sensor_deadline) >= 0)
+      _sensor_state = SENSOR_FAILED;
+    return _sensor_state;
+  }
+  void cancelSensorTelemetry() { _sensor_state = SENSOR_IDLE; sensorTelemetry.clear(); }
+  bool requestSensorTelemetry(const uint8_t* key) {
+    cancelSensorTelemetry();
+    ContactInfo* contact = lookupContactByPubKey(key, PUB_KEY_SIZE);
+    uint32_t timeout;
+    if (!contact || contact->type != ADV_TYPE_SENSOR ||
+        sendRequest(*contact, REQ_TYPE_GET_TELEMETRY_DATA, _sensor_tag, timeout) == MSG_SEND_FAILED) {
+      _sensor_state = SENSOR_FAILED;
+      return false;
+    }
+    memcpy(_sensor_key, key, PUB_KEY_SIZE);
+    _sensor_deadline = millis() + timeout;
+    _sensor_state = SENSOR_WAITING;
+    return true;
+  }
+
   // On-device UI login to a room/repeater contact — no phone app required.
   // The room server's ACL grants permission per-identity (self_id), not per
   // command source, so this reuses the same sendLogin() the BLE CMD_SEND_LOGIN
@@ -230,7 +300,10 @@ public:
     // and binary requests have their own response matching and must not make a
     // standalone room login appear to fail merely because an app request is
     // still pending.
-    if (ui_pending_login || pending_login) return false;
+    if (ui_pending_login || solo::RoomLoginResponse::busy(
+          pending_login, _app_login_deadline, millis())) return false;
+    // An unanswered app login must not indefinitely reserve the UI login path.
+    pending_login = 0;
     if (sendLogin(contact, password, est_timeout) == MSG_SEND_FAILED) return false;
     memcpy(&ui_pending_login, contact.id.pub_key, 4); // match this in onContactResponse()
     return true;
@@ -264,14 +337,20 @@ public:
   // CMD_SET_CHANNEL BLE handler already performs, so both paths stay in sync.
   bool setChannelLocal(uint8_t idx, const ChannelDetails& ch);
 
-  // On-device "remote admin" (Tools > Admin): send a CLI command to a node
-  // you're logged into with admin permission (see ClientACL::isAdmin()). The
-  // reply is a text frame (TXT_TYPE_CLI_DATA) delivered via onCommandDataRecv();
-  // this just tracks which contact's reply AdminScreen is currently waiting on.
+  // Local administration uses the same wire commands as the app, but owns
+  // its pending reply independently. Always resolve the current routing data.
+  void authorizeAdmin(const uint8_t* key) { _admin_session.authorize(key); }
+  void cancelAdminCommand() { _admin_session.cancel(millis()); }
+  void closeAdminSession() { _admin_session.close(millis()); }
   bool sendAdminCommand(const ContactInfo& contact, const char* cmd_text, uint32_t& est_timeout) {
-    if (sendCommandData(contact, rtc_clock.getCurrentTime(), 0, cmd_text, est_timeout) == MSG_SEND_FAILED)
+    ContactInfo* current = lookupContactByPubKey(contact.id.pub_key, PUB_KEY_SIZE);
+    if (!current || (_ui && _ui->isChildModeRestricted()) ||
+        !_admin_session.ready(contact.id.pub_key, millis())) return false;
+    char tagged[161];
+    if (!_admin_session.formatRequest(tagged, sizeof(tagged), cmd_text)) return false;
+    if (sendCommandData(*current, rtc_clock.getCurrentTimeUnique(), 0, tagged, est_timeout) == MSG_SEND_FAILED)
       return false;
-    memcpy(&ui_pending_admin_reply, contact.id.pub_key, 4);
+    _admin_session.begin(millis(), est_timeout + 4000);
     return true;
   }
 
@@ -369,9 +448,15 @@ private:
   DataStore* _store;
   NodePrefs _prefs;
   uint32_t pending_login;
-  uint32_t ui_pending_login;  // like pending_login, but triggered by on-device UI instead of BLE/USB app
+  bool _low_power_mode = false;
+  bool _emergency_mode = false;
+  uint32_t _app_login_deadline = 0;
+  uint32_t ui_pending_login = 0;  // independent of app status/telemetry requests
   char pending_login_pw[16];  // password of the in-flight app/USB login, persisted on success for ADV_TYPE_ROOM (see saveRoomPassword)
-  uint32_t ui_pending_admin_reply;  // pub_key prefix of the contact AdminScreen's sendAdminCommand() is awaiting a CLI reply from
+  solo::AdminSession _admin_session;
+  SensorReplyState _sensor_state = SENSOR_IDLE;
+  uint8_t _sensor_key[PUB_KEY_SIZE] = {};
+  uint32_t _sensor_tag = 0, _sensor_deadline = 0;
   uint32_t pending_status;
   uint32_t pending_telemetry, pending_discovery;   // pending _TELEMETRY_REQ
   uint32_t pending_req;   // pending _BINARY_REQ

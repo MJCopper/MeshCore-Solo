@@ -61,6 +61,11 @@ public:
    */
   virtual void loop() { }
 
+  // Reversible runtime sleep, distinct from whole-device shutdown. Generic
+  // radios may reinitialise on resume; concrete drivers can preserve config.
+  virtual void suspend() { }
+  virtual void resume() { begin(); }
+
   virtual int getNoiseFloor() const { return 0; }
 
   virtual void triggerNoiseFloorCalibrate(int threshold) { }
@@ -129,6 +134,7 @@ class Dispatcher {
   unsigned long tx_budget_ms;
   unsigned long last_budget_update;
   unsigned long duty_cycle_window_ms;
+  bool radio_suspend_requested, radio_suspended;
 
   void processRecvPacket(Packet* pkt);
   void updateTxBudget();
@@ -184,6 +190,8 @@ protected:
 public:
   void begin();
   void loop();
+  void setRadioSuspended(bool suspended);
+  bool isRadioSuspended() const { return radio_suspend_requested; }
 
   Packet* obtainNewPacket();
   void releasePacket(Packet* packet);

@@ -64,7 +64,6 @@ class GxEPDDisplay : public DisplayDriver {
   uint8_t _full_refresh_interval = 0;
   uint8_t _partial_count = 0;
 
-  int16_t drawGlyph(int16_t x, int16_t y, uint32_t cp, int sc);
   uint8_t glyphXAdvance(uint32_t cp, int sc);
   int scale() const { return (width() >= height()) ? 2 : 1; }
 

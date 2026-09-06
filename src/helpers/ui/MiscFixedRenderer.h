@@ -6,7 +6,7 @@
 #include "LemonIcons.h"
 #include "EmojiGlyphs.h"
 
-// Shared misc-fixed 6x9 text renderer for the monochrome OLED drivers.
+// Shared misc-fixed 6x9 text renderer for monochrome OLED and e-ink drivers.
 //
 // Both Adafruit_SH110X and Adafruit_SSD1306 derive from Adafruit_GFX and the
 // font path is pure pixel plotting, so SH1106Display and SSD1306Display render

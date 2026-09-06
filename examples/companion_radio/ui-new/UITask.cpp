@@ -198,38 +198,6 @@ static const int QUICK_MSGS_MAX = 10;
   #define BATT_MIN_MILLIVOLTS 3200
 #endif
 
-// LiPo discharge curve: voltage (mV) → raw capacity (%) for the top-bar battery
-// indicator. low_mv (typically NodePrefs.low_batt_mv, the
-// user-configurable auto-shutdown threshold in Settings) is rescaled to 0%
-// so the bar empties at the cutoff the user actually cares about.
-static int battMvToPercent(int mv, int low_mv) {
-  static const struct { uint16_t mv; uint8_t pct; } CURVE[] = {
-    {3200,  0}, {3300,  3}, {3400,  8}, {3500, 15},
-    {3600, 25}, {3650, 33}, {3700, 45}, {3750, 58},
-    {3800, 68}, {3900, 77}, {4000, 86}, {4100, 93}, {4170, 100}
-  };
-  static const int CURVE_LEN = sizeof(CURVE) / sizeof(CURVE[0]);
-  auto curveAt = [&](int v) -> int {
-    if (v <= (int)CURVE[0].mv) return CURVE[0].pct;
-    if (v >= (int)CURVE[CURVE_LEN-1].mv) return CURVE[CURVE_LEN-1].pct;
-    for (int i = 1; i < CURVE_LEN; i++) {
-      if (v <= (int)CURVE[i].mv) {
-        int span_mv  = CURVE[i].mv  - CURVE[i-1].mv;
-        int span_pct = CURVE[i].pct - CURVE[i-1].pct;
-        return CURVE[i-1].pct + (v - (int)CURVE[i-1].mv) * span_pct / span_mv;
-      }
-    }
-    return 100;
-  };
-  if (low_mv <= 0) low_mv = BATT_MIN_MILLIVOLTS;
-  int raw_pct = curveAt(mv);
-  int low_pct = curveAt(low_mv);
-  int pct = (low_pct >= 100) ? 0 : (raw_pct - low_pct) * 100 / (100 - low_pct);
-  if (pct < 0)   pct = 0;
-  if (pct > 100) pct = 100;
-  return pct;
-}
-
 // Render the time starting at top_y; returns the y just below the time block
 // so the caller can flow the date and message-count row beneath it.
 //
@@ -313,6 +281,8 @@ static int drawClockSync(DisplayDriver& d, int top_y, bool h12) {
   return date_y;
 }
 
+#include "SensorPage.h"
+
 // ── HomeScreen ────────────────────────────────────────────────────────────────
 class HomeScreen : public UIScreen {
   enum HomePage {
@@ -328,6 +298,8 @@ class HomeScreen : public UIScreen {
     SETTINGS,
     TOOLS,
     QUICK_MSG,
+    SENSORS,
+    EMERGENCY,
     Count    // keep as last
   };
 
@@ -338,6 +310,9 @@ class HomeScreen : public UIScreen {
   uint8_t _tools_sel = 0, _tools_scroll = 0;
   PopupMenu _msg_menu;
   PopupMenu _fav_menu;
+  PopupMenu _emergency_menu;
+  bool _emergency_menu_disables = false;
+  SensorPage _sensor_page;
   static const uint32_t HOME_IDLE_RETURN_MS = 5UL * 60UL * 1000UL;
   uint32_t _home_idle_deadline = 0;
 
@@ -349,6 +324,7 @@ class HomeScreen : public UIScreen {
     if (_page == CLOCK || _home_idle_deadline == 0 ||
         (int32_t)(millis() - _home_idle_deadline) < 0) return;
     _page = CLOCK;
+    _sensor_page.close();
     _msg_menu.active = false;
     _fav_menu.active = false;
     _pin_menu.active = false;
@@ -460,6 +436,7 @@ class HomeScreen : public UIScreen {
   NodePrefs* _node_prefs;
   uint8_t _page;
   int pageBit(int page) const {
+    if (page == SENSORS)    return NodePrefs::HPB_SENSORS;
     if (page == CLOCK)      return NodePrefs::HPB_CLOCK;
     if (page == FAVOURITES) return NodePrefs::HPB_FAVOURITES;
     if (page == RECENT)    return NodePrefs::HPB_RECENT;
@@ -477,6 +454,7 @@ class HomeScreen : public UIScreen {
   // Returns -1 if the page is not compiled in.
   int bitToPage(int bit) const {
     switch (bit) {
+      case NodePrefs::HPB_SENSORS:    return SENSORS;
       case NodePrefs::HPB_CLOCK:      return CLOCK;
       case NodePrefs::HPB_FAVOURITES: return FAVOURITES;
       case NodePrefs::HPB_RECENT:    return RECENT;
@@ -494,6 +472,15 @@ class HomeScreen : public UIScreen {
   }
 
   bool isPageVisible(int page) const {
+    if (page == EMERGENCY) return _task->isLowPowerMode();
+#if ENV_INCLUDE_GPS == 1
+    // Emergency Mode exposes the volatile GPS control even when the GPS home
+    // page is normally hidden. Its saved mode remains unchanged.
+    if (page == GPS && _task->isEmergencyMode()) return true;
+#endif
+    // Bluetooth is also a volatile emergency control; showing it here does
+    // not alter its saved home-page visibility or enabled preference.
+    if (page == BLUETOOTH && _task->isEmergencyMode()) return true;
     if (page == RECENT) return false;  // Recent adverts folded into Nearby Nodes; page retired
     int bit = pageBit(page);
     if (bit < 0) return true;
@@ -535,8 +522,7 @@ class HomeScreen : public UIScreen {
   }
 
   int renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts) {
-    int low_mv = _node_prefs ? (int)_node_prefs->low_batt_mv : 0;
-    int pct = battMvToPercent((int)batteryMilliVolts, low_mv);
+    int pct = solo::BatteryPolicy::percent(batteryMilliVolts);
 
     uint8_t mode = (_node_prefs && _node_prefs->batt_display_mode < 3)
                      ? _node_prefs->batt_display_mode : 0;
@@ -600,7 +586,7 @@ class HomeScreen : public UIScreen {
     bool advert_visible = the_mesh.advertIndicatorActive();
     struct Sicon { bool active; const MiniIcon* icon; bool boxed; bool blink; };
     const Sicon icons[] = {
-      { _node_prefs && _node_prefs->bluetooth_enabled,
+      { _task->isBluetoothEnabled(),
                                   &ICON_BLUETOOTH, _task->isBLEConnected(), false },
       { gps_on,                   &ICON_GPS,        gps_on && loc->isValid(),                            false },
       { solo::Features::CLOCK_TOOLS && _node_prefs && _node_prefs->alarm_on,
@@ -633,18 +619,30 @@ public:
 
   void onShow() override { noteHomeInteraction(); }
 
+  void resetSession() {
+    _page = CLOCK;
+    _sensor_page.close();
+    _msg_menu.active = false;
+    _fav_menu.active = false;
+    _pin_menu.active = false;
+    _pin_target_slot = -1;
+  }
+
   // Shared top bar keeps status visibility, priority and battery formatting
   // consistent across the home carousel.
   void renderTopBar(DisplayDriver& display) {
     display.setColor(DisplayDriver::LIGHT);
     int right_edge = renderBatteryIndicator(display, _task->getBattMilliVolts());
     display.setColor(DisplayDriver::LIGHT);
-    display.drawTextEllipsized(0, 0, right_edge - 2, _node_prefs->node_name);
+    display.drawTextEllipsized(0, 0, right_edge - 2,
+                              _task->isLowPowerMode() ? "LOW POWER" : _node_prefs->node_name);
   }
 
   // Small 5x5 glyph shown in the page-indicator row for each HomePage.
   static const MiniIcon* pageIcon(int page) {
     switch (page) {
+      case SENSORS:    return &ICON_PG_SENSORS;
+      case EMERGENCY:  return &ICON_PG_POWER;
       case CLOCK:      return &ICON_PG_CLOCK;
       case FAVOURITES: return &ICON_PG_STAR;
       case RECENT:     return &ICON_PG_RECENT;
@@ -779,12 +777,12 @@ public:
       display.setColor(DisplayDriver::LIGHT);
       display.setTextSize(1);
       display.drawXbm((display.width() - 32) / 2, content_y,
-          _task->isSerialEnabled() ? bluetooth_on : bluetooth_off, 32, 32);
+          _task->isBluetoothEnabled() ? bluetooth_on : bluetooth_off, 32, 32);
       const int text_y = content_y + 32 + 3;
       // The pairing PIN is BLE-specific: show it while BLE is on but not yet
       // bonded. (Gating on a plain isConnected() broke this on dual builds,
       // where it's hardcoded true.)
-      const bool waiting_for_pair = _task->isSerialEnabled() && !_task->isBLEConnected() && the_mesh.getBLEPin() != 0;
+      const bool waiting_for_pair = _task->isBluetoothEnabled() && !_task->isBLEConnected() && the_mesh.getBLEPin() != 0;
       if (waiting_for_pair && !display.isLandscape()) {
         char pin_buf[16];
         snprintf(pin_buf, sizeof(pin_buf), "PIN: %d", the_mesh.getBLEPin());
@@ -854,6 +852,36 @@ public:
                        [&](int i) { return _task->getSettingsSectionLabel(i); });
         _settings_scroll = (uint8_t)scroll;
       }
+    } else if (_page == HomePage::SENSORS) {
+      _sensor_page.render(display, content_y);
+    } else if (_page == HomePage::EMERGENCY) {
+      display.setColor(DisplayDriver::LIGHT);
+      display.setTextSize(1);
+      // Five rows share the small OLED content area. Use the glyph height
+      // without the normal two-pixel list gap so the Bluetooth row is visible.
+      const int emergency_step = lh;
+      int status_y = content_y + emergency_step * 2;
+      if (_task->isEmergencyMode()) {
+        uint32_t remaining = _task->emergencyRemainingSeconds();
+        char buf[32];
+        display.drawTextCentered(display.width() / 2, content_y, "Emergency Mode");
+        snprintf(buf, sizeof(buf), "%lum %02lus remaining",
+                 (unsigned long)(remaining / 60), (unsigned long)(remaining % 60));
+        display.drawTextCentered(display.width() / 2, content_y + emergency_step, buf);
+      } else {
+        display.drawTextCentered(display.width() / 2, content_y, "Low Power Emergency");
+        display.drawTextCentered(display.width() / 2, content_y + emergency_step, "Select to Enable");
+      }
+      display.drawTextCentered(display.width() / 2, status_y,
+                               the_mesh.radioAvailable() ? "Radio On" : "Radio Off");
+      status_y += emergency_step;
+#if ENV_INCLUDE_GPS == 1
+      display.drawTextCentered(display.width() / 2, status_y,
+                               _task->getGPSState() ? "GPS On" : "GPS Off");
+      status_y += emergency_step;
+#endif
+      display.drawTextCentered(display.width() / 2, status_y,
+                               _task->isBluetoothEnabled() ? "Bluetooth On" : "Bluetooth Off");
     } else if (_page == HomePage::TOOLS) {
       display.setColor(DisplayDriver::LIGHT);
       display.setTextSize(1);
@@ -958,6 +986,7 @@ public:
       if (_pin_menu.active) _pin_menu.render(display);
       if (_fav_menu.active) _fav_menu.render(display);
     }
+    if (_emergency_menu.active) _emergency_menu.render(display);
     bool auto_adv = _node_prefs && _node_prefs->advert_auto_interval_sec > 0;
     // Any blinking status-bar indicator needs a 1 s refresh to animate evenly.
     bool repeating  = _node_prefs && _node_prefs->client_repeat;
@@ -970,6 +999,8 @@ public:
     } else if (_page == HomePage::CLOCK) {
       bool show_sec = !_node_prefs || !_node_prefs->clock_hide_seconds;
       refresh_ms = need_blink ? 1000 : (show_sec ? 1000 : 60000);
+    } else if (_page == HomePage::EMERGENCY && _task->isEmergencyMode()) {
+      refresh_ms = 1000;
     } else {
       refresh_ms = need_blink ? 1000 : 5000;
     }
@@ -984,6 +1015,20 @@ public:
 
   bool handleInput(char c) override {
     noteHomeInteraction();
+    if (_emergency_menu.active) {
+      auto result = _emergency_menu.handleInput(c);
+      if (result == PopupMenu::SELECTED && _emergency_menu.selectedIndex() == 1) {
+        if (_emergency_menu_disables) _task->endEmergencyMode();
+        else _task->beginEmergencyMode();
+      }
+      return true;
+    }
+    if (_page == HomePage::SENSORS) {
+      if (_task->isChildModeLocked()) { _sensor_page.close(); _page = CLOCK; return true; }
+      if (_sensor_page.handleInput(c)) return true;
+      if (c == KEY_LEFT || c == KEY_RIGHT || c == KEY_PREV || c == KEY_NEXT || c == KEY_CANCEL)
+        _sensor_page.close();
+    }
     if (_page == HomePage::QUICK_MSG && _msg_menu.active) {
       auto result = _msg_menu.handleInput(c);
       if (result == PopupMenu::SELECTED) {
@@ -1150,6 +1195,21 @@ public:
       }
     }
 
+    if (_page == HomePage::EMERGENCY && c == KEY_ENTER) {
+      if (_task->isEmergencyMode()) {
+        _emergency_menu_disables = true;
+        _emergency_menu.begin("Disable Emergency?", 2);
+        _emergency_menu.addItem("No");
+        _emergency_menu.addItem("Yes");
+      } else {
+        _emergency_menu_disables = false;
+        _emergency_menu.begin("Enable for 10 min?", 2);
+        _emergency_menu.addItem("No");
+        _emergency_menu.addItem("Yes");
+      }
+      return true;
+    }
+
     // Treat Clock as the carousel's home page: Back/Escape from any other
     // home card jumps straight there when it is enabled. Active popups consume
     // Cancel above first, so closing a menu never unexpectedly changes pages.
@@ -1167,10 +1227,12 @@ public:
       return true;
     }
     if (c == KEY_ENTER && _page == HomePage::BLUETOOTH) {
-      if (_task->isSerialEnabled()) {  // toggle Bluetooth on/off
-        _task->disableSerial();
+      if (_task->isLowPowerMode() && !_task->isEmergencyMode()) {
+        _task->showAlert("Enable Emergency", 1000);
+      } else if (_task->isBluetoothEnabled()) {
+        _task->disableBluetooth();
       } else {
-        _task->enableSerial();
+        _task->enableBluetooth();
       }
       return true;
     }
@@ -1329,6 +1391,7 @@ void UITask::beginBootTimeSync() {
 }
 
 void UITask::tickBootTimeSync() {
+  if (_low_power_mode) return;
   LocationProvider* loc = _sensors ? _sensors->getLocationProvider() : nullptr;
   bool configured_on = _node_prefs && _node_prefs->gps_enabled;
   bool enabled = loc && loc->isEnabled();
@@ -1367,7 +1430,17 @@ void UITask::openSettingsSection(int index) {
 }
 void UITask::gotoChildUnlockScreen() { setCurrScreen(child_unlock); }
 void UITask::setChildAdminUnlocked(bool unlocked) {
+  bool was_unlocked = _solo.parentUnlocked();
   _solo.setParentUnlocked(unlocked);
+  if (was_unlocked && isChildModeLocked()) {
+    // No privileged screen, modal or queued input survives the parent session.
+    ((SettingsScreen*)settings)->onShow();
+    ((MessagesScreen*)messages_screen)->reset();
+    ((HomeScreen*)home)->resetSession();
+    char discarded;
+    while (dequeueKey(discarded)) { }
+    gotoHomeScreen();
+  }
   applyChildMode();
 }
 void UITask::applyChildMode() {
@@ -1385,7 +1458,8 @@ void UITask::applyChildMode() {
   if (child_locked) disableSerial();
   else {
     enableSerial();                 // restore USB and the other transports
-    applyBluetoothPrefs();          // then honour the independently saved BLE state
+    if (_low_power_mode) disableBluetooth();
+    else applyBluetoothPrefs();     // then honour the independently saved BLE state
   }
   _next_refresh = 0;
 }
@@ -1412,20 +1486,18 @@ void UITask::gotoDiscoverScreen() {
   ((NearbyScreen*)nearby_screen)->startDiscoverScan();
 }
 
-void UITask::pickAdminTarget() {
+void UITask::openAdminFor(const ContactInfo& ci) {
 #if SOLO_FEAT_ADMIN
-  setCurrScreen(nearby_screen);   // runs NearbyScreen::onShow()'s reset first
-  ((NearbyScreen*)nearby_screen)->startPickAdminTarget();
+  if (isChildModeLocked() || (ci.type != ADV_TYPE_REPEATER && ci.type != ADV_TYPE_ROOM)) return;
+  setCurrScreen(admin_screen);   // runs AdminScreen::onShow()'s reset first
+  ((AdminScreen*)admin_screen)->startFor(ci);
+#else
+  (void)ci;
 #endif
 }
-
-void UITask::openAdminFor(const ContactInfo& ci, bool from_picker) {
-#if SOLO_FEAT_ADMIN
-  setCurrScreen(admin_screen);   // runs AdminScreen::onShow()'s reset first
-  ((AdminScreen*)admin_screen)->startFor(ci, from_picker);
-#else
-  (void)ci; (void)from_picker;
-#endif
+void UITask::returnFromAdmin() {
+  ((NearbyScreen*)nearby_screen)->resumeFromAdmin();
+  setCurrScreen(nearby_screen);
 }
 void UITask::gotoTrailScreen()     { if (solo::Features::NAVIGATION) setCurrScreen(trail_screen); }
 void UITask::gotoCompassScreen()   { if (solo::Features::NAVIGATION) setCurrScreen(compass_screen); }
@@ -1784,6 +1856,12 @@ void UITask::onMsgAck(uint32_t ack_crc) {
   ((MessagesScreen*)messages_screen)->markDmDelivered(ack_crc);
 }
 
+bool UITask::matchMsgAck(uint32_t ack_crc, uint8_t* prefix) {
+  bool matched = ((MessagesScreen*)messages_screen)->markDmDelivered(ack_crc, prefix);
+  if (matched) _next_refresh = 0;
+  return matched;
+}
+
 void UITask::onChannelRelayed(uint32_t seq) {
   ((MessagesScreen*)messages_screen)->markChannelRelayed(seq);
 }
@@ -1795,10 +1873,10 @@ void UITask::onChannelRelayExpired(uint32_t seq) {
 void UITask::onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
   solo::RoomLoginCoordinator::Attempt attempt;
   if (!_room_login.complete(pub_key, attempt)) return;
-  if (success) {
+  if (success && attempt.owner == solo::RoomLoginCoordinator::MESSAGES) {
     _room_login.markLoggedIn(pub_key);
     the_mesh.saveRoomPassword(pub_key, attempt.password);
-  } else if (attempt.used_saved_password) {
+  } else if (!success && attempt.owner == solo::RoomLoginCoordinator::MESSAGES && attempt.used_saved_password) {
     the_mesh.forgetRoomPassword(pub_key);
   }
 #if SOLO_FEAT_ADMIN
@@ -1824,6 +1902,18 @@ bool UITask::startRoomLogin(solo::RoomLoginCoordinator::Owner owner,
                         millis() + est_timeout + 4000)) return true;
   the_mesh.cancelUiPendingLogin(contact.id.pub_key);
   return false;
+}
+
+void UITask::onRoomLoginCancelled(const uint8_t* prefix) {
+  solo::RoomLoginCoordinator::Attempt attempt;
+  if (!_room_login.complete(prefix, attempt)) return;
+#if SOLO_FEAT_ADMIN
+  if (attempt.owner == solo::RoomLoginCoordinator::ADMIN)
+    ((AdminScreen*)admin_screen)->onRoomLoginTimeout(prefix);
+  else
+#endif
+    ((MessagesScreen*)messages_screen)->onRoomLoginTimeout(prefix);
+  _next_refresh = 0;
 }
 
 void UITask::cancelRoomLogin(solo::RoomLoginCoordinator::Owner owner, const uint8_t* pub_key) {
@@ -1956,7 +2046,7 @@ bool UITask::notificationAllowed(UIEventType event, uint8_t contact_type,
 
 bool UITask::isQuietTimeActive() const {
   return solo::Features::QUIET_TIME &&
-         quiettime::active(_node_prefs, rtc_clock.getCurrentTime());
+         quiettime::active(_node_prefs, rtc_clock.getCurrentTime(), !isTimeSyncPending());
 }
 
 bool UITask::notificationQuietAffected(UIEventType event) const {
@@ -2131,6 +2221,10 @@ void UITask::handleNewMsg(uint8_t path_len, const char* from_name, const char* t
   snprintf(alert_buf, sizeof(alert_buf), "Msg: %.20s", from_name);
   showAlert(alert_buf, 3000);
 
+  wakeForNotification();
+}
+
+void UITask::wakeForNotification() {
   if (_display != NULL) {
     if (!_display->isOn() && !isClientConnected()) {   // wake for the msg unless an app (BLE/USB) is already showing it
       turnDisplayOn();
@@ -2146,6 +2240,83 @@ void UITask::handleNewMsg(uint8_t path_len, const char* from_name, const char* t
       _next_refresh = 100;
     }
   }
+}
+
+void UITask::notifyLowBattery() {
+  // System warning: no sender/unread state, but the same Quiet Time sound
+  // policy and screen lifetime as message notifications.
+  auto decision = solo::NotificationPolicy::decide(true, isQuietTimeActive(), true);
+#ifdef PIN_BUZZER
+  if (decision.play_sound) {
+    SoundNotifier sn(buzzer, _node_prefs, _notif_mel_buf, sizeof(_notif_mel_buf));
+    sn.playLowBattery();
+  }
+#endif
+  if (decision.show_visual) {
+    showAlert("Low Battery", 5000);
+    wakeForNotification();
+  }
+}
+
+void UITask::setLowPowerMode(bool active) {
+  if (_low_power_mode == active) return;
+  if (!active && _emergency_window.active()) {
+    _emergency_window.cancel();
+    _emergency_gps_on = false;
+    if (_sensors) {
+      _sensors->setSettingValue("gps_power", "0");
+      _sensors->setSettingValue("gps", "0");
+    }
+    the_mesh.setEmergencyMode(false);
+  }
+  _low_power_mode = active;
+  the_mesh.setLowPowerMode(active);
+
+  if (active) {
+    ((MessagesScreen*)messages_screen)->cancelDmResends();
+    the_mesh.cancelSensorTelemetry();
+#if SOLO_FEAT_ADMIN
+    the_mesh.cancelAdminCommand();
+#endif
+    if (_sensors) {
+      _sensors->setSettingValue("gps_power", "0");
+      _sensors->setSettingValue("gps", "0");
+    }
+    disableBluetooth();
+    applyBrightness();
+    showAlert("Low Power", 5000);
+    wakeForNotification();
+  } else {
+    applyGpsPrefs();
+    applyChildMode();
+    applyBrightness();
+    showAlert("Power Restored", 2000);
+    _next_refresh = 0;
+  }
+}
+
+void UITask::setEmergencyMode(bool active) {
+  if (active) {
+    if (!_low_power_mode || _emergency_window.active()) return;
+    _emergency_window.start(millis());
+    _emergency_gps_on = false;
+    disableBluetooth();
+    the_mesh.setEmergencyMode(true);
+    showAlert("Emergency Enabled", 1200);
+  } else {
+    bool was_active = the_mesh.isEmergencyMode();
+    _emergency_window.cancel();
+    _emergency_gps_on = false;
+    disableBluetooth();
+    if (_sensors) {
+      _sensors->setSettingValue("gps_power", "0");
+      _sensors->setSettingValue("gps", "0");
+    }
+    ((MessagesScreen*)messages_screen)->cancelDmResends();
+    the_mesh.setEmergencyMode(false);
+    if (was_active) showAlert("Emergency Ended", 1200);
+  }
+  _next_refresh = 0;
 }
 
 void UITask::userLedHandler() {
@@ -2198,6 +2369,10 @@ void UITask::setCurrScreen(UIScreen* c) {
   // begin()) stays nullptr thanks to the in-class initialisers. Bail here so
   // that mistake is an inert no-op instead of a null deref in render()/poll().
   if (!c) return;
+#if SOLO_FEAT_ADMIN
+  if (curr == admin_screen && c != admin_screen)
+    ((AdminScreen*)admin_screen)->closeSession();
+#endif
   curr = c;
   c->onShow();          // central per-visit reset hook (see UIScreen::onShow)
   _next_refresh = 100;
@@ -2317,6 +2492,9 @@ void UITask::turnDisplayOff() {
 #endif
   _display->turnOff();
   _notification_wake_active = false;
+  // A parent session never survives display sleep, regardless of its caller.
+  if (_node_prefs && _node_prefs->child_mode_enabled && _solo.parentUnlocked())
+    setChildAdminUnlocked(false);
 }
 
 // Poll an optional CardKB (I2C keyboard, addr 0x5F) on Wire1/Grove, feeding
@@ -2399,6 +2577,8 @@ void UITask::pollCardKB() {
 }
 
 void UITask::loop() {
+  if (_emergency_window.active() && !_emergency_window.update(millis()))
+    setEmergencyMode(false);
   tickBootTimeSync();
   solo::RoomLoginCoordinator::Attempt login_timeout;
   if (_room_login.takeTimeout(millis(), login_timeout)) {
@@ -2425,7 +2605,8 @@ void UITask::loop() {
   }
   // Background delivery: resend pending on-device DMs whose ACK timed out, and
   // finalise the ✗ marker — runs regardless of which screen is active.
-  ((MessagesScreen*)messages_screen)->tickDmResends();
+  if (!_low_power_mode || isEmergencyMode())
+    ((MessagesScreen*)messages_screen)->tickDmResends();
 #if UI_HAS_JOYSTICK
   uint8_t joy_rot = _node_prefs ? _node_prefs->joystick_rotation : JOYSTICK_ROTATION;
   int ev = user_btn.check();
@@ -2591,10 +2772,6 @@ void UITask::loop() {
 #ifdef PIN_LED
       digitalWrite(PIN_LED, LOW);  // turn off status LED with display to save power
 #endif
-      // A parent session never survives display sleep. Child mode then closes
-      // both companion transports before the device can be woken by the child.
-      if (_node_prefs && _node_prefs->child_mode_enabled && _solo.parentUnlocked())
-        setChildAdminUnlocked(false);
     }
 #endif
   }
@@ -2609,9 +2786,8 @@ void UITask::loop() {
       // EMA filter: alpha=0.2 (80% old, 20% new) — smooths ADC noise from uneven load
       _batt_mv = (_batt_mv == 0) ? raw : (uint16_t)((_batt_mv * 4u + raw) / 5u);
     }
-    uint16_t low_mv = _node_prefs ? _node_prefs->low_batt_mv : 0;
     // Don't shut down while on external power (charging) — avoids a shutdown loop.
-    if (low_mv > 0 && _batt_mv > 0 && _batt_mv < low_mv && !board.isExternalPowered()) {
+    if (solo::BatteryPolicy::shouldShutdown(_batt_mv, board.isExternalPowered())) {
       if (_display != NULL) {
         _display->startFrame();
         _display->setTextSize(1);
@@ -2625,6 +2801,10 @@ void UITask::loop() {
       }
       shutdown();
     }
+    bool low_power = _low_power_latch.update(_batt_mv, board.isExternalPowered());
+    if (low_power != _low_power_mode) setLowPowerMode(low_power);
+    if (_low_battery_reminder.due(millis(), _batt_mv, board.isExternalPowered()))
+      notifyLowBattery();
     next_batt_chck = millis() + 8000;
   }
 
@@ -3154,6 +3334,7 @@ bool UITask::getGPSState() {
 }
 
 uint8_t UITask::getGPSMode() const {
+  if (_low_power_mode) return _emergency_gps_on ? 1 : 0;
   if (!_node_prefs) return 0;
   return solo::GpsMode::fromPrefs(_node_prefs->gps_enabled != 0,
                                   _node_prefs->gps_interval);
@@ -3180,12 +3361,12 @@ void UITask::applyGpsPrefs() {
   char interval_str[12];
   snprintf(interval_str, sizeof(interval_str), "%u", _node_prefs->gps_interval);
   _sensors->setSettingValue("gps_interval", interval_str);
-  _sensors->setSettingValue("gps", _node_prefs->gps_enabled ? "1" : "0");
+  _sensors->setSettingValue("gps", (!_low_power_mode && _node_prefs->gps_enabled) ? "1" : "0");
   _next_refresh = 0;
 }
 
 void UITask::applyBluetoothPrefs() {
-  if (!_node_prefs || isChildModeLocked()) return;
+  if (!_node_prefs || isChildModeLocked() || _low_power_mode) return;
   if (_node_prefs->bluetooth_enabled) enableBluetooth();
   else disableBluetooth();
   _next_refresh = 0;
@@ -3202,6 +3383,20 @@ bool UITask::hasGPS() {
 }
 
 void UITask::toggleGPS() {
+  if (_low_power_mode) {
+    if (!isEmergencyMode()) {
+      showAlert("Enable Emergency", 1000);
+      return;
+    }
+    _emergency_gps_on = !_emergency_gps_on;
+    if (_sensors) {
+      _sensors->setSettingValue("gps_power", _emergency_gps_on ? "1" : "0");
+      _sensors->setSettingValue("gps", _emergency_gps_on ? "1" : "0");
+    }
+    showAlert(_emergency_gps_on ? "GPS: On" : "GPS: Off", 900);
+    _next_refresh = 0;
+    return;
+  }
   setGPSMode((getGPSMode() + 1) % solo::GpsMode::COUNT);
 }
 
@@ -3413,18 +3608,18 @@ bool UITask::botGetGPIOAnalog(int idx, int& millivolts) {
 }
 
 void UITask::applyTxPower() {
-  if (_node_prefs == NULL) return;
+  if (_node_prefs == NULL || _low_power_mode) return;
   radio_driver.setTxPower(_node_prefs->tx_power_dbm);
 }
 
 void UITask::applyRadioParams() {
-  if (_node_prefs == NULL) return;
+  if (_node_prefs == NULL || _low_power_mode) return;
   the_mesh.applyRadioParams();
 }
 
 void UITask::applyBrightness() {
   if (_display != NULL && _node_prefs != NULL) {
-    _display->setBrightness(_node_prefs->display_brightness);
+    _display->setBrightness(_low_power_mode ? 0 : _node_prefs->display_brightness);
   }
 }
 
