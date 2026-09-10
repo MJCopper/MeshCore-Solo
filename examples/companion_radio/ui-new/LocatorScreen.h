@@ -121,7 +121,7 @@ public:
       display.print(r.label);
       char val[24];
       valueLabel(r.kind, val, sizeof(val));
-      if (val[0]) display.drawTextEllipsized(valx, y, display.width() - valx - reserve, val);
+      if (val[0]) display.drawTextEllipsized(valx, y, display.width() - valx - reserve, val, sel);
     });
     return 500;
   }
@@ -279,7 +279,7 @@ public:
       } else {
         snprintf(row, sizeof(row), "@%s", t.name);          // favourite, no position known yet
       }
-      display.drawTextEllipsized(2, y, display.width() - 2 - reserve, row);
+      display.drawTextEllipsized(2, y, display.width() - 2 - reserve, row, sel);
     });
   }
 

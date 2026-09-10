@@ -1,25 +1,90 @@
 #include <gtest/gtest.h>
 #include "../../examples/companion_radio/solo/BatteryPolicy.h"
+#include "../../examples/companion_radio/solo/BatteryRuntime.h"
 
 TEST(BatteryPolicy, FixedCutoffHonoursExternalPowerAndInvalidReading) {
-  EXPECT_TRUE(solo::BatteryPolicy::shouldShutdown(3000, false));
-  EXPECT_TRUE(solo::BatteryPolicy::shouldShutdown(2999, false));
-  EXPECT_FALSE(solo::BatteryPolicy::shouldShutdown(3001, false));
+  EXPECT_TRUE(solo::BatteryPolicy::shouldShutdown(3100, false));
+  EXPECT_TRUE(solo::BatteryPolicy::shouldShutdown(3099, false));
+  EXPECT_FALSE(solo::BatteryPolicy::shouldShutdown(3101, false));
   EXPECT_FALSE(solo::BatteryPolicy::shouldShutdown(3200, true));
   EXPECT_FALSE(solo::BatteryPolicy::shouldShutdown(0, false));
 }
 
 TEST(BatteryPolicy, PercentageEndpointsAndBounds) {
   EXPECT_EQ(solo::BatteryPolicy::percent(3300), 0);
+  EXPECT_LT(solo::BatteryPolicy::percent(4119), 100);
+  EXPECT_EQ(solo::BatteryPolicy::percent(4120), 100);
   EXPECT_EQ(solo::BatteryPolicy::percent(4200), 100);
   EXPECT_EQ(solo::BatteryPolicy::percent(0), 0);
   EXPECT_EQ(solo::BatteryPolicy::percent(5000), 100);
-  EXPECT_LT(solo::BatteryPolicy::percent(4199), 100);
-  EXPECT_LT(solo::BatteryPolicy::percent(4170), 100);
+  EXPECT_EQ(solo::BatteryPolicy::percent(4199), 100);
+  EXPECT_EQ(solo::BatteryPolicy::percent(4170), 100);
   EXPECT_EQ(solo::BatteryPolicy::percent(3500), 5);
-  EXPECT_EQ(solo::BatteryPolicy::percent(3700), 25);
-  EXPECT_EQ(solo::BatteryPolicy::percent(3800), 50);
-  EXPECT_EQ(solo::BatteryPolicy::percent(4000), 80);
+  EXPECT_EQ(solo::BatteryPolicy::percent(3700), 30);
+  EXPECT_EQ(solo::BatteryPolicy::percent(3800), 55);
+  EXPECT_EQ(solo::BatteryPolicy::percent(4000), 85);
+  EXPECT_EQ(solo::BatteryPolicy::percentX100(3750), 4200);
+  EXPECT_GT(solo::BatteryPolicy::percentX100(3751), 4200);
+}
+
+TEST(BatteryRuntime, StartsWithFiveDayModel) {
+  solo::BatteryRuntimeEstimator estimate;
+  estimate.update(0, 4120, false, false);
+  EXPECT_EQ(estimate.state(), solo::BatteryRuntimeEstimator::MODEL);
+  EXPECT_EQ(estimate.seconds(), 5UL * 24UL * 60UL * 60UL);
+  estimate.update(1000, 4000, false, false);
+  EXPECT_EQ(estimate.seconds(), 102UL * 60UL * 60UL); // 85% of five days
+}
+
+TEST(BatteryRuntime, LearnsOnlyAfterSixHoursAndFivePercentDischarge) {
+  solo::BatteryRuntimeEstimator estimate;
+  estimate.update(0, 4000, false, false);
+  for (uint32_t hour = 1; hour < 6; hour++)
+    estimate.update(hour * 3600000UL, 4000 - hour * 6, false, false);
+  EXPECT_EQ(estimate.state(), solo::BatteryRuntimeEstimator::MODEL);
+  estimate.update(6UL * 3600000UL, 3960, false, false);
+  EXPECT_EQ(estimate.state(), solo::BatteryRuntimeEstimator::ESTIMATE);
+  EXPECT_GT(estimate.confidencePermille(), 0);
+  EXPECT_GT(estimate.seconds(), 0u);
+}
+
+TEST(BatteryRuntime, FlatVoltageFallsBackToModel) {
+  solo::BatteryRuntimeEstimator estimate;
+  for (uint32_t hour = 0; hour <= 12; hour++)
+    estimate.update(hour * 3600000UL, 3900, false, false);
+  EXPECT_EQ(estimate.state(), solo::BatteryRuntimeEstimator::MODEL);
+  EXPECT_EQ(estimate.seconds(), 5UL * 24UL * 60UL * 60UL * 72UL / 100UL);
+}
+
+TEST(BatteryRuntime, ResetsForChargingEmergencyAndVoltageRecovery) {
+  solo::BatteryRuntimeEstimator estimate;
+  estimate.update(0, 3900, false, false);
+  estimate.update(60UL * 60000UL, 3880, false, false);
+  estimate.update(61UL * 60000UL, 3880, true, false);
+  EXPECT_EQ(estimate.state(), solo::BatteryRuntimeEstimator::CHARGING);
+  EXPECT_EQ(estimate.sampleCount(), 0);
+  estimate.update(62UL * 60000UL, 3880, false, false);
+  EXPECT_EQ(estimate.state(), solo::BatteryRuntimeEstimator::MODEL);
+  EXPECT_EQ(estimate.sampleCount(), 0); // two-hour post-charge settling window
+  estimate.update(181UL * 60000UL, 3840, false, false);
+  EXPECT_EQ(estimate.sampleCount(), 0);
+  estimate.update(182UL * 60000UL, 3840, false, false);
+  EXPECT_EQ(estimate.sampleCount(), 1);
+  estimate.update(183UL * 60000UL, 3840, false, true);
+  EXPECT_EQ(estimate.state(), solo::BatteryRuntimeEstimator::PAUSED);
+  estimate.update(184UL * 60000UL, 3800, false, false);
+  estimate.update(244UL * 60000UL, 3890, false, false);
+  EXPECT_EQ(estimate.state(), solo::BatteryRuntimeEstimator::MODEL);
+  EXPECT_EQ(estimate.sampleCount(), 1);
+}
+
+TEST(BatteryRuntime, EndsAtThreePointThreeVoltsAndHandlesMillisWrap) {
+  solo::BatteryRuntimeEstimator estimate;
+  estimate.update(0xFFF00000UL, 3800, false, false);
+  estimate.update((uint32_t)(0xFFF00000UL + 60UL * 60000UL), 3790, false, false);
+  EXPECT_EQ(estimate.sampleCount(), 2);
+  estimate.update(0, 3300, false, false);
+  EXPECT_EQ(estimate.state(), solo::BatteryRuntimeEstimator::EMPTY);
 }
 
 TEST(BatteryPolicy, CurveIsMonotonicAndNonlinear) {
@@ -30,8 +95,8 @@ TEST(BatteryPolicy, CurveIsMonotonicAndNonlinear) {
     EXPECT_LE(percent, 100);
     previous = percent;
   }
-  EXPECT_EQ(solo::BatteryPolicy::percent(3700), 25);
-  EXPECT_EQ(solo::BatteryPolicy::percent(3800), 50);
+  EXPECT_EQ(solo::BatteryPolicy::percent(3700), 30);
+  EXPECT_EQ(solo::BatteryPolicy::percent(3800), 55);
 }
 
 TEST(LowBatteryReminder, FirstLowSampleThenHourlyIncludingThresholdChatter) {
@@ -48,7 +113,7 @@ TEST(LowBatteryReminder, IgnoresChargingInvalidAndShutdownSamples) {
   solo::LowBatteryReminder reminder;
   EXPECT_FALSE(reminder.due(0, 3500, true));
   EXPECT_FALSE(reminder.due(0, 0, false));
-  EXPECT_FALSE(reminder.due(0, 3000, false));
+  EXPECT_FALSE(reminder.due(0, 3100, false));
   EXPECT_TRUE(reminder.due(0, 3500, false));
   EXPECT_FALSE(reminder.due(3600000, 3500, true));
   EXPECT_TRUE(reminder.due(3608000, 3500, false));
@@ -82,8 +147,8 @@ TEST(LowPowerLatch, RequiresThreeConsecutiveLowSamples) {
 TEST(LowPowerLatch, DoesNotReplaceShutdownOrRunWithoutReading) {
   solo::LowPowerLatch latch;
   EXPECT_FALSE(latch.update(0, false));
+  EXPECT_FALSE(latch.update(3100, false));
   EXPECT_FALSE(latch.update(3000, false));
-  EXPECT_FALSE(latch.update(2900, false));
   EXPECT_FALSE(latch.update(3500, true));
 }
 

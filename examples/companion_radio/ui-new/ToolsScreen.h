@@ -83,7 +83,8 @@ public:
     drawList(display, TOOL_COUNT, _sel, _scroll,
       [&](int idx, int y, bool selected, int reserve) {
         drawRowSelection(display, y, selected, reserve);
-        display.drawTextEllipsized(2, y, display.width() - 4 - reserve, TOOLS[idx].label);
+        display.drawTextEllipsized(2, y, display.width() - 4 - reserve,
+                                   TOOLS[idx].label, selected);
       });
     return 500;
   }

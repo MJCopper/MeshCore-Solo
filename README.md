@@ -4,7 +4,7 @@ Zen extends the official [MeshCore](https://github.com/meshcore-dev/MeshCore)
 companion firmware with a standalone messaging interface for the Seeed Wio
 Tracker L1.
 
-Current release: **Zen v2.27**, based on **MeshCore v1.17.1**.
+Current release: **Zen v1.32.8**, based on **MeshCore v1.17.1**.
 
 ## Supported hardware
 
@@ -22,7 +22,7 @@ Both builds support BLE and USB serial. Firmware is available from the
 - Predictive T9 and ABC text entry with Australianised word completion.
 - UTF-8 text, monochrome emoji display and four insertable chat emoji.
 - Clock, unread shortcut, GPS time sync and timed GPS operation.
-- Editable Favourites Dial for four contacts.
+- Starred contacts, rooms and channels, plus an editable four-contact speed dial.
 - Automatic CardKB support through the Grove I2C port.
 - PIN-protected Child Mode and scheduled Quiet Time.
 - On-device radio, advert, notification and home-page settings.

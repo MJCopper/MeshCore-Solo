@@ -7,11 +7,17 @@
 | Discover Repeaters | Scan for zero-hop repeaters and add results as contacts |
 | Node List | Browse, filter, inspect, ping and manage known nodes |
 | Repeater Mode | Toggle the companion repeater backend |
-| Ringtone Editor | Edit and preview notification melodies |
+| Ringtone Editor | Edit and preview two 16-note chromatic notification melodies |
 | Diagnostics | View device, radio, mesh and runtime information |
 
 Node List opens on **All**. Use Left/Right for the Fav, All, Comp, Rpt, Room and
 Snsr filters; hold Enter for actions available to the selected node.
+
+Diagnostics includes a Battery tab with filtered voltage, curve-based percentage
+and estimated time to 3.3 V. Remaining starts from a five-day full-charge model,
+ignores the first two hours after charging, then gradually learns from six to
+24 hours of normal discharge. Samples remain RAM-only. A `~` marks a model-led
+estimate; Charging and Paused replace the time when appropriate.
 
 ## Node administration
 
@@ -35,7 +41,8 @@ adds a trailing space. Password and structured setting fields remain literal.
 Actions and console commands require confirmation. **Confirmed** means the
 remote node returned an OK response. **No reply** means the result is unknown
 (including reboot); changes are never automatically retried. The console shows
-other replies verbatim.
+other replies verbatim. **Start OTA** is a dedicated action and its confirmation
+opens on Cancel.
 
 Admin is unavailable while Child Mode is locked. Leaving Admin clears its
 session. Commands use tagged replies and current contact paths, without background
@@ -46,6 +53,9 @@ CLI prefix; untagged replies cannot populate an editor.
 
 Discover Repeaters starts a repeater-only scan immediately. Hold Enter on a
 result to manage it or rescan.
+
+Stored Node List entries can be starred independently of Favourites Dial pins.
+Starred nodes sort first within the selected filter.
 
 Repeater Mode uses the current **Settings › Radio** configuration. Its fixed
 backend values are RX delay `10`, flood/direct airtime factors `0.5`/`0.3`,

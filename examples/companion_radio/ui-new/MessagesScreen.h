@@ -7,8 +7,10 @@
 #include "ChannelsView.h"  // on-device channel add/edit form (Channels tab)
 #include "MessageEditorSupport.h"
 #include "../solo/NotificationPreferences.h"
+#include "../solo/BuiltinMelodies.h"
 #include "MessageTranscriptView.h"
 #include "RecentParticipants.h"
+#include "../solo/QuickReplies.h"
 
 class MessagesScreen : public UIScreen {
   UITask* _task;
@@ -43,7 +45,9 @@ class MessagesScreen : public UIScreen {
 
   // MSG_PICK (shared)
   int _msg_sel, _msg_scroll;
-  int _active_msgs[QUICK_MSGS_MAX];
+  // Values below BUILTIN_COUNT address firmware replies; following values
+  // address the five editable custom slots.
+  uint8_t _active_replies[solo::QuickReplies::MAX_VISIBLE_COUNT];
   int _active_msg_count;
   bool _quick_msgs_bypassed = false;
   bool _home_category_entry = false;
@@ -68,10 +72,12 @@ class MessagesScreen : public UIScreen {
   uint8_t   _ctx_ch_idx = 0;
   char      _ctx_notif_item[22];
   char      _ctx_melody_item[20];
+  char      _ctx_fav_item[12];
   char      _ctx_pin_item[28];   // "Pin to dial" or "Unpin (slot N)"
   char      _ctx_ch_fav_item[12]; // "Fav" or "Unfav"
   char      _pin_slot_labels[NodePrefs::FAVOURITES_COUNT][40];  // "Slot N: " + full UTF-8 contact name
   bool      _pin_picker_active;  // true while the slot-picker submenu is open
+  bool      _channel_delete_confirm_active = false;
   bool      _retry_menu_active = false; // transcript Hold-Enter action menu
   bool      _participant_picker_active = false;
   int       _retry_hist_pos = -1;       // frozen row selected when menu opened
@@ -279,17 +285,27 @@ class MessagesScreen : public UIScreen {
   void setupMsgPick() {
     _msg_sel = _msg_scroll = 0;
     _active_msg_count = 0;
+    for (uint8_t i = 0; i < solo::QuickReplies::BUILTIN_COUNT; i++)
+      _active_replies[_active_msg_count++] = i;
     NodePrefs* p = _task->getNodePrefs();
     if (p) {
-      for (int i = 0; i < QUICK_MSGS_MAX; i++) {
+      for (uint8_t i = 0; i < solo::QuickReplies::CUSTOM_COUNT; i++) {
         if (p->custom_msgs[i][0] != '\0')
-          _active_msgs[_active_msg_count++] = i;
+          _active_replies[_active_msg_count++] = solo::QuickReplies::BUILTIN_COUNT + i;
       }
     }
   }
 
+  const char* quickReplyText(uint8_t entry) const {
+    if (entry < solo::QuickReplies::BUILTIN_COUNT)
+      return solo::QuickReplies::builtin(entry);
+    NodePrefs* p = _task->getNodePrefs();
+    uint8_t slot = entry - solo::QuickReplies::BUILTIN_COUNT;
+    return p && slot < solo::QuickReplies::CUSTOM_COUNT ? p->custom_msgs[slot] : "";
+  }
+
   // Conversation controls deliberately avoid a selectable compose row: a short
-  // Enter opens the editor. Hold Enter opens saved quick messages directly,
+  // Enter opens the editor. Hold Enter opens quick replies directly,
   // except when this transcript has a failed send and needs a resend action.
   int sendTextLimit() const {
     return (int)solo::MessageTextPolicy::limit(MAX_TEXT_LEN,
@@ -375,7 +391,7 @@ class MessagesScreen : public UIScreen {
       _ctx_menu.addItem(channel ? "Resend anyway" : "Resend failed");
       _transcript_act[_transcript_act_n++] = TRANS_RESEND;
     }
-    _ctx_menu.addItem("Quick messages");
+    _ctx_menu.addItem("Quick replies");
     _transcript_act[_transcript_act_n++] = TRANS_QUICK;
   }
 
@@ -435,7 +451,7 @@ class MessagesScreen : public UIScreen {
       _history.setChUnread(_sel_channel_idx, 0);
       _unread_at_entry = 0;
       _viewing_max_seen = 0;
-      _task->showAlert("Sent!", 600);
+      _task->showAlert("Sent", 600);
     } else if (ok) {
       _history.storeDMMsg(_sel_contact.id.pub_key, true, msg, _last_ack_tag,
                           _last_ack_deadline_ms, _last_send_ts,
@@ -445,7 +461,7 @@ class MessagesScreen : public UIScreen {
       _dm_hist_scroll = 0;
       _dm_transcript.reset();
       _phase = DM_HIST;
-      _task->showAlert("Sent!", 600);
+      _task->showAlert("Sent", 600);
     } else {
       if (_sending_to_channel) {
         _hist_sel = _hist_scroll = 0;
@@ -514,24 +530,19 @@ class MessagesScreen : public UIScreen {
     ContactInfo c;
     int total = the_mesh.getNumContacts();
     _num_contacts = 0;
-    if (_room_mode) {
-      bool fav_only = (p && (p->room_fav_only || _task->isChildModeLocked()));
-      for (int i = 0; i < total; i++) {
-        if (!the_mesh.getContactByIdx(i, c) || c.type != ADV_TYPE_ROOM) continue;
-        if (fav_only && !(c.flags & 0x01)) continue;
-        _sorted[_num_contacts++] = i;
-      }
-    } else {
-      bool show_all = (p && p->dm_show_all && !_task->isChildModeLocked());
-      // Build _sorted and counts[] in one pass — avoids a second getContactByIdx loop.
-      // uint8_t, not int: values are bounded by MessageHistory::DM_HIST_MAX (32), and
-      // this array is 1400 B at this build's MAX_CONTACTS=350 as an int[] -- a sizeable
-      // slice of the 4 KB loop() task stack for one local array.
-      uint8_t counts[MAX_CONTACTS];
-      uint8_t unreads[MAX_CONTACTS];
-      for (int i = 0; i < total; i++) {
+    bool show_all = _room_mode
+        ? !(p && (p->room_fav_only || _task->isChildModeLocked()))
+        :  (p && p->dm_show_all && !_task->isChildModeLocked());
+    // Compact parallel sort keys avoid three int[MAX_CONTACTS] arrays on the
+    // UI task's small stack.
+    uint8_t counts[MAX_CONTACTS];
+    uint8_t unreads[MAX_CONTACTS];
+    uint8_t favourites[MAX_CONTACTS];
+    for (int i = 0; i < total; i++) {
         if (!the_mesh.getContactByIdx(i, c)) continue;
-        int hist_count = _history.dmHistCountForContact(c.id.pub_key);
+        if (_room_mode) {
+          if (c.type != ADV_TYPE_ROOM) continue;
+        } else {
         bool has_dm_unread = _task->getDMUnread(c.id.pub_key) > 0;
         bool has_direct_dm = _task->hasDirectDMContact(c.id.pub_key);
         // A contact can advertise a different role after sending a DM. The
@@ -542,29 +553,31 @@ class MessagesScreen : public UIScreen {
         // also be favourited, but belong in their own pickers.
         if (c.type != ADV_TYPE_CHAT &&
             (_task->isChildModeLocked() || (!has_dm_unread && !has_direct_dm))) continue;
+        }
         // The user-facing filter is authoritative: All shows every eligible DM
         // contact; Fav shows only upstream-starred eligible DM contacts.
         if (!show_all && !(c.flags & 0x01)) continue;
-        counts[_num_contacts] = hist_count;
-        unreads[_num_contacts] = _task->getDMUnread(c.id.pub_key);
+        counts[_num_contacts] = _room_mode ? 0 : _history.dmHistCountForContact(c.id.pub_key);
+        unreads[_num_contacts] = _room_mode ? _task->getRoomUnread(c.id.pub_key)
+                                            : _task->getDMUnread(c.id.pub_key);
+        favourites[_num_contacts] = (c.flags & 0x01) ? 1 : 0;
         _sorted[_num_contacts++] = i;
-      }
-      // Unread conversations belong at the top so the category badge always
-      // leads to an obvious sender row. Within the same unread state/count,
-      // keep the existing most-history-first ordering.
-      for (int i = 1; i < _num_contacts; i++) {
-        if (unreads[i] == 0 && counts[i] == 0) continue;
-        uint16_t key = _sorted[i]; int kc = counts[i]; int ku = unreads[i];
+    }
+    // Favourites lead, then unread conversations, then most-used history.
+    for (int i = 1; i < _num_contacts; i++) {
+        uint16_t key = _sorted[i];
+        int kc = counts[i], ku = unreads[i], kf = favourites[i];
         int j = i;
-        while (j > 0 && (unreads[j-1] < ku ||
-                         (unreads[j-1] == ku && counts[j-1] < kc))) {
+        while (j > 0 && (favourites[j-1] < kf ||
+                         (favourites[j-1] == kf && unreads[j-1] < ku) ||
+                         (favourites[j-1] == kf && unreads[j-1] == ku && counts[j-1] < kc))) {
           _sorted[j] = _sorted[j-1];
           counts[j] = counts[j-1];
           unreads[j] = unreads[j-1];
+          favourites[j] = favourites[j-1];
           j--;
         }
-        _sorted[j] = key; counts[j] = kc; unreads[j] = ku;
-      }
+        _sorted[j] = key; counts[j] = kc; unreads[j] = ku; favourites[j] = kf;
     }
   }
 
@@ -604,6 +617,21 @@ class MessagesScreen : public UIScreen {
       if (child_locked && !channelAllowedForChild((uint8_t)i, ch)) continue;
       _channel_indices[_num_channels++] = (uint8_t)i;
     }
+    // Stable partition: favourite channels first, preserving slot order.
+    int front = 0;
+    for (int i = 0; p && i < _num_channels; i++) {
+      if (!(p->ch_fav_bitmask & (1ULL << _channel_indices[i]))) continue;
+      uint8_t idx = _channel_indices[i];
+      for (int j = i; j > front; j--) _channel_indices[j] = _channel_indices[j - 1];
+      _channel_indices[front++] = idx;
+    }
+  }
+
+  bool toggleContactFavourite(const ContactInfo& contact) {
+    bool favourite = !(contact.flags & 0x01);
+    if (!the_mesh.setContactFavourite(contact.id.pub_key, favourite)) return false;
+    snprintf(_ctx_fav_item, sizeof(_ctx_fav_item), "Fav: %s", favourite ? "On" : "Off");
+    return true;
   }
 
   // Returns per-channel notification state: 0=follow global, 1=muted, 2=force-on
@@ -623,37 +651,41 @@ class MessagesScreen : public UIScreen {
     NodePrefs* p = _task->getNodePrefs();
     return solo::NotificationPreferences::channelState(p, ch_idx);
   }
-  void setChNotifState(uint8_t ch_idx, uint8_t state) {
+  bool setChNotifState(uint8_t ch_idx, uint8_t state) {
     NodePrefs* p = _task->getNodePrefs();
-    solo::NotificationPreferences::setChannelState(p, ch_idx, state);
+    return solo::NotificationPreferences::setChannelState(p, ch_idx, state);
   }
 
   uint8_t dmNotifState(const uint8_t* pub_key) const {
     NodePrefs* p = _task->getNodePrefs();
     return solo::NotificationPreferences::dmState(p, pub_key);
   }
-  void setDmNotifState(const uint8_t* pub_key, uint8_t state) {
+  bool setDmNotifState(const uint8_t* pub_key, uint8_t state) {
     NodePrefs* p = _task->getNodePrefs();
-    solo::NotificationPreferences::setDmState(p, pub_key, state);
+    return solo::NotificationPreferences::setDmState(p, pub_key, state);
   }
 
-  // Channel melody: slot 1 = melody 1 (variant bit clear), 2 = melody 2 (set).
+  // Melody override 0 follows the global sound; other values are catalogue ID + 1.
+  static const char* melodyOverrideLabel(uint8_t value) {
+    return value ? solo::BuiltinMelodies::label(value - 1) : "Global";
+  }
+
   uint8_t chNotifMelody(uint8_t ch_idx) const {
     NodePrefs* p = _task->getNodePrefs();
     return solo::NotificationPreferences::channelMelody(p, ch_idx);
   }
-  void setChNotifMelody(uint8_t ch_idx, uint8_t slot) {
+  bool setChNotifMelody(uint8_t ch_idx, uint8_t slot) {
     NodePrefs* p = _task->getNodePrefs();
-    solo::NotificationPreferences::setChannelMelody(p, ch_idx, slot);
+    return solo::NotificationPreferences::setChannelMelody(p, ch_idx, slot);
   }
 
   uint8_t dmMelodySlot(const uint8_t* pub_key) const {
     NodePrefs* p = _task->getNodePrefs();
     return solo::NotificationPreferences::dmMelody(p, pub_key);
   }
-  void setDmMelody(const uint8_t* pub_key, uint8_t slot) {
+  bool setDmMelody(const uint8_t* pub_key, uint8_t slot) {
     NodePrefs* p = _task->getNodePrefs();
-    solo::NotificationPreferences::setDmMelody(p, pub_key, slot);
+    return solo::NotificationPreferences::setDmMelody(p, pub_key, slot);
   }
 
   // On-device channel Add/Edit form (Channels tab) — owned by this screen and
@@ -709,6 +741,17 @@ public:
   }
   void markChannelRelayed(uint32_t seq) { _history.markChannelRelayed(seq); }
   void markChannelRelayExpired(uint32_t seq) { _history.markChannelRelayExpired(seq); }
+  void armChannelRelay(int pos, uint32_t seq) { _history.armChannelRelay(pos, seq); }
+  void addAppDMMsg(const uint8_t* pub_key, const char* text, uint32_t timestamp,
+                   uint8_t attempt, uint32_t ack_tag, uint32_t ack_deadline_ms,
+                   uint8_t path_len) {
+    uint8_t route = path_len == OUT_PATH_UNKNOWN ? DELIVERY_ROUTE_FLOOD
+                    : (path_len == 0 ? DELIVERY_ROUTE_DIRECT : DELIVERY_ROUTE_PATH);
+    bool viewing = isViewingContact(pub_key);
+    bool added = _history.storeAppDM(pub_key, text, timestamp, attempt,
+                                     ack_tag, ack_deadline_ms, route);
+    if (viewing && added) _dm_transcript.messageAdded();
+  }
   bool addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text,
                 uint32_t sender_timestamp = 0) {
     bool viewing = isViewingContact(pub_key);
@@ -859,6 +902,7 @@ public:
     _pick_bot_channel = false;
     _pick_bot_room = false;
     _pin_picker_active = false;
+    _channel_delete_confirm_active = false;
     _dm_direct_entry = false;
     _channel_direct_entry = false;
     _quick_msgs_bypassed = false;
@@ -1093,7 +1137,10 @@ public:
           uint8_t dm_unread = _room_mode ? _task->getRoomUnread(c.id.pub_key)
                                          : _task->getDMUnread(c.id.pub_key);
           int bw = dm_unread > 0 ? display.unreadBadgeWidth(dm_unread) + 2 : 0;
-          display.drawTextEllipsized(2, y, display.width() - 2 - bw - reserve, c.name);
+          int sw = (c.flags & 0x01) ? favStarWidth(display) : 0;
+          display.drawTextEllipsized(2, y, display.width() - 2 - bw - sw - reserve,
+                                     c.name, sel && !_ctx_menu.active);
+          if (sw) drawFavStar(display, display.width() - reserve - bw - sw, y);
           if (dm_unread > 0)
             display.drawUnreadBadge(display.width() - reserve, y, dm_unread, sel);
         }
@@ -1131,7 +1178,12 @@ public:
         if (the_mesh.getChannel(_channel_indices[list_idx], ch)) {
           uint8_t unread = _history.chUnread(_channel_indices[list_idx]);
           int bw = unread > 0 ? display.unreadBadgeWidth(unread) + 2 : 0;
-          display.drawTextEllipsized(2, y, display.width() - 4 - bw - reserve, ch.name);
+          bool favourite = _task->getNodePrefs() &&
+              (_task->getNodePrefs()->ch_fav_bitmask & (1ULL << _channel_indices[list_idx]));
+          int sw = favourite ? favStarWidth(display) : 0;
+          display.drawTextEllipsized(2, y, display.width() - 4 - bw - sw - reserve,
+                                     ch.name, sel && !_ctx_menu.active);
+          if (sw) drawFavStar(display, display.width() - reserve - bw - sw, y);
           if (unread > 0)
             display.drawUnreadBadge(display.width() - reserve, y, unread, sel);
         }
@@ -1318,15 +1370,13 @@ public:
       int total_msg_items = _active_msg_count;
       if (total_msg_items == 0) {
         display.drawTextCentered(display.width() / 2, display.height() / 2,
-                                 "No quick messages");
+                                 "No quick replies");
         return 2000;
       }
       drawList(display, total_msg_items, _msg_sel, _msg_scroll, [&](int idx, int y, bool sel, int reserve) {
         drawRowSelection(display, y, sel, reserve);
-        NodePrefs* p = _task->getNodePrefs();
-        int slot = _active_msgs[idx];
-        const char* tmpl = p ? p->custom_msgs[slot] : "";
-        display.drawTextEllipsized(2, y, display.width() - 4 - reserve, tmpl);
+        const char* tmpl = quickReplyText(_active_replies[idx]);
+        display.drawTextEllipsized(2, y, display.width() - 4 - reserve, tmpl, sel);
       });
     }
     return 2000;
@@ -1396,7 +1446,20 @@ public:
       // Context menu consumes all input while open
       if (_ctx_menu.active) {
         if (_room_mode) {
+          int favourite_row = _ctx_menu.count() - 1;
+          if ((keyIsPrev(c) || keyIsNext(c)) && _ctx_menu.selectedIndex() == favourite_row) {
+            ContactInfo ci;
+            if (_num_contacts > 0 && the_mesh.getContactByIdx(_sorted[_contact_sel], ci))
+              toggleContactFavourite(ci);
+            return true;
+          }
           auto res = _ctx_menu.handleInput(c);
+          if (res == PopupMenu::VALUE_NEXT && _ctx_menu.selectedIndex() == favourite_row) {
+            ContactInfo ci;
+            if (_num_contacts > 0 && the_mesh.getContactByIdx(_sorted[_contact_sel], ci))
+              toggleContactFavourite(ci);
+            return true;
+          }
           if (res == PopupMenu::SELECTED && _num_contacts > 0) {
             if (the_mesh.getContactByIdx(_sorted[_contact_sel], _sel_contact)) {
               int sel = _ctx_menu.selectedIndex();
@@ -1405,37 +1468,61 @@ public:
                 _kb->begin("", 15); // room/repeater password: max 15 chars
                 _kb->clearPlaceholders();   // message placeholders are not valid in a password
                 _phase = KEYBOARD;
-              } else {
+              } else if (sel < favourite_row) {
                 // Logout: only reachable when isRoomLoggedIn() added this item.
                 _task->logoutRoom(_sel_contact.id.pub_key);
                 _task->showAlert("Logged out", 1000);
               }
             }
           }
+          if (res != PopupMenu::NONE && _phase == CONTACT_PICK) {
+            buildContactList();
+            if (_contact_sel >= _num_contacts)
+              _contact_sel = _num_contacts > 0 ? _num_contacts - 1 : 0;
+          }
           return true;
         }
-        // LEFT/RIGHT cycle Notif/Melody in-place (menu stays open).
+        // LEFT/RIGHT cycle Notif/Melody/Favourite in place.
         if (!_pin_picker_active && _num_contacts > 0) {
           bool left  = keyIsPrev(c);
-          bool right = keyIsNext(c);
+          int value_sel = _ctx_menu.selectedIndex();
+          if (c == KEY_ENTER && value_sel == 2) {
+            ContactInfo ci;
+            NodePrefs* p = _task->getNodePrefs();
+            if (p && the_mesh.getContactByIdx(_sorted[_contact_sel], ci)) {
+              uint8_t selection = solo::BuiltinMelodies::resolveOverride(
+                  dmMelodySlot(ci.id.pub_key), p->notif_melody_dm);
+              _task->previewMelody(selection, solo::BuiltinMelodies::MESSAGE);
+            }
+            return true;
+          }
+          bool right = keyIsNext(c) || (c == KEY_ENTER && (value_sel == 1 || value_sel == 3));
           if (left || right) {
             static const char* NOTIF_LABELS[] = { "Default", "Off", "On" };
-            static const char* ML[]           = { "Global", "M1", "M2" };
             ContactInfo ci;
             if (the_mesh.getContactByIdx(_sorted[_contact_sel], ci)) {
               int sel = _ctx_menu.selectedIndex();
               if (sel == 1) {
                 uint8_t v = dmNotifState(ci.id.pub_key);
                 v = right ? (v + 1) % 3 : (v + 2) % 3;
-                setDmNotifState(ci.id.pub_key, v);
+                if (!setDmNotifState(ci.id.pub_key, v)) {
+                  _task->showAlert("Override list full", 1500);
+                  return true;
+                }
                 snprintf(_ctx_notif_item, sizeof(_ctx_notif_item), "Notif: %s", NOTIF_LABELS[v]);
                 _ctx_dirty = true;
               } else if (sel == 2) {
                 uint8_t v = dmMelodySlot(ci.id.pub_key);
-                v = right ? (v + 1) % 3 : (v + 2) % 3;
-                setDmMelody(ci.id.pub_key, v);
-                snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s", ML[v]);
+                v = right ? (v + 1) % (solo::BuiltinMelodies::COUNT + 1)
+                          : (v + solo::BuiltinMelodies::COUNT) % (solo::BuiltinMelodies::COUNT + 1);
+                if (!setDmMelody(ci.id.pub_key, v)) {
+                  _task->showAlert("Override list full", 1500);
+                  return true;
+                }
+                snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s", melodyOverrideLabel(v));
                 _ctx_dirty = true;
+              } else if (sel == 3) {
+                toggleContactFavourite(ci);
               }
             }
             return true;
@@ -1466,7 +1553,7 @@ public:
               int cleared = (int)_task->getDMUnread(ci.id.pub_key);
               _task->clearDMUnread(ci.id.pub_key);
               markReadAlert(cleared);
-            } else if (sel == 3) {
+            } else if (sel == 4) {
               // Pin / Unpin
               int pinned_slot = _task->findFavouriteSlot(ci.id.pub_key);
               if (pinned_slot >= 0) {
@@ -1501,10 +1588,17 @@ public:
                 _pin_picker_active = true;
               }
             }
-            // sel == 1 (Notif) and sel == 2 (Melody): already cycled via LEFT/RIGHT; ENTER just closes.
+            // Value rows are handled in place by Left/Right/Enter above.
           }
         }
-        if (res != PopupMenu::NONE) _task->savePrefsIfDirty(_ctx_dirty);
+        if (res != PopupMenu::NONE) {
+          _task->savePrefsIfDirty(_ctx_dirty);
+          if (!_pin_picker_active) {
+            buildContactList();
+            if (_contact_sel >= _num_contacts)
+              _contact_sel = _num_contacts > 0 ? _num_contacts - 1 : 0;
+          }
+        }
         return true;
       }
       if (c == KEY_CANCEL) {
@@ -1570,9 +1664,11 @@ public:
       if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && _room_mode && !_task->isChildModeLocked()) {
         ContactInfo ci;
         bool logged_in = the_mesh.getContactByIdx(_sorted[_contact_sel], ci) && isRoomLoggedIn(ci.id.pub_key);
-        _ctx_menu.begin("Room options", logged_in ? 2 : 1);
+        snprintf(_ctx_fav_item, sizeof(_ctx_fav_item), "Fav: %s", (ci.flags & 0x01) ? "On" : "Off");
+        _ctx_menu.begin("Room options", logged_in ? 3 : 2);
         _ctx_menu.addItem("Login...");
         if (logged_in) _ctx_menu.addItem("Logout");
+        _ctx_menu.addValueItem(_ctx_fav_item);
         return true;
       }
       if (c == KEY_CONTEXT_MENU && _num_contacts > 0 && !_room_mode && !_task->isChildModeLocked()) {
@@ -1581,16 +1677,17 @@ public:
         the_mesh.getContactByIdx(_sorted[_contact_sel], ci);
         snprintf(_ctx_notif_item, sizeof(_ctx_notif_item), "Notif: %s",
                  NOTIF_LABELS[dmNotifState(ci.id.pub_key)]);
-        { static const char* ML[] = { "Global", "M1", "M2" };
-          snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s",
-                   ML[dmMelodySlot(ci.id.pub_key)]); }
+        snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s",
+                 melodyOverrideLabel(dmMelodySlot(ci.id.pub_key)));
         int pinned_slot = _task->findFavouriteSlot(ci.id.pub_key);
         if (pinned_slot >= 0) snprintf(_ctx_pin_item, sizeof(_ctx_pin_item), "Unpin (slot %d)", pinned_slot + 1);
         else                  snprintf(_ctx_pin_item, sizeof(_ctx_pin_item), "Pin to dial");
-        _ctx_menu.begin("Contact options", 3);
+        snprintf(_ctx_fav_item, sizeof(_ctx_fav_item), "Fav: %s", (ci.flags & 0x01) ? "On" : "Off");
+        _ctx_menu.begin("Contact options", 5);
         _ctx_menu.addItem("Mark as read");
-        _ctx_menu.addItem(_ctx_notif_item);
-        _ctx_menu.addItem(_ctx_melody_item);
+        _ctx_menu.addValueItem(_ctx_notif_item);
+        _ctx_menu.addValueItem(_ctx_melody_item);
+        _ctx_menu.addValueItem(_ctx_fav_item);
         _ctx_menu.addItem(_ctx_pin_item);
         _ctx_dirty = false;
         return true;
@@ -1600,12 +1697,22 @@ public:
       // Context menu consumes all input while open
       if (_ctx_menu.active) {
         // LEFT/RIGHT cycle Notif/Melody/Fav in-place (menu stays open).
-        if (_num_channels > 0) {
+        if (!_channel_delete_confirm_active && _num_channels > 0) {
           bool left  = keyIsPrev(c);
-          bool right = keyIsNext(c);
+          int value_sel = _ctx_menu.selectedIndex();
+          if (c == KEY_ENTER && value_sel == 2) {
+            NodePrefs* p = _task->getNodePrefs();
+            if (p) {
+              uint8_t selection = solo::BuiltinMelodies::resolveOverride(
+                  chNotifMelody(_ctx_ch_idx), p->notif_melody_ch);
+              _task->previewMelody(selection, solo::BuiltinMelodies::KERPLOP);
+            }
+            return true;
+          }
+          bool right = keyIsNext(c) ||
+                       (c == KEY_ENTER && (value_sel == 1 || value_sel == 3));
           if (left || right) {
             static const char* NOTIF_LABELS[] = { "Default", "Off", "On" };
-            static const char* ML[]           = { "Global", "M1", "M2" };
             uint8_t ch_idx = _ctx_ch_idx;   // frozen at menu open — see declaration
             int sel = _ctx_menu.selectedIndex();
             if (sel == 1) {
@@ -1616,9 +1723,10 @@ public:
               _ctx_dirty = true;
             } else if (sel == 2) {
               uint8_t v = chNotifMelody(ch_idx);
-              v = right ? (v + 1) % 3 : (v + 2) % 3;
+              v = right ? (v + 1) % (solo::BuiltinMelodies::COUNT + 1)
+                        : (v + solo::BuiltinMelodies::COUNT) % (solo::BuiltinMelodies::COUNT + 1);
               setChNotifMelody(ch_idx, v);
-              snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s", ML[v]);
+              snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s", melodyOverrideLabel(v));
               _ctx_dirty = true;
             } else if (sel == 3) {
               NodePrefs* p2 = _task->getNodePrefs();
@@ -1637,6 +1745,22 @@ public:
           }
         }
         auto res = _ctx_menu.handleInput(c);
+        if (_channel_delete_confirm_active) {
+          if (res == PopupMenu::SELECTED && _ctx_menu.selectedIndex() == 0) {
+            ChannelDetails ch;
+            memset(&ch, 0, sizeof(ch));
+            the_mesh.setChannelLocal(_ctx_ch_idx, ch);
+            _task->showAlert("Channel deleted", 1000);
+          }
+          if (res != PopupMenu::NONE) {
+            _channel_delete_confirm_active = false;
+            _task->savePrefsIfDirty(_ctx_dirty);
+            buildChannelList();
+            if (_channel_sel >= _num_channels)
+              _channel_sel = _num_channels > 0 ? _num_channels - 1 : 0;
+          }
+          return true;
+        }
         if (res == PopupMenu::SELECTED && _num_channels > 0) {
           uint8_t ch_idx = _ctx_ch_idx;   // frozen at menu open — see declaration
           int sel = _ctx_menu.selectedIndex();
@@ -1648,12 +1772,11 @@ public:
             ChannelDetails ch;
             if (the_mesh.getChannel(ch_idx, ch)) _ch_view.openEdit(ch_idx, ch.name);
           } else if (sel == 5) {              // Delete
-            ChannelDetails ch;
-            memset(&ch, 0, sizeof(ch));
-            the_mesh.setChannelLocal(ch_idx, ch);
-            _task->showAlert("Channel deleted", 1000);
+            _ctx_menu.beginConfirm("Delete channel?", "Delete");
+            _channel_delete_confirm_active = true;
+            return true;
           }
-          // sel 1/2/3 already handled by LEFT/RIGHT; ENTER just closes.
+          // Value rows are handled in place by Left/Right/Enter above.
         }
         if (res != PopupMenu::NONE) {
           _task->savePrefsIfDirty(_ctx_dirty);
@@ -1713,17 +1836,16 @@ public:
         static const char* NOTIF_LABELS[] = { "Default", "Off", "On" };
         snprintf(_ctx_notif_item, sizeof(_ctx_notif_item), "Notif: %s",
                  NOTIF_LABELS[chNotifState(ch_idx)]);
-        { static const char* ML[] = { "Global", "M1", "M2" };
-          snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s",
-                   ML[chNotifMelody(ch_idx)]); }
+        snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s",
+                 melodyOverrideLabel(chNotifMelody(ch_idx)));
         { NodePrefs* p2 = _task->getNodePrefs();
           bool is_fav = p2 && (p2->ch_fav_bitmask & (1ULL << ch_idx));
           snprintf(_ctx_ch_fav_item, sizeof(_ctx_ch_fav_item), is_fav ? "Fav: Yes" : "Fav: No"); }
         _ctx_menu.begin("Channel options", 6);
         _ctx_menu.addItem("Mark all read");
-        _ctx_menu.addItem(_ctx_notif_item);
-        _ctx_menu.addItem(_ctx_melody_item);
-        _ctx_menu.addItem(_ctx_ch_fav_item);
+        _ctx_menu.addValueItem(_ctx_notif_item);
+        _ctx_menu.addValueItem(_ctx_melody_item);
+        _ctx_menu.addValueItem(_ctx_ch_fav_item);
         _ctx_menu.addItem("Edit");
         _ctx_menu.addItem("Delete");
         _ctx_dirty = false;
@@ -1919,9 +2041,7 @@ public:
       if (c == KEY_UP)   { _msg_sel = (_msg_sel > 0) ? _msg_sel - 1 : total_msg_items - 1; return true; }
       if (c == KEY_DOWN) { _msg_sel = (_msg_sel < total_msg_items - 1) ? _msg_sel + 1 : 0; return true; }
       if (c == KEY_ENTER) {
-        NodePrefs* p = _task->getNodePrefs();
-        int slot = _active_msgs[_msg_sel];
-        const char* tmpl = p ? p->custom_msgs[slot] : "OK";
+        const char* tmpl = quickReplyText(_active_replies[_msg_sel]);
         char msg[MSG_TEXT_BUF];
         expandMsg(tmpl, msg, sizeof(msg));
         solo::MessageTextPolicy::trim(msg, sendTextLimit());

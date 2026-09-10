@@ -95,7 +95,10 @@ protected:
   void bootstrapRTCfromContacts();
 
   void resetContacts() {
-    memset(contacts, 0, sizeof(contacts[0])*MAX_ANON_CONTACTS);   // set all to have type = ADV_TYPE_NONE(0)
+    // This also runs before a mid-session contact reload. Clear real contacts
+    // as well as the anonymous scratch slots so a shorter reload cannot leave
+    // stale entries behind.
+    memset(contacts, 0, sizeof(contacts));
     num_contacts = MAX_ANON_CONTACTS;  // seed the first contacts for anon requests
   }
   void populateContactFromAdvert(ContactInfo& ci, const mesh::Identity& id, const AdvertDataParser& parser, uint32_t timestamp);

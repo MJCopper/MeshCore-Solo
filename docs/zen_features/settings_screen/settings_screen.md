@@ -6,6 +6,10 @@ Settings opens a flat section list. Each section has its own screen. Changes
 are staged and saved on Back only when the final value differs from the saved
 value.
 
+Zen tracks a separate semantic configuration schema alongside the preference
+file layout. Boot applies any outstanding ordered migrations, normalises active
+settings and compacts override tables, then saves only when stored data changed.
+
 ## Display
 
 Brightness, display timeout, battery format, clock seconds and 12/24-hour time.
@@ -13,8 +17,8 @@ E-ink builds also provide display rotation, joystick rotation and full-refresh
 interval.
 
 Battery percentage estimates usable charge from voltage: 0% at 3.3 V and 100%
-at 4.2 V, using a non-linear single-cell Li-ion/LiPo discharge curve. The
-device shuts down at or below 3.0 V unless externally powered.
+at 4.12 V, using a non-linear single-cell Li-ion/LiPo discharge curve. The
+device shuts down at or below 3.1 V unless externally powered.
 At 20% or below, a Low Battery alert sounds one short beep, then repeats hourly
 while on battery power. Quiet Time suppresses the beep; the visual notification
 follows the message screen-wake rules. The alert does not add an unread message.
@@ -36,12 +40,19 @@ settings. The page shows the remaining time. At expiry, GPS, Bluetooth and the
 radio turn off, pending automatic retries stop, and normal Low Power restrictions
 resume. The card always shows Radio, GPS and Bluetooth status. While active,
 Enter opens a confirmation to end Emergency Mode early. The battery display
-reaches 0% at 3.3 V; shutdown occurs at 3.0 V.
+reaches 0% at 3.3 V; shutdown occurs at 3.1 V.
 
 ## Sound
 
 Buzzer mode, volume, DM/channel/advert melodies, advert sound scope, and Quiet
-Time schedule. Custom melodies are edited in **Tools › Ringtone Editor**.
+Time schedule. Notification sounds can use Message, Kerplop, Chime, Ripple,
+Beacon, Cheer, Orbit, Alert, Custom1, Custom2 or None. Any sound can be assigned
+globally or to an individual contact or channel. Custom melodies are edited in
+**Tools › Ringtone Editor**. Each supports up to 16 notes or pauses, chromatic
+pitches from C through B, octaves 4–7, four note lengths and five tempos.
+Accidentals are shown as sharps; use the enharmonic sharp for a flat note.
+Use Left/Right to select a melody and Enter to preview it. Preview is silent
+when Buzzer is Off and does not save the selection; settings save on Back.
 
 ## Advert
 
@@ -112,7 +123,9 @@ Set the six-digit PIN, enable the mode, and select whether favourited private
 Channels and the Favourites home page remain visible. See
 [Child Mode](../child_mode/child_mode.md).
 
-## Messages
+## Quick Replies
 
-Edit quick-message templates Q1–Q10. Templates support the same time, location
-and active-sensor placeholders as message composition.
+Ten natural built-in replies are always available. Edit up to five additional
+custom replies here; empty custom slots are omitted from the reply picker.
+Custom replies support the same time, location and active-sensor placeholders
+as message composition.

@@ -39,7 +39,9 @@ public:
   void savePrefs(const NodePrefs& prefs, double node_lat, double node_lon);
   void loadContacts(DataStoreHost* host);
   void saveContacts(DataStoreHost* host, bool (*filter)(const ContactInfo& c) = NULL);
-  void loadChannels(DataStoreHost* host);
+  // True when current or legacy channel storage exists. This lets first boot
+  // seed Public without resurrecting it after a user deletes it.
+  bool loadChannels(DataStoreHost* host);
   void saveChannels(DataStoreHost* host);
   void migrateToSecondaryFS();
   uint8_t getBlobByKey(const uint8_t key[], int key_len, uint8_t dest_buf[]);

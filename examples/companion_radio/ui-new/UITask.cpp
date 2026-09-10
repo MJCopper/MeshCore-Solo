@@ -3,7 +3,9 @@
 #include "HomePageRegistry.h"
 #include "../solo/NotificationPreferences.h"
 #include "../solo/NotificationPolicy.h"
+#include "../solo/TimeDeadline.h"
 #include <helpers/TxtDataHelpers.h>
+#include <helpers/UTF8Helpers.h>
 #include "../MyMesh.h"
 #include "../MsgExpand.h"
 #include "../Features.h"
@@ -151,9 +153,6 @@ public:
     return true;
   }
 };
-
-static const int QUICK_MSGS_MAX = 10;
-
 
 // ── Screen fragments — included into THIS translation unit only ───────────────
 // These headers are not standalone: they are compiled solely as part of
@@ -346,7 +345,7 @@ class HomeScreen : public UIScreen {
       int y = content_y + pos * step;
       bool active = index == selected;
       display.drawSelectionRow(0, y - 1, display.width(), step - 1, active);
-      display.drawTextEllipsized(2, y, display.width() - 4, label(index));
+      display.drawTextEllipsized(2, y, display.width() - 4, label(index), active);
     }
   }
 
@@ -391,6 +390,7 @@ class HomeScreen : public UIScreen {
         ContactInfo c;
         if (!the_mesh.getContactByIdx(idx, c)) break;
         if (memcmp(c.id.pub_key, recent[i], NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
+          if (c.type != ADV_TYPE_CHAT) break;
           memcpy(_pin_keys[_pin_count], recent[i], NodePrefs::FAVOURITE_PREFIX_LEN);
           snprintf(_pin_labels[_pin_count], sizeof(_pin_labels[_pin_count]), "%s", c.name);
           _pin_count++;
@@ -970,7 +970,8 @@ public:
           int name_y     = cy + (cell_h - line_h) / 2;
           int name_max_w = cell_w - 4 - bw;
           if (name_max_w < 6) name_max_w = 6;
-          display.drawTextEllipsized(cx + 2, name_y, name_max_w, ci.name);
+          display.drawTextEllipsized(cx + 2, name_y, name_max_w, ci.name,
+                                     sel && !_fav_menu.active && !_pin_menu.active);
           if (unread > 0)
             display.drawUnreadBadge(cx + cell_w - 2, name_y, unread, sel);
         } else {
@@ -1055,7 +1056,9 @@ public:
           } else {
             _task->clearFavouriteSlot(_fav_sel);
             the_mesh.savePrefs();
-            _task->showAlert("Favourite removed", 800);
+            char alert[24];
+            snprintf(alert, sizeof(alert), "Unpinned (slot %d)", _fav_sel + 1);
+            _task->showAlert(alert, 800);
           }
         }
         return true;
@@ -1120,6 +1123,12 @@ public:
             ContactInfo c2;
             if (!the_mesh.getContactByIdx(idx, c2)) break;
             if (memcmp(c2.id.pub_key, pfx, NodePrefs::FAVOURITE_PREFIX_LEN) == 0) {
+              if (c2.type != ADV_TYPE_CHAT) {
+                _task->clearFavouriteSlot(_fav_sel);
+                the_mesh.savePrefs();
+                _task->showAlert("Invalid favourite removed", 1000);
+                return true;
+              }
               _task->openContactDM(c2);
               return true;
             }
@@ -1239,9 +1248,9 @@ public:
     if (c == KEY_ENTER && _page == HomePage::ADVERT) {
       _task->notify(UIEventType::ack);
       if (the_mesh.advert()) {
-        _task->showAlert("Advert sent!", 1000);
+        _task->showAlert("Advert sent", 1000);
       } else {
-        _task->showAlert("Advert failed..", 1000);
+        _task->showAlert("Advert failed", 1000);
       }
       return true;
     }
@@ -1313,11 +1322,6 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 #ifdef PIN_VIBRATION
   vibration.begin();
 #endif
-
-  // Set default quick message if slot 0 is empty (first boot)
-  if (_node_prefs && _node_prefs->custom_msgs[0][0] == '\0') {
-    strncpy(_node_prefs->custom_msgs[0], "OK", sizeof(_node_prefs->custom_msgs[0]) - 1);
-  }
 
   ui_started_at = millis();
   _alert_expiry = 0;
@@ -1684,6 +1688,22 @@ void UITask::playMelody(const char* melody) {
 #endif
 }
 
+void UITask::previewMelody(uint8_t selection, uint8_t empty_fallback) {
+#ifdef PIN_BUZZER
+  // An explicit Off remains authoritative. Auto mode may be quiet because a
+  // client is connected, but a user-requested preview should still be audible.
+  if (getBuzzerMode() == 1) {
+    buzzer.stop();
+    return;
+  }
+  SoundNotifier sn(buzzer, _node_prefs, _notif_mel_buf, sizeof(_notif_mel_buf));
+  sn.preview(selection, empty_fallback);
+#else
+  (void)selection;
+  (void)empty_fallback;
+#endif
+}
+
 void UITask::stopMelody() {
 #ifdef PIN_BUZZER
   buzzer.stop();
@@ -1939,6 +1959,36 @@ bool UITask::addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, u
                                                             sender_timestamp);
   if (added) reconcileDMUnread();
   return added;
+}
+
+void UITask::addAppDMMsg(const uint8_t* pub_key, const char* text,
+                         uint32_t timestamp, uint8_t attempt,
+                         uint32_t ack_tag, uint32_t ack_deadline_ms,
+                         uint8_t path_len) {
+  ((MessagesScreen*)messages_screen)->addAppDMMsg(pub_key, text, timestamp,
+      attempt, ack_tag, ack_deadline_ms, path_len);
+  _next_refresh = 0;
+}
+
+int UITask::addOwnChannelMsg(uint8_t channel_idx, const char* text,
+                             int text_len, uint32_t timestamp) {
+  char entry[sizeof(ChHistEntry::text)];
+  static const char prefix[] = "Me: ";
+  memcpy(entry, prefix, sizeof(prefix) - 1);
+  size_t available = sizeof(entry) - sizeof(prefix);
+  size_t requested = text_len < 0 ? strlen(text) : (size_t)text_len;
+  if (requested > available) requested = available;
+  size_t copied = mesh::validUtf8PrefixLength(text, requested);
+  memcpy(entry + sizeof(prefix) - 1, text, copied);
+  entry[sizeof(prefix) - 1 + copied] = '\0';
+  int pos = ((MessagesScreen*)messages_screen)->addChannelMsg(channel_idx, entry,
+                                                               timestamp, false);
+  _next_refresh = 0;
+  return pos;
+}
+
+void UITask::armChannelRelay(int history_pos, uint32_t seq) {
+  ((MessagesScreen*)messages_screen)->armChannelRelay(history_pos, seq);
 }
 
 int UITask::getDMUnreadTotal() const {
@@ -2389,7 +2439,12 @@ bool UITask::savePrefsIfDirty(bool& dirty) {
   hardware-agnostic pre-shutdown activity should be done here
 */
 void UITask::shutdown(bool restart){
+  // Settings normally commit on Back. A shutdown is also an exit, and may be
+  // initiated asynchronously by the battery guard while that screen is open.
+  if (settings) ((SettingsScreen*)settings)->prepareForShutdown();
+  the_mesh.savePrefs();
   the_mesh.saveRTCTime();
+  the_mesh.flushDirtyContacts();
 
   // Auto-save the live GPS trail before power-off when the user enabled it
   // (Tools › Trail › Settings › Auto-save). This covers the low-battery
@@ -2733,26 +2788,32 @@ void UITask::loop() {
 #endif
 
   if (_display != NULL && _display->isOn()) {
-    if (millis() >= _next_refresh && curr) {
+    uint32_t frame_now = millis();
+    if (solo::TimeDeadline::due(frame_now, _next_refresh) && curr) {
       _display->startFrame();
+      _display->beginMarqueeFrame();
       _kb.beginFrame();
       int delay_millis = curr->render(*_display);
+      int marquee_delay = _display->marqueeDelay();
+      if (marquee_delay > 0 && (delay_millis <= 0 || marquee_delay < delay_millis))
+        delay_millis = marquee_delay;
       // Skip the alert overlay (new-message toast) while the keyboard is the
       // thing actually on screen this frame -- it's shared across Messages/
       // Bot/Settings/Admin/etc., so this covers every screen that uses it for
       // full-screen text entry, not just message compose. Otherwise a message
       // arriving mid-typing blanks out the letter grid for 3s with no way to
       // see what's being typed.
-      if (millis() < _alert_expiry && !_kb.isVisible()) {  // alert overlay on top of any (non-keyboard) screen
+      frame_now = millis();
+      if (solo::TimeDeadline::active(frame_now, _alert_expiry) && !_kb.isVisible()) {
         renderAlertOverlay();
         // Keep refreshing the underlying screen at its own cadence (capped at the
         // alert's expiry) so layouts that settle over a frame — e.g. the message-
         // history scrollbar reserve — don't stay stuck behind the alert. Unchanged
         // frames are skipped by the display CRC, so e-ink isn't thrashed.
-        _next_refresh = millis() + delay_millis;
-        if (_next_refresh > _alert_expiry) _next_refresh = _alert_expiry;
+        _next_refresh = frame_now + delay_millis;
+        if (solo::TimeDeadline::after(_next_refresh, _alert_expiry)) _next_refresh = _alert_expiry;
       } else {
-        _next_refresh = millis() + delay_millis;
+        _next_refresh = frame_now + delay_millis;
       }
       _display->endFrame();
     }
@@ -2786,8 +2847,10 @@ void UITask::loop() {
       // EMA filter: alpha=0.2 (80% old, 20% new) — smooths ADC noise from uneven load
       _batt_mv = (_batt_mv == 0) ? raw : (uint16_t)((_batt_mv * 4u + raw) / 5u);
     }
+    bool external_power = board.isExternalPowered();
+    _battery_runtime.update(millis(), _batt_mv, external_power, isEmergencyMode());
     // Don't shut down while on external power (charging) — avoids a shutdown loop.
-    if (solo::BatteryPolicy::shouldShutdown(_batt_mv, board.isExternalPowered())) {
+    if (solo::BatteryPolicy::shouldShutdown(_batt_mv, external_power)) {
       if (_display != NULL) {
         _display->startFrame();
         _display->setTextSize(1);
@@ -2801,9 +2864,9 @@ void UITask::loop() {
       }
       shutdown();
     }
-    bool low_power = _low_power_latch.update(_batt_mv, board.isExternalPowered());
+    bool low_power = _low_power_latch.update(_batt_mv, external_power);
     if (low_power != _low_power_mode) setLowPowerMode(low_power);
-    if (_low_battery_reminder.due(millis(), _batt_mv, board.isExternalPowered()))
+    if (_low_battery_reminder.due(millis(), _batt_mv, external_power))
       notifyLowBattery();
     next_batt_chck = millis() + 8000;
   }

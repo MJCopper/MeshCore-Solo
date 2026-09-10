@@ -156,11 +156,13 @@ struct FullscreenMsgView {
     }
     drawScrollIndicator(display, startY, visible * lineH, lcount, visible, scroll);
     const int nav_y = display.height() - lineH;
-    if (has_next) {
+    // Read in book order: older messages are to the left and newer messages
+    // are to the right. History indices themselves run newest-first.
+    if (has_prev) {
       display.setCursor(0, nav_y);
       display.print("<");
     }
-    if (has_prev) {
+    if (has_next) {
       display.setCursor(display.width() - cw, nav_y);
       display.print(">");
     }
@@ -170,8 +172,8 @@ struct FullscreenMsgView {
   Result handleInput(char c) {
     if (c == KEY_UP)          { if (scroll > 0) scroll--; return NONE; }
     if (c == KEY_DOWN)        { if (scroll < _max_scroll) scroll++; return NONE; }
-    if (keyIsPrev(c))         return NEXT;   // page between messages (encoder too)
-    if (keyIsNext(c))         return PREV;
+    if (keyIsPrev(c))         return PREV;
+    if (keyIsNext(c))         return NEXT;
     if (c == KEY_CONTEXT_MENU) return REPLY;
     if (c == KEY_ENTER || c == KEY_CANCEL) return CLOSE;
     return NONE;

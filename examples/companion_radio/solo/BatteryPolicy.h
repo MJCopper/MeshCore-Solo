@@ -8,35 +8,42 @@ namespace solo {
 // Percentage is a voltage-based estimate, not a fuel-gauge measurement.
 class BatteryPolicy {
 public:
-  static constexpr uint16_t SHUTDOWN_MV = 3000;
+  static constexpr uint16_t SHUTDOWN_MV = 3100;
   static constexpr uint16_t EMPTY_MV = 3300;
-  static constexpr uint16_t FULL_MV = 4200;
+  static constexpr uint16_t FULL_MV = 4120;
 
   static bool shouldShutdown(uint16_t mv, bool external_power) {
     return !external_power && mv > 0 && mv <= SHUTDOWN_MV;
   }
 
-  static int percent(int mv) {
-    static const struct { uint16_t mv; uint8_t pct; } CURVE[] = {
-      {EMPTY_MV, 0}, {3500, 5}, {3600, 10}, {3650, 15},
-      {3700, 25}, {3750, 38}, {3800, 50}, {3900, 67},
-      {4000, 80}, {4100, 90}, {FULL_MV, 100}
+  // Hundredths retain enough resolution for a multi-hour discharge-rate
+  // estimate while keeping the interpolation integer-only.
+  static uint16_t percentX100(int mv) {
+    static const struct { uint16_t mv; uint16_t pct_x100; } CURVE[] = {
+      {EMPTY_MV, 0}, {3450, 300}, {3550, 700}, {3600, 1200},
+      {3650, 2000}, {3700, 3000}, {3750, 4200}, {3800, 5500},
+      {3900, 7200}, {4000, 8500}, {4050, 9100}, {4100, 9700},
+      {FULL_MV, 10000}
     };
     if (mv <= EMPTY_MV) return 0;
-    if (mv >= FULL_MV) return 100;
+    if (mv >= FULL_MV) return 10000;
     // Piecewise interpolation follows the broad shape of a lightly loaded
     // single-cell Li-ion/LiPo discharge. Round to the nearest percentage.
     for (unsigned i = 1; i < sizeof(CURVE) / sizeof(CURVE[0]); i++) {
       if (mv <= CURVE[i].mv) {
         int span = CURVE[i].mv - CURVE[i - 1].mv;
-        int rise = (mv - CURVE[i - 1].mv) *
-                   (CURVE[i].pct - CURVE[i - 1].pct);
-        int result = CURVE[i - 1].pct + (rise + span / 2) / span;
-        // Reserve 100% for a measured full-charge voltage.
-        return result < 100 ? result : 99;
+        int32_t rise = (int32_t)(mv - CURVE[i - 1].mv) *
+                       (CURVE[i].pct_x100 - CURVE[i - 1].pct_x100);
+        return CURVE[i - 1].pct_x100 + (rise + span / 2) / span;
       }
     }
-    return 100;
+    return 10000;
+  }
+
+  static int percent(int mv) {
+    int result = (percentX100(mv) + 50) / 100;
+    // Reserve 100% for a measured full-charge voltage.
+    return mv < FULL_MV && result >= 100 ? 99 : result;
   }
 };
 

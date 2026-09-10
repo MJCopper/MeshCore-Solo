@@ -9,9 +9,11 @@ The Messages home page opens directly to **Direct Message**, **Channel** and
 
 Select a recipient to open its full transcript. Sender names are inverted,
 messages are separated by a rule, and Up/Down scroll one wrapped line at a time.
+Messages sent from a connected companion app are added to the same direct,
+channel and room histories and use the same delivery markers.
 
 - **Enter** composes a message.
-- **Hold Enter** opens quick messages and transcript actions.
+- **Hold Enter** opens quick replies and transcript actions.
 - In channels and rooms, **Reply to…** selects one of the six latest senders and
   inserts `@[name] `.
 - A failed latest message offers **Resend failed**; channels offer
@@ -61,8 +63,9 @@ sent. Hold Enter on a room to log in again or log out.
 ## Lists and context actions
 
 Contact and channel menus provide read state, notification and melody controls.
-Contacts can be pinned to the Favourites Dial. Channels can be favourited,
-edited or deleted, and the Channels list can add Public, hashtag or private
-channels.
+Contacts, rooms and channels can be starred and are sorted first in their lists.
+Contacts can separately be pinned to the four-slot Favourites Dial. Channels can
+also be edited or deleted, and the Channels list can add Public, hashtag or
+private channels.
 
 Child Mode limits these lists to permitted favourites and blocks editing.

@@ -7,6 +7,7 @@
 // Magic numbers came from actual testing
 #define BLE_HEALTH_CHECK_INTERVAL  10000  // Advertising watchdog check every 10 seconds
 #define BLE_RETRY_THROTTLE_MS      250    // Throttle retries to 250ms when queue buildup detected
+#define BLE_RETRY_THROTTLE_MAX_MS  2000   // Cap marginal-link retry backoff
 
 // Connection parameters (units: interval=1.25ms, timeout=10ms)
 #define BLE_MIN_CONN_INTERVAL      12     // 15ms
@@ -205,6 +206,7 @@ void SerialBLEInterface::clearBuffers() {
   send_queue_len = 0;
   recv_queue_len = 0;
   _last_retry_attempt = 0;
+  _retry_backoff_ms = 0;
   bleuart.flush();
 }
 
@@ -271,6 +273,8 @@ void SerialBLEInterface::disable() {
   Bluefruit.Advertising.stop();
   disconnect();
   _last_health_check = 0;
+  _last_retry_attempt = 0;
+  _retry_backoff_ms = 0;
 }
 
 size_t SerialBLEInterface::writeFrame(const uint8_t src[], size_t len) {
@@ -302,7 +306,8 @@ size_t SerialBLEInterface::checkRecvFrame(uint8_t dest[]) {
       send_queue_len = 0;
     } else {
       unsigned long now = millis();
-      bool throttle_active = (_last_retry_attempt > 0 && (now - _last_retry_attempt) < BLE_RETRY_THROTTLE_MS);
+      unsigned long throttle_ms = _retry_backoff_ms ? _retry_backoff_ms : BLE_RETRY_THROTTLE_MS;
+      bool throttle_active = (_last_retry_attempt > 0 && (now - _last_retry_attempt) < throttle_ms);
 
       if (!throttle_active) {
         Frame frame_to_send = send_queue[0];
@@ -311,19 +316,25 @@ size_t SerialBLEInterface::checkRecvFrame(uint8_t dest[]) {
         if (written == frame_to_send.len) {
           BLE_DEBUG_PRINTLN("writeBytes: sz=%u, hdr=%u", (unsigned)frame_to_send.len, (unsigned)frame_to_send.buf[0]);
           _last_retry_attempt = 0;
+          _retry_backoff_ms = 0;
           shiftSendQueueLeft();
         } else if (written > 0) {
           BLE_DEBUG_PRINTLN("writeBytes: partial write, sent=%u of %u, dropping corrupted frame", (unsigned)written, (unsigned)frame_to_send.len);
           _last_retry_attempt = 0;
+          _retry_backoff_ms = 0;
           shiftSendQueueLeft();
         } else {
           if (!isConnected()) {
             BLE_DEBUG_PRINTLN("writeBytes failed: connection lost, dropping frame");
             _last_retry_attempt = 0;
+            _retry_backoff_ms = 0;
             shiftSendQueueLeft();
           } else {
             BLE_DEBUG_PRINTLN("writeBytes failed (buffer full), keeping frame for retry");
             _last_retry_attempt = now;
+            unsigned long next = throttle_ms * 2;
+            _retry_backoff_ms = next > BLE_RETRY_THROTTLE_MAX_MS
+                                  ? BLE_RETRY_THROTTLE_MAX_MS : next;
           }
         }
       }

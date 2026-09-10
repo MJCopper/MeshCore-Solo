@@ -21,26 +21,25 @@ class NotificationPreferences {
   }
 
   template <class Entry>
-  static void tableSet(Entry* table, int count, const uint8_t* pub_key,
+  static bool tableSet(Entry* table, int count, const uint8_t* pub_key,
                        uint8_t Entry::* value, uint8_t setting) {
-    if (!table || !pub_key) return;
+    if (!table || !pub_key) return false;
     for (int i = 0; i < count; i++) {
       if (table[i].*value && memcmp(table[i].prefix, pub_key, 4) == 0) {
         if (setting == 0) memset(&table[i], 0, sizeof(table[i]));
         else table[i].*value = setting;
-        return;
+        return true;
       }
     }
-    if (setting == 0) return;
+    if (setting == 0) return true;
     for (int i = 0; i < count; i++) {
       if (table[i].*value == 0) {
         memcpy(table[i].prefix, pub_key, 4);
         table[i].*value = setting;
-        return;
+        return true;
       }
     }
-    memcpy(table[0].prefix, pub_key, 4);
-    table[0].*value = setting;
+    return false;
   }
 
   static uint8_t maskGet(uint64_t presence, uint64_t variant, uint8_t index,
@@ -65,6 +64,19 @@ class NotificationPreferences {
     }
   }
 
+  static uint8_t nibbleGet(const uint8_t* values, uint8_t index) {
+    if (!values || index >= 64) return 0;
+    uint8_t packed = values[index >> 1];
+    return index & 1 ? packed >> 4 : packed & 0x0F;
+  }
+
+  static void nibbleSet(uint8_t* values, uint8_t index, uint8_t setting) {
+    if (!values || index >= 64) return;
+    uint8_t& packed = values[index >> 1];
+    if (index & 1) packed = (packed & 0x0F) | ((setting & 0x0F) << 4);
+    else           packed = (packed & 0xF0) | (setting & 0x0F);
+  }
+
 public:
   // Notification state: 0=global, 1=muted, 2=force-on.
   static uint8_t dmState(const NodePrefs* prefs, const uint8_t* pub_key) {
@@ -72,9 +84,9 @@ public:
                             pub_key, &NodePrefs::DmNotifEntry::state) : 0;
   }
 
-  static void setDmState(NodePrefs* prefs, const uint8_t* pub_key, uint8_t state) {
-    if (prefs) tableSet(prefs->dm_notif, NodePrefs::DM_NOTIF_TABLE_MAX,
-                        pub_key, &NodePrefs::DmNotifEntry::state, state);
+  static bool setDmState(NodePrefs* prefs, const uint8_t* pub_key, uint8_t state) {
+    return prefs && tableSet(prefs->dm_notif, NodePrefs::DM_NOTIF_TABLE_MAX,
+                             pub_key, &NodePrefs::DmNotifEntry::state, state);
   }
 
   static uint8_t channelState(const NodePrefs* prefs, uint8_t index) {
@@ -82,9 +94,10 @@ public:
                            index, 1, 2) : 0;
   }
 
-  static void setChannelState(NodePrefs* prefs, uint8_t index, uint8_t state) {
-    if (prefs) maskSet(prefs->ch_notif_override, prefs->ch_notif_muted,
-                       index, state, 1);
+  static bool setChannelState(NodePrefs* prefs, uint8_t index, uint8_t state) {
+    if (!prefs || index >= 64) return false;
+    maskSet(prefs->ch_notif_override, prefs->ch_notif_muted, index, state, 1);
+    return true;
   }
 
   static uint8_t dmMelody(const NodePrefs* prefs, const uint8_t* pub_key) {
@@ -92,19 +105,19 @@ public:
                             pub_key, &NodePrefs::DmMelodyEntry::slot) : 0;
   }
 
-  static void setDmMelody(NodePrefs* prefs, const uint8_t* pub_key, uint8_t slot) {
-    if (prefs) tableSet(prefs->dm_melody, NodePrefs::DM_MELODY_TABLE_MAX,
-                        pub_key, &NodePrefs::DmMelodyEntry::slot, slot);
+  static bool setDmMelody(NodePrefs* prefs, const uint8_t* pub_key, uint8_t slot) {
+    return prefs && tableSet(prefs->dm_melody, NodePrefs::DM_MELODY_TABLE_MAX,
+                             pub_key, &NodePrefs::DmMelodyEntry::slot, slot);
   }
 
   static uint8_t channelMelody(const NodePrefs* prefs, uint8_t index) {
-    return prefs ? maskGet(prefs->ch_notif_melody_set, prefs->ch_notif_melody_2,
-                           index, 2, 1) : 0;
+    return prefs ? nibbleGet(prefs->channel_melody_overrides, index) : 0;
   }
 
-  static void setChannelMelody(NodePrefs* prefs, uint8_t index, uint8_t slot) {
-    if (prefs) maskSet(prefs->ch_notif_melody_set, prefs->ch_notif_melody_2,
-                       index, slot, 2);
+  static bool setChannelMelody(NodePrefs* prefs, uint8_t index, uint8_t slot) {
+    if (!prefs || index >= 64) return false;
+    nibbleSet(prefs->channel_melody_overrides, index, slot);
+    return true;
   }
 
   static bool removeContact(NodePrefs* prefs, const uint8_t* pub_key) {

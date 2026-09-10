@@ -17,18 +17,34 @@ struct PopupMenu {
   int         _cap;       // actual visible cap, updated each render()
   bool        active;
   const char* _title;
+  uint32_t    _value_mask;
 
-  enum Result { NONE, SELECTED, CANCELLED };
+  enum Result { NONE, SELECTED, CANCELLED, VALUE_NEXT };
 
-  PopupMenu() : _count(0), _sel(0), _scroll(0), _visible(3), _cap(3), active(false), _title(nullptr) {}
+  PopupMenu() : _count(0), _sel(0), _scroll(0), _visible(3), _cap(3), active(false), _title(nullptr), _value_mask(0) {}
 
   void begin(const char* title, int visible = 3) {
     _count = 0; _sel = 0; _scroll = 0;
     _visible = visible; _cap = visible; active = true; _title = title;
+    _value_mask = 0;
   }
 
   void addItem(const char* item) {
     if (_count < PM_MAX_ITEMS) _items[_count++] = item;
+  }
+
+  void addValueItem(const char* item) {
+    int i = _count;
+    addItem(item);
+    if (_count > i) _value_mask |= (1UL << i);
+  }
+
+  void beginConfirm(const char* title, const char* action_label,
+                    const char* cancel_label = "Cancel") {
+    begin(title, 2);
+    addItem(action_label);
+    addItem(cancel_label);
+    setSelected(1);
   }
 
   int render(DisplayDriver& display) {
@@ -114,7 +130,7 @@ struct PopupMenu {
       } else {
         display.setColor(DisplayDriver::LIGHT);
       }
-      display.drawTextEllipsized(bx + pad, py, text_w, _items[idx]);
+      display.drawTextEllipsized(bx + pad, py, text_w, _items[idx], idx == _sel);
       display.setColor(DisplayDriver::LIGHT);
     }
 
@@ -131,8 +147,12 @@ struct PopupMenu {
     // Selection only moves here; render() keeps it scrolled into view.
     if (c == KEY_UP)   { _sel = (_sel > 0) ? _sel - 1 : _count - 1; return NONE; }
     if (c == KEY_DOWN) { _sel = (_sel < _count - 1) ? _sel + 1 : 0; return NONE; }
-    if (c == KEY_ENTER)                           { active = false; return SELECTED;  }
-    if (c == KEY_CANCEL || c == KEY_CONTEXT_MENU) { active = false; return CANCELLED; }
+    if (c == KEY_ENTER) {
+      if (_value_mask & (1UL << _sel)) return VALUE_NEXT;
+      active = false;
+      return SELECTED;
+    }
+    if (c == KEY_CANCEL) { active = false; return CANCELLED; }
     return NONE;
   }
 

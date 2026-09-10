@@ -2,87 +2,115 @@
 // Custom screen — not part of upstream UITask.cpp
 // Included by UITask.cpp after the global KB_* constants are defined.
 
+#include "../solo/RingtoneModel.h"
+
 class RingtoneEditorScreen : public UIScreen {
-  UITask*    _task;
+  UITask* _task;
   NodePrefs* _prefs;
+  static const int MAX_NOTES = solo::RingtoneModel::MAX_NOTES;
+  enum MenuIdx { MI_PLAY, MI_SWITCH, MI_DURATION, MI_BPM, MI_INSERT, MI_DELETE, MI_SAVE, MI_DISCARD };
+  enum ConfirmAction { CA_NONE, CA_EXIT, CA_SWITCH };
 
-  static const int MAX_NOTES = 32;
+  int _visible_notes = 7;
+  uint8_t _notes[MAX_NOTES], _initial_notes[MAX_NOTES];
+  uint8_t _len, _initial_len, _bpm_idx, _initial_bpm_idx;
+  int _slot, _cursor, _scroll;
+  bool _legacy_truncated;
+  PopupMenu _menu, _confirm;
+  ConfirmAction _confirm_action;
+  char _play_buf[220], _menu_play_label[8], _menu_slot_label[24];
+  char _menu_dur_label[18], _menu_bpm_label[12];
 
-  // Menu item indices
-  enum MenuIdx { MI_PLAY=0, MI_SWITCH, MI_DURATION, MI_BPM, MI_INSERT, MI_DELETE, MI_SAVE, MI_DISCARD, MI_COUNT };
-
-  int _visible_notes = 7;  // updated in render(); used by clampScroll()
-
-  static const uint16_t BPM_OPTS[5];
-  static const char*    DUR_LABELS[4];
-  static const char     PITCH_NAMES[8];  // lowercase rtttl names
-
-  uint8_t _notes[MAX_NOTES];
-  uint8_t _len;
-  uint8_t _bpm_idx;
-  int     _slot;   // 0=melody1, 1=melody2
-  int     _cursor;
-  int     _scroll;
-  PopupMenu _menu;
-  char    _play_buf[220];  // persistent RTTTL buffer — library holds a pointer into it
-  char    _menu_play_label[8];
-  char    _menu_slot_label[16];
-  char    _menu_dur_label[16];
-  char    _menu_bpm_label[10];
-
-  static uint8_t notePitch(uint8_t b)  { return b & 0x07; }
-  static uint8_t noteOctave(uint8_t b) { return ((b >> 3) & 0x03) + 4; }
-  static uint8_t noteDurIdx(uint8_t b) { return (b >> 5) & 0x03; }
-  static uint8_t packNote(uint8_t pitch, uint8_t octave, uint8_t dur_idx) {
-    return (pitch & 0x07) | (((octave - 4) & 0x03) << 3) | ((dur_idx & 0x03) << 5);
+  bool dirty() const {
+    return _legacy_truncated || _len != _initial_len || _bpm_idx != _initial_bpm_idx ||
+           memcmp(_notes, _initial_notes, sizeof(_notes)) != 0;
   }
-
+  void snapshot() {
+    memcpy(_initial_notes, _notes, sizeof(_notes));
+    _initial_len = _len;
+    _initial_bpm_idx = _bpm_idx;
+    _legacy_truncated = false;
+  }
   void clampScroll() {
-    if (_cursor < _scroll)                      _scroll = _cursor;
+    if (_cursor < _scroll) _scroll = _cursor;
     if (_cursor >= _scroll + _visible_notes) _scroll = _cursor - _visible_notes + 1;
     if (_scroll < 0) _scroll = 0;
   }
-
-  void buildRTTTL() {
-    NodePrefs::buildRTTTLString(_notes, _len, _bpm_idx, _play_buf, sizeof(_play_buf));
-  }
-
-  void previewNote(uint8_t note_byte) {
-    uint8_t pitch = notePitch(note_byte);
-    if (pitch == 0) { _task->stopMelody(); return; }
-    snprintf(_play_buf, sizeof(_play_buf), "P:d=16,o=5,b=240:%c%d", PITCH_NAMES[pitch], noteOctave(note_byte));
+  void previewNote(uint8_t note) {
+    if (!solo::RingtoneModel::pitchIndex(note)) { _task->stopMelody(); return; }
+    solo::RingtoneModel::buildRTTTL(&note, 1, 4, _play_buf, sizeof(_play_buf));
     _task->playMelody(_play_buf);
+  }
+  void saveCurrent() {
+    if (!_prefs || !dirty()) return;
+    uint8_t* stored = _slot ? _prefs->ringtone2_notes : _prefs->ringtone_notes;
+    memset(stored, 0, solo::RingtoneModel::STORAGE_NOTES);
+    memcpy(stored, _notes, _len);
+    if (_slot) {
+      _prefs->ringtone2_bpm_idx = _bpm_idx;
+      _prefs->ringtone2_len = _len;
+    } else {
+      _prefs->ringtone_bpm_idx = _bpm_idx;
+      _prefs->ringtone_len = _len;
+    }
+    the_mesh.savePrefs();
+    snapshot();
+  }
+  void leaveEditor() { _task->stopMelody(); _task->gotoToolsScreen(); }
+  void confirmExit() {
+    if (!dirty()) { leaveEditor(); return; }
+    _confirm_action = CA_EXIT;
+    _confirm.beginConfirm("Discard changes?", "Discard");
+  }
+  void confirmSwitch() {
+    if (!dirty()) { selectSlot(1 - _slot); return; }
+    _confirm_action = CA_SWITCH;
+    _confirm.begin("Save changes?", 3);
+    _confirm.addItem("Save & Switch");
+    _confirm.addItem("Discard");
+    _confirm.addItem("Cancel");
+    _confirm.setSelected(2);
   }
 
 public:
-  RingtoneEditorScreen(UITask* task, NodePrefs* prefs) : _task(task), _prefs(prefs), _slot(0) {}
+  RingtoneEditorScreen(UITask* task, NodePrefs* prefs)
+    : _task(task), _prefs(prefs), _len(0), _initial_len(0), _bpm_idx(2),
+      _initial_bpm_idx(2), _slot(0), _cursor(0), _scroll(0),
+      _legacy_truncated(false), _confirm_action(CA_NONE) {
+    memset(_notes, 0, sizeof(_notes));
+    memset(_initial_notes, 0, sizeof(_initial_notes));
+  }
 
-  // Load a melody slot for editing. Called by gotoRingtoneEditor() right after
-  // setCurrScreen() (whose onShow() can't carry the slot argument).
+  // Preference slots retain their historical 32-byte layout. Editing exposes
+  // the first 16 notes; saving clears the inactive legacy tail.
   void selectSlot(int slot = 0) {
-    _slot    = (slot == 1) ? 1 : 0;
-    bool s2  = (_slot == 1);
-    _bpm_idx = (_prefs && (s2 ? _prefs->ringtone2_bpm_idx : _prefs->ringtone_bpm_idx) < 5)
-                 ? (s2 ? _prefs->ringtone2_bpm_idx : _prefs->ringtone_bpm_idx) : 2;
-    uint8_t rlen = _prefs ? (s2 ? _prefs->ringtone2_len : _prefs->ringtone_len) : 0;
-    _len     = (rlen <= (uint8_t)MAX_NOTES) ? rlen : 0;
-    if (_prefs) memcpy(_notes, s2 ? _prefs->ringtone2_notes : _prefs->ringtone_notes, sizeof(_notes));
-    _cursor  = 0;
-    _scroll  = 0;
-    _menu.active = false;
+    _slot = slot == 1 ? 1 : 0;
+    uint8_t bpm = _prefs ? (_slot ? _prefs->ringtone2_bpm_idx : _prefs->ringtone_bpm_idx) : 2;
+    _bpm_idx = bpm < solo::RingtoneModel::BPM_COUNT ? bpm : 2;
+    uint8_t stored_len = _prefs ? (_slot ? _prefs->ringtone2_len : _prefs->ringtone_len) : 0;
+    _len = stored_len > MAX_NOTES ? MAX_NOTES : stored_len;
+    memset(_notes, 0, sizeof(_notes));
+    if (_prefs && _len) memcpy(_notes, _slot ? _prefs->ringtone2_notes : _prefs->ringtone_notes, _len);
+    _cursor = _scroll = 0;
+    _menu.active = _confirm.active = false;
+    _confirm_action = CA_NONE;
+    snapshot();
+    _legacy_truncated = stored_len > MAX_NOTES;
   }
 
   void openMenu() {
     snprintf(_menu_play_label, sizeof(_menu_play_label), "%s", _task->isMelodyPlaying() ? "Stop" : "Play");
-    snprintf(_menu_slot_label, sizeof(_menu_slot_label), "Melody %d", (_slot == 0) ? 2 : 1);
-    uint8_t di = (_cursor < _len) ? noteDurIdx(_notes[_cursor]) : 0;
-    snprintf(_menu_dur_label, sizeof(_menu_dur_label), "Duration: %s", DUR_LABELS[di]);
-    snprintf(_menu_bpm_label, sizeof(_menu_bpm_label), "BPM: %u", BPM_OPTS[_bpm_idx]);
+    int other = 1 - _slot;
+    uint8_t other_len = _prefs ? (other ? _prefs->ringtone2_len : _prefs->ringtone_len) : 0;
+    snprintf(_menu_slot_label, sizeof(_menu_slot_label), "Custom%d%s", other + 1, other_len ? "" : " (empty)");
+    uint8_t duration = _cursor < _len ? solo::RingtoneModel::duration(_notes[_cursor]) : 0;
+    snprintf(_menu_dur_label, sizeof(_menu_dur_label), "Duration: %s", solo::RingtoneModel::durationLabel(duration));
+    snprintf(_menu_bpm_label, sizeof(_menu_bpm_label), "BPM: %u", solo::RingtoneModel::bpm(_bpm_idx));
     _menu.begin("Options", 5);
     _menu.addItem(_menu_play_label);
     _menu.addItem(_menu_slot_label);
-    _menu.addItem(_menu_dur_label);
-    _menu.addItem(_menu_bpm_label);
+    _menu.addValueItem(_menu_dur_label);
+    _menu.addValueItem(_menu_bpm_label);
     _menu.addItem("Insert");
     _menu.addItem("Delete");
     _menu.addItem("Save & Exit");
@@ -92,207 +120,136 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
-
-    const int lh            = display.getLineHeight();
-    const int cw            = display.getCharWidth();
-    const int cell_w        = cw * 2 + 6;  // fits 2-char label with margin
-    const int notes_y       = display.listStart();
-    const int cell_h        = lh + 6;
-    _visible_notes          = display.width() / cell_w;
-
-    char hdr[32];
-    snprintf(hdr, sizeof(hdr), "M%d BPM:%u %d/%d", _slot + 1, BPM_OPTS[_bpm_idx], _len, MAX_NOTES);
-    display.setCursor(0, 0);
-    display.print(hdr);
+    int lh = display.getLineHeight(), cw = display.getCharWidth();
+    int cell_w = cw * 3 + 5, notes_y = display.listStart(), cell_h = lh + 6;
+    _visible_notes = display.width() / cell_w;
+    if (_visible_notes < 1) _visible_notes = 1;
+    clampScroll();
+    char header[32];
+    snprintf(header, sizeof(header), "Custom%d%s %u %d/%d", _slot + 1, dirty() ? "*" : "",
+             solo::RingtoneModel::bpm(_bpm_idx), _len, MAX_NOTES);
+    display.setCursor(0, 0); display.print(header);
     display.fillRect(0, display.headerH() - 1, display.width(), display.sepH());
-
     for (int i = 0; i < _visible_notes; i++) {
-      int ni = _scroll + i;
-      int cx = i * cell_w;
-      bool sel = (ni == _cursor);
+      int ni = _scroll + i, x = i * cell_w;
+      bool selected = ni == _cursor;
       if (ni < _len) {
-        uint8_t pitch  = notePitch(_notes[ni]);
-        uint8_t octave = noteOctave(_notes[ni]);
-        char label[3];
-        if (pitch == 0) {
-          label[0] = '-'; label[1] = '-'; label[2] = '\0';
-        } else {
-          label[0] = PITCH_NAMES[pitch] - 32;  // uppercase
-          label[1] = '0' + octave;
-          label[2] = '\0';
-        }
-        if (sel) {
-          display.setColor(DisplayDriver::LIGHT);
-          display.fillRect(cx, notes_y, cell_w - 1, cell_h);
-          display.setColor(DisplayDriver::DARK);
-        } else {
-          display.setColor(DisplayDriver::LIGHT);
-          display.drawRect(cx, notes_y, cell_w - 1, cell_h);
-        }
-        display.setCursor(cx + (cell_w - cw * 2) / 2, notes_y + 3);
-        display.print(label);
+        char label[5];
+        solo::RingtoneModel::label(_notes[ni], label, sizeof(label));
+        display.drawSelectionRow(x, notes_y, cell_w - 1, cell_h, selected);
+        display.setCursor(x + 2, notes_y + 3); display.print(label);
         display.setColor(DisplayDriver::LIGHT);
       } else if (ni == _len && _len < MAX_NOTES) {
-        display.drawSelectionRow(cx, notes_y, cell_w - 1, cell_h, sel);
-        display.setCursor(cx + (cell_w - cw) / 2, notes_y + 3);
-        display.print("+");
+        display.drawSelectionRow(x, notes_y, cell_w - 1, cell_h, selected);
+        display.setCursor(x + (cell_w - cw) / 2, notes_y + 3); display.print("+");
         display.setColor(DisplayDriver::LIGHT);
       }
     }
-
-    const int info_y   = notes_y + cell_h + 2;
-    const int bottom_y = display.height() - display.lineStep();
+    int info_y = notes_y + cell_h + 2;
     if (_scroll > 0) { display.setCursor(0, info_y); display.print("<"); }
-    if (_scroll + _visible_notes <= _len) { display.setCursor(display.width() - display.getCharWidth(), info_y); display.print(">"); }
+    if (_scroll + _visible_notes <= _len) { display.setCursor(display.width() - cw, info_y); display.print(">"); }
+    display.setCursor(cw + 2, info_y);
     if (_cursor < _len) {
       char info[24];
-      snprintf(info, sizeof(info), "oct:%d dur:%s",
-               noteOctave(_notes[_cursor]), DUR_LABELS[noteDurIdx(_notes[_cursor])]);
-      display.setCursor(display.getCharWidth() + 2, info_y);
+      snprintf(info, sizeof(info), "oct:%u dur:%s", solo::RingtoneModel::octave(_notes[_cursor]),
+               solo::RingtoneModel::durationLabel(solo::RingtoneModel::duration(_notes[_cursor])));
       display.print(info);
-    } else if (_cursor == _len) {
-      display.setCursor(display.getCharWidth() + 2, info_y);
-      display.print("U/D to add note");
-    }
-
-    display.setCursor(0, bottom_y);
+    } else display.print(_len ? "U/D to add note" : "Empty: U/D add");
+    display.setCursor(0, display.height() - display.lineStep());
     display.print("ENT:oct MENU:opts");
-
     if (_menu.active) _menu.render(display);
-
+    if (_confirm.active) _confirm.render(display);
     return 200;
   }
 
   bool handleInput(char c) override {
-    bool up    = (c == KEY_UP);
-    bool down  = (c == KEY_DOWN);
-    bool left  = keyIsPrev(c);
-    bool right = keyIsNext(c);
-    bool enter = (c == KEY_ENTER);
-    bool menu_key = (c == KEY_CONTEXT_MENU);
-    bool cancel   = (c == KEY_CANCEL);
-
+    if (_confirm.active) {
+      PopupMenu::Result result = _confirm.handleInput(c);
+      if (result == PopupMenu::SELECTED) {
+        int choice = _confirm.selectedIndex();
+        ConfirmAction action = _confirm_action;
+        _confirm_action = CA_NONE;
+        if (action == CA_EXIT && choice == 0) leaveEditor();
+        else if (action == CA_SWITCH && choice == 0) { saveCurrent(); selectSlot(1 - _slot); }
+        else if (action == CA_SWITCH && choice == 1) selectSlot(1 - _slot);
+      } else if (result == PopupMenu::CANCELLED) _confirm_action = CA_NONE;
+      return true;
+    }
+    bool up = c == KEY_UP, down = c == KEY_DOWN;
+    bool left = keyIsPrev(c), right = keyIsNext(c), enter = c == KEY_ENTER;
     if (_menu.active) {
-      // LEFT/RIGHT cycle Duration and BPM in-place, menu stays open.
+      int selected = _menu.selectedIndex();
+      if (enter && (selected == MI_DURATION || selected == MI_BPM)) right = true;
       if (left || right) {
-        int sel = _menu.selectedIndex();
-        if (sel == MI_DURATION && _cursor < _len) {
-          uint8_t p  = notePitch(_notes[_cursor]);
-          uint8_t o  = noteOctave(_notes[_cursor]);
-          uint8_t di = noteDurIdx(_notes[_cursor]);
-          di = right ? (di + 1) & 0x03 : (di + 3) & 0x03;
-          _notes[_cursor] = packNote(p, o, di);
-          snprintf(_menu_dur_label, sizeof(_menu_dur_label), "Duration: %s", DUR_LABELS[di]);
-        } else if (sel == MI_BPM) {
-          if (right && _bpm_idx < 4) _bpm_idx++;
-          else if (left  && _bpm_idx > 0) _bpm_idx--;
-          snprintf(_menu_bpm_label, sizeof(_menu_bpm_label), "BPM: %u", BPM_OPTS[_bpm_idx]);
+        if (selected == MI_DURATION && _cursor < _len) {
+          uint8_t value = solo::RingtoneModel::duration(_notes[_cursor]);
+          value = right ? (value + 1) % solo::RingtoneModel::DURATION_COUNT
+                        : (value + solo::RingtoneModel::DURATION_COUNT - 1) % solo::RingtoneModel::DURATION_COUNT;
+          _notes[_cursor] = solo::RingtoneModel::withDuration(_notes[_cursor], value);
+          snprintf(_menu_dur_label, sizeof(_menu_dur_label), "Duration: %s", solo::RingtoneModel::durationLabel(value));
+        } else if (selected == MI_BPM) {
+          if (right && _bpm_idx + 1 < solo::RingtoneModel::BPM_COUNT) _bpm_idx++;
+          else if (left && _bpm_idx) _bpm_idx--;
+          snprintf(_menu_bpm_label, sizeof(_menu_bpm_label), "BPM: %u", solo::RingtoneModel::bpm(_bpm_idx));
         }
         return true;
       }
-      auto res = _menu.handleInput(c);
-      if (res == PopupMenu::SELECTED) {
+      PopupMenu::Result result = _menu.handleInput(c);
+      if (result == PopupMenu::SELECTED) {
         switch ((MenuIdx)_menu.selectedIndex()) {
           case MI_PLAY:
-            if (_task->isMelodyPlaying()) { _task->stopMelody(); }
-            else if (_len > 0) { buildRTTTL(); _task->playMelody(_play_buf); }
+            if (_task->isMelodyPlaying()) _task->stopMelody();
+            else if (_len) { solo::RingtoneModel::buildRTTTL(_notes, _len, _bpm_idx, _play_buf, sizeof(_play_buf)); _task->playMelody(_play_buf); }
             break;
-          case MI_SWITCH:
-            _task->stopMelody();
-            this->selectSlot(1 - _slot);
-            break;
-          case MI_DURATION: break;  // already handled by LEFT/RIGHT
-          case MI_BPM:      break;  // already handled by LEFT/RIGHT
+          case MI_SWITCH: confirmSwitch(); break;
+          case MI_DURATION: case MI_BPM: break;
           case MI_INSERT:
             if (_len < MAX_NOTES) {
-              int ins = (_cursor < _len) ? _cursor + 1 : _cursor;
-              for (int i = _len; i > ins; i--) _notes[i] = _notes[i - 1];
-              _notes[ins] = packNote(1, 5, 1);
-              _len++;
-              _cursor = ins;
-              clampScroll();
+              int at = _cursor < _len ? _cursor + 1 : _cursor;
+              for (int i = _len; i > at; i--) _notes[i] = _notes[i - 1];
+              _notes[at] = solo::RingtoneModel::pack(1, 5, 1);
+              _len++; _cursor = at; clampScroll();
             }
             break;
           case MI_DELETE:
-            if (_len > 0 && _cursor < _len) {
-              for (int i = _cursor; i < _len - 1; i++) _notes[i] = _notes[i + 1];
-              _len--;
-              if (_cursor >= _len && _len > 0) _cursor = _len - 1;
-              else if (_len == 0) _cursor = 0;
+            if (_cursor < _len) {
+              for (int i = _cursor; i + 1 < _len; i++) _notes[i] = _notes[i + 1];
+              _notes[--_len] = 0;
+              if (_cursor >= _len && _len) _cursor = _len - 1;
+              else if (!_len) _cursor = 0;
               clampScroll();
             }
             break;
-          case MI_SAVE:
-            if (_prefs) {
-              if (_slot == 1) {
-                _prefs->ringtone2_bpm_idx = _bpm_idx;
-                _prefs->ringtone2_len     = _len;
-                memcpy(_prefs->ringtone2_notes, _notes, sizeof(_notes));
-              } else {
-                _prefs->ringtone_bpm_idx = _bpm_idx;
-                _prefs->ringtone_len     = _len;
-                memcpy(_prefs->ringtone_notes, _notes, sizeof(_notes));
-              }
-              the_mesh.savePrefs();
-            }
-            _task->stopMelody();
-            _task->gotoToolsScreen();
-            break;
-          case MI_DISCARD:
-            _task->stopMelody();
-            _task->gotoToolsScreen();
-            break;
-          default: break;
+          case MI_SAVE: saveCurrent(); leaveEditor(); break;
+          case MI_DISCARD: confirmExit(); break;
         }
       }
       return true;
     }
-
-    if (cancel)   { _task->stopMelody(); _task->gotoToolsScreen(); return true; }
-    if (menu_key) { openMenu(); return true; }
-
+    if (c == KEY_CANCEL) { confirmExit(); return true; }
+    if (c == KEY_CONTEXT_MENU) { openMenu(); return true; }
     if (left && _cursor > 0) { _cursor--; clampScroll(); return true; }
     if (right) {
-      int max_cur = (_len < MAX_NOTES) ? _len : _len - 1;
-      if (_cursor < max_cur) { _cursor++; clampScroll(); return true; }
+      int maximum = _len < MAX_NOTES ? _len : _len - 1;
+      if (_cursor < maximum) { _cursor++; clampScroll(); return true; }
     }
-
-    if ((up || down) && _cursor == _len && _len < MAX_NOTES) {
-      _notes[_len] = packNote(1, 5, 1);
-      _len++;
-      clampScroll();
+    if ((up || down || enter) && _cursor == _len && _len < MAX_NOTES) {
+      _notes[_len++] = solo::RingtoneModel::pack(1, 5, 1);
+      clampScroll(); previewNote(_notes[_cursor]); return true;
     }
     if ((up || down) && _cursor < _len) {
-      uint8_t p  = notePitch(_notes[_cursor]);
-      uint8_t o  = noteOctave(_notes[_cursor]);
-      uint8_t di = noteDurIdx(_notes[_cursor]);
-      if (up)   p = (p + 1) & 0x07;
-      if (down) p = (p + 7) & 0x07;
-      _notes[_cursor] = packNote(p, o, di);
-      previewNote(_notes[_cursor]);
-      return true;
+      uint8_t pitch = solo::RingtoneModel::pitchIndex(_notes[_cursor]);
+      pitch = up ? (pitch + 1) % solo::RingtoneModel::PITCH_COUNT
+                 : (pitch + solo::RingtoneModel::PITCH_COUNT - 1) % solo::RingtoneModel::PITCH_COUNT;
+      _notes[_cursor] = solo::RingtoneModel::withPitch(_notes[_cursor], pitch);
+      previewNote(_notes[_cursor]); return true;
     }
-
     if (enter && _cursor < _len) {
-      uint8_t p  = notePitch(_notes[_cursor]);
-      uint8_t o  = noteOctave(_notes[_cursor]);
-      uint8_t di = noteDurIdx(_notes[_cursor]);
-      if (p != 0) o = (o < 6) ? o + 1 : 4;
-      _notes[_cursor] = packNote(p, o, di);
-      previewNote(_notes[_cursor]);
-      return true;
-    }
-    if (enter && _cursor == _len && _len < MAX_NOTES) {
-      _notes[_len] = packNote(1, 5, 1);
-      _len++;
-      clampScroll();
-      previewNote(_notes[_cursor]);
-      return true;
+      uint8_t octave = solo::RingtoneModel::octave(_notes[_cursor]);
+      if (solo::RingtoneModel::pitchIndex(_notes[_cursor])) octave = octave < 7 ? octave + 1 : 4;
+      _notes[_cursor] = solo::RingtoneModel::withOctave(_notes[_cursor], octave);
+      previewNote(_notes[_cursor]); return true;
     }
     return false;
   }
 };
-
-const uint16_t RingtoneEditorScreen::BPM_OPTS[5]   = { 60, 90, 120, 150, 180 };
-const char*    RingtoneEditorScreen::DUR_LABELS[4]  = { "1/4", "1/8", "1/16", "1/32" };
-const char     RingtoneEditorScreen::PITCH_NAMES[8] = { 'p', 'c', 'd', 'e', 'f', 'g', 'a', 'b' };

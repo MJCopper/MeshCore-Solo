@@ -13,6 +13,8 @@
 #include "MessageEditorSupport.h"
 #include "HomePageRegistry.h"
 #include "../solo/GpsMode.h"
+#include "../solo/QuickReplies.h"
+#include "../solo/BuiltinMelodies.h"
 
 class SettingsScreen : public UIScreen {
   UITask* _task;
@@ -87,10 +89,9 @@ class SettingsScreen : public UIScreen {
 #if SOLO_FEAT_CHILD_MODE
     SECTION_CHILD, CHILD_ENABLED, CHILD_PIN, CHILD_CHANNELS, CHILD_FAVOURITES,
 #endif
-    // Messages section
-    SECTION_MESSAGES,
+    // Quick Replies section
+    SECTION_QUICK_REPLIES,
     MSG_SLOT_0, MSG_SLOT_1, MSG_SLOT_2, MSG_SLOT_3, MSG_SLOT_4,
-    MSG_SLOT_5, MSG_SLOT_6, MSG_SLOT_7, MSG_SLOT_8, MSG_SLOT_9,
     Count
   };
 
@@ -127,8 +128,6 @@ class SettingsScreen : public UIScreen {
 #endif
   static const char* BATT_DISPLAY_LABELS[3];
   static const int BATT_DISPLAY_COUNT = 3;
-  static const char* SOUND_LABELS[4];
-  static const int SOUND_COUNT = 4;
   static const char* AD_SCOPE_LABELS[2];
   static const int AD_SCOPE_COUNT = 2;
 #if FEAT_FULL_REFRESH_SETTING
@@ -187,7 +186,7 @@ class SettingsScreen : public UIScreen {
 #if SOLO_FEAT_CHILD_MODE
            item == SECTION_CHILD ||
 #endif
-           item == SECTION_MESSAGES;
+           item == SECTION_QUICK_REPLIES;
   }
 
   const char* sectionName(int item) const {
@@ -201,7 +200,7 @@ class SettingsScreen : public UIScreen {
 #if SOLO_FEAT_CHILD_MODE
     if (item == SECTION_CHILD)      return "Child Mode";
 #endif
-    if (item == SECTION_MESSAGES)   return "Messages";
+    if (item == SECTION_QUICK_REPLIES) return "Quick Replies";
     return "";
   }
 
@@ -299,7 +298,8 @@ class SettingsScreen : public UIScreen {
   }
 
   bool isMsgSlot(int item) const {
-    return item >= MSG_SLOT_0 && item <= MSG_SLOT_9;
+    return item >= MSG_SLOT_0 &&
+           item < MSG_SLOT_0 + solo::QuickReplies::CUSTOM_COUNT;
   }
 
   int msgSlotIndex(int item) const {
@@ -341,17 +341,17 @@ class SettingsScreen : public UIScreen {
       display.print("DM Sound");
       display.setCursor(valCol(display), y);
       { uint8_t v = p ? p->notif_melody_dm : 0;
-        display.print(SOUND_LABELS[v < SOUND_COUNT ? v : 0]); }
+        display.print(solo::BuiltinMelodies::label(v)); }
     } else if (item == CH_MELODY) {
       display.print("Ch Sound");
       display.setCursor(valCol(display), y);
       { uint8_t v = p ? p->notif_melody_ch : 0;
-        display.print(SOUND_LABELS[v < SOUND_COUNT ? v : 0]); }
+        display.print(solo::BuiltinMelodies::label(v)); }
     } else if (item == AD_SOUND) {
       display.print("AD Sound");
       display.setCursor(valCol(display), y);
       { uint8_t v = p ? p->notif_melody_ad : 0;
-        display.print(SOUND_LABELS[v < SOUND_COUNT ? v : 0]); }
+        display.print(solo::BuiltinMelodies::label(v)); }
     } else if (item == AD_SOUND_SCOPE) {
       display.print("AD Scope");
       display.setCursor(valCol(display), y);
@@ -400,7 +400,7 @@ class SettingsScreen : public UIScreen {
       display.print("Preset");
       const char* name = p ? _picker.currentName(p, radioTarget(p)) : "Custom";
       int xc = valCol(display);
-      display.drawTextEllipsized(xc, y, display.width() - xc - _reserve, name);
+      display.drawTextEllipsized(xc, y, display.width() - xc - _reserve, name, sel);
     } else if (item == CUSTOM_FREQ) {
       display.print("Freq");
       int xc = valCol(display);
@@ -461,7 +461,8 @@ class SettingsScreen : public UIScreen {
     } else if (item == DEVICE_NAME) {
       display.print("Name");
       int vx = valCol(display);
-      display.drawTextEllipsized(vx, y, display.width() - vx - _reserve, the_mesh.getNodeName());
+      display.drawTextEllipsized(vx, y, display.width() - vx - _reserve,
+                                 the_mesh.getNodeName(), sel);
     } else if (item == REBOOT) {
       display.print("Reboot");   // action row: Enter reboots this device
     } else if (item == KEYBOARD_TYPE) {
@@ -510,7 +511,7 @@ class SettingsScreen : public UIScreen {
         display.print(EINK_FULL_REFRESH_LABELS[idx]); }
 #endif
     } else if (item == DM_FILTER) {
-      display.print("DM");
+      display.print("DMs");
       display.setCursor(valCol(display), y);
       display.print((p && p->dm_show_all) ? "All" : "Fav");
     } else if (item == CH_FILTER) {
@@ -538,12 +539,12 @@ class SettingsScreen : public UIScreen {
 #endif
     } else if (isMsgSlot(item)) {
       int slot = msgSlotIndex(item);
-      char label[5];
-      snprintf(label, sizeof(label), "Q%d:", slot + 1);
+      char label[10];
+      snprintf(label, sizeof(label), "Custom %d", slot + 1);
       display.print(label);
       const char* tmpl = (p && p->custom_msgs[slot][0]) ? p->custom_msgs[slot] : "(empty)";
-      int xm = 8 + display.getCharWidth() * 4;
-      display.drawTextEllipsized(xm, y, display.width() - xm - _reserve, tmpl);
+      int xm = valCol(display);
+      display.drawTextEllipsized(xm, y, display.width() - xm - _reserve, tmpl, sel);
     }
   }
 
@@ -600,6 +601,21 @@ public:
     buildSections();
   }
 
+  // Capture staged fields without applying hardware changes immediately; the
+  // caller is about to power off or reboot and performs the single prefs write.
+  void prepareForShutdown() {
+#if ENV_INCLUDE_GPS == 1
+    if (_gps_dirty && _task->getNodePrefs()) {
+      NodePrefs* p = _task->getNodePrefs();
+      p->gps_enabled = _gps_pending_mode != 0;
+      p->gps_interval = solo::GpsMode::interval(_gps_pending_mode);
+    }
+    _gps_dirty = false;
+#endif
+    _bluetooth_dirty = false;
+    _dirty = false;
+  }
+
 
   void onShow() override {
     _dirty = false;
@@ -618,6 +634,7 @@ public:
     _picker.menu.active = false;
     _picker.saving = false;
     _picker.deleting = false;
+    _picker.confirm_slot = -1;
     _child_pin.active = false;
     _child_pin_confirming = false;
     _child_pin_first_hash = 0;
@@ -816,11 +833,13 @@ public:
         }
       } else if (res == PopupMenu::CANCELLED) {
         _picker.deleting = false;
+        _picker.confirm_slot = -1;
       }
       return true;
     }
 
     if (c == KEY_CANCEL) {
+      _task->stopMelody();
       commitStagedChanges();
       if (p && p->child_mode_enabled) _task->setChildAdminUnlocked(false);
       _task->gotoHomeScreen();
@@ -865,16 +884,28 @@ public:
       return right || left;
     }
     if (_selected == DM_MELODY && p && (left || right || enter)) {
-      p->notif_melody_dm = (p->notif_melody_dm + (left ? SOUND_COUNT - 1 : 1)) % SOUND_COUNT;
-      _dirty = true; return true;
+      if (enter) _task->previewMelody(p->notif_melody_dm, solo::BuiltinMelodies::MESSAGE);
+      else {
+        p->notif_melody_dm = (p->notif_melody_dm + (left ? solo::BuiltinMelodies::COUNT - 1 : 1)) % solo::BuiltinMelodies::COUNT;
+        _dirty = true;
+      }
+      return true;
     }
     if (_selected == CH_MELODY && p && (left || right || enter)) {
-      p->notif_melody_ch = (p->notif_melody_ch + (left ? SOUND_COUNT - 1 : 1)) % SOUND_COUNT;
-      _dirty = true; return true;
+      if (enter) _task->previewMelody(p->notif_melody_ch, solo::BuiltinMelodies::KERPLOP);
+      else {
+        p->notif_melody_ch = (p->notif_melody_ch + (left ? solo::BuiltinMelodies::COUNT - 1 : 1)) % solo::BuiltinMelodies::COUNT;
+        _dirty = true;
+      }
+      return true;
     }
     if (_selected == AD_SOUND && p && (left || right || enter)) {
-      p->notif_melody_ad = (p->notif_melody_ad + (left ? SOUND_COUNT - 1 : 1)) % SOUND_COUNT;
-      _dirty = true; return true;
+      if (enter) _task->previewMelody(p->notif_melody_ad, solo::BuiltinMelodies::MESSAGE);
+      else {
+        p->notif_melody_ad = (p->notif_melody_ad + (left ? solo::BuiltinMelodies::COUNT - 1 : 1)) % solo::BuiltinMelodies::COUNT;
+        _dirty = true;
+      }
+      return true;
     }
     if (_selected == AD_SOUND_SCOPE && p && (left || right || enter)) {
       p->advert_sound_scope ^= 1;
@@ -930,9 +961,9 @@ public:
 #if AUTO_OFF_MILLIS > 0
     if (_selected == AUTO_OFF && p) {
       int idx = autoOffIndex();
-      if (right) idx = (idx + 1) % AUTO_OFF_COUNT;
+      if (right || enter) idx = (idx + 1) % AUTO_OFF_COUNT;
       if (left)  idx = (idx + AUTO_OFF_COUNT - 1) % AUTO_OFF_COUNT;
-      if (left || right) { p->auto_off_secs = AUTO_OFF_OPTS[idx]; _dirty = true; return true; }
+      if (left || right || enter) { p->auto_off_secs = AUTO_OFF_OPTS[idx]; _dirty = true; return true; }
     }
 #endif
     if (_selected == TIMEZONE && p) {
@@ -966,9 +997,8 @@ public:
       return true;
     }
     if (_selected == REBOOT && enter) {
-      commitStagedChanges();             // don't lose pending edits across the restart
       _task->showAlert("Rebooting...", 800);
-      board.reboot();
+      _task->shutdown(true);
       return true;
     }
     if (_selected == KEYBOARD_TYPE && p && (left || right || enter)) {
@@ -978,9 +1008,9 @@ public:
     }
     if (_selected == BATT_DISPLAY && p) {
       int idx = p->batt_display_mode < BATT_DISPLAY_COUNT ? p->batt_display_mode : 0;
-      if (right) idx = (idx + 1) % BATT_DISPLAY_COUNT;
+      if (right || enter) idx = (idx + 1) % BATT_DISPLAY_COUNT;
       if (left)  idx = (idx + BATT_DISPLAY_COUNT - 1) % BATT_DISPLAY_COUNT;
-      if (left || right) { p->batt_display_mode = idx; _dirty = true; return true; }
+      if (left || right || enter) { p->batt_display_mode = idx; _dirty = true; return true; }
     }
 #if FEAT_CLOCK_SECONDS_SETTING
     if (_selected == CLOCK_SECONDS && p && (left || right || enter)) {
@@ -1088,7 +1118,6 @@ const uint16_t SettingsScreen::AUTO_OFF_OPTS[5]   = { 5, 15, 30, 60, 0 };
 const char*    SettingsScreen::AUTO_OFF_LABELS[5]  = { "5s", "15s", "30s", "60s", "Never" };
 #endif
 const char*    SettingsScreen::BATT_DISPLAY_LABELS[3] = { "Icon", "%", "V" };
-const char*    SettingsScreen::SOUND_LABELS[4] = { "Built-in", "M1", "M2", "None" };
 const char*    SettingsScreen::AD_SCOPE_LABELS[2] = { "All", "Zero-hop" };
 #if FEAT_FULL_REFRESH_SETTING
 const char* SettingsScreen::EINK_FULL_REFRESH_LABELS[5] = { "Off", "5", "10", "20", "30" };

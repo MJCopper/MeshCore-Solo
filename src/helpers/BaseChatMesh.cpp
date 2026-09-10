@@ -62,7 +62,9 @@ void BaseChatMesh::bootstrapRTCfromContacts() {
       latest = contacts[i].lastmod;
     }
   }
-  if (latest != 0) {
+  // Contact time is only a lower bound. Never roll a valid RTC backwards to
+  // an older contact-table timestamp during boot.
+  if (latest != 0 && latest + 1 > getRTCClock()->getCurrentTime()) {
     getRTCClock()->setCurrentTime(latest + 1);
   }
 }

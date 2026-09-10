@@ -281,6 +281,35 @@ public:
     return true;
   }
 
+  // Store one logical message for app-owned sends. A later app retry reuses
+  // timestamp and text, so update the existing entry rather than adding a new
+  // transcript row. Retry counters stay zero: only the app may retransmit it.
+  bool storeAppDM(const uint8_t* pub_key, const char* text, uint32_t msg_ts,
+                  uint8_t attempt, uint32_t ack_tag,
+                  uint32_t ack_deadline_ms, uint8_t route) {
+    for (int i = 0; i < _dm_hist_count; i++) {
+      DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
+      if (!e.outgoing || e.msg_ts != msg_ts || memcmp(e.prefix, pub_key, 4) ||
+          strcmp(e.text, text)) continue;
+      e.attempt = attempt;
+      e.ack_tag = ack_tag;
+      e.ack_deadline_ms = ack_deadline_ms;
+      e.ack_status = ack_tag ? ACK_PENDING : ACK_NONE;
+      e.delivery_route = route;
+      e.acknowledgements.record(attempt, ack_tag, route);
+      e.direct_retries_left = e.flood_retries_left = 0;
+      scheduleDmMaintenance();
+      return false;
+    }
+    int pos = storeDMMsg(pub_key, true, text, ack_tag, ack_deadline_ms,
+                         msg_ts, route);
+    DmHistEntry& e = _dm_hist[pos];
+    e.attempt = attempt;
+    e.direct_retries_left = e.flood_retries_left = 0;
+    scheduleDmMaintenance();
+    return true;
+  }
+
   int dmHistCountForContact(const uint8_t* prefix) const {
     int n = 0;
     for (int i = 0; i < _dm_hist_count; i++)

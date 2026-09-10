@@ -281,7 +281,7 @@ MINI_ICON(ICON_PG_TOOLS, 5,      // wrench (open jaw + handle) — tools
   packRow("..#.."),
   packRow("..#.."),
   packRow("..#.."));
-MINI_ICON(ICON_PG_MSG, 5,        // speech bubble — quick messages
+MINI_ICON(ICON_PG_MSG, 5,        // speech bubble — quick replies
   packRow("#####"),
   packRow("#...#"),
   packRow("#...#"),
@@ -665,3 +665,13 @@ static const uint8_t advert_icon[] = {
 0x04, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
+
+// Common favourite marker for list rows. This is distinct from a carousel pin:
+// the star reflects ContactInfo::flags or the channel favourite bitmask.
+inline int favStarWidth(DisplayDriver& display) {
+  return ICON_PG_STAR.w * miniIconScale(display) + 2;
+}
+
+inline void drawFavStar(DisplayDriver& display, int x, int y) {
+  miniIconDraw(display, x, y, ICON_PG_STAR);
+}

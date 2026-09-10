@@ -1,6 +1,23 @@
 #include <gtest/gtest.h>
 
 #include "../../examples/companion_radio/solo/BootTimeSync.h"
+#include "../../examples/companion_radio/solo/DeviceTimePolicy.h"
+
+TEST(DeviceTimePolicy, AcceptsAuthoritativeBackwardCorrections) {
+  EXPECT_TRUE(solo::DeviceTimePolicy::valid(1704067200UL));
+  EXPECT_TRUE(solo::DeviceTimePolicy::valid(4102444799UL));
+  EXPECT_FALSE(solo::DeviceTimePolicy::valid(1704067199UL));
+  EXPECT_FALSE(solo::DeviceTimePolicy::valid(4102444800UL));
+  EXPECT_TRUE(solo::DeviceTimePolicy::shouldPersist(2000000120UL, 2000000000UL));
+}
+
+TEST(DeviceTimePolicy, AvoidsFlashWritesForSmallCorrections) {
+  EXPECT_TRUE(solo::DeviceTimePolicy::shouldPersist(0, 2000000000UL));
+  EXPECT_FALSE(solo::DeviceTimePolicy::shouldPersist(2000000000UL, 1999999941UL));
+  EXPECT_TRUE(solo::DeviceTimePolicy::shouldPersist(2000000000UL, 1999999940UL));
+  EXPECT_FALSE(solo::DeviceTimePolicy::shouldPersist(2000000000UL, 2000000059UL));
+  EXPECT_TRUE(solo::DeviceTimePolicy::shouldPersist(2000000000UL, 2000000060UL));
+}
 
 TEST(BootTimeSync, StartsTemporaryGpsAndStopsAfterAnyLiveSync) {
   solo::BootTimeSync sync;

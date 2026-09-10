@@ -22,7 +22,7 @@ class UITask;
 // Zen release version. The underlying MeshCore protocol/base version is
 // reported separately through the MESHCORE_VERSION build flag.
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v2.27"
+#define FIRMWARE_VERSION "v1.32.8"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -164,6 +164,9 @@ public:
   // delete a contact without the phone app. Mirrors the CMD_ADD/REMOVE paths.
   bool addDiscoveredContact(const uint8_t* pub_key, const char* name, uint8_t type);
   bool deleteContactByKey(const uint8_t* pub_key);
+  // Change the MeshCore favourite flag used by app sync, list filters and
+  // Child Mode. Carousel pins are intentionally stored separately in prefs.
+  bool setContactFavourite(const uint8_t* pub_key, bool favourite);
   bool clearContactPath(const uint8_t* pub_key, size_t prefix_len);
 
   // Ping/Trace functionality
@@ -356,6 +359,12 @@ public:
 
   void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
   void saveRTCTime() { _store->saveRTCTime(); }
+  void flushDirtyContacts() {
+    if (dirty_contacts_expiry) {
+      saveContacts();
+      dirty_contacts_expiry = 0;
+    }
+  }
   DataStore* getDataStore() const { return _store; }
   // Apply the companion radio parameters. Repeater mode shares this network.
   void applyRadioParams();

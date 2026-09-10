@@ -48,6 +48,17 @@ TEST(AdminCommands, AdvertStepsRespectBaselineDisabledAndMinimumIntervals) {
   }
 }
 
+TEST(AdminCommands, ExposesDedicatedOtaAction) {
+  const solo::admin::Field* ota = nullptr;
+  for (const auto& field : solo::admin::FIELDS) {
+    if (field.get && !strcmp(field.get, "start ota")) ota = &field;
+  }
+  ASSERT_NE(ota, nullptr);
+  EXPECT_EQ(ota->group, solo::admin::ACTIONS);
+  EXPECT_EQ(ota->kind, solo::admin::ACTION);
+  EXPECT_STREQ(ota->label, "Start OTA");
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

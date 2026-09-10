@@ -115,6 +115,15 @@ public:
   }
   virtual void addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp = 0) {}
   virtual bool addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) { return false; }
+  // App/USB sends are mirrored after the mesh accepts them. The app owns retry
+  // scheduling, so UI implementations must track status without transmitting.
+  virtual void addAppDMMsg(const uint8_t* pub_key, const char* text,
+                           uint32_t timestamp, uint8_t attempt,
+                           uint32_t ack_tag, uint32_t ack_deadline_ms,
+                           uint8_t path_len) {}
+  virtual int addOwnChannelMsg(uint8_t channel_idx, const char* text,
+                               int text_len, uint32_t timestamp) { return -1; }
+  virtual void armChannelRelay(int history_pos, uint32_t seq) {}
   // A node shared its current position via a [LOC] message. pub_key is the
   // sender's key prefix for a verified DM share, or null for a channel share
   // (keyed by name, best-effort). Default no-op so UI variants opt in.
@@ -132,5 +141,8 @@ public:
   // added later at the same slot would silently inherit the old one's bot/
   // share target or notification melody. Default no-op.
   virtual void onChannelRemoved(uint8_t channel_idx) {}
+  // Controlled power transitions must pass through the UI so staged settings,
+  // preferences and debounced contacts are committed before power is removed.
+  virtual void shutdown(bool restart = false) = 0;
   virtual void loop() = 0;
 };

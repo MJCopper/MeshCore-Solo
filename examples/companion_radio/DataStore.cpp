@@ -1,8 +1,10 @@
 #include <Arduino.h>
 #include "DataStore.h"
-#include "solo/SoloPrefsDefaults.h"
 #include "SoloPrefsMigration.h"
 #include "solo/SoloPrefsCodec.h"
+#include "solo/BuiltinMelodies.h"
+#include "solo/NotificationPreferences.h"
+#include "solo/ConfigMaintenance.h"
 #include "Features.h"   // FEAT_JOYSTICK_ROTATION_SETTING (else `#if !FEAT_…` is always true)
 
 #if defined(EXTRAFS) || defined(QSPIFLASH)
@@ -346,9 +348,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   if (_prefs.ringtone2_len > 32) _prefs.ringtone2_len = 0;
   rd(_prefs.ringtone2_notes,            sizeof(_prefs.ringtone2_notes));
   rd(&_prefs.notif_melody_dm,           sizeof(_prefs.notif_melody_dm));
-  if (_prefs.notif_melody_dm > 3) _prefs.notif_melody_dm = 0;
   rd(&_prefs.notif_melody_ch,           sizeof(_prefs.notif_melody_ch));
-  if (_prefs.notif_melody_ch > 3) _prefs.notif_melody_ch = 0;
   rd(&_prefs.ch_notif_melody_set,       sizeof(_prefs.ch_notif_melody_set));
   rd(&_prefs.ch_notif_melody_2,         sizeof(_prefs.ch_notif_melody_2));
   rd(_prefs.dm_melody,                  sizeof(_prefs.dm_melody));
@@ -475,8 +475,6 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   if (_prefs.bot_quiet_end   > 23)      _prefs.bot_quiet_end   = 0;
   // These fields were appended over successive schema bumps; an older file
   // can leave stray bytes here, so clamp out-of-range values back to defaults.
-  // Values for notif_melody_ad: 0=built-in, 1=melody1, 2=melody2, 3=none.
-  if (_prefs.notif_melody_ad > 3) _prefs.notif_melody_ad = 0;
   // A stale value >1 from an older multi-font build would read as "Lemon" (all
   // sites test != 0) until the user toggles Font; clamp it to default here.
   if (_prefs.use_lemon_font  > 1) _prefs.use_lemon_font  = 0;
@@ -642,13 +640,32 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   // new byte and sentinel are both present.
   if (file.available() >= (int)(sizeof(_prefs.bluetooth_enabled) + sizeof(uint32_t)))
     rd(&_prefs.bluetooth_enabled, sizeof(_prefs.bluetooth_enabled));
-  solo::PrefsDefaults::normalize(_prefs);
-
+  // → 0xC0DE002A: full per-channel melody selections. A 0x29 record has only
+  // its sentinel remaining, so read this table only when all 32 bytes exist.
+  if (file.available() >= (int)(sizeof(_prefs.channel_melody_overrides) + sizeof(uint32_t)))
+    rd(_prefs.channel_melody_overrides, sizeof(_prefs.channel_melody_overrides));
+  // → 0xC0DE002B: semantic Zen configuration schema. Layout 0x2A has only its
+  // sentinel left here, so schema zero enters the ordered migration sequence.
+  if (file.available() >= (int)(sizeof(_prefs.zen_config_schema) + sizeof(uint32_t)))
+    rd(&_prefs.zen_config_schema, sizeof(_prefs.zen_config_schema));
   // Schema sentinel: bumped on layout changes. Mismatch means an older file
   // (or a different schema); rd() already zero-inits any fields not present,
   // so we just log it — next savePrefs writes the current sentinel.
   uint32_t sentinel = 0;
   rd(&sentinel, sizeof(sentinel));
+  if (!solo::ConfigMaintenance::migrateMelodySchema(_prefs, sentinel)) {
+    _prefs.notif_melody_dm = solo::BuiltinMelodies::validate(_prefs.notif_melody_dm);
+    _prefs.notif_melody_ch = solo::BuiltinMelodies::validate(
+        _prefs.notif_melody_ch, solo::BuiltinMelodies::KERPLOP);
+    _prefs.notif_melody_ad = solo::BuiltinMelodies::validate(_prefs.notif_melody_ad);
+    for (int i = 0; i < NodePrefs::DM_MELODY_TABLE_MAX; i++) {
+      if (_prefs.dm_melody[i].slot > solo::BuiltinMelodies::COUNT) memset(&_prefs.dm_melody[i], 0, sizeof(_prefs.dm_melody[i]));
+    }
+    for (uint8_t i = 0; i < 64; i++) {
+      if (solo::NotificationPreferences::channelMelody(&_prefs, i) > solo::BuiltinMelodies::COUNT)
+        solo::NotificationPreferences::setChannelMelody(&_prefs, i, 0);
+    }
+  }
   if (sentinel != NodePrefs::SCHEMA_SENTINEL) {
     MESH_DEBUG_PRINTLN("prefs schema sentinel mismatch: got 0x%08X, expected 0x%08X — re-saving on next change",
                        (unsigned)sentinel, (unsigned)NodePrefs::SCHEMA_SENTINEL);
@@ -866,6 +883,8 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.reserved_repeat_flood_tx_factor, sizeof(_prefs.reserved_repeat_flood_tx_factor));
     file.write((uint8_t *)&_prefs.reserved_repeat_direct_tx_factor, sizeof(_prefs.reserved_repeat_direct_tx_factor));
     file.write((uint8_t *)&_prefs.bluetooth_enabled, sizeof(_prefs.bluetooth_enabled));
+    file.write((uint8_t *)_prefs.channel_melody_overrides, sizeof(_prefs.channel_melody_overrides));
+    file.write((uint8_t *)&_prefs.zen_config_schema, sizeof(_prefs.zen_config_schema));
 
     // Tail sentinel — must be last. See NodePrefs::SCHEMA_SENTINEL. Its write is
     // the one we check: once the flash fills, writes return 0, so a good
@@ -900,7 +919,9 @@ void DataStore::restoreRTCTime() {
     uint32_t t = 0;
     file.read((uint8_t *)&t, sizeof(t));
     file.close();
-    if (t > 1000000000UL) _clock->setCurrentTime(t);
+    uint32_t current = _clock->getCurrentTime();
+    if (t > 1000000000UL && (current < 1000000000UL || t > current))
+      _clock->setCurrentTime(t);
   }
 }
 
@@ -988,10 +1009,11 @@ void DataStore::saveContacts(DataStoreHost* host, bool (*filter)(const ContactIn
   }
 }
 
-void DataStore::loadChannels(DataStoreHost* host) {
+bool DataStore::loadChannels(DataStoreHost* host) {
     FILESYSTEM* fs = _getContactsChannelsFS();
     File file = openRead(fs, "/channels3");
     if (file) {
+      size_t stored_size = file.size();
       // /channels3: the leading 4-byte field's first byte is the channel's
       // original slot index (see saveChannels()) — load it back into that
       // exact slot. The old /channels2 format instead reassigned indices
@@ -1002,6 +1024,7 @@ void DataStore::loadChannels(DataStoreHost* host) {
       // after the next reboot.
       bool full = false;
       uint8_t skipped = 0;
+      uint8_t loaded = 0;
       while (!full) {
         ChannelDetails ch;
         uint8_t hdr[4];
@@ -1030,13 +1053,17 @@ void DataStore::loadChannels(DataStoreHost* host) {
         ch.name[31] = '\0';
 
         if (!host->onChannelLoaded(hdr[0], ch)) full = true;
+        else loaded++;
       }
       file.close();
       if (skipped > 0) {
         MESH_DEBUG_PRINTLN("loadChannels: skipped %u corrupted/empty channel entr%s",
                            (unsigned)skipped, skipped == 1 ? "y" : "ies");
       }
-      return;
+      // A zero-byte file is the valid representation of an intentionally
+      // empty channel list. A non-empty file with no complete valid records is
+      // corrupt, so let first-boot recovery seed Public instead.
+      return stored_size == 0 || loaded > 0;
     }
 
     // One-time migration from the old /channels2 format (sequential index,
@@ -1045,8 +1072,10 @@ void DataStore::loadChannels(DataStoreHost* host) {
     // fallback is never hit again on this device.
     file = openRead(fs, "/channels2");
     if (file) {
+      size_t stored_size = file.size();
       bool full = false;
       uint8_t channel_idx = 0;
+      uint8_t loaded = 0;
       while (!full) {
         ChannelDetails ch;
         uint8_t unused[4];
@@ -1061,12 +1090,17 @@ void DataStore::loadChannels(DataStoreHost* host) {
         if (secret_empty) continue;
         ch.name[31] = '\0';
 
-        if (host->onChannelLoaded(channel_idx, ch)) channel_idx++;
+        if (host->onChannelLoaded(channel_idx, ch)) { channel_idx++; loaded++; }
         else full = true;
       }
       file.close();
-      saveChannels(host);   // write /channels3 so the migration runs only once
+      if (stored_size == 0 || loaded > 0) {
+        saveChannels(host); // write /channels3 so the migration runs only once
+        return true;
+      }
+      return false;
     }
+    return false;
 }
 
 void DataStore::saveChannels(DataStoreHost* host) {

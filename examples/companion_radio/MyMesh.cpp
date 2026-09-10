@@ -1,12 +1,16 @@
 #include "MyMesh.h"
 #include "solo/RepeaterTiming.h"
 #include "solo/SoloPrefsDefaults.h"
+#include "solo/DeviceTimePolicy.h"
+#include "solo/BuiltinMelodies.h"
+#include "solo/ConfigMaintenance.h"
 #include "MsgExpand.h"
 #include "GeoUtils.h"
 #include "Features.h"
 
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
+#include <helpers/UTF8Helpers.h>
 
 #ifdef DISPLAY_CLASS
 #include "helpers/ui/DisplayDriver.h"
@@ -458,6 +462,23 @@ bool MyMesh::deleteContactByKey(const uint8_t* pub_key) {
   return true;
 }
 
+bool MyMesh::setContactFavourite(const uint8_t* pub_key, bool favourite) {
+  ContactInfo* contact = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
+  if (!contact) return false;
+  bool current = (contact->flags & 0x01) != 0;
+  if (current == favourite) return true;
+  if (favourite) contact->flags |= 0x01;
+  else           contact->flags &= ~0x01;
+  uint32_t changed_at = getRTCClock()->getCurrentTimeUnique();
+  // Incremental companion sync uses `lastmod > since`. Preserve that strict
+  // ordering even for two edits in one RTC second or a clock correction.
+  if (changed_at <= contact->lastmod && contact->lastmod != UINT32_MAX)
+    changed_at = contact->lastmod + 1;
+  contact->lastmod = changed_at;
+  dirty_contacts_expiry = futureMillis(LAZY_CONTACTS_WRITE_DELAY);
+  return true;
+}
+
 bool MyMesh::clearContactPath(const uint8_t* pub_key, size_t prefix_len) {
   ContactInfo* recipient = lookupContactByPubKey(pub_key, prefix_len);
   if (!recipient) return false;
@@ -537,9 +558,9 @@ void MyMesh::queueMessage(const ContactInfo &from, uint8_t txt_type, mesh::Packe
     memcpy(&out_frame[i], extra, extra_len);
     i += extra_len;
   }
-  int tlen = strlen(text); // TODO: UTF-8 ??
+  int tlen = strlen(text);
   if (i + tlen > MAX_FRAME_SIZE) {
-    tlen = MAX_FRAME_SIZE - i;
+    tlen = mesh::validUtf8PrefixLength(text, MAX_FRAME_SIZE - i);
   }
   memcpy(&out_frame[i], text, tlen);
   i += tlen;
@@ -786,9 +807,9 @@ void MyMesh::onChannelMessageRecv(const mesh::GroupChannel &channel, mesh::Packe
   out_frame[i++] = TXT_TYPE_PLAIN;
   memcpy(&out_frame[i], &timestamp, 4);
   i += 4;
-  int tlen = strlen(text); // TODO: UTF-8 ??
+  int tlen = strlen(text);
   if (i + tlen > MAX_FRAME_SIZE) {
-    tlen = MAX_FRAME_SIZE - i;
+    tlen = mesh::validUtf8PrefixLength(text, MAX_FRAME_SIZE - i);
   }
   memcpy(&out_frame[i], text, tlen);
   i += tlen;
@@ -1553,7 +1574,9 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.ringtone_bpm_idx = 2;   // 120 bpm default
   _prefs.ringtone_len = 0;       // no custom ringtone by default
   _prefs.ringtone2_bpm_idx = 2;  // 120 bpm default
-  _prefs.notif_melody_ad = 0;    // built-in advert sound by default
+  _prefs.notif_melody_dm = solo::BuiltinMelodies::MESSAGE;
+  _prefs.notif_melody_ch = solo::BuiltinMelodies::KERPLOP;
+  _prefs.notif_melody_ad = solo::BuiltinMelodies::MESSAGE;
   _prefs.advert_sound_scope = ADVERT_SOUND_SCOPE_ALL;  // sound every advert by default
   _prefs.home_pages_mask = NodePrefs::HP_DEFAULT;  // curated everyday carousel; rest opt-in via Home Pages
   solo::PrefsDefaults::apply(_prefs);
@@ -1632,7 +1655,6 @@ void MyMesh::begin(bool has_display) {
   if (isnan(_prefs.rx_delay_base)  || isinf(_prefs.rx_delay_base))  _prefs.rx_delay_base  = 0;
   _prefs.rx_delay_base = constrain(_prefs.rx_delay_base, 0, 20.0f);
   _prefs.airtime_factor = constrain(_prefs.airtime_factor, 0, 9.0f);
-  solo::PrefsDefaults::normalize(_prefs);
   _prefs.freq = constrain(_prefs.freq, 150.0f, 2500.0f);
   _prefs.bw = constrain(_prefs.bw, 7.8f, 500.0f);
   _prefs.sf = constrain(_prefs.sf, 5, 12);
@@ -1640,6 +1662,9 @@ void MyMesh::begin(bool has_display) {
   _prefs.tx_power_dbm = constrain(_prefs.tx_power_dbm, -9, MAX_LORA_TX_POWER);
   _prefs.gps_enabled = constrain(_prefs.gps_enabled, 0, 1);  // Ensure boolean 0 or 1
   _prefs.gps_interval = constrain(_prefs.gps_interval, 0, 86400);  // Max 24 hours
+  if (solo::ConfigMaintenance::apply(_prefs)) {
+    _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon);
+  }
 
 #ifdef BLE_PIN_CODE // 123456 by default
   if (_prefs.ble_pin == 0) {
@@ -1663,8 +1688,11 @@ void MyMesh::begin(bool has_display) {
   resetContacts();
   _store->loadContacts(this);
   bootstrapRTCfromContacts();
-  addChannel("Public", PUBLIC_GROUP_PSK); // pre-configure Andy's public channel
-  _store->loadChannels(this);
+  // A saved channel list is authoritative, including the deliberate absence
+  // of Public. Seed it only on a genuinely fresh device.
+  if (!_store->loadChannels(this)) {
+    addChannel("Public", PUBLIC_GROUP_PSK);
+  }
 
   applyRadioParams();
   radio_driver.setRxBoostedGainMode(_prefs.rx_boosted_gain);
@@ -1841,6 +1869,16 @@ void MyMesh::handleCmdFrame(size_t len) {
         memcpy(&out_frame[2], &expected_ack, 4);
         memcpy(&out_frame[6], &est_timeout, 4);
         _serial->writeFrame(out_frame, 10);
+
+#ifdef DISPLAY_CLASS
+        if (_ui && txt_type == TXT_TYPE_PLAIN) {
+          uint32_t deadline = expected_ack ? millis() + est_timeout + 4000 : 0;
+          uint8_t path_len = result == MSG_SEND_SENT_FLOOD
+                               ? OUT_PATH_UNKNOWN : recipient->out_path_len;
+          _ui->addAppDMMsg(recipient->id.pub_key, text, msg_timestamp, attempt,
+                           expected_ack, deadline, path_len);
+        }
+#endif
       }
     } else {
       writeErrFrame(recipient == NULL
@@ -1863,6 +1901,14 @@ void MyMesh::handleCmdFrame(size_t len) {
       bool success = getChannel(channel_idx, channel);
       if (success && sendGroupMessage(msg_timestamp, channel.channel, _prefs.node_name, text, len - i)) {
         writeOKFrame();
+#ifdef DISPLAY_CLASS
+        if (_ui) {
+          int text_len = len - i;
+          if (text_len > MAX_TEXT_LEN) text_len = MAX_TEXT_LEN;
+          int pos = _ui->addOwnChannelMsg(channel_idx, text, text_len, msg_timestamp);
+          if (pos >= 0) _ui->armChannelRelay(pos, lastChannelRelaySeq());
+        }
+#endif
       } else {
         writeErrFrame(ERR_CODE_NOT_FOUND); // bad channel_idx
       }
@@ -1960,8 +2006,13 @@ void MyMesh::handleCmdFrame(size_t len) {
     uint32_t secs;
     memcpy(&secs, &cmd_frame[1], 4);
     uint32_t curr = getRTCClock()->getCurrentTime();
-    if (secs >= curr) {
+    if (solo::DeviceTimePolicy::valid(secs)) {
+      bool persist = solo::DeviceTimePolicy::shouldPersist(curr, secs);
+      // Companion time is authoritative. Always call setCurrentTime(), even
+      // for a zero-delta correction, so BootTimeSync observes a live source
+      // and clears SYNC TIME without waiting for GPS.
       getRTCClock()->setCurrentTime(secs);
+      if (persist) saveRTCTime();
       writeOKFrame();
     } else {
       writeErrFrame(ERR_CODE_ILLEGAL_ARG);
@@ -2167,10 +2218,13 @@ void MyMesh::handleCmdFrame(size_t len) {
       writeOKFrame();
     }
   } else if (cmd_frame[0] == CMD_REBOOT && memcmp(&cmd_frame[1], "reboot", 6) == 0) {
-    if (dirty_contacts_expiry) { // is there are pending dirty contacts write needed?
-      saveContacts();
+    if (_ui) _ui->shutdown(true);
+    else {
+      savePrefs();
+      saveRTCTime();
+      flushDirtyContacts();
+      board.reboot();
     }
-    board.reboot();
   } else if (cmd_frame[0] == CMD_GET_BATT_AND_STORAGE) {
     uint8_t reply[11];
     int i = 0;
@@ -2972,7 +3026,13 @@ void MyMesh::checkCLIRescueCmd() {
       }
 
     } else if (strcmp(cli_command, "reboot") == 0) {
-      board.reboot();  // doesn't return
+      if (_ui) _ui->shutdown(true);
+      else {
+        savePrefs();
+        saveRTCTime();
+        flushDirtyContacts();
+        board.reboot();
+      }
     } else {
       Serial.println("  Error: unknown command");
     }

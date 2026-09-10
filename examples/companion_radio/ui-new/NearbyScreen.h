@@ -25,7 +25,8 @@ class NearbyScreen : public UIScreen {
 
   // ── action-menu actions (matched by id, not by row index) ────────────────────
   enum Action : uint8_t { ACT_NAV, ACT_PING, ACT_LOCATOR,
-                          ACT_ADD, ACT_DELETE, ACT_FAV, ACT_ADMIN, ACT_SORT, ACT_SCAN };
+                          ACT_ADD, ACT_DELETE, ACT_FAV, ACT_PIN,
+                          ACT_ADMIN, ACT_SORT, ACT_SCAN };
 
   // Returning from a node's Admin action preserves this browsing context.
   bool _resume_admin = false;
@@ -38,6 +39,7 @@ class NearbyScreen : public UIScreen {
     uint8_t  type;
     uint8_t  pub_key[PUB_KEY_SIZE];
     bool     has_key;
+    bool     favourite;
     // stored-source fields
     int32_t  lat_e6, lon_e6;
     float    dist_km;
@@ -87,6 +89,8 @@ class NearbyScreen : public UIScreen {
   Action  _menu_actions[10];  // parallel to _menu rows — stable action ids
   int     _menu_action_count;
   char    _sort_label[16];    // dynamic label for the Sort row
+  char    _fav_label[12];
+  char    _pin_label[24];
 
   // ── ping state ───────────────────────────────────────────────────────────────
   char _ping_time_str[24];
@@ -177,6 +181,7 @@ class NearbyScreen : public UIScreen {
       e.name[sizeof(e.name) - 1] = '\0';
       memcpy(e.pub_key, ci.id.pub_key, PUB_KEY_SIZE);
       e.has_key = true;
+      e.favourite = (ci.flags & 0x01) != 0;
       e.lat_e6  = ci.gps_lat;
       e.lon_e6  = ci.gps_lon;
       bool remote_gps = (ci.gps_lat != 0 || ci.gps_lon != 0);
@@ -314,6 +319,10 @@ class NearbyScreen : public UIScreen {
     for (int i = 0; i < _count - 1; i++) {
       int best = i;
       for (int j = i + 1; j < _count; j++) {
+        if (_entries[j].favourite != _entries[best].favourite) {
+          if (_entries[j].favourite) best = j;
+          continue;
+        }
         if (_sort == SORT_TIME) {
           // lastmod=0 or lastmod>now (RTC not synced) → "unknown" → sort to bottom.
           uint32_t tj = (_entries[j].lastmod > 0 && now_ts >= _entries[j].lastmod) ? _entries[j].lastmod : 0;
@@ -344,6 +353,7 @@ class NearbyScreen : public UIScreen {
       e.snr_x4        = dr[i].snr_x4;
       e.remote_snr_x4 = dr[i].remote_snr_x4;
       e.is_known      = dr[i].is_known;
+      e.favourite     = false;
       e.lat_e6 = e.lon_e6 = 0;
       e.dist_km = -1.0f;
       e.lastmod = 0;
@@ -395,18 +405,31 @@ class NearbyScreen : public UIScreen {
     if (slot >= 0) {
       _task->clearFavouriteSlot(slot);
       the_mesh.savePrefs();
-      _task->showAlert("Unfavourited", 1000);
+      char alert[24];
+      snprintf(alert, sizeof(alert), "Unpinned (slot %d)", slot + 1);
+      _task->showAlert(alert, 1000);
       return;
     }
     for (int s = 0; s < NodePrefs::FAVOURITES_DIAL_COUNT; s++) {
       if (_task->isFavouriteSlotEmpty(s)) {
         _task->setFavouriteSlot(s, pub_key);
         the_mesh.savePrefs();
-        _task->showAlert("Favourited", 1000);
+        char alert[24];
+        snprintf(alert, sizeof(alert), "Pinned to slot %d", s + 1);
+        _task->showAlert(alert, 1000);
         return;
       }
     }
     _task->showAlert("Favourites full", 1200);
+  }
+
+  void toggleStarred() {
+    const Entry* entry = selected();
+    if (!entry || !entryIsContact(entry) || !entry->has_key) return;
+    bool favourite = !entry->favourite;
+    if (!the_mesh.setContactFavourite(entry->pub_key, favourite)) return;
+    snprintf(_fav_label, sizeof(_fav_label), "Fav: %s", favourite ? "On" : "Off");
+    refreshKeepingSelection();
   }
 
   // Deleting a contact is destructive → confirm first (default highlight = Cancel).
@@ -537,7 +560,7 @@ class NearbyScreen : public UIScreen {
     bool has_key = e && e->has_key;
     bool is_contact = entryIsContact(e);
     bool can_add = e && has_key && !is_contact;   // a new node we can save
-    bool is_fav  = e && has_key && _task->findFavouriteSlot(e->pub_key) >= 0;
+    bool is_pinned = e && has_key && _task->findFavouriteSlot(e->pub_key) >= 0;
     // Admin needs a real saved contact (repeater/room), not a scan result or a
     // name-only live-share row.
     bool is_admin_target = e && stored && e->contact_idx >= 0
@@ -547,7 +570,8 @@ class NearbyScreen : public UIScreen {
     _menu_action_count = 0;
     _menu.begin("Options", 10);
     auto add = [&](const char* label, Action a) {
-      _menu.addItem(label);
+      if (a == ACT_SORT || a == ACT_FAV) _menu.addValueItem(label);
+      else _menu.addItem(label);
       _menu_actions[_menu_action_count++] = a;
     };
 
@@ -561,7 +585,14 @@ class NearbyScreen : public UIScreen {
     if (has_gps && has_key) add("Set as target", ACT_LOCATOR);
 #endif
     if (can_add)            add("Add contact", ACT_ADD);
-    if (is_contact && has_key) add(is_fav ? "Unfavourite" : "Favourite", ACT_FAV);
+    if (stored && is_contact && has_key) {
+      snprintf(_fav_label, sizeof(_fav_label), "Fav: %s", e->favourite ? "On" : "Off");
+      add(_fav_label, ACT_FAV);
+    }
+    if (is_contact && has_key && e->type == ADV_TYPE_CHAT) {
+      snprintf(_pin_label, sizeof(_pin_label), "%s", is_pinned ? "Unpin from dial" : "Pin to dial");
+      add(_pin_label, ACT_PIN);
+    }
 #if SOLO_FEAT_ADMIN
     if (is_admin_target && !_task->isChildModeLocked()) add("Admin", ACT_ADMIN);
 #endif
@@ -604,6 +635,10 @@ class NearbyScreen : public UIScreen {
         break;
       }
       case ACT_FAV: {
+        toggleStarred();
+        break;
+      }
+      case ACT_PIN: {
         const Entry* e = selected();
         if (e && e->has_key) toggleFavourite(e->pub_key);
         break;
@@ -858,9 +893,9 @@ public:
           miniIconDrawCentered(display, tx + iw / 2, y + display.getLineHeight() / 2 - 1, ICON_MAP_CONTACT);
           tx += iw + 2;
         }
-        // Star = pinned to the Favourites dial (same glyph as the Favourites page
-        // icon). Shown next to any live diamond so both states read at once.
-        if (e.has_key && _task->findFavouriteSlot(e.pub_key) >= 0) {
+        // A star is MeshCore's favourite flag; carousel pinning is a separate
+        // shortcut and deliberately has no second row glyph.
+        if (e.favourite) {
           int iw = ICON_PG_STAR.w * miniIconScale(display);
           miniIconDrawCentered(display, tx + iw / 2, y + display.getLineHeight() / 2 - 1, ICON_PG_STAR);
           tx += iw + 2;
@@ -875,13 +910,15 @@ public:
           // Signed RSSI fits in four characters (for example, -123). Reserve
           // only that much so repeater names retain the rest of the row.
           int rssi_col = display.width() - display.getCharWidth() * 4;
-          display.drawTextEllipsized(tx, y, rssi_col - tx - 2, shown);
+          display.drawTextEllipsized(tx, y, rssi_col - tx - 2, shown,
+                                     sel && !ctxMenuOpen());
           display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
           char right[10];
           snprintf(right, sizeof(right), "%d", (int)e.rssi);
           display.drawTextRightAlign(display.width() - reserve - 2, y, right);
         } else {
-          display.drawTextEllipsized(tx, y, display.width() - reserve - tx - 2, shown);
+          display.drawTextEllipsized(tx, y, display.width() - reserve - tx - 2,
+                                     shown, sel && !ctxMenuOpen());
         }
       });
     }
@@ -912,21 +949,30 @@ public:
     if (_ping_menu.active)   { handlePingMenuInput(c); return true; }
     if (_menu.active) {
       // LEFT/RIGHT on the Sort row toggles the value in-place and rebuilds the
-      // label; the popup stays open so the user can keep tapping. Other rows
-      // swallow L/R. ENTER on Sort just closes (value changes via L/R only).
-      if (keyIsPrev(c) || keyIsNext(c)) {
+      // label; the popup stays open so the user can keep tapping. Enter advances
+      // the value like Right. Other rows swallow Left/Right.
+      bool value_enter = c == KEY_ENTER && _menu.selectedIndex() >= 0 &&
+                         _menu.selectedIndex() < _menu_action_count &&
+                         (_menu_actions[_menu.selectedIndex()] == ACT_SORT ||
+                          _menu_actions[_menu.selectedIndex()] == ACT_FAV);
+      if (keyIsPrev(c) || keyIsNext(c) || value_enter) {
         int i = _menu.selectedIndex();
-        if (i >= 0 && i < _menu_action_count && _menu_actions[i] == ACT_SORT) {
-          _sort = (_sort == SORT_DIST) ? SORT_TIME : SORT_DIST;
-          buildSortLabel();
-          refresh();
+        if (i >= 0 && i < _menu_action_count) {
+          if (_menu_actions[i] == ACT_SORT) {
+            _sort = (_sort == SORT_DIST) ? SORT_TIME : SORT_DIST;
+            buildSortLabel();
+            refreshKeepingSelection();
+          } else if (_menu_actions[i] == ACT_FAV) {
+            toggleStarred();
+          }
         }
         return true;
       }
       auto res = _menu.handleInput(c);
       if (res == PopupMenu::SELECTED) {
         int i = _menu.selectedIndex();
-        if (i >= 0 && i < _menu_action_count && _menu_actions[i] != ACT_SORT)
+        if (i >= 0 && i < _menu_action_count &&
+            _menu_actions[i] != ACT_SORT && _menu_actions[i] != ACT_FAV)
           runAction(_menu_actions[i]);
       }
       return true;

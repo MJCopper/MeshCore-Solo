@@ -114,7 +114,8 @@ public:
       for (int i = 0; i < visible && node(_scroll + i, contact); i++) {
         char name[33]; memcpy(name, contact.name, 32); name[32] = 0;
         display.drawSelectionRow(0, y + i * step - 1, display.width(), step - 1, _scroll + i == _selected);
-        display.drawTextEllipsized(2, y + i * step, display.width() - 4, name);
+        display.drawTextEllipsized(2, y + i * step, display.width() - 4, name,
+                                   _scroll + i == _selected);
       }
     }
   }

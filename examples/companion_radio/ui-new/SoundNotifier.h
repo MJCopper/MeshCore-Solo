@@ -5,6 +5,8 @@
 #include <helpers/ui/buzzer.h>
 #include "../NodePrefs.h"
 #include "../solo/NotificationPreferences.h"
+#include "../solo/BuiltinMelodies.h"
+#include "../solo/RingtoneModel.h"
 
 class SoundNotifier {
   genericBuzzer&   _buz;
@@ -16,26 +18,35 @@ class SoundNotifier {
     const uint8_t* notes = (slot == 2) ? p->ringtone2_notes   : p->ringtone_notes;
     uint8_t        len   = (slot == 2) ? p->ringtone2_len      : p->ringtone_len;
     uint8_t        bpm_i = (slot == 2) ? p->ringtone2_bpm_idx  : p->ringtone_bpm_idx;
-    NodePrefs::buildRTTTLString(notes, len, bpm_i, buf, size);
+    solo::RingtoneModel::buildRTTTL(notes, len, bpm_i, buf, size);
   }
 
-  // Play custom slot (1/2) or fall back to built-in RTTTL. Slot 3 = explicit silence.
-  void playSlot(int slot, bool force, const char* fallback) {
-    if (slot == 3) return;
-    if (slot > 0 && _prefs) {
+  void playSelection(uint8_t selection, bool force, uint8_t empty_fallback) {
+    selection = solo::BuiltinMelodies::validate(selection, empty_fallback);
+    if (selection == solo::BuiltinMelodies::NONE) return;
+    if ((selection == solo::BuiltinMelodies::CUSTOM1 ||
+         selection == solo::BuiltinMelodies::CUSTOM2) && _prefs) {
       if (_buz.isPlaying()) _buz.stop();
-      buildMelody(_prefs, slot, _mel_buf, _mel_buf_sz);
+      buildMelody(_prefs, selection == solo::BuiltinMelodies::CUSTOM2 ? 2 : 1,
+                  _mel_buf, _mel_buf_sz);
       if (_mel_buf[0]) {
         if (force) _buz.playForced(_mel_buf); else _buz.play(_mel_buf);
         return;
       }
     }
-    if (force) _buz.playForced(fallback); else _buz.play(fallback);
+    const char* melody = solo::BuiltinMelodies::melody(selection);
+    if (!melody) melody = solo::BuiltinMelodies::melody(empty_fallback);
+    if (force) _buz.playForced(melody); else _buz.play(melody);
   }
 
 public:
   SoundNotifier(genericBuzzer& buz, const NodePrefs* prefs, char* buf, int sz)
     : _buz(buz), _prefs(prefs), _mel_buf(buf), _mel_buf_sz(sz) {}
+
+  void preview(uint8_t selection, uint8_t empty_fallback) {
+    if (_buz.isPlaying()) _buz.stop();
+    playSelection(selection, true, empty_fallback);
+  }
 
   void playDM(bool dm_valid, const uint8_t* dm_prefix) {
     bool play = false, force = false;
@@ -49,12 +60,12 @@ public:
     }
     if (!play) return;
 
-    int slot = _prefs ? (int)_prefs->notif_melody_dm : 0;
+    uint8_t slot = _prefs ? _prefs->notif_melody_dm : solo::BuiltinMelodies::MESSAGE;
     if (dm_valid && _prefs) {
       uint8_t override_slot = solo::NotificationPreferences::dmMelody(_prefs, dm_prefix);
-      if (override_slot) slot = override_slot;
+      if (override_slot) slot = override_slot - 1;
     }
-    playSlot(slot, force, "MsgRcv3:d=4,o=6,b=200:32e,32g,32b,16c7");
+    playSelection(slot, force, solo::BuiltinMelodies::MESSAGE);
   }
 
   void playLowBattery() {
@@ -73,19 +84,19 @@ public:
     }
     if (!play) return;
 
-    int slot = _prefs ? (int)_prefs->notif_melody_ch : 0;
+    uint8_t slot = _prefs ? _prefs->notif_melody_ch : solo::BuiltinMelodies::KERPLOP;
     if (ch_idx >= 0 && ch_idx < 64 && _prefs) {
       uint8_t override_slot = solo::NotificationPreferences::channelMelody(_prefs, ch_idx);
-      if (override_slot) slot = override_slot;
+      if (override_slot) slot = override_slot - 1;
     }
-    playSlot(slot, force, "kerplop:d=16,o=6,b=120:32g#,32c#");
+    playSelection(slot, force, solo::BuiltinMelodies::KERPLOP);
   }
 
   void playAD(bool is_flood) {
     if (_prefs && _prefs->advert_sound_scope == ADVERT_SOUND_SCOPE_ZERO_HOP && is_flood) return;
     if (_buz.isQuiet()) return;
-    int slot = _prefs ? (int)_prefs->notif_melody_ad : 0;
-    playSlot(slot, false, "MsgRcv3:d=4,o=6,b=200:32e,32g,32b,16c7");
+    uint8_t slot = _prefs ? _prefs->notif_melody_ad : solo::BuiltinMelodies::MESSAGE;
+    playSelection(slot, false, solo::BuiltinMelodies::MESSAGE);
   }
 };
 #endif

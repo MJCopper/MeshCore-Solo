@@ -45,6 +45,7 @@ static const Field FIELDS[] = {
   {ROOM, "Read-only access", "get allow.read.only", "set allow.read.only", TOGGLE, 0, 1, 1},
   {ACTIONS, "Send advert", "advert", nullptr, ACTION, 0, 0, 0},
   {ACTIONS, "Zero-hop advert", "advert.zerohop", nullptr, ACTION, 0, 0, 0},
+  {ACTIONS, "Start OTA", "start ota", nullptr, ACTION, 0, 0, 0},
   {ACTIONS, "Reboot", "reboot", nullptr, ACTION, 0, 0, 0},
 };
 static const int FIELD_COUNT = sizeof(FIELDS) / sizeof(FIELDS[0]);

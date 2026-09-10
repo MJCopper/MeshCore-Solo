@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <string.h>
+#include <Arduino.h>
 
 using ColorVal = uint16_t;
 
@@ -16,6 +17,13 @@ class DisplayDriver {
 protected:
   bool _vw_dirty = true;
   bool _vw_result = false;
+  char _marquee_text[256] = {0};
+  int _marquee_width = -1;
+  int _marquee_x = -1, _marquee_y = -1;
+  uint16_t _marquee_offset = 0, _marquee_end = 0;
+  uint8_t _marquee_phase = 0;  // start hold, forward, end hold, backward, stopped
+  unsigned long _marquee_next = 0;
+  int _marquee_delay = 0;
   DisplayDriver(int w, int h) { _w = w; _h = h; }
   void setDimensions(int w, int h) { _w = w; _h = h; }
 public:
@@ -26,6 +34,14 @@ public:
 
   int width() const { return _w; }
   int height() const { return _h; }
+
+  // One selected overflowing label owns the marquee in a frame. UITask uses
+  // the returned delay to redraw only when the next animation step is due.
+  void beginMarqueeFrame() { _marquee_delay = 0; }
+  int marqueeDelay() const { return _marquee_delay; }
+  virtual unsigned long marqueeStepMs() { return isEink() ? 2500 : 220; }
+  virtual unsigned long marqueeHoldMs() { return isEink() ? 2500 : 700; }
+  virtual uint8_t marqueeStepChars() { return isEink() ? 3 : 1; }
 
   virtual bool isOn() = 0;
   virtual bool isEink() { return false; } // default to non-eink, override in eink drivers
@@ -249,8 +265,10 @@ public:
   }
 
 
-  // draw text with ellipsis if it exceeds max_width
-  virtual void drawTextEllipsized(int x, int y, int max_width, const char* str) {
+  // Selected overflowing rows swing between their beginning and end. Other
+  // rows retain the static ellipsis and incur no extra redraws.
+  virtual int drawTextEllipsized(int x, int y, int max_width, const char* str,
+                                 bool selected = false) {
     char temp_str[256];  // reasonable buffer size
     strncpy(temp_str, str ? str : "", sizeof(temp_str) - 1);
     temp_str[sizeof(temp_str) - 1] = '\0';
@@ -266,7 +284,84 @@ public:
     if (getTextWidth(temp_str) <= max_width) {
       setCursor(x, y);
       print(temp_str);
-      return;
+      return 0;
+    }
+
+    if (selected) {
+      unsigned long now = millis();
+      bool changed = strcmp(temp_str, _marquee_text) || max_width != _marquee_width ||
+                     x != _marquee_x || y != _marquee_y;
+      if (changed) {
+        strncpy(_marquee_text, temp_str, sizeof(_marquee_text) - 1);
+        _marquee_text[sizeof(_marquee_text) - 1] = 0;
+        _marquee_width = max_width;
+        _marquee_x = x; _marquee_y = y;
+        _marquee_offset = 0;
+        _marquee_phase = 0;
+        _marquee_next = now + marqueeHoldMs();
+        const uint8_t* p = (const uint8_t*)temp_str;
+        int remaining = getTextWidth(temp_str);
+        _marquee_end = 0;
+        while (*p && remaining > max_width) {
+          remaining -= getCodepointWidth(decodeCodepoint(p));
+          _marquee_end++;
+        }
+      }
+      if (_marquee_phase != 4 && (int32_t)(now - _marquee_next) >= 0) {
+        uint8_t step = marqueeStepChars();
+        if (_marquee_phase <= 1) {
+          _marquee_phase = 1;
+          _marquee_offset += step;
+          if (_marquee_offset >= _marquee_end) {
+            _marquee_offset = _marquee_end;
+            // E-ink performs one slow traversal and then stops at the end.
+            // Repeated back-and-forth partial refreshes cost appreciable power.
+            if (isEink()) {
+              _marquee_phase = 4;
+              _marquee_next = 0;
+            } else {
+              _marquee_phase = 2;
+              _marquee_next = now + marqueeHoldMs();
+            }
+          } else _marquee_next = now + marqueeStepMs();
+        } else {
+          _marquee_phase = 3;
+          if (_marquee_offset <= step) {
+            _marquee_offset = 0;
+            _marquee_phase = 0;
+            _marquee_next = now + marqueeHoldMs();
+          } else {
+            _marquee_offset -= step;
+            _marquee_next = now + marqueeStepMs();
+          }
+        }
+      }
+      const uint8_t* start = (const uint8_t*)temp_str;
+      for (uint16_t i = 0; i < _marquee_offset && *start; i++) decodeCodepoint(start);
+      // Copy complete UTF-8 codepoints only. Byte-at-a-time clipping can leave
+      // a continuation byte behind and turn the last glyph into a placeholder.
+      const uint8_t* end = start;
+      const uint8_t* scan = start;
+      int window_width = 0;
+      while (*scan) {
+        const uint8_t* before = scan;
+        uint32_t cp = decodeCodepoint(scan);
+        int cp_width = getCodepointWidth(cp);
+        if (window_width + cp_width > max_width) break;
+        window_width += cp_width;
+        end = scan;
+        if (scan == before) break;
+      }
+      char window[256];
+      size_t length = (size_t)(end - start);
+      if (length >= sizeof(window)) length = sizeof(window) - 1;
+      memcpy(window, start, length);
+      window[length] = 0;
+      setCursor(x, y);
+      print(window);
+      _marquee_delay = _marquee_phase == 4 ? 0
+          : (_marquee_next > now ? (int)(_marquee_next - now) : 1);
+      return _marquee_delay;
     }
     
     // for variable-width fonts (GxEPD), add space after ellipsis
@@ -297,6 +392,7 @@ public:
     
     setCursor(x, y);
     print(temp_str);
+    return 0;
   }
   
   virtual void setBrightness(uint8_t level) { }  // level 0-4 (min to max), no-op default

@@ -35,6 +35,7 @@
 #endif
 
 #include "../solo/BatteryPolicy.h"
+#include "../solo/BatteryRuntime.h"
 
 class UITask : public AbstractUITask {
   DisplayDriver* _display;
@@ -82,6 +83,7 @@ class UITask : public AbstractUITask {
   DMUnreadEntry _room_unread_table[ROOM_UNREAD_TABLE_SIZE];
   unsigned long ui_started_at, next_batt_chck;
   uint16_t _batt_mv;  // EMA-filtered battery voltage
+  solo::BatteryRuntimeEstimator _battery_runtime;
   unsigned long next_backlight_btn_check = 0;
 #ifdef PIN_STATUS_LED
   int led_state = 0;
@@ -271,6 +273,8 @@ public:
   // Global metric/imperial preference for distance/speed display.
   bool useImperial() const { return _node_prefs && _node_prefs->units_imperial; }
   uint16_t getBattMilliVolts() const { return _batt_mv > 0 ? _batt_mv : AbstractUITask::getBattMilliVolts(); }
+  solo::BatteryRuntimeEstimator::State batteryRuntimeState() const { return _battery_runtime.state(); }
+  uint32_t batteryRuntimeSeconds() const { return _battery_runtime.seconds(); }
   void gotoHomeScreen() { _tool_home_entry = false; setCurrScreen(home); }
   void gotoSettingsScreen();
   int getSettingsSectionCount() const;
@@ -390,6 +394,7 @@ public:
   // / map screens so the LocationProvider lookup isn't duplicated per screen.
   bool currentLocation(int32_t& lat, int32_t& lon) const;
   void playMelody(const char* melody);
+  void previewMelody(uint8_t selection, uint8_t empty_fallback);
   void stopMelody();
   bool isMelodyPlaying();
   void showAlert(const char* text, int duration_millis);
@@ -410,6 +415,12 @@ public:
   void endEmergencyMode() { setEmergencyMode(false); }
   void addChannelMsg(uint8_t channel_idx, const char* text, uint32_t timestamp = 0) override;
   bool addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp = 0) override;
+  void addAppDMMsg(const uint8_t* pub_key, const char* text, uint32_t timestamp,
+                   uint8_t attempt, uint32_t ack_tag, uint32_t ack_deadline_ms,
+                   uint8_t path_len) override;
+  int addOwnChannelMsg(uint8_t channel_idx, const char* text, int text_len,
+                       uint32_t timestamp) override;
+  void armChannelRelay(int history_pos, uint32_t seq) override;
   void onMsgAck(uint32_t ack_crc) override;
   bool matchMsgAck(uint32_t ack_crc, uint8_t* prefix) override;
   void onRoomLoginCancelled(const uint8_t* prefix) override;

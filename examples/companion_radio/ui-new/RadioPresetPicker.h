@@ -39,6 +39,7 @@ struct RadioPresetPicker {
   int       user_count = 0;
   bool      saving   = false;   // keyboard is open to name a new preset
   bool      deleting = false;   // menu is showing the delete sub-list
+  int8_t    confirm_slot = -1;  // slot awaiting destructive-action confirmation
 
   static bool matches(const Target& t, float freq, float bw, uint8_t sf, uint8_t cr) {
     return radioParamsMatchPreset(*t.freq, *t.bw, *t.sf, *t.cr, freq, bw, sf, cr);
@@ -98,6 +99,7 @@ struct RadioPresetPicker {
 
   void open(NodePrefs* p, const Target& t, const char* title) {
     deleting = false;
+    confirm_slot = -1;
     menu.begin(title, 6);
     menu.addItem("+ Save current...");
     for (int i = 0; i < RADIO_PRESET_COUNT; i++) menu.addItem(RADIO_PRESETS[i].name);
@@ -124,18 +126,28 @@ struct RadioPresetPicker {
     deleting = true;
   }
 
+  void openConfirm(uint8_t slot) {
+    menu.beginConfirm("Delete preset?", "Delete");
+    confirm_slot = slot;
+  }
+
   // Handle the index the popup reports as SELECTED. Mutates target fields on a
   // built-in/user pick; deletes a slot in the delete sub-list. See Result.
   Result onSelected(int idx, NodePrefs* p, const Target& t) {
     if (!p) return NONE;
-    if (deleting) {
+    if (confirm_slot >= 0) {
       Result r = NONE;
-      if (idx >= 0 && idx < user_count) {
-        p->user_radio_presets[user_slot[idx]].name[0] = '\0';
+      if (idx == 0) {
+        p->user_radio_presets[confirm_slot].name[0] = '\0';
         r = DELETED;
       }
-      deleting = false;
+      confirm_slot = -1;
       return r;
+    }
+    if (deleting) {
+      if (idx >= 0 && idx < user_count) openConfirm(user_slot[idx]);
+      deleting = false;
+      return NONE;
     }
     const int builtin_base = 1;
     const int user_base    = builtin_base + RADIO_PRESET_COUNT;

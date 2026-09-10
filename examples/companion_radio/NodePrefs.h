@@ -58,14 +58,17 @@ struct NodePrefs {  // persisted to file
   int8_t tz_offset_hours;       // timezone offset from UTC, -12..+14 (default 0)
   uint16_t low_batt_mv;         // reserved legacy field; shutdown uses BatteryPolicy
   uint8_t batt_display_mode;   // 0=icon, 1=percent, 2=voltage
-  char custom_msgs[10][140];   // user-defined quick messages (supports {loc}, {time})
+  // The first five entries are editable Quick Replies. Keep all ten records so
+  // existing preference files retain their binary layout and later fields do
+  // not shift; slots 5..9 are reserved legacy storage.
+  char custom_msgs[10][140];
   uint64_t ch_notif_override;  // bitmask: bit i = channel i has explicit notification setting [del→onChannelRemoved]
   uint64_t ch_notif_muted;     // bitmask: bit i = channel i muted (only if override bit set) [del→onChannelRemoved]
   uint8_t  dm_show_all;        // 0=favourites only (default), 1=all chat contacts
   uint8_t  room_fav_only;      // 0=all room servers (default), 1=favourites only
   uint8_t  ringtone_bpm_idx;   // index into {60,90,120,150,180}
-  uint8_t  ringtone_len;        // number of notes in custom ringtone (0 = use default)
-  uint8_t  ringtone_notes[32]; // packed: bits0-2=pitch, bits3-4=octave-4, bits5-6=dur_idx
+  uint8_t  ringtone_len;       // active notes (0 = default, editor maximum 16)
+  uint8_t  ringtone_notes[32]; // legacy-sized storage; bit7 extends pitch to sharps
   uint16_t home_pages_mask;    // bitmask of visible home pages (bit0=Clock..bit8=Shutdown); 0=all visible
   uint8_t  bot_enabled;         // 0=disabled, 1=DM trigger-reply active — DM only; channel/room have their own bot_channel_enabled/bot_room_enabled and don't depend on this
   uint8_t  bot_channel_enabled; // 0=disabled, 1=channel bot active for bot_channel_idx
@@ -89,19 +92,19 @@ struct NodePrefs {  // persisted to file
   uint32_t advert_auto_interval_sec; // periodic 0-hop advert with GPS: 0=off, else seconds
   // Second melody slot (same packing as ringtone_*)
   uint8_t  ringtone2_bpm_idx;
-  uint8_t  ringtone2_len;
-  uint8_t  ringtone2_notes[32];
-  // Global melodies for notifications: 0=built-in, 1=melody1, 2=melody2, 3=none
+  uint8_t  ringtone2_len;       // active notes (0 = default, editor maximum 16)
+  uint8_t  ringtone2_notes[32]; // legacy-sized storage; bit7 extends pitch to sharps
+  // Global selection IDs from solo/BuiltinMelodies.h.
   uint8_t  notif_melody_dm;
   uint8_t  notif_melody_ch;
   uint8_t  notif_melody_ad;
   // Advert sound filter: 0=all adverts, 1=zero-hop only
   uint8_t  advert_sound_scope;
-  // Per-channel melody override (2 bitmasks, 1 bit per channel)
+  // Legacy per-channel Custom1/Custom2 override masks, retained for migration.
   uint64_t ch_notif_melody_set;  // bit i = channel i has explicit melody [del→onChannelRemoved]
   uint64_t ch_notif_melody_2;    // bit i = use melody 2 (else melody 1, when set bit is set)
   // Per-DM melody table
-  struct DmMelodyEntry { uint8_t prefix[4]; uint8_t slot; }; // slot: 0=global,1=melody1,2=melody2
+  struct DmMelodyEntry { uint8_t prefix[4]; uint8_t slot; }; // 0=global; otherwise selection+1
   static const int DM_MELODY_TABLE_MAX = 16;
   DmMelodyEntry dm_melody[DM_MELODY_TABLE_MAX]; // [del→onContactRemoved]
   uint8_t  use_lemon_font;      // 0=default Adafruit font, 1=Lemon font (Unicode, pixel-accurate wrap)
@@ -391,6 +394,12 @@ struct NodePrefs {  // persisted to file
   float reserved_repeat_flood_tx_factor;
   float reserved_repeat_direct_tx_factor;
   uint8_t bluetooth_enabled;  // persisted BLE state; USB remains independently available
+  // Two four-bit selection overrides per byte. 0=Global; otherwise the
+  // BuiltinMelodies selection ID + 1. Appended to preserve the old layout.
+  uint8_t channel_melody_overrides[32];
+  // Zen-owned semantic configuration schema. Unlike the file-layout sentinel,
+  // this tracks ordered value migrations at boot.
+  uint16_t zen_config_schema;
 
   // Single source of truth for the live-share option tables (shared by the Map
   // UI labels and the auto-send engine in UITask).
@@ -454,7 +463,7 @@ struct NodePrefs {  // persisted to file
   // adding/removing/reordering fields in DataStore::savePrefs/loadPrefsInt so
   // older saves are detected on load and skipped (zero-init defaults kept).
   // High 24 bits identify the file format; low byte is the schema revision.
-  static const uint32_t SCHEMA_SENTINEL = 0xC0DE0029;
+  static const uint32_t SCHEMA_SENTINEL = 0xC0DE002B;
 
   // Bit-index for each home page. Used by page_order (entries store bit+1) and
   // by home_pages_mask. Single source of truth — both HomeScreen::pageBit/bitToPage
@@ -519,24 +528,6 @@ struct NodePrefs {  // persisted to file
     return (bit < HPB_COUNT) ? labels[bit] : "";
   }
 
-  static void buildRTTTLString(const uint8_t* notes, uint8_t len, uint8_t bpm_idx,
-                                char* buf, int size) {
-    static const uint16_t BPM_OPTS[] = { 60, 90, 120, 150, 180 };
-    static const uint8_t  DUR_VALS[] = { 4, 8, 16, 32 };
-    static const char     PITCHES[]  = { 'p', 'c', 'd', 'e', 'f', 'g', 'a', 'b' };
-    if (len == 0) { buf[0] = '\0'; return; }
-    uint16_t bpm = BPM_OPTS[bpm_idx < 5 ? bpm_idx : 2];
-    int pos = snprintf(buf, size, "Ring:d=8,o=5,b=%u:", bpm);
-    for (int i = 0; i < len && pos < size - 8; i++) {
-      if (i > 0 && pos < size - 1) buf[pos++] = ',';
-      uint8_t pitch   = notes[i] & 0x07;
-      uint8_t octave  = ((notes[i] >> 3) & 0x03) + 4;
-      uint8_t dur_val = DUR_VALS[(notes[i] >> 5) & 0x03];
-      if (pitch == 0) pos += snprintf(buf + pos, size - pos, "%dp", dur_val);
-      else            pos += snprintf(buf + pos, size - pos, "%d%c%d", dur_val, PITCHES[pitch], octave);
-    }
-    if (pos < size) buf[pos] = '\0';
-  }
 };
 
 // ── Serialization tripwire ───────────────────────────────────────────────────
@@ -563,12 +554,14 @@ struct NodePrefs {  // persisted to file
 // Wio Tracker build.
 // bluetooth_enabled (0xC0DE0029) is appended after those floats; older records
 // default to enabled and retain their existing sentinel alignment.
+// channel_melody_overrides (0xC0DE002A) adds 32 bytes at the persisted tail.
+// zen_config_schema (0xC0DE002B) consumes tail padding; size remains unchanged.
 // keyboard_main_alphabet (added in an earlier bump) landed in existing tail
 // padding -- confirmed via a real build's sizeof() -- so that bump left the
 // size unchanged. bot_actions_dm/ch/room and gpio1..4_mode (the last two
 // bumps, 7 more uint8_t total) added 8 bytes, not 7 -- one byte of tail
 // padding got consumed along the way. 2720 confirmed via a real
 // WioTrackerL1Eink_companion_solo_dual build.
-static_assert(sizeof(NodePrefs) == 2752,
+static_assert(sizeof(NodePrefs) == 2784,
               "NodePrefs layout changed — sync DataStore save/load + clamp, bump "
               "SCHEMA_SENTINEL, then update this size (see steps above).");

@@ -216,7 +216,7 @@ class WaypointsView {
         geo::fmtDist(dist, sizeof(dist), geo::haversineKm(mylat, mylon, tlat, tlon), useImperial());
         bw = display.getTextWidth(dist) + 2;
       }
-      display.drawTextEllipsized(2, y, display.width() - 2 - bw - reserve, label);
+      display.drawTextEllipsized(2, y, display.width() - 2 - bw - reserve, label, sel);
       if (dist[0]) { display.setCursor(display.width() - bw + 1 - reserve, y); display.print(dist); }
       display.setColor(DisplayDriver::LIGHT);
     });

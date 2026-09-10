@@ -32,7 +32,7 @@ class DiagnosticsScreen : public UIScreen {
   uint8_t _tab = 0;        // persists across visits (like BotScreen's _tab)
   PopupMenu _reset_menu;   // Live tab, Hold Enter → 1-item "Reset counters" action menu (Back dismisses)
 
-  enum Tab : uint8_t { TAB_LIVE, TAB_SYSTEM, TAB_FONT, TAB_COUNT };
+  enum Tab : uint8_t { TAB_LIVE, TAB_BATTERY, TAB_SYSTEM, TAB_FONT, TAB_COUNT };
   static const char* const TAB_LABELS[TAB_COUNT];
 
   struct Row { const char* label; char value[20]; };
@@ -172,6 +172,38 @@ class DiagnosticsScreen : public UIScreen {
     }
   }
 
+  void buildBatteryRows() {
+    _row_count = 0;
+    uint16_t mv = _task->getBattMilliVolts();
+    char buf[20];
+    if (mv) snprintf(buf, sizeof(buf), "%u.%02u V", mv / 1000, (mv % 1000) / 10);
+    else strcpy(buf, "Unknown");
+    addRow("Voltage", buf);
+    if (mv) snprintf(buf, sizeof(buf), "%d%%", solo::BatteryPolicy::percent(mv));
+    else strcpy(buf, "Unknown");
+    addRow("Percentage", buf);
+
+    switch (_task->batteryRuntimeState()) {
+      case solo::BatteryRuntimeEstimator::CHARGING: strcpy(buf, "Charging"); break;
+      case solo::BatteryRuntimeEstimator::PAUSED: strcpy(buf, "Paused"); break;
+      case solo::BatteryRuntimeEstimator::EMPTY: strcpy(buf, "0 min"); break;
+      case solo::BatteryRuntimeEstimator::MODEL:
+      case solo::BatteryRuntimeEstimator::ESTIMATE: {
+        uint32_t seconds = _task->batteryRuntimeSeconds();
+        uint32_t hours = seconds / 3600;
+        uint32_t minutes = (seconds % 3600) / 60;
+        if (hours >= 48) snprintf(buf, sizeof(buf), "%lud %luh",
+                                  (unsigned long)(hours / 24), (unsigned long)(hours % 24));
+        else if (hours) snprintf(buf, sizeof(buf), "%luh %lum",
+                                 (unsigned long)hours, (unsigned long)minutes);
+        else snprintf(buf, sizeof(buf), "%lu min", (unsigned long)minutes);
+        break;
+      }
+      default: strcpy(buf, "Unknown"); break;
+    }
+    addRow("Remaining", buf);
+  }
+
   // Representative font samples for checking the display on real hardware.
   void buildFontLines() {
     _line_count = 0;
@@ -233,6 +265,7 @@ public:
     tabbar::draw(display, TAB_LABELS, TAB_COUNT, _tab);
 
     switch (_tab) {
+      case TAB_BATTERY: buildBatteryRows(); renderRows(display); break;
       case TAB_SYSTEM: buildSystemLines(); renderLines(display); break;
       case TAB_FONT:   buildFontLines();   renderLines(display); break;
       default:         buildLiveRows();    renderRows(display);  break;
@@ -243,13 +276,13 @@ public:
     // Live counters refresh once a second; the static System/Font cards don't
     // change, so they can idle. The reset popup wants a snappier redraw.
     if (_reset_menu.active) return 50;
-    return _tab == TAB_LIVE ? 1000 : 2000;
+    return (_tab == TAB_LIVE || _tab == TAB_BATTERY) ? 1000 : 2000;
   }
 
   bool handleInput(char c) override {
     if (_reset_menu.active) {
-      auto res = _reset_menu.handleInput(c);   // Back/Cancel dismisses; the only item is "Reset counters"
-      if (res == PopupMenu::SELECTED) {
+      auto res = _reset_menu.handleInput(c);
+      if (res == PopupMenu::SELECTED && _reset_menu.selectedIndex() == 0) {
         the_mesh.resetStats();   // zeroes Dispatcher per-type counters + Mesh forward count + err flags
         _task->showAlert("Counters reset", 800);
       }
@@ -260,8 +293,7 @@ public:
     if (c == KEY_UP)   { if (_scroll > 0) _scroll--; return true; }
     if (c == KEY_DOWN) { _scroll++; return true; }   // clamped in render()
     if (c == KEY_CONTEXT_MENU && _tab == TAB_LIVE) {   // Hold Enter — reset the live counters
-      _reset_menu.begin("Diagnostics", 1);
-      _reset_menu.addItem("Reset counters");
+      _reset_menu.beginConfirm("Reset counters?", "Reset");
       return true;
     }
     if (c == KEY_CANCEL) { _task->gotoToolsScreen(); return true; }
@@ -269,4 +301,6 @@ public:
   }
 };
 
-const char* const DiagnosticsScreen::TAB_LABELS[DiagnosticsScreen::TAB_COUNT] = { "Live", "System", "Font" };
+const char* const DiagnosticsScreen::TAB_LABELS[DiagnosticsScreen::TAB_COUNT] = {
+  "Live", "Battery", "System", "Font"
+};

@@ -15,6 +15,8 @@ another network source supplies valid time. GPS may run for five minutes on the
 first attempt, then for up to 90 seconds each hour for 48 hours. GPS is powered
 down between attempts when its configured mode is Off. `SYNC TIME` remains
 until time is eventually set, even after automatic attempts stop.
+Companion time is authoritative and can correct a fast clock backwards. Normal
+small connection-time corrections do not cause an immediate flash write.
 
 The configured timezone is applied for display. OLED supports 12/24-hour format
 and optional seconds; e-ink omits seconds to limit refreshes.

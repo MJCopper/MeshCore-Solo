@@ -131,7 +131,7 @@ class AdminScreen : public UIScreen {
     if (_field->kind == solo::admin::ACTION) {
       _confirm.begin(_field->label);
       _confirm.addItem("Cancel");
-      _confirm.addItem("Confirm");
+      _confirm.addItem(!strcmp(_field->get, "start ota") ? "Start" : "Confirm");
     } else send(_field->get, _field->set != nullptr);
   }
 
@@ -234,7 +234,7 @@ public:
               solo::admin::REPEATER : solo::admin::ROOM)) group++;
         const char* label = _phase == ROOT ? solo::admin::GROUP_LABELS[group] :
             solo::admin::FIELDS[_items[i]].label;
-        d.drawTextEllipsized(2, y, d.width() - reserve - 4, label);
+        d.drawTextEllipsized(2, y, d.width() - reserve - 4, label, selected);
       });
     }
     if (_confirm.active) _confirm.render(d);
