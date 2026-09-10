@@ -78,7 +78,10 @@ Sensors lists saved sensor nodes. Open a node to fetch its telemetry; Up/Down
 scrolls one value at a time, Enter refreshes and Back returns to the list.
 Channels appear in descending order, with values kept in their original order
 within each channel. Only telemetry labels and values are shown. Requests use
-the node's existing path and access permissions; there is no background polling.
+the node's existing path and access permissions. After no reply, Zen tries
+blank-password ACL login. Confirmed access retries telemetry automatically;
+otherwise Enter offers administrator-password login followed by one retry.
+There is no background polling.
 Sensors is enabled by default on fresh settings. Enable it here on existing
 devices. It is hidden while Child Mode is locked.
 

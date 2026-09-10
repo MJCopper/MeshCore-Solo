@@ -37,6 +37,17 @@ TEST(RoomLogin, KeepsOwnerAndRejectsOtherContacts) {
   EXPECT_TRUE(login.complete(second, result));
 }
 
+TEST(RoomLogin, TracksSensorCarouselAsAnIndependentOwner) {
+  solo::RoomLoginCoordinator login;
+  uint8_t sensor[4] = {4, 3, 2, 1};
+  solo::RoomLoginCoordinator::Attempt result;
+  ASSERT_TRUE(login.begin(login.SENSOR, sensor, "", false, 50));
+  EXPECT_TRUE(login.ownedBy(login.SENSOR));
+  ASSERT_TRUE(login.takeTimeout(50, result));
+  EXPECT_EQ(result.owner, login.SENSOR);
+  EXPECT_STREQ(result.password, "");
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

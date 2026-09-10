@@ -561,10 +561,11 @@ class NearbyScreen : public UIScreen {
     bool is_contact = entryIsContact(e);
     bool can_add = e && has_key && !is_contact;   // a new node we can save
     bool is_pinned = e && has_key && _task->findFavouriteSlot(e->pub_key) >= 0;
-    // Admin needs a real saved contact (repeater/room), not a scan result or a
+    // Admin needs a real saved server/sensor contact, not a scan result or a
     // name-only live-share row.
     bool is_admin_target = e && stored && e->contact_idx >= 0
-                           && (e->type == ADV_TYPE_REPEATER || e->type == ADV_TYPE_ROOM);
+                           && (e->type == ADV_TYPE_REPEATER || e->type == ADV_TYPE_ROOM
+                               || e->type == ADV_TYPE_SENSOR);
 
     buildSortLabel();
     _menu_action_count = 0;

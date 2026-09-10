@@ -21,13 +21,15 @@ estimate; Charging and Paused replace the time when appropriate.
 
 ## Node administration
 
-Select a saved repeater or room in Node List, hold Enter and choose **Admin**.
+Select a saved repeater, room or sensor in Node List, hold Enter and choose
+**Admin**.
 Zen first tries ACL login with an empty password, then offers password entry.
 The remote node must grant admin rights. Credentials stay in RAM; Back returns
 to the same Node List filter and position.
 
-Menus provide Status, Settings, Radio, Repeater or Room options, Console and
-Actions. Open a setting to fetch its current value. Finish editing with Enter
+Menus provide Status, Settings, Radio, type-specific options, Console and
+Actions. Sensors omit Repeater and Room options. Open a setting to fetch its
+current value. Finish editing with Enter
 or Back, then choose Apply, Discard or Cancel. Unchanged values send nothing.
 Radio changes warn that the node may become unreachable; Zen's radio stays unchanged.
 

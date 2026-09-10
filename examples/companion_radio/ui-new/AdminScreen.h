@@ -36,6 +36,11 @@ class AdminScreen : public UIScreen {
 
   KeyboardWidget& kb() { return _task->keyboard(); }
   bool allowed() const { return !_task->isChildModeLocked(); }
+  solo::admin::TargetKind targetKind() const {
+    if (_target.type == ADV_TYPE_ROOM) return solo::admin::TARGET_ROOM;
+    if (_target.type == ADV_TYPE_SENSOR) return solo::admin::TARGET_SENSOR;
+    return solo::admin::TARGET_REPEATER;
+  }
 
   void root() { _phase = ROOT; _sel = _scroll = 0; _field = nullptr; }
   void leave() {
@@ -226,12 +231,10 @@ public:
         d.setCursor(2, y); d.print(val);
       }
     } else {
-      int count = _phase == ROOT ? solo::admin::GROUP_COUNT - 1 : _count;
+      int count = _phase == ROOT ? solo::admin::groupCount(targetKind()) : _count;
       drawList(d, count, _sel, _scroll, [&](int i, int y, bool selected, int reserve) {
         drawRowSelection(d, y, selected, reserve);
-        int group = i;
-        if (_phase == ROOT && group >= (_target.type == ADV_TYPE_ROOM ?
-              solo::admin::REPEATER : solo::admin::ROOM)) group++;
+        int group = _phase == ROOT ? solo::admin::groupAt(targetKind(), i) : 0;
         const char* label = _phase == ROOT ? solo::admin::GROUP_LABELS[group] :
             solo::admin::FIELDS[_items[i]].label;
         d.drawTextEllipsized(2, y, d.width() - reserve - 4, label, selected);
@@ -300,16 +303,14 @@ public:
       }
       return true;
     }
-    int count = _phase == ROOT ? solo::admin::GROUP_COUNT - 1 : _count;
+    int count = _phase == ROOT ? solo::admin::groupCount(targetKind()) : _count;
     if (c == KEY_CANCEL) { if (_phase == ROOT) leave(); else root(); }
     else if (c == KEY_UP && count) _sel = (_sel + count - 1) % count;
     else if (c == KEY_DOWN && count) _sel = (_sel + 1) % count;
     else if (c == KEY_ENTER && count) {
       if (_phase == LIST) activate();
       else {
-        int group = _sel;
-        if (group >= (_target.type == ADV_TYPE_ROOM ? solo::admin::REPEATER : solo::admin::ROOM)) group++;
-        _group = (solo::admin::Group)group;
+        _group = solo::admin::groupAt(targetKind(), _sel);
         _console = _group == solo::admin::CONSOLE;
         if (_console) openText("", solo::AdminSession::TEXT_LIMIT); else buildList();
       }

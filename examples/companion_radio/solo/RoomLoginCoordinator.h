@@ -5,11 +5,11 @@
 
 namespace solo {
 
-// Owns only the on-device UI's room-login state. Packet construction and the
-// BLE/USB login path remain in BaseChatMesh/MyMesh respectively.
+// Owns on-device UI login state for rooms and remotely managed nodes. Packet
+// construction and the BLE/USB login path remain in BaseChatMesh/MyMesh.
 class RoomLoginCoordinator {
 public:
-  enum Owner : uint8_t { NONE, MESSAGES, ADMIN };
+  enum Owner : uint8_t { NONE, MESSAGES, ADMIN, SENSOR };
 
   struct Attempt {
     Owner owner;

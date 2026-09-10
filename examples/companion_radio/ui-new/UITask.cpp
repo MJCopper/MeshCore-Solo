@@ -615,7 +615,8 @@ class HomeScreen : public UIScreen {
 
 public:
   HomeScreen(UITask* task, mesh::RTCClock* rtc, SensorManager* sensors, NodePrefs* node_prefs)
-     : _task(task), _rtc(rtc), _sensors(sensors), _node_prefs(node_prefs), _page(0) {  }
+     : _task(task), _rtc(rtc), _sensors(sensors), _node_prefs(node_prefs),
+       _sensor_page(task), _page(0) {  }
 
   void onShow() override { noteHomeInteraction(); }
 
@@ -661,6 +662,9 @@ public:
 
   int render(DisplayDriver& display) override {
     returnToClockIfIdle();
+    _sensor_page.tick();
+    if (_page == HomePage::SENSORS && _sensor_page.passwordEditing())
+      return _sensor_page.renderPassword(display);
     char tmp[80];
     display.setTextSize(1);
     const int lh      = display.getLineHeight();  // line height at sz1
@@ -1012,6 +1016,13 @@ public:
       if (remaining > 0 && remaining < refresh_ms) refresh_ms = remaining;
     }
     return refresh_ms;
+  }
+
+  void onSensorLoginResult(const uint8_t* key, bool success) {
+    _sensor_page.onLoginResult(key, success);
+  }
+  void onSensorLoginTimeout(const uint8_t* key) {
+    _sensor_page.onLoginTimeout(key);
   }
 
   bool handleInput(char c) override {
@@ -1492,7 +1503,11 @@ void UITask::gotoDiscoverScreen() {
 
 void UITask::openAdminFor(const ContactInfo& ci) {
 #if SOLO_FEAT_ADMIN
-  if (isChildModeLocked() || (ci.type != ADV_TYPE_REPEATER && ci.type != ADV_TYPE_ROOM)) return;
+  if (isChildModeLocked() || (ci.type != ADV_TYPE_REPEATER && ci.type != ADV_TYPE_ROOM
+                              && ci.type != ADV_TYPE_SENSOR)) return;
+  // Sensor telemetry and login use the same contact-response transport. End a
+  // card request before the independently matched admin login begins.
+  if (ci.type == ADV_TYPE_SENSOR) the_mesh.cancelSensorTelemetry();
   setCurrScreen(admin_screen);   // runs AdminScreen::onShow()'s reset first
   ((AdminScreen*)admin_screen)->startFor(ci);
 #else
@@ -1904,6 +1919,9 @@ void UITask::onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t per
     ((AdminScreen*)admin_screen)->onRoomLoginResult(pub_key, success, permissions);
   else
 #endif
+  if (attempt.owner == solo::RoomLoginCoordinator::SENSOR)
+    ((HomeScreen*)home)->onSensorLoginResult(pub_key, success);
+  else
     ((MessagesScreen*)messages_screen)->onRoomLoginResult(pub_key, success, permissions);
   // Unlike the keypress-driven showAlert() calls elsewhere, this fires from a
   // background mesh response with no keypress to schedule a redraw — without
@@ -1932,6 +1950,9 @@ void UITask::onRoomLoginCancelled(const uint8_t* prefix) {
     ((AdminScreen*)admin_screen)->onRoomLoginTimeout(prefix);
   else
 #endif
+  if (attempt.owner == solo::RoomLoginCoordinator::SENSOR)
+    ((HomeScreen*)home)->onSensorLoginTimeout(prefix);
+  else
     ((MessagesScreen*)messages_screen)->onRoomLoginTimeout(prefix);
   _next_refresh = 0;
 }
@@ -2643,7 +2664,9 @@ void UITask::loop() {
       ((AdminScreen*)admin_screen)->onRoomLoginTimeout(login_timeout.pub_key);
     else
 #endif
-    if (login_timeout.owner == solo::RoomLoginCoordinator::MESSAGES
+    if (login_timeout.owner == solo::RoomLoginCoordinator::SENSOR) {
+      ((HomeScreen*)home)->onSensorLoginTimeout(login_timeout.pub_key);
+    } else if (login_timeout.owner == solo::RoomLoginCoordinator::MESSAGES
         && login_timeout.password[0] == '\0') {
       // A blank room credential means "authenticate from the server ACL".
       // Room servers silently discard unauthorised anonymous requests, so no

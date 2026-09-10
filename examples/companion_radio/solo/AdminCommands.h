@@ -10,6 +10,7 @@ namespace solo {
 namespace admin {
 
 enum Group { STATUS, SETTINGS, RADIO, REPEATER, ROOM, CONSOLE, ACTIONS, GROUP_COUNT };
+enum TargetKind { TARGET_REPEATER, TARGET_ROOM, TARGET_SENSOR };
 enum Kind { READ, TEXT, NUMBER, TOGGLE, FREQUENCY, BANDWIDTH, SF, CR, ACTION };
 struct Field {
   Group group;
@@ -49,6 +50,25 @@ static const Field FIELDS[] = {
   {ACTIONS, "Reboot", "reboot", nullptr, ACTION, 0, 0, 0},
 };
 static const int FIELD_COUNT = sizeof(FIELDS) / sizeof(FIELDS[0]);
+
+inline bool groupAllowed(TargetKind target, Group group) {
+  if (group == REPEATER) return target == TARGET_REPEATER;
+  if (group == ROOM) return target == TARGET_ROOM;
+  return true;
+}
+inline int groupCount(TargetKind target) {
+  int count = 0;
+  for (int group = 0; group < GROUP_COUNT; group++)
+    if (groupAllowed(target, (Group)group)) count++;
+  return count;
+}
+inline Group groupAt(TargetKind target, int visible_index) {
+  for (int group = 0; group < GROUP_COUNT; group++) {
+    if (!groupAllowed(target, (Group)group)) continue;
+    if (visible_index-- == 0) return (Group)group;
+  }
+  return STATUS;
+}
 
 inline bool radioTuple(Kind kind) { return kind >= FREQUENCY && kind <= CR; }
 inline const char* value(const char* reply) {

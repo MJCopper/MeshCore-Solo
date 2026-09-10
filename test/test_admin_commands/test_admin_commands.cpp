@@ -59,6 +59,22 @@ TEST(AdminCommands, ExposesDedicatedOtaAction) {
   EXPECT_STREQ(ota->label, "Start OTA");
 }
 
+TEST(AdminCommands, FiltersGroupsByRemoteNodeType) {
+  using namespace solo::admin;
+  EXPECT_EQ(groupCount(TARGET_REPEATER), 6);
+  EXPECT_EQ(groupCount(TARGET_ROOM), 6);
+  EXPECT_EQ(groupCount(TARGET_SENSOR), 5);
+  EXPECT_TRUE(groupAllowed(TARGET_REPEATER, REPEATER));
+  EXPECT_FALSE(groupAllowed(TARGET_REPEATER, ROOM));
+  EXPECT_TRUE(groupAllowed(TARGET_ROOM, ROOM));
+  EXPECT_FALSE(groupAllowed(TARGET_ROOM, REPEATER));
+  EXPECT_FALSE(groupAllowed(TARGET_SENSOR, ROOM));
+  EXPECT_FALSE(groupAllowed(TARGET_SENSOR, REPEATER));
+  EXPECT_EQ(groupAt(TARGET_SENSOR, 0), STATUS);
+  EXPECT_EQ(groupAt(TARGET_SENSOR, 3), CONSOLE);
+  EXPECT_EQ(groupAt(TARGET_SENSOR, 4), ACTIONS);
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

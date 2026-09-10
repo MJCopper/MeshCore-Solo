@@ -3,8 +3,12 @@
 // Remote sensors share the home card's header/navigation. Only opening a node
 // or explicitly refreshing sends a request; browsing does not poll the radio.
 class SensorPage {
+  enum Phase { TELEMETRY_WAIT, ACL_WAIT, LOGIN_OFFER, PASSWORD, PASSWORD_WAIT,
+               AUTH_TELEMETRY_WAIT, ERROR };
+  UITask* _task;
   int _selected = 0, _scroll = 0, _row = 0, _lines = 0;
   bool _open = false;
+  Phase _phase = TELEMETRY_WAIT;
   uint8_t _key[PUB_KEY_SIZE] = {};
   char _name[33] = {};
 
@@ -20,9 +24,58 @@ class SensorPage {
       if (contact.type == ADV_TYPE_SENSOR && index-- == 0) return true;
     return false;
   }
+  bool requestTelemetry(bool authenticated) {
+    _row = 0;
+    bool sent = the_mesh.requestSensorTelemetry(_key);
+    _phase = authenticated ? AUTH_TELEMETRY_WAIT : TELEMETRY_WAIT;
+    if (!sent) _phase = ERROR;
+    return sent;
+  }
+  bool startLogin(const char* password, bool entered_password) {
+    ContactInfo* contact = the_mesh.lookupContactByPubKey(_key, PUB_KEY_SIZE);
+    bool sent = contact && _task->startRoomLogin(
+        solo::RoomLoginCoordinator::SENSOR, *contact, password, false);
+    if (sent) _phase = entered_password ? PASSWORD_WAIT : ACL_WAIT;
+    else {
+      _phase = entered_password ? PASSWORD : LOGIN_OFFER;
+      _task->showAlert(_task->roomLoginBusy() ? "Login busy" : "Login failed", 1200);
+    }
+    return sent;
+  }
 
 public:
+  explicit SensorPage(UITask* task) : _task(task) {}
+  bool passwordEditing() const { return _open && _phase == PASSWORD; }
+  int renderPassword(DisplayDriver& display) { return _task->keyboard().render(display); }
+  void tick() {
+    if (!_open || _phase != TELEMETRY_WAIT ||
+        the_mesh.sensorReplyState() != MyMesh::SENSOR_FAILED) return;
+    startLogin("", false);  // first ask the sensor to authenticate from its ACL
+  }
+  void onLoginResult(const uint8_t* key, bool success) {
+    if (!_open || memcmp(_key, key, PUB_KEY_SIZE) != 0 ||
+        (_phase != ACL_WAIT && _phase != PASSWORD_WAIT)) return;
+    if (success) {
+      requestTelemetry(true);
+    } else if (_phase == ACL_WAIT) {
+      _phase = LOGIN_OFFER;
+    } else {
+      _phase = PASSWORD;
+      _task->keyboard().begin("", 15);
+      _task->showAlert("Login failed", 1200);
+    }
+  }
+  void onLoginTimeout(const uint8_t* key) {
+    if (!_open || memcmp(_key, key, 4) != 0) return;
+    if (_phase == ACL_WAIT) _phase = LOGIN_OFFER;
+    else if (_phase == PASSWORD_WAIT) {
+      _phase = PASSWORD;
+      _task->keyboard().begin("", 15);
+      _task->showAlert("No login reply", 1200);
+    }
+  }
   void close() {
+    if (_open) _task->cancelRoomLogin(solo::RoomLoginCoordinator::SENSOR, _key);
     _open = false;
     _row = 0;
     the_mesh.cancelSensorTelemetry();
@@ -30,9 +83,25 @@ public:
   bool handleInput(char c) {
     if (_open) {
       if (c == KEY_CANCEL) { close(); return true; }
+      if (_phase == PASSWORD) {
+        auto result = _task->keyboard().handleInput(c);
+        if (result == KeyboardWidget::DONE) {
+          char password[16];
+          snprintf(password, sizeof(password), "%s", _task->keyboard().buf);
+          startLogin(password, true);
+          _task->keyboard().begin("", 15);  // do not retain credentials in the shared editor
+        }
+        else if (result == KeyboardWidget::CANCELLED) _phase = LOGIN_OFFER;
+        return true;
+      }
+      if (_phase == LOGIN_OFFER && c == KEY_ENTER) {
+        _task->keyboard().begin("", 15);
+        _task->keyboard().clearPlaceholders();
+        _phase = PASSWORD;
+        return true;
+      }
       if (c == KEY_ENTER) {
-        _row = 0;
-        the_mesh.requestSensorTelemetry(_key);
+        requestTelemetry(false);
         return true;
       }
       if (c == KEY_UP) { if (_row > 0) _row--; return true; }
@@ -54,7 +123,7 @@ public:
         memcpy(_key, contact.id.pub_key, PUB_KEY_SIZE);
         memcpy(_name, contact.name, 32); _name[32] = 0;
         _open = true; _row = 0;
-        the_mesh.requestSensorTelemetry(_key);
+        requestTelemetry(false);
       }
       return true;
     }
@@ -73,8 +142,14 @@ public:
     if (_open) {
       auto state = the_mesh.sensorReplyState();
       const char* status = nullptr;
-      if (state == MyMesh::SENSOR_WAITING) status = "Requesting...";
-      else if (state == MyMesh::SENSOR_FAILED) status = "No reply. Enter: Retry";
+      if (_phase == ACL_WAIT) status = "Checking ACL...";
+      else if (_phase == PASSWORD_WAIT) status = "Logging in...";
+      else if (_phase == LOGIN_OFFER) status = "Enter: Login";
+      else if (_phase == ERROR ||
+               (_phase == AUTH_TELEMETRY_WAIT && state == MyMesh::SENSOR_FAILED))
+        status = "No reply/access denied";
+      else if (state == MyMesh::SENSOR_WAITING) status = "Requesting...";
+      else if (state == MyMesh::SENSOR_FAILED) status = "No reply/access denied";
       else if (!the_mesh.sensorTelemetry.rows())
         status = the_mesh.sensorTelemetry.invalid() ? "Unsupported data" : "No telemetry";
       if (status) { display.drawTextEllipsized(0, y, display.width(), status); return; }
