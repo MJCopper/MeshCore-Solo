@@ -46,10 +46,11 @@ sensor measurement. Duplicate commands are suppressed and the bot sends no more
 than one response per minute. It never posts periodically or responds to its own
 messages.
 
-The configured admin password grants full remote-management access. Guest,
-blank and incorrect passwords receive a transient read-only session that can
-request telemetry but cannot manage the node or issue text commands. Read-only
-logins are held in RAM and do not trigger ACL writes to flash.
+The configured admin password grants full remote-management access. A blank
+login preserves any existing ACL role; otherwise blank and incorrect passwords
+receive a transient read-only session that can request telemetry but cannot
+manage the node or issue text commands. Read-only logins are held in RAM and do
+not trigger ACL writes to flash.
 
 Build with:
 

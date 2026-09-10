@@ -371,8 +371,54 @@ int SensorMesh::getAGCResetInterval() const {
   return ((int)_prefs.agc_reset_interval) * 4000;   // milliseconds
 }
 
+mesh::DispatcherAction SensorMesh::onRecvPacket(mesh::Packet* packet) {
+  if (packet->getRouteType() == ROUTE_TYPE_TRANSPORT_FLOOD) {
+    recv_pkt_region = region_map.findMatch(packet, REGION_DENY_FLOOD);
+  } else if (packet->getRouteType() == ROUTE_TYPE_FLOOD &&
+             !(region_map.getWildcard().flags & REGION_DENY_FLOOD)) {
+    recv_pkt_region = &region_map.getWildcard();
+  } else {
+    recv_pkt_region = NULL;
+  }
+  return Mesh::onRecvPacket(packet);
+}
+
+void SensorMesh::sendFloodScoped(const TransportKey& scope, mesh::Packet* packet,
+                                 uint32_t delay_millis, uint8_t path_hash_size) {
+  if (scope.isNull()) {
+    sendFlood(packet, delay_millis, path_hash_size);
+  } else {
+    uint16_t codes[2];
+    codes[0] = scope.calcTransportCode(packet);
+    codes[1] = 0;
+    sendFlood(packet, codes, delay_millis, path_hash_size);
+  }
+}
+
+void SensorMesh::sendFloodReply(mesh::Packet* packet, unsigned long delay_millis,
+                                uint8_t path_hash_size) {
+  TransportKey request_scope;
+  bool is_wildcard = recv_pkt_region != NULL && recv_pkt_region->isWildcard();
+  bool request_scope_known = recv_pkt_region != NULL && !is_wildcard &&
+      region_map.getTransportKeysFor(*recv_pkt_region, &request_scope, 1) > 0;
+
+  switch (mesh::chooseReplyScope(request_scope_known, is_wildcard, !default_scope.isNull())) {
+    case mesh::REPLY_SCOPE_REQUEST:
+      sendFloodScoped(request_scope, packet, delay_millis, path_hash_size);
+      break;
+    case mesh::REPLY_SCOPE_DEFAULT:
+      sendFloodScoped(default_scope, packet, delay_millis, path_hash_size);
+      break;
+    case mesh::REPLY_SCOPE_NONE:
+      sendFlood(packet, delay_millis, path_hash_size);
+      break;
+  }
+}
+
 uint8_t SensorMesh::handleLoginReq(const mesh::Identity& sender, const uint8_t* secret, uint32_t sender_timestamp, const uint8_t* data, bool is_flood) {
   bool is_admin = data[0] != 0 && strcmp((char *)data, _prefs.password) == 0;
+  bool is_blank = data[0] == 0;
+  ClientInfo* existing = acl.getClient(sender.pub_key, PUB_KEY_SIZE);
   ClientInfo* client = acl.putClientPreservingAdmins(sender, 0);
   if (client == NULL) {
     MESH_DEBUG_PRINTLN("Login rejected: client table contains only administrators");
@@ -383,11 +429,19 @@ uint8_t SensorMesh::handleLoginReq(const mesh::Identity& sender, const uint8_t* 
     return 0;
   }
 
-  MESH_DEBUG_PRINTLN("Login success (%s)", is_admin ? "admin" : "read-only");
+  MESH_DEBUG_PRINTLN("Login success (%s)", is_admin ? "admin" :
+                     (is_blank && existing != NULL ? "ACL" : "guest"));
   client->last_timestamp = sender_timestamp;
   client->last_activity = getRTCClock()->getCurrentTime();
-  client->permissions &= ~PERM_ACL_ROLE_MASK;
-  client->permissions |= is_admin ? PERM_ACL_ADMIN : PERM_ACL_READ_ONLY;
+  if (is_admin) {
+    client->permissions &= ~PERM_ACL_ROLE_MASK;
+    client->permissions |= PERM_ACL_ADMIN;
+  } else if (!is_blank || existing == NULL) {
+    // Keep unauthorised sessions as active read-only sensor clients. Permission
+    // zero is the room-server Guest role, but ClientACL also treats it as a
+    // deleted entry; sensor telemetry clients use the read-only ACL role.
+    client->permissions = PERM_ACL_READ_ONLY;
+  }
   if (is_admin) client->permissions |= PERM_RECV_ALERTS_HI | PERM_RECV_ALERTS_LO;
   memcpy(client->shared_secret, secret, PUB_KEY_SIZE);
 
@@ -403,7 +457,9 @@ uint8_t SensorMesh::handleLoginReq(const mesh::Identity& sender, const uint8_t* 
   memcpy(reply_data, &now, 4);   // response packets always prefixed with timestamp
   reply_data[4] = RESP_SERVER_LOGIN_OK;
   reply_data[5] = 0;
-  reply_data[6] = client->isAdmin() ? 1 : 0;
+  // Legacy login mode 2 selects the companion app's limited guest UI, while
+  // reply_data[7] carries the sensor's actual read-only ACL permission.
+  reply_data[6] = client->isAdmin() ? 1 : 2;
   reply_data[7] = client->permissions;
   getRNG()->random(&reply_data[8], 4);   // random blob to help packet-hash uniqueness
   reply_data[12] = FIRMWARE_VER_LEVEL;
@@ -504,10 +560,10 @@ void SensorMesh::onAnonDataRecv(mesh::Packet* packet, const uint8_t* secret, con
       // let this sender know path TO here, so they can use sendDirect(), and ALSO encode the response
       mesh::Packet* path = createPathReturn(sender, secret, packet->path, packet->path_len,
                                             PAYLOAD_TYPE_RESPONSE, reply_data, reply_len);
-      if (path) sendFlood(path, SERVER_RESPONSE_DELAY, packet->getPathHashSize());
+      if (path) sendFloodReply(path, SERVER_RESPONSE_DELAY, packet->getPathHashSize());
     } else {
       mesh::Packet* reply = createDatagram(PAYLOAD_TYPE_RESPONSE, sender, secret, reply_data, reply_len);
-      if (reply) sendFlood(reply, SERVER_RESPONSE_DELAY, packet->getPathHashSize());
+      if (reply) sendFloodReply(reply, SERVER_RESPONSE_DELAY, packet->getPathHashSize());
     }
   }
 }
@@ -573,14 +629,14 @@ void SensorMesh::onPeerDataRecv(mesh::Packet* packet, uint8_t type, int sender_i
         // let this sender know path TO here, so they can use sendDirect(), and ALSO encode the response
         mesh::Packet* path = createPathReturn(from->id, secret, packet->path, packet->path_len,
                                               PAYLOAD_TYPE_RESPONSE, reply_data, reply_len);
-        if (path) sendFlood(path, SERVER_RESPONSE_DELAY, packet->getPathHashSize());
+        if (path) sendFloodReply(path, SERVER_RESPONSE_DELAY, packet->getPathHashSize());
       } else {
         mesh::Packet* reply = createDatagram(PAYLOAD_TYPE_RESPONSE, from->id, secret, reply_data, reply_len);
         if (reply) {
           if (from->out_path_len != OUT_PATH_UNKNOWN) {  // we have an out_path, so send DIRECT
             sendDirect(reply, from->out_path, from->out_path_len, SERVER_RESPONSE_DELAY);
           } else {
-            sendFlood(reply, SERVER_RESPONSE_DELAY, packet->getPathHashSize());
+            sendFloodReply(reply, SERVER_RESPONSE_DELAY, packet->getPathHashSize());
           }
         }
       }
@@ -737,6 +793,7 @@ SensorMesh::SensorMesh(mesh::MainBoard& board, mesh::Radio& radio, mesh::Millise
 {
   next_local_advert = next_flood_advert = 0;
   dirty_contacts_expiry = 0;
+  recv_pkt_region = NULL;
   last_read_time = 0;
   num_alert_tasks = 0;
   set_radio_at = revert_radio_at = 0;

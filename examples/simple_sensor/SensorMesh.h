@@ -23,6 +23,7 @@
 #include <helpers/StatsFormatHelper.h>
 #include <helpers/ClientACL.h>
 #include <helpers/RegionMap.h>
+#include <helpers/RoutingPolicy.h>
 #include <RTClib.h>
 #include <target.h>
 
@@ -140,6 +141,7 @@ protected:
   int getInterferenceThreshold() const override;
   bool getCADEnabled() const override;
   int getAGCResetInterval() const override;
+  mesh::DispatcherAction onRecvPacket(mesh::Packet* packet) override;
   void onAnonDataRecv(mesh::Packet* packet, const uint8_t* secret, const mesh::Identity& sender, uint8_t* data, size_t len) override;
   int searchPeersByHash(const uint8_t* hash) override;
   void getPeerSharedSecret(uint8_t* dest_secret, int peer_idx) override;
@@ -161,6 +163,7 @@ private:
   TransportKeyStore key_store;
   RegionMap region_map;
   TransportKey default_scope;
+  RegionEntry* recv_pkt_region;
   uint32_t last_read_time;
   int matching_peer_indexes[MAX_SEARCH_RESULTS];
   int num_alert_tasks;
@@ -174,6 +177,9 @@ private:
   uint8_t handleLoginReq(const mesh::Identity& sender, const uint8_t* secret, uint32_t sender_timestamp, const uint8_t* data, bool is_flood);
   uint8_t handleRequest(uint8_t perms, uint32_t sender_timestamp, uint8_t req_type, uint8_t* payload, size_t payload_len);
   mesh::Packet* createSelfAdvert();
+  void sendFloodScoped(const TransportKey& scope, mesh::Packet* packet,
+                       uint32_t delay_millis, uint8_t path_hash_size);
+  void sendFloodReply(mesh::Packet* packet, unsigned long delay_millis, uint8_t path_hash_size);
 
   void sendAlert(const ClientInfo* c, Trigger* t);
 
