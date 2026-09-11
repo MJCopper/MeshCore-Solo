@@ -3,9 +3,9 @@
 #include "../../examples/companion_radio/solo/BatteryRuntime.h"
 
 TEST(BatteryPolicy, FixedCutoffHonoursExternalPowerAndInvalidReading) {
-  EXPECT_TRUE(solo::BatteryPolicy::shouldShutdown(3100, false));
-  EXPECT_TRUE(solo::BatteryPolicy::shouldShutdown(3099, false));
-  EXPECT_FALSE(solo::BatteryPolicy::shouldShutdown(3101, false));
+  EXPECT_TRUE(solo::BatteryPolicy::shouldShutdown(3300, false));
+  EXPECT_TRUE(solo::BatteryPolicy::shouldShutdown(3299, false));
+  EXPECT_FALSE(solo::BatteryPolicy::shouldShutdown(3301, false));
   EXPECT_FALSE(solo::BatteryPolicy::shouldShutdown(3200, true));
   EXPECT_FALSE(solo::BatteryPolicy::shouldShutdown(0, false));
 }
@@ -113,7 +113,7 @@ TEST(LowBatteryReminder, IgnoresChargingInvalidAndShutdownSamples) {
   solo::LowBatteryReminder reminder;
   EXPECT_FALSE(reminder.due(0, 3500, true));
   EXPECT_FALSE(reminder.due(0, 0, false));
-  EXPECT_FALSE(reminder.due(0, 3100, false));
+  EXPECT_FALSE(reminder.due(0, 3300, false));
   EXPECT_TRUE(reminder.due(0, 3500, false));
   EXPECT_FALSE(reminder.due(3600000, 3500, true));
   EXPECT_TRUE(reminder.due(3608000, 3500, false));

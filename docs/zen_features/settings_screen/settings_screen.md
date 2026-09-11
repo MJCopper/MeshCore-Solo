@@ -18,7 +18,7 @@ interval.
 
 Battery percentage estimates usable charge from voltage: 0% at 3.3 V and 100%
 at 4.12 V, using a non-linear single-cell Li-ion/LiPo discharge curve. The
-device shuts down at or below 3.1 V unless externally powered.
+device shuts down at or below 3.3 V unless externally powered.
 At 20% or below, a Low Battery alert sounds one short beep, then repeats hourly
 while on battery power. Quiet Time suppresses the beep; the visual notification
 follows the message screen-wake rules. The alert does not add an unread message.
@@ -40,7 +40,7 @@ settings. The page shows the remaining time. At expiry, GPS, Bluetooth and the
 radio turn off, pending automatic retries stop, and normal Low Power restrictions
 resume. The card always shows Radio, GPS and Bluetooth status. While active,
 Enter opens a confirmation to end Emergency Mode early. The battery display
-reaches 0% at 3.3 V; shutdown occurs at 3.1 V.
+reaches 0% and shuts down at 3.3 V.
 
 ## Sound
 

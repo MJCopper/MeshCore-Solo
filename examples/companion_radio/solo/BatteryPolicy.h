@@ -8,7 +8,7 @@ namespace solo {
 // Percentage is a voltage-based estimate, not a fuel-gauge measurement.
 class BatteryPolicy {
 public:
-  static constexpr uint16_t SHUTDOWN_MV = 3100;
+  static constexpr uint16_t SHUTDOWN_MV = 3300;
   static constexpr uint16_t EMPTY_MV = 3300;
   static constexpr uint16_t FULL_MV = 4120;
 

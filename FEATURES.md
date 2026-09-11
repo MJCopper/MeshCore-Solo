@@ -1,6 +1,6 @@
 # Zen features
 
-Zen v1.32.33 extends MeshCore v1.17.1 companion firmware for the Wio Tracker L1.
+Zen v1.32.35 extends MeshCore v1.17.1 companion firmware for the Wio Tracker L1.
 The features below are provided by Zen in addition to the standard MeshCore
 companion protocol and radio operation.
 
@@ -24,7 +24,7 @@ companion protocol and radio operation.
 | Repeater Mode | Companion repeating with current radio settings, MeshCore repeater timing, Yield x2 and duplicate suppression |
 | Node tools | Repeater discovery, filtered Node List, inspection, ping and saved-node management |
 | Node administration | ACL/password login, route retries, remote settings, routing, radio, console and verified changes for repeaters, rooms and sensors |
-| Battery | Li-ion percentage curve, learned remaining-runtime estimate, hourly low-battery warning and 3.1 V shutdown protection |
+| Battery | Li-ion percentage curve, learned remaining-runtime estimate, hourly low-battery warning and 3.3 V shutdown protection |
 | Low Power | Automatic 5% radio/GPS/Bluetooth suspension with a ten-minute emergency communications override |
 | Diagnostics | Live radio/mesh counters, battery and system details, font viewer and a 16-entry RAM-only warning/error log |
 | Configuration | Save-on-exit for changed values, versioned Zen sidecar preferences and schema-based migrations |
