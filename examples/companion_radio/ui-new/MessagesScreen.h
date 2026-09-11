@@ -429,7 +429,8 @@ class MessagesScreen : public UIScreen {
       ok = _history.resendFailedDM(_retry_hist_pos, _sel_contact.id.pub_key);
     }
     _retry_hist_pos = -1;
-    _task->showAlert(ok ? "Retrying..." : "Resend failed", ok ? 900 : 1500);
+    if (!ok) _task->logFailure("Message", "Resend not queued");
+    else _task->showAlert("Retrying...", 900);
   }
 
   void afterSend(bool ok, const char* msg) {
@@ -482,7 +483,7 @@ class MessagesScreen : public UIScreen {
         _dm_transcript.reset();
         _phase = DM_HIST;
       }
-      _task->showAlert("Send failed", 1500);
+      _task->logFailure("Message", "Send not queued");
     }
   }
 
@@ -779,18 +780,19 @@ public:
     return _task->isRoomLoggedIn(pub_key);
   }
 
-  bool startRoomLogin(const char* password, bool used_saved_password = false) {
-    bool sent = _task->startRoomLogin(solo::RoomLoginCoordinator::MESSAGES,
+  bool startNodeLogin(const char* password, bool used_saved_password = false) {
+    bool sent = _task->startNodeLogin(solo::NodeLoginCoordinator::MESSAGES,
                                       _sel_contact, password, used_saved_password);
-    _task->showAlert(sent ? "Logging in..." : (_task->roomLoginBusy() ? "Login busy" : "Login failed"),
-                     sent ? 800 : 1500);
+    if (!sent)
+      _task->logFailure("Room login", _task->nodeLoginBusy() ? "Login busy" : "Send failed");
+    if (sent) _task->showAlert("Logging in...", 800);
     if (sent) _phase = ROOM_LOGIN_WAIT;
     return sent;
   }
 
   // Routed by the shared owner-aware coordinator, even if another screen has
   // become current since this attempt began.
-  void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
+  void onNodeLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
     (void)permissions;
     if (_phase != ROOM_LOGIN_WAIT || memcmp(_sel_contact.id.pub_key, pub_key, 4) != 0) return;
     if (success) {
@@ -798,21 +800,22 @@ public:
       openDmHistory();
       if (_share_mode) beginShareCompose(false);
     } else {
+      _task->logFailure("Room login", "Login rejected");
       _login_mode = true;
       _kb->begin("", 15);
       _kb->clearPlaceholders();
       _phase = KEYBOARD;
     }
-    _task->showAlert(success ? "Login OK" : "Login failed", 1200);
+    if (success) _task->showAlert("Login OK", 1200);
   }
 
-  void onRoomLoginTimeout(const uint8_t* pub_key) {
+  void onNodeLoginTimeout(const uint8_t* pub_key) {
     if (_phase != ROOM_LOGIN_WAIT || memcmp(_sel_contact.id.pub_key, pub_key, 4) != 0) return;
+    _task->logFailure("Room login", "No reply");
     _login_mode = true;
     _kb->begin("", 15);
     _kb->clearPlaceholders();
     _phase = KEYBOARD;
-    _task->showAlert("No response", 1400);
   }
 
   // Open the message history for the currently selected contact/room and reset
@@ -831,7 +834,7 @@ public:
 
   // Background tick (called every UI loop, regardless of the active screen) that
   // drives auto-resend of on-device DMs — forwarded to the history store.
-  void tickDmResends() { _history.tickDmResends(); }
+  uint8_t tickDmResends() { return _history.tickDmResends(); }
   void cancelDmResends() { _history.cancelDmResends(); }
 
   int getDMUnreadTotal() const {
@@ -1025,7 +1028,7 @@ public:
     // A room server can't be a live-share target — a [LOC] DM to it is never
     // reposted to the room's members. Reject the pick and keep the chooser open.
     if (ci.type == ADV_TYPE_ROOM) {
-      _task->showAlert("Rooms not supported", 1400);
+      _task->logWarning("Room", "Not supported");
       return;
     }
     NodePrefs* p = _task->getNodePrefs();
@@ -1506,7 +1509,7 @@ public:
                 uint8_t v = dmNotifState(ci.id.pub_key);
                 v = right ? (v + 1) % 3 : (v + 2) % 3;
                 if (!setDmNotifState(ci.id.pub_key, v)) {
-                  _task->showAlert("Override list full", 1500);
+                  _task->logWarning("Ringtone", "Override list full");
                   return true;
                 }
                 snprintf(_ctx_notif_item, sizeof(_ctx_notif_item), "Notif: %s", NOTIF_LABELS[v]);
@@ -1516,7 +1519,7 @@ public:
                 v = right ? (v + 1) % (solo::BuiltinMelodies::COUNT + 1)
                           : (v + solo::BuiltinMelodies::COUNT) % (solo::BuiltinMelodies::COUNT + 1);
                 if (!setDmMelody(ci.id.pub_key, v)) {
-                  _task->showAlert("Override list full", 1500);
+                  _task->logWarning("Ringtone", "Override list full");
                   return true;
                 }
                 snprintf(_ctx_melody_item, sizeof(_ctx_melody_item), "Melody: %s", melodyOverrideLabel(v));
@@ -1622,7 +1625,7 @@ public:
                 // silently in the background; the bot target is set below
                 // regardless of this attempt's outcome (self-heals like any
                 // other saved room password would on the next real open).
-                startRoomLogin(saved_pw, true);
+                startNodeLogin(saved_pw, true);
               } else {
                 // Never logged in — the bot could never post here without a
                 // password, so prompt for one now instead of picking an
@@ -1647,7 +1650,7 @@ public:
             if (the_mesh.getRoomPassword(_sel_contact.id.pub_key, saved_pw, sizeof(saved_pw))) {
               // Logged in to this room before, on an earlier boot -- retry
               // with the remembered password instead of prompting again.
-              startRoomLogin(saved_pw, true);
+              startNodeLogin(saved_pw, true);
             } else {
               _login_mode = true;
               _kb->begin("", 15); // room/repeater password: max 15 chars
@@ -1800,7 +1803,7 @@ public:
       if (c == KEY_ENTER && _channel_sel == _num_channels && !_pick_bot_channel) {
         if (_task->isChildModeLocked()) return true;
         int idx = findFreeChannelSlot();
-        if (idx < 0) _task->showAlert("Channels full", 1200);
+        if (idx < 0) _task->logWarning("Channel", "List full");
         else         _ch_view.openAdd(idx);
         return true;
       }
@@ -1810,7 +1813,7 @@ public:
             !channelAllowedForChild((uint8_t)_sel_channel_idx)) {
           buildChannelList();
           _channel_sel = _channel_scroll = 0;
-          _task->showAlert("Parent only", 800);
+          _task->logWarning("Child Mode", "Parent only");
           return true;
         }
         if (_pick_target) { commitPickTargetChannel(_sel_channel_idx); return true; }
@@ -1977,7 +1980,7 @@ public:
 
     } else if (_phase == ROOM_LOGIN_WAIT) {
       if (c == KEY_CANCEL) {
-        _task->cancelRoomLogin(solo::RoomLoginCoordinator::MESSAGES, _sel_contact.id.pub_key);
+        _task->cancelNodeLogin(solo::NodeLoginCoordinator::MESSAGES, _sel_contact.id.pub_key);
         _phase = CONTACT_PICK;
       }
       return true;
@@ -1994,7 +1997,7 @@ public:
           // Keep this as a password editor if the packet cannot be queued.
           // Previously _login_mode was cleared first, leaving an identical
           // looking keyboard that was actually handling normal message text.
-          if (startRoomLogin(_kb->buf)) _login_mode = false;
+          if (startNodeLogin(_kb->buf)) _login_mode = false;
         }
         return true;
       }

@@ -13,11 +13,18 @@
 Node List opens on **All**. Use Left/Right for the Fav, All, Comp, Rpt, Room and
 Snsr filters; hold Enter for actions available to the selected node.
 
-Diagnostics includes a Battery tab with filtered voltage, curve-based percentage
+Diagnostics includes a RAM-only Events tab containing the 16 most recent
+operational warnings and errors. Newest events appear first, `W` and `E` mark
+severity, and consecutive duplicates are combined. Hold Enter on Events to
+clear the log; it is also cleared by reboot. No event is written to flash.
+Warnings and errors use the normal popup notifier. Repeated background failures
+are rate-limited, and wake for five seconds when the display was off.
+
+The Battery tab shows filtered voltage, curve-based percentage
 and estimated time to 3.3 V. Remaining starts from a five-day full-charge model,
 ignores the first two hours after charging, then gradually learns from six to
-24 hours of normal discharge. Samples remain RAM-only. A `~` marks a model-led
-estimate; Charging and Paused replace the time when appropriate.
+24 hours of normal discharge. Samples remain RAM-only. Charging and Paused
+replace the time when appropriate.
 
 ## Node administration
 
@@ -26,12 +33,20 @@ Select a saved repeater, room or sensor in Node List, hold Enter and choose
 Zen first tries ACL login with an empty password, then offers password entry.
 The remote node must grant admin rights. Credentials stay in RAM; Back returns
 to the same Node List filter and position.
+Silent login failures identify whether ACL/route or password/time is the
+unresolved cause. MeshCore servers intentionally send no rejection detail, so
+Zen cannot distinguish an incorrect password from server replay protection.
 
-Menus provide Status, Settings, Radio, type-specific options, Console and
-Actions. Sensors omit Repeater and Room options. Open a setting to fetch its
-current value. Finish editing with Enter
-or Back, then choose Apply, Discard or Cancel. Unchanged values send nothing.
+Menus provide Status, Settings, Radio, Routing, type-specific options, Console
+and Actions. Only room servers show Room options. Open a setting to fetch its
+current value. Finish editing with Enter or Back, then choose Yes or No at the
+save confirmation. Unchanged values send nothing. After a successful write, Zen
+reads the setting back and only reports **Setting saved** when the value matches.
+The write-only administrator password is confirmed by the node's save response.
 Radio changes warn that the node may become unreachable; Zen's radio stays unchanged.
+Routing includes forwarding, hop limits, path hashing, RX delay, flood and direct
+TX delays, duty cycle, channel detection, Multi ACKs, interference threshold and
+AGC reset interval.
 
 Console uses predictive T9 with commands and keywords from the
 [MeshCore CLI reference](https://docs.meshcore.io/cli_commands/) ranked ahead of

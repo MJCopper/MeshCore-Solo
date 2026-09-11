@@ -28,7 +28,8 @@
 #include "../solo/SoloRuntime.h"
 #include "../solo/BootTimeSync.h"
 #include "../solo/GpsMode.h"
-#include "../solo/RoomLoginCoordinator.h"
+#include "../solo/NodeLoginCoordinator.h"
+#include "../solo/DiagnosticLog.h"
 #include "KeyboardWidget.h"
 #if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
   #include <helpers/ui/CardKBController.h>
@@ -59,7 +60,8 @@ class UITask : public AbstractUITask {
   void setEmergencyMode(bool active);
   NodePrefs* _node_prefs;
   solo::Runtime _solo;
-  solo::RoomLoginCoordinator _room_login;
+  solo::NodeLoginCoordinator _node_login;
+  solo::DiagnosticLog _diagnostic_log;
   bool _deferred_prefs_save = false;
   uint32_t _deferred_prefs_save_ms = 0;
   char _alert[80];
@@ -83,6 +85,7 @@ class UITask : public AbstractUITask {
   DMUnreadEntry _room_unread_table[ROOM_UNREAD_TABLE_SIZE];
   unsigned long ui_started_at, next_batt_chck;
   uint16_t _batt_mv;  // EMA-filtered battery voltage
+  uint16_t _reported_radio_errors = 0;
   solo::BatteryRuntimeEstimator _battery_runtime;
   unsigned long next_backlight_btn_check = 0;
 #ifdef PIN_STATUS_LED
@@ -228,6 +231,7 @@ class UITask : public AbstractUITask {
   // enable keyboard polling on other targets.
 #if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
   CardKBController _cardkb;
+  bool _cardkb_was_present = false;
 #endif
   void pollCardKB();
   void turnDisplayOn();
@@ -398,6 +402,16 @@ public:
   void stopMelody();
   bool isMelodyPlaying();
   void showAlert(const char* text, int duration_millis);
+  void logFailure(const char* operation, const char* reason);
+  void logWarning(const char* operation, const char* reason);
+  void reportEvent(solo::DiagnosticLog::Severity severity, const char* operation,
+                   const char* reason, bool background = false);
+  void onOperationFailure(const char* operation, const char* reason) override {
+    reportEvent(solo::DiagnosticLog::ERROR, operation, reason, true);
+  }
+  const solo::DiagnosticLog& diagnosticLog() const { return _diagnostic_log; }
+  void clearDiagnosticLog() { _diagnostic_log.clear(); }
+  void resetReportedRadioErrors() { _reported_radio_errors = 0; }
   bool notificationAllowed(UIEventType event, uint8_t contact_type = 0,
                            const uint8_t* pub_key = nullptr, int channel_idx = -1) const;
   void presentNotification(UIEventType event, bool play_sound, bool vibrate);
@@ -423,15 +437,16 @@ public:
   void armChannelRelay(int history_pos, uint32_t seq) override;
   void onMsgAck(uint32_t ack_crc) override;
   bool matchMsgAck(uint32_t ack_crc, uint8_t* prefix) override;
-  void onRoomLoginCancelled(const uint8_t* prefix) override;
+  void onNodeLoginCancelled(const uint8_t* prefix) override;
   void onChannelRelayed(uint32_t seq) override;
   void onChannelRelayExpired(uint32_t seq) override;
-  void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) override;
-  bool startRoomLogin(solo::RoomLoginCoordinator::Owner owner, const ContactInfo& contact,
+  void onNodeLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) override;
+  bool startNodeLogin(solo::NodeLoginCoordinator::Owner owner, const ContactInfo& contact,
                       const char* password, bool used_saved_password = false);
-  bool roomLoginBusy() const { return _room_login.active(); }
-  void cancelRoomLogin(solo::RoomLoginCoordinator::Owner owner, const uint8_t* pub_key);
-  bool isRoomLoggedIn(const uint8_t* pub_key) const { return _room_login.isLoggedIn(pub_key); }
+  bool retryNodeLogin(solo::NodeLoginCoordinator::Attempt& attempt);
+  bool nodeLoginBusy() const { return _node_login.active(); }
+  void cancelNodeLogin(solo::NodeLoginCoordinator::Owner owner, const uint8_t* pub_key);
+  bool isRoomLoggedIn(const uint8_t* pub_key) const { return _node_login.isLoggedIn(pub_key); }
   void logoutRoom(const uint8_t* pub_key);
   void onAdminReply(const uint8_t* pub_key, const char* text) override;
   int  getDMUnreadTotal() const;

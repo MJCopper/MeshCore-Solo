@@ -37,6 +37,7 @@ public:
   }
 
   bool pending() const { return _pending; }
+  bool retryWindowOpen() const { return _retry_window_open; }
   bool shouldStartGps() const { return _owns_gps; }
 
   Action tick(uint32_t generation, bool gps_configured_on, bool gps_enabled, uint32_t now) {

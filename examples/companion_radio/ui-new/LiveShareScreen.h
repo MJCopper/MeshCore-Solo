@@ -146,7 +146,7 @@ public:
       list[n].type = 1; list[n].ch = 0;
       memcpy(list[n].prefix, pre, NodePrefs::FAVOURITE_PREFIX_LEN); n++;
     }
-    if (n == 0) { _task->showAlert("No channels/favs", 1200); return; }
+    if (n == 0) { _task->logWarning("Live Share", "No targets"); return; }
     int cur = -1;
     for (int i = 0; i < n; i++) {
       if (list[i].type != _prefs->loc_share_target_type) continue;

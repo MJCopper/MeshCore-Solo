@@ -134,7 +134,7 @@ public:
       case K_ENABLE:
         _prefs->locator_enabled ^= 1;
         if (_prefs->locator_enabled && !_prefs->locator_has_target)
-          _task->showAlert("Pick a target", 1200);
+          _task->logWarning("Locator", "Pick a target");
         _dirty = true;
         break;
       case K_TARGET:

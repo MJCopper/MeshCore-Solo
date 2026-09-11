@@ -53,7 +53,7 @@ struct NodePrefs {  // persisted to file
   uint8_t autoadd_max_hops;  // 0 = no limit, 1 = direct (0 hops), N = up to N-1 hops (max 64)
   char default_scope_name[31];
   uint8_t default_scope_key[16];
-  uint8_t display_brightness;   // 0=min..4=max, default 2 (medium)
+  uint8_t display_brightness;   // 0=min..4=max, default 4 (UI level 5/full)
   uint16_t auto_off_secs;       // display auto-off: 0=never, else seconds (default 15)
   int8_t tz_offset_hours;       // timezone offset from UTC, -12..+14 (default 0)
   uint16_t low_batt_mv;         // reserved legacy field; shutdown uses BatteryPolicy
@@ -81,7 +81,7 @@ struct NodePrefs {  // persisted to file
   uint8_t  bot_quiet_start;     // quiet-hours start hour, local 0-23 (start==end → disabled)
   uint8_t  bot_quiet_end;       // quiet-hours end hour, local 0-23
   uint8_t  clock_hide_seconds; // 0=show HH:MM:SS/refresh 1s (default), 1=hide/refresh 60s
-  uint8_t  clock_12h;          // 0=24h (default), 1=12h with AM/PM
+  uint8_t  clock_12h;          // 0=24h, 1=12h with AM/PM (default)
   uint8_t  buzzer_auto;        // 0=manual (default), 1=auto-mute when BT connected
   struct DmNotifEntry { uint8_t prefix[4]; uint8_t state; }; // state: 0=default,1=muted,2=force-on
   static const int DM_NOTIF_TABLE_MAX = 16;
@@ -156,7 +156,7 @@ struct NodePrefs {  // persisted to file
   uint8_t  reserved_radio_power;
 
   // Retained only to preserve the existing preferences-file layout. On-device
-  // DM delivery now uses the fixed policy in solo/DmRetryPolicy.h.
+  // On-device delivery uses the fixed policy in solo/NodeRouteRetry.h.
   uint8_t  reserved_dm_resend_count;
 
   // User-saved radio presets, written by the "Save current..." entry in the
@@ -325,7 +325,7 @@ struct NodePrefs {  // persisted to file
   // Room-server auto-reply bot — same trigger/reply/command shape as the DM
   // and channel bots above, but targets a single room server (like the
   // channel bot targets a single channel) since posting requires that room's
-  // own login session (see MyMesh::sendRoomLogin/logoutRoom). If the device
+  // own login session (see MyMesh::sendNodeLogin/logoutRoom). If the device
   // has never logged into this room, replies silently fail to send — same
   // as a manual post would — so log in at least once from Messages > Rooms
   // before relying on the bot there.
@@ -514,9 +514,9 @@ struct NodePrefs {  // persisted to file
   static const uint16_t HP_ALL        = HP_CLOCK | HP_RECENT | HP_RADIO |
                                         HP_BLUETOOTH | HP_ADVERT | HP_GPS |
                                         HP_TOOLS | HP_FAVOURITES | HP_SENSORS;
-  // Messages and Settings have no mask bit and are always visible. Recent,
-  // Radio, Bluetooth, Advert and GPS remain opt-in through Home Pages.
-  static const uint16_t HP_DEFAULT    = HP_CLOCK | HP_TOOLS | HP_FAVOURITES | HP_SENSORS;
+  // Messages and Settings have no mask bit and are always visible. Fresh
+  // installs expose every available page; users can hide individual pages.
+  static const uint16_t HP_DEFAULT    = HP_ALL;
 
   // Label for home page by bit-index; returns "" for out-of-range.
   // Array indices match HomePageBit values.

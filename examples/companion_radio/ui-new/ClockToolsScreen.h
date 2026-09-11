@@ -299,7 +299,7 @@ class ClockToolsScreen : public UIScreen {
     if (c == KEY_DOWN) { stepTimerDigit(-1); return true; }
     if (c == KEY_ENTER) {
       uint32_t dur = (((uint32_t)_timer_h * 60 + _timer_m) * 60 + _timer_s) * 1000UL;
-      if (dur == 0) { _task->showAlert("Set a duration", 1000); return true; }
+      if (dur == 0) { _task->logWarning("Timer", "Set a duration"); return true; }
       _task->startTimer(dur);
     }
     return true;

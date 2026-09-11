@@ -44,6 +44,30 @@ TEST(SensorAccess, OffersPasswordOnlyAfterBlankLoginFails) {
   EXPECT_TRUE(flow.passwordEditing());
 }
 
+TEST(SensorAccess, KnownPathRetriesThenFallsBackToThreeFloods) {
+  solo::SensorAccessCoordinator flow;
+  flow.beginTelemetry(true);
+  EXPECT_EQ(flow.telemetryTimedOut(), solo::SensorAccessCoordinator::SEND_TELEMETRY);
+  flow.telemetryStarted();
+  for (int i = 0; i < 3; i++) {
+    EXPECT_EQ(flow.telemetryTimedOut(),
+              solo::SensorAccessCoordinator::CLEAR_PATH_AND_SEND_TELEMETRY);
+    flow.telemetryStarted();
+  }
+  EXPECT_EQ(flow.telemetryTimedOut(), solo::SensorAccessCoordinator::START_BLANK_LOGIN);
+}
+
+TEST(SensorAccess, UnknownPathGetsThreeFloodTriesTotal) {
+  solo::SensorAccessCoordinator flow;
+  flow.beginTelemetry(false);
+  for (int i = 0; i < 2; i++) {
+    EXPECT_EQ(flow.telemetryTimedOut(),
+              solo::SensorAccessCoordinator::CLEAR_PATH_AND_SEND_TELEMETRY);
+    flow.telemetryStarted();
+  }
+  EXPECT_EQ(flow.telemetryTimedOut(), solo::SensorAccessCoordinator::START_BLANK_LOGIN);
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

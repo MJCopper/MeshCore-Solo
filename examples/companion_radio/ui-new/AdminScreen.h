@@ -14,8 +14,10 @@ class AdminScreen : public UIScreen {
   Phase _phase = LOGIN;
   ContactInfo _target;
   bool _login_waiting = false;
+  bool _login_used_password = false;
   bool _authenticated = false;
-  bool _fetching = false;
+  enum Pending { PENDING_NONE, FETCH_SETTING, APPLY_SETTING, VERIFY_SETTING, RUN_COMMAND };
+  Pending _pending = PENDING_NONE;
   bool _console = false;
   bool _text_edit = false;
   solo::admin::Group _group = solo::admin::STATUS;
@@ -55,20 +57,33 @@ class AdminScreen : public UIScreen {
   }
   void login() {
     ContactInfo* current = the_mesh.lookupContactByPubKey(_target.id.pub_key, PUB_KEY_SIZE);
-    bool sent = current && allowed() && _task->startRoomLogin(
-        solo::RoomLoginCoordinator::ADMIN, *current, kb().buf, false);
+    bool password_supplied = kb().buf[0] != 0;
+    bool busy = _task->nodeLoginBusy();
+    bool sent = current && allowed() && !busy && _task->startNodeLogin(
+        solo::NodeLoginCoordinator::ADMIN, *current, kb().buf, false);
     kb().begin("", 15);  // no credential remains in the shared editor
+    kb().clearPlaceholders();
     _login_waiting = sent;
-    if (!sent) _task->showAlert("Login busy/failed", 1200);
+    if (sent) {
+      _login_used_password = password_supplied;
+    } else if (!current) {
+      _task->logFailure("Admin login", "Node unavailable");
+    } else if (busy) {
+      _task->logFailure("Admin login", "Login busy");
+    } else {
+      _task->logFailure("Admin login", "Send failed");
+    }
   }
-  void send(const char* command, bool fetching) {
+  void send(const char* command, Pending pending) {
     uint32_t timeout;
     if (!allowed() || !_authenticated ||
         !the_mesh.sendAdminCommand(_target, command, timeout)) {
-      showReply("Not sent", "Busy or send failed");
+      _task->logFailure("Admin", "Command not sent");
+      showReply(pending == VERIFY_SETTING ? "Not verified" : "Not sent",
+                "Busy or send failed");
       return;
     }
-    _fetching = fetching;
+    _pending = pending;
     _deadline = millis() + timeout + 4000;
     _phase = WAIT;
   }
@@ -105,7 +120,9 @@ class AdminScreen : public UIScreen {
       _number = strcmp(_value, "on") == 0 ? 1 : 0;
     } else {
       if (!number(_value, _field->min, _field->max, _number)) return false;
-      snprintf(_value, sizeof(_value), _field->step < 1 ? "%.1f" : "%.0f", _number);
+      const char* format = _field->step < 0.01f ? "%.3f" :
+                           (_field->step < 1 ? "%.1f" : "%.0f");
+      snprintf(_value, sizeof(_value), format, _number);
     }
     strcpy(_original, _value);
     _phase = EDIT;
@@ -118,17 +135,25 @@ class AdminScreen : public UIScreen {
       if (_field->kind == FREQUENCY) _freq = _frequency.value;
       formatRadio(_value, sizeof(_value), _freq, _bw, _sf, _cr);
     } else if (_field->kind == TOGGLE) strcpy(_value, _number ? "on" : "off");
-    else snprintf(_value, sizeof(_value), _field->step < 1 ? "%.1f" : "%.0f", _number);
+    else {
+      const char* format = _field->step < 0.01f ? "%.3f" :
+                           (_field->step < 1 ? "%.1f" : "%.0f");
+      snprintf(_value, sizeof(_value), format, _number);
+    }
   }
   void reviewEdit() {
     formatValue();
     if (!_console && !strcmp(_original, _value)) { _phase = LIST; return; }
     if (_console && !_value[0]) { root(); return; }
-    _confirm.begin(_console ? "Send command?" :
-        (_group == solo::admin::RADIO ? "May lose contact" : "Apply change?"));
-    _confirm.addItem("Cancel");
-    _confirm.addItem(_console ? "Send" : "Apply");
-    _confirm.addItem("Discard");
+    _confirm.begin(_console ? "Send command?" : "Save change?");
+    if (_console) {
+      _confirm.addItem("Cancel");
+      _confirm.addItem("Send");
+      _confirm.addItem("Discard");
+    } else {
+      _confirm.addItem("No");
+      _confirm.addItem("Yes");
+    }
   }
   void activate() {
     _field = &solo::admin::FIELDS[_items[_sel]];
@@ -137,14 +162,18 @@ class AdminScreen : public UIScreen {
       _confirm.begin(_field->label);
       _confirm.addItem("Cancel");
       _confirm.addItem(!strcmp(_field->get, "start ota") ? "Start" : "Confirm");
-    } else send(_field->get, _field->set != nullptr);
+    } else if (_field->kind == solo::admin::WRITE_TEXT) {
+      _original[0] = 0;
+      openText("", (int)_field->max);
+    } else send(_field->get, FETCH_SETTING);
   }
 
 public:
   explicit AdminScreen(UITask* task) : _task(task) {}
   void onShow() override {
     _phase = LOGIN;
-    _authenticated = _login_waiting = false;
+    _pending = PENDING_NONE;
+    _authenticated = _login_waiting = _login_used_password = false;
     _confirm.active = false;
     _field = nullptr;
     _original[0] = _value[0] = _reply[0] = 0;
@@ -152,44 +181,73 @@ public:
   void startFor(const ContactInfo& contact) {
     _target = contact;
     kb().begin("", 15);
+    kb().clearPlaceholders();
     login();  // empty password asks the remote node to check its ACL first
   }
   void closeSession() {
-    _task->cancelRoomLogin(solo::RoomLoginCoordinator::ADMIN, _target.id.pub_key);
+    _task->cancelNodeLogin(solo::NodeLoginCoordinator::ADMIN, _target.id.pub_key);
     the_mesh.closeAdminSession();
-    _authenticated = _login_waiting = false;
+    _authenticated = _login_waiting = _login_used_password = false;
+    _pending = PENDING_NONE;
     _confirm.active = false;
     memset(_original, 0, sizeof(_original));
     memset(_value, 0, sizeof(_value));
     memset(_reply, 0, sizeof(_reply));
     kb().begin("", 15);
   }
-  void onRoomLoginResult(const uint8_t* key, bool success, uint8_t permissions) {
+  void onNodeLoginResult(const uint8_t* key, bool success, uint8_t permissions) {
     if (!_login_waiting || _phase != LOGIN || memcmp(key, _target.id.pub_key, 4)) return;
     _login_waiting = false;
     if (!allowed()) { leave(); return; }
-    if (success && (permissions & PERM_ACL_ROLE_MASK) == PERM_ACL_ADMIN) {
+    if (solo::NodeLoginResponse::grantsAdmin(
+          success, permissions, _login_used_password)) {
       _authenticated = true;
       the_mesh.authorizeAdmin(_target.id.pub_key);
       root();
     } else {
+      _task->logFailure("Admin login", success ? "Not Admin" : "Rejected");
       kb().begin("", 15);
-      _task->showAlert(success ? "Admin rights required" : "Enter admin password", 1400);
     }
   }
-  void onRoomLoginTimeout(const uint8_t* key) {
+  void onNodeLoginTimeout(const uint8_t* key) {
     if (_phase != LOGIN || !_login_waiting || memcmp(key, _target.id.pub_key, 4)) return;
     _login_waiting = false;
+    _task->logFailure("Admin login",
+                      _login_used_password ? "No password reply" : "No ACL reply");
     kb().begin("", 15);
-    _task->showAlert("No reply: enter password", 1400);
+    kb().clearPlaceholders();
   }
   void onAdminReply(const uint8_t* key, const char* text) {
     if (_phase != WAIT || !allowed() || memcmp(key, _target.id.pub_key, PUB_KEY_SIZE)) return;
-    if (_fetching) {
+    Pending completed = _pending;
+    _pending = PENDING_NONE;
+    if (completed == FETCH_SETTING) {
       const char* value = solo::admin::value(text);
       if (value && beginEdit(value)) return;
+      _task->logFailure("Admin", "Invalid setting reply");
       showReply("Cannot edit", text);
+    } else if (completed == APPLY_SETTING) {
+      if (!solo::admin::confirmed(text)) {
+        _task->logFailure("Admin", "Change rejected");
+        showReply(!strncmp(text, "Error", 5) ? "Rejected" : "Not saved", text);
+      } else if (_field && _field->get) {
+        send(_field->get, VERIFY_SETTING);
+      } else {
+        // Password is deliberately write-only in MeshCore. Its OK response is
+        // emitted after savePrefs(), so this is the strongest available check.
+        showReply("Setting saved", "Confirmed by node");
+      }
+    } else if (completed == VERIFY_SETTING) {
+      const char* actual = solo::admin::value(text);
+      if (_field && actual && solo::admin::valuesEqual(*_field, _value, actual))
+        showReply("Setting saved", "Verified on node");
+      else {
+        _task->logFailure("Admin", "Verify mismatch");
+        showReply("Not verified", actual ? actual : text);
+      }
     } else {
+      if (!solo::admin::confirmed(text))
+        _task->logFailure("Admin", !strncmp(text, "Error", 5) ? "Command rejected" : "Unexpected reply");
       showReply(solo::admin::confirmed(text) ? "Confirmed" :
           (!strncmp(text, "Error", 5) ? "Rejected" : "Reply"), text);
     }
@@ -197,7 +255,14 @@ public:
   void poll() override {
     if (_phase == WAIT && (int32_t)(millis() - _deadline) >= 0) {
       the_mesh.cancelAdminCommand();
-      showReply("No reply", "Result unknown.\nNot retried.\nWait before retrying.");
+      if (_pending == VERIFY_SETTING) {
+        _task->logFailure("Admin", "Verify timeout");
+        showReply("Not verified", "Read-back timed out");
+      } else {
+        _task->logFailure("Admin", "No command reply");
+        showReply("No reply", "Result unknown.\nNot retried.\nWait before retrying.");
+      }
+      _pending = PENDING_NONE;
     }
   }
   int render(DisplayDriver& d) override {
@@ -252,12 +317,15 @@ public:
       if (result == PopupMenu::SELECTED) {
         if (_confirm._sel == 1) {
           char command[161];
-          if (_phase == LIST) send(_field->get, false);
-          else if (_console) send(_value, false);
-          else if (solo::admin::formatCommand(command, sizeof(command), _field->set, _value)) send(command, false);
+          if (_phase == LIST) send(_field->get, RUN_COMMAND);
+          else if (_console) send(_value, RUN_COMMAND);
+          else if (solo::admin::formatCommand(command, sizeof(command), _field->set, _value))
+            send(command, APPLY_SETTING);
           else showReply("Not sent", "Value too long");
         } else if (_confirm._sel == 2) {
           if (_console) root(); else _phase = LIST;
+        } else if (!_console && _phase == EDIT) {
+          _phase = LIST;
         }
       }
       return true;

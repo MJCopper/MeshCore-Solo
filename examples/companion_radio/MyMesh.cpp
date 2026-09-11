@@ -990,7 +990,7 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
     // Persist app/USB-entered room passwords too, so the device can later post
     // to that room standalone (after reboot, no phone) without re-prompting --
     // same store the on-device login path uses. Rooms only; a failed login
-    // forgets any stale saved password, mirroring onRoomLoginResult().
+    // forgets any stale saved password, mirroring onNodeLoginResult().
     if (contact.type == ADV_TYPE_ROOM) {
       if (login_ok) saveRoomPassword(contact.id.pub_key, pending_login_pw);
       else          forgetRoomPassword(contact.id.pub_key);
@@ -999,7 +999,7 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
   } else if (ui_pending_login && memcmp(&ui_pending_login, contact.id.pub_key, 4) == 0
       && !(pending_telemetry && tag == pending_telemetry)
       && !(pending_req && tag == pending_req)
-      && solo::RoomLoginResponse::valid(data, len)) {
+      && solo::NodeLoginResponse::valid(data, len)) {
     ui_pending_login = 0;
 
     bool success;
@@ -1012,11 +1012,12 @@ void MyMesh::onContactResponse(const ContactInfo &contact, const uint8_t *data, 
         startConnection(contact, keep_alive_secs);
       }
       success = true;
-      permissions = data[7]; // ACL permissions
+      permissions = solo::NodeLoginResponse::effectivePermissions(
+          data[6], data[7]); // reconcile legacy role with ACL permissions
     } else {
       success = false;
     }
-    _ui->onRoomLoginResult(contact.id.pub_key, success, permissions);
+    _ui->onNodeLoginResult(contact.id.pub_key, success, permissions);
   } else if (len > 4 && // check for status response
              pending_status &&
              memcmp(&pending_status, contact.id.pub_key, 4) == 0 // legacy matching scheme
@@ -1569,7 +1570,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.tx_power_dbm = LORA_TX_POWER;
   _prefs.gps_enabled = 0;       // GPS disabled by default
   _prefs.gps_interval = 0;      // No automatic GPS updates by default
-  _prefs.display_brightness = 2; // medium brightness by default
+  _prefs.display_brightness = 4; // full brightness (level 5 in the UI) by default
   _prefs.buzzer_volume = 4;      // max volume by default
   _prefs.ringtone_bpm_idx = 2;   // 120 bpm default
   _prefs.ringtone_len = 0;       // no custom ringtone by default
@@ -1578,7 +1579,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.notif_melody_ch = solo::BuiltinMelodies::KERPLOP;
   _prefs.notif_melody_ad = solo::BuiltinMelodies::MESSAGE;
   _prefs.advert_sound_scope = ADVERT_SOUND_SCOPE_ALL;  // sound every advert by default
-  _prefs.home_pages_mask = NodePrefs::HP_DEFAULT;  // curated everyday carousel; rest opt-in via Home Pages
+  _prefs.home_pages_mask = NodePrefs::HP_ALL;  // all available carousel pages visible by default
   solo::PrefsDefaults::apply(_prefs);
   _prefs.bot_enabled = 0;
   _prefs.bot_channel_enabled = 0;
@@ -1595,6 +1596,7 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   memset(_prefs.dm_notif, 0, sizeof(_prefs.dm_notif));
   _prefs.auto_off_secs = 15;    // 15 seconds auto-off by default
   _prefs.clock_hide_seconds = Features::CLOCK_HIDE_SECONDS_DEFAULT ? 1 : 0;
+  _prefs.clock_12h = 1;        // 12-hour clock with AM/PM by default
   _prefs.tz_offset_hours = 0;  // UTC by default
   _prefs.low_batt_mv = 0;  // reserved legacy field; ignored by BatteryPolicy
   _prefs.batt_display_mode = 0; // icon by default
@@ -1751,7 +1753,7 @@ static bool isAllZero(const uint8_t* buf, size_t n) {
 // a delete" so the two callers can't drift on the cleanup step.
 bool MyMesh::setChannelLocal(uint8_t idx, const ChannelDetails& ch) {
   if (!setChannel(idx, ch)) return false;
-  saveChannels();
+  if (!saveChannels()) return false;
   // An all-zero secret is this codebase's "empty slot" sentinel (same check
   // loadChannels()/saveChannels() use) -- drop anything that referenced it by
   // index, the same way onContactRemoved() does for contacts.
@@ -2299,7 +2301,7 @@ void MyMesh::handleCmdFrame(size_t len) {
         if (ui_pending_login) {
           uint32_t cancelled = ui_pending_login;
           ui_pending_login = 0;
-          _ui->onRoomLoginCancelled((const uint8_t*)&cancelled);
+          _ui->onNodeLoginCancelled((const uint8_t*)&cancelled);
         }
         _app_login_deadline = millis() + est_timeout + 4000;
         strncpy(pending_login_pw, password, sizeof(pending_login_pw) - 1); // saved on success if it's a room
@@ -2853,8 +2855,10 @@ static bool save_filter(const ContactInfo& c) {
   return c.type != ADV_TYPE_NONE;   // don't save the transient/anon entries
 }
 
-void MyMesh::saveContacts() {
-  _store->saveContacts(this, save_filter);
+bool MyMesh::saveContacts() {
+  bool ok = _store->saveContacts(this, save_filter);
+  if (!ok && _ui) _ui->onOperationFailure("Contacts", "Save failed");
+  return ok;
 }
 
 void MyMesh::enterCLIRescue() {
@@ -3110,7 +3114,8 @@ void MyMesh::loop() {
   }
 
   if (!_low_power_mode && _prefs.advert_auto_interval_sec > 0 && millisHasNowPassed(_next_auto_advert_ms)) {
-    sendConfiguredSelfAdvert(false);
+    if (!sendConfiguredSelfAdvert(false) && _ui)
+      _ui->onOperationFailure("Auto advert", "Send failed");
     _next_auto_advert_ms = futureMillis(_prefs.advert_auto_interval_sec * 1000UL);
   }
 

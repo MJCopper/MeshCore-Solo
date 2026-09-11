@@ -32,7 +32,7 @@ class DiagnosticsScreen : public UIScreen {
   uint8_t _tab = 0;        // persists across visits (like BotScreen's _tab)
   PopupMenu _reset_menu;   // Live tab, Hold Enter → 1-item "Reset counters" action menu (Back dismisses)
 
-  enum Tab : uint8_t { TAB_LIVE, TAB_BATTERY, TAB_SYSTEM, TAB_FONT, TAB_COUNT };
+  enum Tab : uint8_t { TAB_LIVE, TAB_EVENTS, TAB_BATTERY, TAB_SYSTEM, TAB_FONT, TAB_COUNT };
   static const char* const TAB_LABELS[TAB_COUNT];
 
   struct Row { const char* label; char value[20]; };
@@ -43,7 +43,7 @@ class DiagnosticsScreen : public UIScreen {
   // Full-width text lines (System / Font tabs) — long values (device model,
   // node name) don't fit the Live tab's narrow right-aligned value column, so
   // these tabs draw one ellipsized line each instead of a label/value pair.
-  static const int MAX_LINES = 15;
+  static const int MAX_LINES = 16;
   char _lines[MAX_LINES][40];
   int _line_count = 0;
 
@@ -172,6 +172,34 @@ class DiagnosticsScreen : public UIScreen {
     }
   }
 
+  void buildEventLines() {
+    _line_count = 0;
+    const solo::DiagnosticLog& log = _task->diagnosticLog();
+    if (!log.size()) { addLine("No events"); return; }
+    for (uint8_t i = 0; i < log.size() && _line_count < MAX_LINES; i++) {
+      const solo::DiagnosticLog::Entry* event = log.newest(i);
+      if (!event) continue;
+      char time[6] = "--:--";
+      if (event->timestamp) {
+        int32_t local = (int32_t)(event->timestamp % 86400UL) +
+            (int32_t)(_task->getNodePrefs() ? _task->getNodePrefs()->tz_offset_hours : 0) * 3600;
+        while (local < 0) local += 86400;
+        local %= 86400;
+        snprintf(time, sizeof(time), "%02ld:%02ld", (long)(local / 3600),
+                 (long)((local / 60) % 60));
+      }
+      if (event->count > 1)
+        addLine("%c %s %s: %s x%u", event->severity == solo::DiagnosticLog::ERROR ? 'E' :
+                (event->severity == solo::DiagnosticLog::WARNING ? 'W' : 'I'),
+                time, event->operation, event->reason,
+                (unsigned)event->count);
+      else
+        addLine("%c %s %s: %s", event->severity == solo::DiagnosticLog::ERROR ? 'E' :
+                (event->severity == solo::DiagnosticLog::WARNING ? 'W' : 'I'),
+                time, event->operation, event->reason);
+    }
+  }
+
   void buildBatteryRows() {
     _row_count = 0;
     uint16_t mv = _task->getBattMilliVolts();
@@ -265,6 +293,7 @@ public:
     tabbar::draw(display, TAB_LABELS, TAB_COUNT, _tab);
 
     switch (_tab) {
+      case TAB_EVENTS: buildEventLines(); renderLines(display); break;
       case TAB_BATTERY: buildBatteryRows(); renderRows(display); break;
       case TAB_SYSTEM: buildSystemLines(); renderLines(display); break;
       case TAB_FONT:   buildFontLines();   renderLines(display); break;
@@ -283,8 +312,14 @@ public:
     if (_reset_menu.active) {
       auto res = _reset_menu.handleInput(c);
       if (res == PopupMenu::SELECTED && _reset_menu.selectedIndex() == 0) {
-        the_mesh.resetStats();   // zeroes Dispatcher per-type counters + Mesh forward count + err flags
-        _task->showAlert("Counters reset", 800);
+        if (_tab == TAB_EVENTS) {
+          _task->clearDiagnosticLog();
+          _task->showAlert("Events cleared", 800);
+        } else {
+          the_mesh.resetStats(); // Dispatcher counters + forwarding + radio flags
+          _task->resetReportedRadioErrors();
+          _task->showAlert("Counters reset", 800);
+        }
       }
       return true;
     }
@@ -292,8 +327,9 @@ public:
     if (keyIsNext(c)) { _tab = (_tab + 1) % TAB_COUNT;            _scroll = 0; return true; }
     if (c == KEY_UP)   { if (_scroll > 0) _scroll--; return true; }
     if (c == KEY_DOWN) { _scroll++; return true; }   // clamped in render()
-    if (c == KEY_CONTEXT_MENU && _tab == TAB_LIVE) {   // Hold Enter — reset the live counters
-      _reset_menu.beginConfirm("Reset counters?", "Reset");
+    if (c == KEY_CONTEXT_MENU && (_tab == TAB_LIVE || _tab == TAB_EVENTS)) {
+      _reset_menu.beginConfirm(_tab == TAB_EVENTS ? "Clear events?" : "Reset counters?",
+                               _tab == TAB_EVENTS ? "Clear" : "Reset");
       return true;
     }
     if (c == KEY_CANCEL) { _task->gotoToolsScreen(); return true; }
@@ -302,5 +338,5 @@ public:
 };
 
 const char* const DiagnosticsScreen::TAB_LABELS[DiagnosticsScreen::TAB_COUNT] = {
-  "Live", "Battery", "System", "Font"
+  "Live", "Events", "Battery", "System", "Font"
 };

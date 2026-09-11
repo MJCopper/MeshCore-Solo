@@ -269,39 +269,41 @@ private:
   }
   void handleSave() {
     DataStore* ds = the_mesh.getDataStore();
-    if (!ds) { _task->showAlert("FS unavailable", 800); return; }
+    if (!ds) { _task->logFailure("Trail", "Storage unavailable"); return; }
     File f = ds->openWrite(TRAIL_FILE);
-    if (!f) { _task->showAlert("Save failed", 800); return; }
+    if (!f) { _task->logFailure("Trail", "Open for save failed"); return; }
     bool ok = _store->writeTo(f);
     f.close();
-    _task->showAlert(ok ? "Trail saved" : "Save failed", 800);
+    if (ok) _task->showAlert("Trail saved", 800);
+    else _task->logFailure("Trail", "Save failed");
   }
   void handleLoad() {
     DataStore* ds = the_mesh.getDataStore();
-    if (!ds) { _task->showAlert("FS unavailable", 800); return; }
+    if (!ds) { _task->logFailure("Trail", "Storage unavailable"); return; }
     File f = ds->openRead(TRAIL_FILE);
     if (!f) { _task->showAlert("No saved trail", 800); return; }
     bool ok = _store->readFrom(f);
     f.close();
-    _task->showAlert(ok ? "Trail loaded" : "Load failed", 800);
+    if (ok) _task->showAlert("Trail loaded", 800);
+    else _task->logFailure("Trail", "Load failed");
   }
   void handleExport() {
-    if (!Serial) { _task->showAlert("Connect USB first", 1200); return; }
+    if (!Serial) { _task->logWarning("Trail", "Connect USB first"); return; }
     BoundedSerialPrint out{300};
     size_t n = _store->exportGpx(out, _task->waypoints());
     showExportAlert(n);
   }
 
   void handleExportSaved() {
-    if (!Serial) { _task->showAlert("Connect USB first", 1200); return; }
+    if (!Serial) { _task->logWarning("Trail", "Connect USB first"); return; }
     DataStore* ds = the_mesh.getDataStore();
-    if (!ds) { _task->showAlert("FS unavailable", 800); return; }
+    if (!ds) { _task->logFailure("Trail", "Storage unavailable"); return; }
     File f = ds->openRead(TRAIL_FILE);
     if (!f) { _task->showAlert("No saved trail", 800); return; }
     BoundedSerialPrint out{300};
     size_t n = TrailStore::exportGpxFromFile(f, out, _task->waypoints());
     f.close();
-    if (n == 0) { _task->showAlert("Bad saved file", 1000); return; }
+    if (n == 0) { _task->logFailure("Trail", "Invalid saved file"); return; }
     showExportAlert(n);
   }
 
@@ -473,7 +475,7 @@ private:
   // config lives in Tools › Live Share.)
   void shareMyLocationNow() {
     int32_t lat, lon;
-    if (!_task->currentLocation(lat, lon)) { _task->showAlert("No GPS fix", 1000); return; }
+    if (!_task->currentLocation(lat, lon)) { _task->logWarning("Trail", "No GPS fix"); return; }
     char text[40];
     snprintf(text, sizeof(text), LOCATION_MSG_TAG "%.5f,%.5f", lat / 1e6, lon / 1e6);
     _task->shareToMessage(text);

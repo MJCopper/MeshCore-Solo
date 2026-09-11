@@ -4,7 +4,7 @@
 #include <Mesh.h>
 #include "AbstractUITask.h"
 #include "solo/SoloPolicy.h"
-#include "solo/RoomLoginResponse.h"
+#include "solo/NodeLoginResponse.h"
 #include "solo/AdminSession.h"
 #include "solo/SensorTelemetry.h"
 #include <helpers/ui/DisplayDriver.h>
@@ -22,7 +22,7 @@ class UITask;
 // Zen release version. The underlying MeshCore protocol/base version is
 // reported separately through the MESHCORE_VERSION build flag.
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.32.11"
+#define FIRMWARE_VERSION "v1.32.23"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -291,19 +291,19 @@ public:
     return true;
   }
 
-  // On-device UI login to a room/repeater contact — no phone app required.
-  // The room server's ACL grants permission per-identity (self_id), not per
+  // On-device UI login to a room or remotely managed node — no phone app required.
+  // The remote node's ACL grants permission per-identity (self_id), not per
   // command source, so this reuses the same sendLogin() the BLE CMD_SEND_LOGIN
   // path uses; the async result lands in onContactResponse() and is pushed to
-  // the UI via AbstractUITask::onRoomLoginResult().
-  bool sendRoomLogin(const ContactInfo& contact, const char* password, uint32_t& est_timeout) {
+  // the UI via AbstractUITask::onNodeLoginResult().
+  bool sendNodeLogin(const ContactInfo& contact, const char* password, uint32_t& est_timeout) {
     // UI requests must never cancel an app/USB request (or another UI login).
     // The app path deliberately retains its upstream single-request behaviour.
     // Only another login is ambiguous with this response. Status, telemetry
     // and binary requests have their own response matching and must not make a
-    // standalone room login appear to fail merely because an app request is
+    // standalone node login appear to fail merely because an app request is
     // still pending.
-    if (ui_pending_login || solo::RoomLoginResponse::busy(
+    if (ui_pending_login || solo::NodeLoginResponse::busy(
           pending_login, _app_login_deadline, millis())) return false;
     // An unanswered app login must not indefinitely reserve the UI login path.
     pending_login = 0;
@@ -357,8 +357,16 @@ public:
     return true;
   }
 
-  void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
-  void saveRTCTime() { _store->saveRTCTime(); }
+  bool savePrefs() {
+    bool ok = _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon);
+    if (!ok && _ui) _ui->onOperationFailure("Settings", "Save failed");
+    return ok;
+  }
+  bool saveRTCTime() {
+    bool ok = _store->saveRTCTime();
+    if (!ok && _ui) _ui->onOperationFailure("Time", "Save failed");
+    return ok;
+  }
   void flushDirtyContacts() {
     if (dirty_contacts_expiry) {
       saveContacts();
@@ -451,8 +459,12 @@ private:
 #endif
 
   // helpers, short-cuts
-  void saveChannels() { _store->saveChannels(this); }
-  void saveContacts();
+  bool saveChannels() {
+    bool ok = _store->saveChannels(this);
+    if (!ok && _ui) _ui->onOperationFailure("Channels", "Save failed");
+    return ok;
+  }
+  bool saveContacts();
 
   DataStore* _store;
   NodePrefs _prefs;

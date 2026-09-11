@@ -114,13 +114,18 @@ class ChannelsView {
     uint8_t secret[32];
     hexToSecret(PUBLIC_SECRET_HEX, secret);   // fixed, known-good constant -- can't fail
     if (saveChannel("Public", secret)) _task->showAlert("Channel added", 1000);
-    else                               _task->showAlert("Save failed", 1200);
+    else {
+      _task->logFailure("Channel", "Save failed");
+    }
     _mode = OFF;
   }
 
   void commit() {
     if (_mode == ADD_HASHTAG) {
-      if (_topic[0] == '\0') { _task->showAlert("Topic required", 1200); return; }
+      if (_topic[0] == '\0') {
+        _task->logWarning("Channel", "Topic required");
+        return;
+      }
       // "#topic" as both the channel's display name and the passphrase fed to
       // sha256 -- the exact "Hashtag Channels" convention in
       // docs/companion_protocol.md, just synthesized instead of hand-typed.
@@ -129,17 +134,17 @@ class ChannelsView {
       _secret_text[sizeof(_secret_text) - 1] = '\0';
       _hex_mode = false;
     }
-    if (_name[0] == '\0') { _task->showAlert("Name required", 1200); return; }
+    if (_name[0] == '\0') { _task->logWarning("Channel", "Name required"); return; }
     uint8_t secret[32];
     if (!deriveSecret(secret)) {
-      _task->showAlert(_hex_mode ? "Invalid secret" : "Secret required", 1400);
+      _task->logWarning("Channel", _hex_mode ? "Invalid secret" : "Secret required");
       return;
     }
     if (saveChannel(_name, secret)) {
       _task->showAlert((_mode == ADD || _mode == ADD_HASHTAG) ? "Channel added" : "Channel updated", 1000);
       _mode = OFF;
     } else {
-      _task->showAlert("Save failed", 1200);
+      _task->logFailure("Channel", "Save failed");
     }
   }
 

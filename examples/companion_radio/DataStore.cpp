@@ -48,6 +48,14 @@ static File openWrite(FILESYSTEM* fs, const char* filename) {
 #endif
 }
 
+static File openReadFile(FILESYSTEM* fs, const char* filename) {
+#if defined(RP2040_PLATFORM)
+  return fs->open(filename, "r");
+#else
+  return fs->open(filename);
+#endif
+}
+
 // Atomically swap a fully-written temp file over its final path. LittleFS
 // (nRF52/STM32) rename replaces an existing destination atomically, so a crash
 // leaves either the old file or the new one intact — never a truncated mix.
@@ -63,6 +71,52 @@ static bool commitTempFile(FILESYSTEM* fs, const char* tmp, const char* final_pa
 #endif
 }
 
+// Copy a non-empty file between filesystems without putting the existing
+// destination at risk. The source is deliberately left for the caller to
+// remove only after the temporary file has been fully written, size-checked,
+// and committed. This is used by the one-time internal/external migration;
+// an interrupted boot can therefore retry instead of losing the only copy.
+static bool copyFileVerified(FILESYSTEM* source_fs, const char* source_path,
+                             FILESYSTEM* dest_fs, const char* temp_path,
+                             const char* dest_path) {
+  File source = openReadFile(source_fs, source_path);
+  if (!source) return false;
+  size_t expected = (size_t)source.size();
+  if (expected == 0) {
+    source.close();
+    return false;
+  }
+
+  File dest = ::openWrite(dest_fs, temp_path);
+  if (!dest) {
+    source.close();
+    return false;
+  }
+
+  uint8_t buf[64];
+  size_t copied = 0;
+  bool ok = true;
+  while (copied < expected) {
+    size_t remaining = expected - copied;
+    size_t wanted = remaining < sizeof(buf) ? remaining : sizeof(buf);
+    int count = source.read(buf, wanted);
+    if (count <= 0 || dest.write(buf, (size_t)count) != (size_t)count) {
+      ok = false;
+      break;
+    }
+    copied += (size_t)count;
+  }
+  source.close();
+  dest.close();
+
+  File check = openReadFile(dest_fs, temp_path);
+  ok = ok && copied == expected && check && (size_t)check.size() == expected;
+  if (check) check.close();
+  if (ok && commitTempFile(dest_fs, temp_path, dest_path)) return true;
+  dest_fs->remove(temp_path);
+  return false;
+}
+
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   static uint32_t _ContactsChannelsTotalBlocks = 0;
 #endif
@@ -74,10 +128,10 @@ void DataStore::begin() {
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   _ContactsChannelsTotalBlocks = _getContactsChannelsFS()->_getFS()->cfg->block_count;
-  checkAdvBlobFile();
   #if defined(EXTRAFS) || defined(QSPIFLASH)
   migrateToSecondaryFS();
   #endif
+  checkAdvBlobFile();
 #else
   // init 'blob store' support
   _fs->mkdir("/bl");
@@ -250,17 +304,18 @@ void DataStore::loadSoloPrefs(NodePrefs& prefs) {
   if (complete) solo::PrefsCodec::decode(prefs, data, len);
 }
 
-void DataStore::saveSoloPrefs(const NodePrefs& prefs) {
-  if (!solo::Features::CHILD_MODE && !solo::Features::QUIET_TIME) return;
+bool DataStore::saveSoloPrefs(const NodePrefs& prefs) {
+  if (!solo::Features::CHILD_MODE && !solo::Features::QUIET_TIME) return true;
   uint8_t data[solo::PrefsCodec::MAX_ENCODED_SIZE];
   size_t len = solo::PrefsCodec::encode(prefs, data, sizeof(data));
-  if (!len) return;
+  if (!len) return false;
   File file = ::openWrite(_fs, "/solo_prefs.tmp");
-  if (!file) return;
+  if (!file) return false;
   bool ok = file.write(data, len) == len;
   file.close();
-  if (ok && commitTempFile(_fs, "/solo_prefs.tmp", "/solo_prefs")) return;
+  if (ok && commitTempFile(_fs, "/solo_prefs.tmp", "/solo_prefs")) return true;
   _fs->remove("/solo_prefs.tmp");
+  return false;
 }
 
 void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& node_lat, double& node_lon) {
@@ -718,7 +773,7 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
   file.close();
 }
 
-void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_lon) {
+bool DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_lon) {
   // Atomic temp-then-rename (see commitTempFile) so an interrupted save can't
   // wipe settings; loadPrefs() still validates the tail sentinel on read.
   File file = ::openWrite(_fs, "/new_prefs.tmp");
@@ -895,22 +950,25 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.close();
     if (ok) {
       if (commitTempFile(_fs, "/new_prefs.tmp", "/new_prefs")) {
-        saveSoloPrefs(_prefs);
+        return saveSoloPrefs(_prefs);
       }
     } else {
       _fs->remove("/new_prefs.tmp");   // keep the previous good /new_prefs
     }
   }
+  return false;
 }
 
-void DataStore::saveRTCTime() {
+bool DataStore::saveRTCTime() {
   uint32_t t = _clock->getCurrentTime();
-  if (t < 1000000000UL) return;  // don't save if time not yet synced
+  if (t < 1000000000UL) return true;  // unsynchronised time is intentionally not saved
   File file = ::openWrite(_fs, "/rtc_save");
   if (file) {
-    file.write((uint8_t *)&t, sizeof(t));
+    bool ok = file.write((uint8_t *)&t, sizeof(t)) == sizeof(t);
     file.close();
+    return ok;
   }
+  return false;
 }
 
 void DataStore::restoreRTCTime() {
@@ -960,7 +1018,7 @@ File file = openRead(_getContactsChannelsFS(), "/contacts3");
     }
 }
 
-void DataStore::saveContacts(DataStoreHost* host, bool (*filter)(const ContactInfo& c)) {
+bool DataStore::saveContacts(DataStoreHost* host, bool (*filter)(const ContactInfo& c)) {
   FILESYSTEM* fs = _getContactsChannelsFS();
   // Write to a temp file, then atomically rename it over /contacts3 only once
   // every record has written cleanly. The old code truncated /contacts3 up
@@ -968,7 +1026,7 @@ void DataStore::saveContacts(DataStoreHost* host, bool (*filter)(const ContactIn
   // the entire contact list. Now an interrupted save leaves the previous good
   // file untouched.
   File file = ::openWrite(fs, "/contacts3.tmp");
-  if (!file) return;
+  if (!file) return false;
 
   bool ok = true;
   uint32_t idx = 0;
@@ -1003,10 +1061,11 @@ void DataStore::saveContacts(DataStoreHost* host, bool (*filter)(const ContactIn
   file.close();
 
   if (ok) {
-    commitTempFile(fs, "/contacts3.tmp", "/contacts3");
+    return commitTempFile(fs, "/contacts3.tmp", "/contacts3");
   } else {
     fs->remove("/contacts3.tmp");   // keep the previous good /contacts3
   }
+  return false;
 }
 
 bool DataStore::loadChannels(DataStoreHost* host) {
@@ -1103,12 +1162,12 @@ bool DataStore::loadChannels(DataStoreHost* host) {
     return false;
 }
 
-void DataStore::saveChannels(DataStoreHost* host) {
+bool DataStore::saveChannels(DataStoreHost* host) {
   FILESYSTEM* fs = _getContactsChannelsFS();
   // Same atomic temp-then-rename pattern as saveContacts() — never truncate the
   // live /channels3 before the new copy is fully written.
   File file = ::openWrite(fs, "/channels3.tmp");
-  if (!file) return;
+  if (!file) return false;
 
   bool ok = true;
   uint8_t channel_idx = 0;
@@ -1135,10 +1194,11 @@ void DataStore::saveChannels(DataStoreHost* host) {
   file.close();
 
   if (ok) {
-    commitTempFile(fs, "/channels3.tmp", "/channels3");
+    return commitTempFile(fs, "/channels3.tmp", "/channels3");
   } else {
     fs->remove("/channels3.tmp");   // keep the previous good /channels3
   }
+  return false;
 }
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -1167,110 +1227,32 @@ void DataStore::checkAdvBlobFile() {
 }
 
 void DataStore::migrateToSecondaryFS() {
-  // migrate old adv_blobs, contacts3 and channels2 files to secondary FS if they don't already exist
-  if (!_fsExtra->exists("/adv_blobs")) {
-    if (_fs->exists("/adv_blobs")) {
-    File oldAdvBlobs = openRead(_fs, "/adv_blobs");
-    File newAdvBlobs = ::openWrite(_fsExtra, "/adv_blobs");
+  // Contacts, channels and advert records belong on secondary flash. Never
+  // delete the internal source unless a verified copy was committed.
+  static const char* const secondary_files[] = {
+    "/adv_blobs", "/contacts3", "/channels2"
+  };
+  static const char* const secondary_tmps[] = {
+    "/adv_blobs.migrate", "/contacts3.migrate", "/channels2.migrate"
+  };
+  for (size_t i = 0; i < sizeof(secondary_files) / sizeof(secondary_files[0]); i++) {
+    const char* path = secondary_files[i];
+    if (!_fsExtra->exists(path) && _fs->exists(path) &&
+        copyFileVerified(_fs, path, _fsExtra, secondary_tmps[i], path))
+      _fs->remove(path);
+  }
 
-    if (oldAdvBlobs && newAdvBlobs) {
-      BlobRec rec;
-      size_t count = 0;
-
-      // Copy 20 BlobRecs from old to new
-      while (count < 20 && oldAdvBlobs.read((uint8_t *)&rec, sizeof(rec)) == sizeof(rec)) {
-        newAdvBlobs.seek(count * sizeof(BlobRec));
-        newAdvBlobs.write((uint8_t *)&rec, sizeof(rec));
-        count++;
-      }
-    }
-    if (oldAdvBlobs) oldAdvBlobs.close();
-    if (newAdvBlobs) newAdvBlobs.close();
-    _fs->remove("/adv_blobs");
-    }
-  }
-  if (!_fsExtra->exists("/contacts3")) {
-    if (_fs->exists("/contacts3")) {
-      File oldFile = openRead(_fs, "/contacts3");
-      File newFile = ::openWrite(_fsExtra, "/contacts3");
-
-      if (oldFile && newFile) {
-        uint8_t buf[64];
-        int n;
-        while ((n = oldFile.read(buf, sizeof(buf))) > 0) {
-          newFile.write(buf, n);
-        }
-      }
-      if (oldFile) oldFile.close();
-      if (newFile) newFile.close();
-      _fs->remove("/contacts3");
-    }
-  }
-  if (!_fsExtra->exists("/channels2")) {
-    if (_fs->exists("/channels2")) {
-      File oldFile = openRead(_fs, "/channels2");
-      File newFile = ::openWrite(_fsExtra, "/channels2");
-
-      if (oldFile && newFile) {
-        uint8_t buf[64];
-        int n;
-        while ((n = oldFile.read(buf, sizeof(buf))) > 0) {
-          newFile.write(buf, n);
-        }
-      }
-      if (oldFile) oldFile.close();
-      if (newFile) newFile.close();
-      _fs->remove("/channels2");
-    }
-  }
-  // cleanup nodes which have been testing the extra fs, copy _main.id and new_prefs back to primary
-  if (_fsExtra->exists("/_main.id")) {
-      if (_fs->exists("/_main.id")) {_fs->remove("/_main.id");}
-      File oldFile = openRead(_fsExtra, "/_main.id");
-      File newFile = ::openWrite(_fs, "/_main.id");
-
-      if (oldFile && newFile) {
-        uint8_t buf[64];
-        int n;
-        while ((n = oldFile.read(buf, sizeof(buf))) > 0) {
-          newFile.write(buf, n);
-        }
-      }
-      if (oldFile) oldFile.close();
-      if (newFile) newFile.close();
-      _fsExtra->remove("/_main.id");
-  }
-  if (_fsExtra->exists("/new_prefs")) {
-    if (_fs->exists("/new_prefs")) {_fs->remove("/new_prefs");}
-      File oldFile = openRead(_fsExtra, "/new_prefs");
-      File newFile = ::openWrite(_fs, "/new_prefs");
-
-      if (oldFile && newFile) {
-        uint8_t buf[64];
-        int n;
-        while ((n = oldFile.read(buf, sizeof(buf))) > 0) {
-          newFile.write(buf, n);
-        }
-      }
-      if (oldFile) oldFile.close();
-      if (newFile) newFile.close();
-      _fsExtra->remove("/new_prefs");
-  }
-  // remove files from where they should not be anymore
-  if (_fs->exists("/adv_blobs")) {
-    _fs->remove("/adv_blobs");
-  }
-  if (_fs->exists("/contacts3")) {
-    _fs->remove("/contacts3");
-  }
-  if (_fs->exists("/channels2")) {
-    _fs->remove("/channels2");
-  }
-  if (_fsExtra->exists("/_main.id")) {
-    _fsExtra->remove("/_main.id");
-  }
-  if (_fsExtra->exists("/new_prefs")) {
-    _fsExtra->remove("/new_prefs");
+  // Identity and preferences belong on internal flash. A valid-looking
+  // primary file is authoritative: an old secondary copy must never replace
+  // it. If primary is absent, retain the secondary source until a verified
+  // atomic migration succeeds.
+  static const char* const primary_files[] = { "/_main.id", "/new_prefs" };
+  static const char* const primary_tmps[] = { "/_main.id.migrate", "/new_prefs.migrate" };
+  for (size_t i = 0; i < sizeof(primary_files) / sizeof(primary_files[0]); i++) {
+    const char* path = primary_files[i];
+    if (!_fs->exists(path) && _fsExtra->exists(path) &&
+        copyFileVerified(_fsExtra, path, _fs, primary_tmps[i], path))
+      _fsExtra->remove(path);
   }
 }
 

@@ -75,7 +75,7 @@ class WaypointsView {
 
   // Add a waypoint by coordinates (no GPS fix needed). Opens the ADD form.
   void openAddForm() {
-    if (_task->waypoints().full()) { _task->showAlert("Waypoints full", 1000); return; }
+    if (_task->waypoints().full()) { _task->logWarning("Waypoints", "List full"); return; }
     _add_lat_mag = _add_lon_mag = 0.0f;
     _add_label[0] = '\0';
     _add_lat_neg = _add_lon_neg = false;
@@ -96,9 +96,9 @@ class WaypointsView {
     if (_add_lat_neg) la = -la;
     if (_add_lon_neg) lo = -lo;
     if (la < -90.0 || la > 90.0 || lo < -180.0 || lo > 180.0) {
-      _task->showAlert("Out of range", 1200); return;
+      _task->logWarning("Waypoints", "Out of range"); return;
     }
-    if (_task->waypoints().full()) { _task->showAlert("Waypoints full", 1000); return; }
+    if (_task->waypoints().full()) { _task->logWarning("Waypoints", "List full"); return; }
     int32_t lat = (int32_t)(la * 1e6 + (la < 0 ? -0.5 : 0.5));
     int32_t lon = (int32_t)(lo * 1e6 + (lo < 0 ? -0.5 : 0.5));
     char label[WAYPOINT_LABEL_LEN];
@@ -275,8 +275,8 @@ public:
   void openList() { _mode = LIST; _sel = 0; _scroll = 0; }
   void markHere() {
     int32_t lat, lon;
-    if (!ownPos(lat, lon))         { _task->showAlert("No GPS fix", 1000); return; }
-    if (_task->waypoints().full()) { _task->showAlert("Waypoints full", 1000); return; }
+    if (!ownPos(lat, lon))         { _task->logWarning("Waypoints", "No GPS fix"); return; }
+    if (_task->waypoints().full()) { _task->logWarning("Waypoints", "List full"); return; }
     NodePrefs* p = _task->getNodePrefs();
     uint8_t avg_idx = p ? p->gps_avg_idx : 0;
     if (avg_idx == 0) { beginLabel(lat, lon); return; }   // instant mark (default)
@@ -324,7 +324,7 @@ public:
       _avg_next_ms = now + 1000;
     }
     if ((int32_t)(now - _avg_end_ms) >= 0) {       // window closed → mark the mean
-      if (_avg_n == 0) { _task->showAlert("No GPS fix", 1000); _mode = OFF; return; }
+      if (_avg_n == 0) { _task->logWarning("Waypoints", "No GPS fix"); _mode = OFF; return; }
       int32_t mlat = (int32_t)(_avg_sum_lat / (long long)_avg_n);
       int32_t mlon = (int32_t)(_avg_sum_lon / (long long)_avg_n);
       beginLabel(mlat, mlon);                       // opens the label keyboard

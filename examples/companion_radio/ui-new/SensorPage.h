@@ -8,6 +8,7 @@ class SensorPage {
   UITask* _task;
   int _selected = 0, _scroll = 0, _row = 0, _lines = 0;
   bool _open = false;
+  bool _error_logged = false;
   solo::SensorAccessCoordinator _access;
   uint8_t _key[PUB_KEY_SIZE] = {};
   char _name[33] = {};
@@ -24,21 +25,31 @@ class SensorPage {
       if (contact.type == ADV_TYPE_SENSOR && index-- == 0) return true;
     return false;
   }
-  bool requestTelemetry() {
+  bool requestTelemetry(bool new_sequence = true) {
     _row = 0;
+    if (new_sequence) _error_logged = false;
+    ContactInfo* contact = the_mesh.lookupContactByPubKey(_key, PUB_KEY_SIZE);
+    if (new_sequence)
+      _access.beginTelemetry(contact && contact->out_path_len != OUT_PATH_UNKNOWN);
+    else
+      _access.telemetryStarted();
     bool sent = the_mesh.requestSensorTelemetry(_key);
-    _access.telemetryStarted();
-    if (!sent) _access.telemetrySendFailed();
+    if (!sent) {
+      _access.telemetrySendFailed();
+      _task->logFailure("Telemetry", contact ? "Send failed" : "Node missing");
+      _error_logged = true;
+    }
     return sent;
   }
   bool startLogin(const char* password, bool entered_password) {
     ContactInfo* contact = the_mesh.lookupContactByPubKey(_key, PUB_KEY_SIZE);
-    bool sent = contact && _task->startRoomLogin(
-        solo::RoomLoginCoordinator::SENSOR, *contact, password, false);
+    bool sent = contact && _task->startNodeLogin(
+        solo::NodeLoginCoordinator::SENSOR, *contact, password, false);
     if (sent) _access.loginStarted(entered_password);
     else {
       _access.loginStartFailed(entered_password);
-      _task->showAlert(_task->roomLoginBusy() ? "Login busy" : "Login failed", 1200);
+      _task->logFailure("Sensor login",
+                        _task->nodeLoginBusy() ? "Login busy" : "Send failed");
     }
     return sent;
   }
@@ -49,11 +60,25 @@ public:
   int renderPassword(DisplayDriver& display) { return _task->keyboard().render(display); }
   void tick() {
     if (!_open) return;
-    if (the_mesh.sensorReplyState() == MyMesh::SENSOR_FAILED &&
-        _access.telemetryTimedOut() == solo::SensorAccessCoordinator::START_BLANK_LOGIN)
-      startLogin("", false);
+    if (the_mesh.sensorReplyState() == MyMesh::SENSOR_FAILED) {
+      ContactInfo* contact = the_mesh.lookupContactByPubKey(_key, PUB_KEY_SIZE);
+      solo::SensorAccessCoordinator::Action action = _access.telemetryTimedOut(
+          contact && contact->out_path_len != OUT_PATH_UNKNOWN);
+      if (action == solo::SensorAccessCoordinator::START_BLANK_LOGIN) {
+        startLogin("", false);
+      } else if (action == solo::SensorAccessCoordinator::SEND_TELEMETRY) {
+        requestTelemetry(false);
+      } else if (action == solo::SensorAccessCoordinator::CLEAR_PATH_AND_SEND_TELEMETRY) {
+        the_mesh.clearContactPath(_key, PUB_KEY_SIZE);
+        requestTelemetry(false);
+      }
+    }
     if (_access.tick(millis()) == solo::SensorAccessCoordinator::SEND_TELEMETRY)
       requestTelemetry();
+    if (_access.phase() == solo::SensorAccessCoordinator::ERROR && !_error_logged) {
+      _task->logFailure("Telemetry", "No reply after retries");
+      _error_logged = true;
+    }
   }
   void onLoginResult(const uint8_t* key, bool success) {
     if (!_open || memcmp(_key, key, PUB_KEY_SIZE) != 0 ||
@@ -65,24 +90,26 @@ public:
     } else {
       _access.loginFailed(password_entered);
       if (password_entered) {
+        _task->logFailure("Sensor login", "Login rejected");
         _task->keyboard().begin("", 15);
-        _task->showAlert("Login failed", 1200);
       }
     }
   }
   void onLoginTimeout(const uint8_t* key) {
     if (!_open || memcmp(_key, key, PUB_KEY_SIZE) != 0) return;
-    if (_access.phase() == solo::SensorAccessCoordinator::ACL_WAIT)
+    if (_access.phase() == solo::SensorAccessCoordinator::ACL_WAIT) {
       _access.loginFailed(false);
-    else if (_access.phase() == solo::SensorAccessCoordinator::PASSWORD_WAIT) {
+      _task->logFailure("Sensor login", "No ACL reply");
+    } else if (_access.phase() == solo::SensorAccessCoordinator::PASSWORD_WAIT) {
       _access.loginFailed(true);
+      _task->logFailure("Sensor login", "No reply");
       _task->keyboard().begin("", 15);
-      _task->showAlert("No login reply", 1200);
     }
   }
   void close() {
-    if (_open) _task->cancelRoomLogin(solo::RoomLoginCoordinator::SENSOR, _key);
+    if (_open) _task->cancelNodeLogin(solo::NodeLoginCoordinator::SENSOR, _key);
     _open = false;
+    _error_logged = false;
     _access.reset();
     _row = 0;
     the_mesh.cancelSensorTelemetry();

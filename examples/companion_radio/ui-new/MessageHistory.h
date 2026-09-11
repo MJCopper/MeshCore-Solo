@@ -10,8 +10,8 @@
 // MSG_TEXT_BUF and the two entry structs are file-scope (not nested) so the
 // phase machine in MessagesScreen keeps referring to them unqualified.
 
-#include "../solo/DmRetryPolicy.h"
 #include "../solo/MessageAckTracker.h"
+#include "../solo/NodeRouteRetry.h"
 
 // Outgoing-message delivery state. DM: a real end-to-end ACK (✓ delivered to
 // the recipient). Channel: only a "relayed into mesh" echo from a repeater (no
@@ -57,8 +57,7 @@ struct DmHistEntry {
   // sender_timestamp for incoming (used to dedup retried copies). 0 = unknown.
   uint32_t msg_ts;
   uint8_t  attempt;          // last attempt number sent (outgoing); next resend = attempt+1
-  uint8_t  direct_retries_left;
-  uint8_t  flood_retries_left;
+  solo::NodeRouteRetry route_retry;
 };
 
 class MessageHistory {
@@ -253,12 +252,8 @@ public:
     _dm_hist[pos].attempt         = 0;
     bool initial_direct = initial_route == DELIVERY_ROUTE_DIRECT ||
                           initial_route == DELIVERY_ROUTE_PATH;
-    _dm_hist[pos].direct_retries_left = (outgoing && ack_tag && initial_direct)
-        ? solo::DmRetryPolicy::DIRECT_RETRIES_AFTER_INITIAL : 0;
-    _dm_hist[pos].flood_retries_left = (outgoing && ack_tag)
-        ? (initial_direct ? solo::DmRetryPolicy::FALLBACK_FLOOD_TRIES
-                          : solo::DmRetryPolicy::INITIAL_FLOOD_RETRIES)
-        : 0;
+    if (outgoing && ack_tag) _dm_hist[pos].route_retry.begin(initial_direct);
+    else _dm_hist[pos].route_retry.reset();
     scheduleDmMaintenance();
     return pos;
   }
@@ -297,7 +292,7 @@ public:
       e.ack_status = ack_tag ? ACK_PENDING : ACK_NONE;
       e.delivery_route = route;
       e.acknowledgements.record(attempt, ack_tag, route);
-      e.direct_retries_left = e.flood_retries_left = 0;
+      e.route_retry.reset();
       scheduleDmMaintenance();
       return false;
     }
@@ -305,7 +300,7 @@ public:
                          msg_ts, route);
     DmHistEntry& e = _dm_hist[pos];
     e.attempt = attempt;
-    e.direct_retries_left = e.flood_retries_left = 0;
+    e.route_retry.reset();
     scheduleDmMaintenance();
     return true;
   }
@@ -388,11 +383,7 @@ public:
         ? (c.out_path_len == 0 ? DELIVERY_ROUTE_DIRECT : DELIVERY_ROUTE_PATH)
         : DELIVERY_ROUTE_FLOOD;
     e.acknowledgements.record(e.attempt, expected_ack, e.delivery_route);
-    e.direct_retries_left = direct
-        ? solo::DmRetryPolicy::DIRECT_RETRIES_AFTER_INITIAL : 0;
-    e.flood_retries_left = direct
-        ? solo::DmRetryPolicy::FALLBACK_FLOOD_TRIES
-        : solo::DmRetryPolicy::INITIAL_FLOOD_RETRIES;
+    e.route_retry.begin(direct);
     scheduleDmMaintenance();
     return true;
   }
@@ -411,8 +402,7 @@ public:
   // stays pending (tickDmResends() retries / finalises it). Safety net for
   // when the tick hasn't run yet; the tick is the authority that writes ACK_FAIL.
   AckState dmEffectiveStatus(const DmHistEntry& e) const {
-    if (e.ack_status == ACK_PENDING && e.direct_retries_left == 0 &&
-        e.flood_retries_left == 0 &&
+    if (e.ack_status == ACK_PENDING && e.route_retry.exhausted() &&
         (int32_t)(millis() - e.ack_deadline_ms) >= 0)
       return ACK_FAIL;
     return (AckState)e.ack_status;
@@ -429,7 +419,7 @@ public:
         if (matched_prefix) memcpy(matched_prefix, e.prefix, sizeof(e.prefix));
         e.ack_status = ACK_OK;
         e.delivery_route = route;
-        e.direct_retries_left = e.flood_retries_left = 0;
+        e.route_retry.reset();
         scheduleDmMaintenance();
         return true;
       }
@@ -441,23 +431,35 @@ public:
   // ACK: resend with the next attempt# (reusing the original timestamp so the
   // recipient dedups). Known routes get one direct retry, then three forced
   // flood tries; unknown routes get two flood retries, then the entry fails (✗).
-  void tickDmResends() {
+  uint8_t tickDmResends() {
+    uint8_t newly_failed = 0;
     uint32_t now = millis();
     if (!_dm_maintenance_pending ||
-        (int32_t)(now - _next_dm_maintenance_ms) < 0) return;
+        (int32_t)(now - _next_dm_maintenance_ms) < 0) return 0;
     for (int i = 0; i < _dm_hist_count; i++) {
       DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
       if (!e.outgoing || e.ack_status != ACK_PENDING) continue;
       if ((int32_t)(now - e.ack_deadline_ms) < 0) continue;   // still waiting
-      if (e.direct_retries_left == 0 && e.flood_retries_left == 0) {
+      if (e.route_retry.exhausted()) {
         e.ack_status = ACK_FAIL;
+        newly_failed++;
         continue;
       }
       ContactInfo c;
-      if (!contactByPrefix(e.prefix, c)) { e.ack_status = ACK_FAIL; continue; }
+      if (!contactByPrefix(e.prefix, c)) {
+        e.ack_status = ACK_FAIL;
+        newly_failed++;
+        continue;
+      }
 
-      bool send_direct = e.direct_retries_left > 0 && c.out_path_len != OUT_PATH_UNKNOWN;
-      if (e.direct_retries_left > 0 && !send_direct) e.direct_retries_left = 0;
+      solo::NodeRouteRetry::Action retry = e.route_retry.next(
+          c.out_path_len != OUT_PATH_UNKNOWN);
+      if (retry == solo::NodeRouteRetry::EXHAUSTED) {
+        e.ack_status = ACK_FAIL;
+        newly_failed++;
+        continue;
+      }
+      bool send_direct = retry == solo::NodeRouteRetry::RETRY_PATH;
       if (!send_direct) {
         // Force every fallback attempt to flood, even if a path-return packet
         // learned a fresh route after an earlier flood whose ACK was missed.
@@ -476,13 +478,13 @@ public:
             ? (c.out_path_len == 0 ? DELIVERY_ROUTE_DIRECT : DELIVERY_ROUTE_PATH)
             : DELIVERY_ROUTE_FLOOD;
         e.acknowledgements.record(e.attempt, expected_ack, e.delivery_route);
-        if (send_direct) e.direct_retries_left--;
-        else e.flood_retries_left--;
       } else {
         e.ack_status = ACK_FAIL;            // couldn't compose/send — give up
+        newly_failed++;
       }
     }
     scheduleDmMaintenance();
+    return newly_failed;
   }
 
   // Low power deliberately ends automatic delivery. Rows remain failed and
@@ -492,7 +494,7 @@ public:
       DmHistEntry& e = _dm_hist[(_dm_hist_head + i) % DM_HIST_MAX];
       if (e.outgoing && e.ack_status == ACK_PENDING) {
         e.ack_status = ACK_FAIL;
-        e.direct_retries_left = e.flood_retries_left = 0;
+        e.route_retry.reset();
       }
     }
     _dm_maintenance_pending = false;

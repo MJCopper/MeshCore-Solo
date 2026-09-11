@@ -2,12 +2,13 @@
 
 #include <stdint.h>
 #include <string.h>
+#include "NodeRouteRetry.h"
 
 namespace solo {
 
-// Owns on-device UI login state for rooms and remotely managed nodes. Packet
+// Owns on-device UI authentication state for rooms and remotely managed nodes. Packet
 // construction and the BLE/USB login path remain in BaseChatMesh/MyMesh.
-class RoomLoginCoordinator {
+class NodeLoginCoordinator {
 public:
   enum Owner : uint8_t { NONE, MESSAGES, ADMIN, SENSOR };
 
@@ -16,6 +17,7 @@ public:
     uint8_t pub_key[4];
     char password[16];
     bool used_saved_password;
+    NodeRouteRetry route_retry;
   };
 
 private:
@@ -31,13 +33,23 @@ public:
   bool ownedBy(Owner owner) const { return _active && _attempt.owner == owner; }
 
   bool begin(Owner owner, const uint8_t* pub_key, const char* password,
-             bool used_saved_password, uint32_t deadline_ms) {
+             bool used_saved_password, bool has_known_path,
+             uint32_t deadline_ms) {
     if (_active || owner == NONE || !pub_key || !password) return false;
     _attempt.owner = owner;
     memcpy(_attempt.pub_key, pub_key, sizeof(_attempt.pub_key));
     strncpy(_attempt.password, password, sizeof(_attempt.password) - 1);
     _attempt.password[sizeof(_attempt.password) - 1] = '\0';
     _attempt.used_saved_password = used_saved_password;
+    _attempt.route_retry.begin(has_known_path);
+    _deadline_ms = deadline_ms;
+    _active = true;
+    return true;
+  }
+
+  bool restart(const Attempt& attempt, uint32_t deadline_ms) {
+    if (_active || attempt.owner == NONE) return false;
+    _attempt = attempt;
     _deadline_ms = deadline_ms;
     _active = true;
     return true;

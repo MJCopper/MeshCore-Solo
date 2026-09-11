@@ -48,7 +48,7 @@ public:
   // An end-to-end ACK (CRC) arrived for one of our sent messages — drives the
   // DM delivery-status marker. Default no-op for UIs that don't track it.
   virtual void onMsgAck(uint32_t ack_crc) { (void)ack_crc; }
-  virtual void onRoomLoginCancelled(const uint8_t* prefix) { (void)prefix; }
+  virtual void onNodeLoginCancelled(const uint8_t* prefix) { (void)prefix; }
   // Return the four-byte contact prefix when an on-device send owns this ACK.
   virtual bool matchMsgAck(uint32_t ack_crc, uint8_t* prefix) {
     onMsgAck(ack_crc);
@@ -59,10 +59,13 @@ public:
   // lastChannelRelaySeq()) — drives the channel "relayed into mesh" marker.
   virtual void onChannelRelayed(uint32_t seq) { (void)seq; }
   virtual void onChannelRelayExpired(uint32_t seq) { (void)seq; }
-  // Result of an on-device-UI-triggered MyMesh::sendRoomLogin() arrived.
+  // Result of an on-device-UI-triggered MyMesh::sendNodeLogin() arrived.
   // pub_key is the contact's key prefix (>=4 bytes valid); permissions is the
-  // room/repeater ACL byte (only meaningful when success is true).
-  virtual void onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) { (void)pub_key; (void)success; (void)permissions; }
+  // remote node ACL byte (only meaningful when success is true).
+  virtual void onNodeLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) { (void)pub_key; (void)success; (void)permissions; }
+  virtual void onOperationFailure(const char* operation, const char* reason) {
+    (void)operation; (void)reason;
+  }
   // Text reply to an on-device-UI-triggered MyMesh::sendAdminCommand() arrived
   // (see AdminScreen). pub_key is the contact's key prefix (>=4 bytes valid).
   virtual void onAdminReply(const uint8_t* pub_key, const char* text) { (void)pub_key; (void)text; }

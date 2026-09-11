@@ -420,7 +420,7 @@ class NearbyScreen : public UIScreen {
         return;
       }
     }
-    _task->showAlert("Favourites full", 1200);
+    _task->logFailure("Favourites", "List full");
   }
 
   void toggleStarred() {
@@ -495,6 +495,7 @@ class NearbyScreen : public UIScreen {
       _ping_started_ms = millis();
     } else {
       snprintf(_ping_time_str, sizeof(_ping_time_str), "RTT: send fail");
+      if (_task) _task->logFailure("Ping", "Send failed");
     }
     if (_ping_menu.active) rebuildPingMenu();   // surface "RTT: ..." immediately
   }
@@ -522,6 +523,7 @@ class NearbyScreen : public UIScreen {
       _ping_snr_out_str[0] = '\0';
       _ping_snr_back_str[0] = '\0';
       _pinging = false;
+      _task->logFailure("Ping", "No reply");
       if (_task) _task->clearPing();
     }
     if (pingRowCount() != _ping_menu.count()) rebuildPingMenu();
@@ -607,7 +609,7 @@ class NearbyScreen : public UIScreen {
       case ACT_NAV: {
         const Entry* e = selected();
         if (e && (e->lat_e6 != 0 || e->lon_e6 != 0)) { _nav = true; _nav_eta.reset(); }
-        else _task->showAlert("No node GPS", 1000);
+        else _task->logWarning("Navigation", "No node GPS");
         break;
       }
       case ACT_PING: {
@@ -630,7 +632,7 @@ class NearbyScreen : public UIScreen {
             _task->showAlert("Contact added", 1200);
             refresh();   // now a known contact — re-sort / re-mark this pass
           } else {
-            _task->showAlert("Contacts full", 1200);
+            _task->logFailure("Contacts", "List full");
           }
         }
         break;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include "NodeRouteRetry.h"
 
 namespace solo {
 
@@ -13,13 +14,16 @@ public:
     TELEMETRY_WAIT, ACL_WAIT, LOGIN_OFFER, PASSWORD, PASSWORD_WAIT,
     RETRY_DELAY, AUTH_TELEMETRY_WAIT, ERROR
   };
-  enum Action : uint8_t { NONE, START_BLANK_LOGIN, SEND_TELEMETRY };
+  enum Action : uint8_t {
+    NONE, START_BLANK_LOGIN, SEND_TELEMETRY, CLEAR_PATH_AND_SEND_TELEMETRY
+  };
   static const uint32_t POST_LOGIN_DELAY_MS = 1000;
 
 private:
   Phase _phase = TELEMETRY_WAIT;
   bool _access_confirmed = false;
   uint32_t _retry_at = 0;
+  NodeRouteRetry _route_retry;
 
 public:
   Phase phase() const { return _phase; }
@@ -30,19 +34,28 @@ public:
     _phase = TELEMETRY_WAIT;
     _access_confirmed = false;
     _retry_at = 0;
+    _route_retry.reset();
+  }
+  void beginTelemetry(bool has_known_path) {
+    _route_retry.begin(has_known_path);
+    telemetryStarted();
   }
   void telemetryStarted() {
     _phase = _access_confirmed ? AUTH_TELEMETRY_WAIT : TELEMETRY_WAIT;
   }
   void telemetrySendFailed() { _phase = ERROR; }
-  Action telemetryTimedOut() {
-    if (_phase == AUTH_TELEMETRY_WAIT) {
+  Action telemetryTimedOut(bool path_available = true) {
+    // The mesh reply state remains FAILED while login and the delayed retry
+    // are in progress. Ignore that stale state outside a telemetry wait.
+    bool authenticated = _phase == AUTH_TELEMETRY_WAIT;
+    if (_phase != TELEMETRY_WAIT && !authenticated) return NONE;
+    NodeRouteRetry::Action retry = _route_retry.next(path_available);
+    if (retry == NodeRouteRetry::RETRY_PATH) return SEND_TELEMETRY;
+    if (retry == NodeRouteRetry::RETRY_FLOOD) return CLEAR_PATH_AND_SEND_TELEMETRY;
+    if (authenticated) {
       _phase = ERROR;
       return NONE;
     }
-    // The mesh reply state remains FAILED while login and the delayed retry
-    // are in progress. Ignore that stale state outside a telemetry wait.
-    if (_phase != TELEMETRY_WAIT) return NONE;
     _phase = ACL_WAIT;
     return START_BLANK_LOGIN;
   }

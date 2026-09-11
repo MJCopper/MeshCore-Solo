@@ -735,7 +735,7 @@ public:
         } else {
           _child_pin_confirming = false;
           _child_pin_first_hash = 0;
-          _task->showAlert("PINs did not match", 1200);
+          _task->logWarning("Child PIN", "PINs did not match");
         }
       } else if (r == DigitEditor::CANCELLED) {
         _child_pin_confirming = false;
@@ -1074,7 +1074,7 @@ public:
     }
     if (_selected == CHILD_ENABLED && p && (left || right || enter)) {
       if (!p->child_mode_enabled && p->child_mode_pin_hash == 0) {
-        _task->showAlert("Set PIN first", 1000);
+        _task->logWarning("Child Mode", "Set PIN first");
         return true;
       }
       if (p->child_mode_enabled) {

@@ -21,7 +21,7 @@ class DataStore {
 
   void loadPrefsInt(const char *filename, NodePrefs& prefs, double& node_lat, double& node_lon);
   void loadSoloPrefs(NodePrefs& prefs);
-  void saveSoloPrefs(const NodePrefs& prefs);
+  bool saveSoloPrefs(const NodePrefs& prefs);
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
   void checkAdvBlobFile();
 #endif
@@ -36,13 +36,13 @@ public:
   bool loadMainIdentity(mesh::LocalIdentity &identity);
   bool saveMainIdentity(const mesh::LocalIdentity &identity);
   void loadPrefs(NodePrefs& prefs, double& node_lat, double& node_lon);
-  void savePrefs(const NodePrefs& prefs, double node_lat, double node_lon);
+  bool savePrefs(const NodePrefs& prefs, double node_lat, double node_lon);
   void loadContacts(DataStoreHost* host);
-  void saveContacts(DataStoreHost* host, bool (*filter)(const ContactInfo& c) = NULL);
+  bool saveContacts(DataStoreHost* host, bool (*filter)(const ContactInfo& c) = NULL);
   // True when current or legacy channel storage exists. This lets first boot
   // seed Public without resurrecting it after a user deletes it.
   bool loadChannels(DataStoreHost* host);
-  void saveChannels(DataStoreHost* host);
+  bool saveChannels(DataStoreHost* host);
   void migrateToSecondaryFS();
   uint8_t getBlobByKey(const uint8_t key[], int key_len, uint8_t dest_buf[]);
   bool putBlobByKey(const uint8_t key[], int key_len, const uint8_t src_buf[], uint8_t len);
@@ -59,7 +59,7 @@ public:
   bool removeFile(FILESYSTEM* fs, const char* filename);
   uint32_t getStorageUsedKb() const;
   uint32_t getStorageTotalKb() const;
-  void saveRTCTime();
+  bool saveRTCTime();
   void restoreRTCTime();
 
 private:

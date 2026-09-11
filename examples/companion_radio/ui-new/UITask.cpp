@@ -144,7 +144,7 @@ public:
         _task->setChildAdminUnlocked(true);
         _task->gotoHomeScreen();
       } else {
-        _task->showAlert("Wrong PIN", 1000);
+        _task->logWarning("Child PIN", "Incorrect PIN");
         _pin.begin(0, 0, 999999, 6, 0);
       }
       return true;
@@ -1111,7 +1111,7 @@ public:
       }
       if (c == KEY_CONTEXT_MENU) {
         if (_task->isChildModeLocked()) {
-          _task->showAlert("Parent only", 800);
+          _task->logWarning("Child Mode", "Parent only");
           return true;
         }
         bool filled = !_task->isFavouriteSlotEmpty(_fav_sel);
@@ -1137,17 +1137,17 @@ public:
               if (c2.type != ADV_TYPE_CHAT) {
                 _task->clearFavouriteSlot(_fav_sel);
                 the_mesh.savePrefs();
-                _task->showAlert("Invalid favourite removed", 1000);
+                _task->logWarning("Favourites", "Invalid entry removed");
                 return true;
               }
               _task->openContactDM(c2);
               return true;
             }
           }
-          _task->showAlert("Contact not found", 800);
+          _task->logWarning("Favourites", "Contact not found");
         } else {
           // Empty slot → open in-place pin picker.
-          if (_task->isChildModeLocked()) _task->showAlert("Parent only", 800);
+          if (_task->isChildModeLocked()) _task->logWarning("Child Mode", "Parent only");
           else buildPinPicker(_fav_sel);
         }
         return true;
@@ -1248,11 +1248,15 @@ public:
     }
     if (c == KEY_ENTER && _page == HomePage::BLUETOOTH) {
       if (_task->isLowPowerMode() && !_task->isEmergencyMode()) {
-        _task->showAlert("Enable Emergency", 1000);
+        _task->logWarning("Bluetooth", "Enable Emergency");
       } else if (_task->isBluetoothEnabled()) {
         _task->disableBluetooth();
+        if (_task->isBluetoothEnabled())
+          _task->logFailure("Bluetooth", "Disable failed");
       } else {
         _task->enableBluetooth();
+        if (!_task->isBluetoothEnabled())
+          _task->logFailure("Bluetooth", "Enable failed");
       }
       return true;
     }
@@ -1261,7 +1265,7 @@ public:
       if (the_mesh.advert()) {
         _task->showAlert("Advert sent", 1000);
       } else {
-        _task->showAlert("Advert failed", 1000);
+        _task->logFailure("Advert", "Send failed");
       }
       return true;
     }
@@ -1295,6 +1299,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   // Wire1 is already brought up by sensors.begin() (EnvironmentSensorManager).
   // The controller performs one boot probe and does not retry an absent accessory.
   _cardkb.begin(Wire1, CARDKB_ADDRESS);
+  _cardkb_was_present = _cardkb.isPresent();
 #endif
   _kb.setExternalKeyboardConnected(isCardKBConnected());
 
@@ -1411,6 +1416,7 @@ void UITask::tickBootTimeSync() {
   bool configured_on = _node_prefs && _node_prefs->gps_enabled;
   bool enabled = loc && loc->isEnabled();
   bool was_pending = _boot_time_sync.pending();
+  bool retries_were_open = _boot_time_sync.retryWindowOpen();
   solo::BootTimeSync::Action action = _boot_time_sync.tick(
       rtc_clock.getSetGeneration(), configured_on, enabled, millis());
   if (action == solo::BootTimeSync::Action::START_TEMP_GPS && loc && _sensors) {
@@ -1420,6 +1426,9 @@ void UITask::tickBootTimeSync() {
     _sensors->setSettingValue("gps_power", "0");
   }
   if (was_pending && !_boot_time_sync.pending()) _next_refresh = 0;
+  if (retries_were_open && !_boot_time_sync.retryWindowOpen() &&
+      _boot_time_sync.pending())
+    reportEvent(solo::DiagnosticLog::WARNING, "Time sync", "GPS retries ended", true);
 }
 
 // onShow() is invoked by setCurrScreen(), so most navigators are just that.
@@ -1676,6 +1685,7 @@ void UITask::clearPing() {
 bool UITask::startPing(const uint8_t* pub_key) {
   if (_ping_active || !pub_key) return false;
   if (_node_prefs && _node_prefs->path_hash_mode > 1) {
+    logFailure("Ping", "Unsupported path");
     showAlert("Ping not supported with 3-byte path hashes", 3000);
     return false;
   }
@@ -1903,26 +1913,27 @@ void UITask::onChannelRelayed(uint32_t seq) {
 
 void UITask::onChannelRelayExpired(uint32_t seq) {
   ((MessagesScreen*)messages_screen)->markChannelRelayExpired(seq);
+  logFailure("Channel", "No relay heard");
 }
 
-void UITask::onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
-  solo::RoomLoginCoordinator::Attempt attempt;
-  if (!_room_login.complete(pub_key, attempt)) return;
-  if (success && attempt.owner == solo::RoomLoginCoordinator::MESSAGES) {
-    _room_login.markLoggedIn(pub_key);
+void UITask::onNodeLoginResult(const uint8_t* pub_key, bool success, uint8_t permissions) {
+  solo::NodeLoginCoordinator::Attempt attempt;
+  if (!_node_login.complete(pub_key, attempt)) return;
+  if (success && attempt.owner == solo::NodeLoginCoordinator::MESSAGES) {
+    _node_login.markLoggedIn(pub_key);
     the_mesh.saveRoomPassword(pub_key, attempt.password);
-  } else if (!success && attempt.owner == solo::RoomLoginCoordinator::MESSAGES && attempt.used_saved_password) {
+  } else if (!success && attempt.owner == solo::NodeLoginCoordinator::MESSAGES && attempt.used_saved_password) {
     the_mesh.forgetRoomPassword(pub_key);
   }
 #if SOLO_FEAT_ADMIN
-  if (attempt.owner == solo::RoomLoginCoordinator::ADMIN)
-    ((AdminScreen*)admin_screen)->onRoomLoginResult(pub_key, success, permissions);
+  if (attempt.owner == solo::NodeLoginCoordinator::ADMIN)
+    ((AdminScreen*)admin_screen)->onNodeLoginResult(pub_key, success, permissions);
   else
 #endif
-  if (attempt.owner == solo::RoomLoginCoordinator::SENSOR)
+  if (attempt.owner == solo::NodeLoginCoordinator::SENSOR)
     ((HomeScreen*)home)->onSensorLoginResult(pub_key, success);
   else
-    ((MessagesScreen*)messages_screen)->onRoomLoginResult(pub_key, success, permissions);
+    ((MessagesScreen*)messages_screen)->onNodeLoginResult(pub_key, success, permissions);
   // Unlike the keypress-driven showAlert() calls elsewhere, this fires from a
   // background mesh response with no keypress to schedule a redraw — without
   // forcing one, the alert's short expiry can lapse before the next scheduled
@@ -1930,39 +1941,60 @@ void UITask::onRoomLoginResult(const uint8_t* pub_key, bool success, uint8_t per
   _next_refresh = 0;
 }
 
-bool UITask::startRoomLogin(solo::RoomLoginCoordinator::Owner owner,
+bool UITask::startNodeLogin(solo::NodeLoginCoordinator::Owner owner,
                             const ContactInfo& contact, const char* password,
                             bool used_saved_password) {
-  if (_room_login.active()) return false;
+  if (_node_login.active()) return false;
   uint32_t est_timeout = 0;
-  if (!the_mesh.sendRoomLogin(contact, password, est_timeout)) return false;
-  if (_room_login.begin(owner, contact.id.pub_key, password, used_saved_password,
+  if (!the_mesh.sendNodeLogin(contact, password, est_timeout)) return false;
+  bool has_known_path = contact.out_path_len != OUT_PATH_UNKNOWN;
+  if (_node_login.begin(owner, contact.id.pub_key, password, used_saved_password,
+                        has_known_path,
                         millis() + est_timeout + 4000)) return true;
   the_mesh.cancelUiPendingLogin(contact.id.pub_key);
   return false;
 }
 
-void UITask::onRoomLoginCancelled(const uint8_t* prefix) {
-  solo::RoomLoginCoordinator::Attempt attempt;
-  if (!_room_login.complete(prefix, attempt)) return;
+bool UITask::retryNodeLogin(solo::NodeLoginCoordinator::Attempt& attempt) {
+  ContactInfo* contact = the_mesh.lookupContactByPubKey(attempt.pub_key,
+                                                        sizeof(attempt.pub_key));
+  if (!contact) return false;
+
+  solo::NodeRouteRetry::Action retry = attempt.route_retry.next(
+      contact->out_path_len != OUT_PATH_UNKNOWN);
+  if (retry == solo::NodeRouteRetry::EXHAUSTED) return false;
+  if (retry == solo::NodeRouteRetry::RETRY_FLOOD) {
+    the_mesh.clearContactPath(attempt.pub_key, sizeof(attempt.pub_key));
+  }
+
+  uint32_t est_timeout = 0;
+  if (!the_mesh.sendNodeLogin(*contact, attempt.password, est_timeout)) return false;
+  if (_node_login.restart(attempt, millis() + est_timeout + 4000)) return true;
+  the_mesh.cancelUiPendingLogin(attempt.pub_key);
+  return false;
+}
+
+void UITask::onNodeLoginCancelled(const uint8_t* prefix) {
+  solo::NodeLoginCoordinator::Attempt attempt;
+  if (!_node_login.complete(prefix, attempt)) return;
 #if SOLO_FEAT_ADMIN
-  if (attempt.owner == solo::RoomLoginCoordinator::ADMIN)
-    ((AdminScreen*)admin_screen)->onRoomLoginTimeout(prefix);
+  if (attempt.owner == solo::NodeLoginCoordinator::ADMIN)
+    ((AdminScreen*)admin_screen)->onNodeLoginTimeout(prefix);
   else
 #endif
-  if (attempt.owner == solo::RoomLoginCoordinator::SENSOR)
+  if (attempt.owner == solo::NodeLoginCoordinator::SENSOR)
     ((HomeScreen*)home)->onSensorLoginTimeout(prefix);
   else
-    ((MessagesScreen*)messages_screen)->onRoomLoginTimeout(prefix);
+    ((MessagesScreen*)messages_screen)->onNodeLoginTimeout(prefix);
   _next_refresh = 0;
 }
 
-void UITask::cancelRoomLogin(solo::RoomLoginCoordinator::Owner owner, const uint8_t* pub_key) {
-  if (_room_login.cancel(owner, pub_key)) the_mesh.cancelUiPendingLogin(pub_key);
+void UITask::cancelNodeLogin(solo::NodeLoginCoordinator::Owner owner, const uint8_t* pub_key) {
+  if (_node_login.cancel(owner, pub_key)) the_mesh.cancelUiPendingLogin(pub_key);
 }
 
 void UITask::logoutRoom(const uint8_t* pub_key) {
-  _room_login.forgetLoggedIn(pub_key);
+  _node_login.forgetLoggedIn(pub_key);
   the_mesh.logoutRoom(pub_key);
 }
 
@@ -1972,7 +2004,7 @@ void UITask::onAdminReply(const uint8_t* pub_key, const char* text) {
 #else
   (void)pub_key; (void)text;
 #endif
-  _next_refresh = 0;   // same reasoning as onRoomLoginResult above
+  _next_refresh = 0;   // same reasoning as onNodeLoginResult above
 }
 
 bool UITask::addDMMsg(const uint8_t* pub_key, bool outgoing, const char* text, uint32_t sender_timestamp) {
@@ -2085,6 +2117,33 @@ void UITask::reconcileDMUnread() {
 void UITask::showAlert(const char* text, int duration_millis) {
   snprintf(_alert, sizeof(_alert), "%s", text);
   _alert_expiry = millis() + duration_millis;
+}
+
+void UITask::logFailure(const char* operation, const char* reason) {
+  reportEvent(solo::DiagnosticLog::ERROR, operation, reason);
+}
+
+void UITask::logWarning(const char* operation, const char* reason) {
+  reportEvent(solo::DiagnosticLog::WARNING, operation, reason);
+}
+
+void UITask::reportEvent(solo::DiagnosticLog::Severity severity,
+                         const char* operation, const char* reason,
+                         bool background) {
+  uint32_t now = isTimeSyncPending() ? 0 : rtc_clock.getCurrentTime();
+  const solo::DiagnosticLog::Entry* previous = _diagnostic_log.newest(0);
+  bool repeated_recently = background && previous &&
+      previous->severity == severity && !strcmp(previous->operation, operation) &&
+      !strcmp(previous->reason, reason) &&
+      (now == 0 || previous->timestamp == 0 || now - previous->timestamp < 300);
+  _diagnostic_log.add(now, severity, operation, reason);
+  if (severity < solo::DiagnosticLog::WARNING || repeated_recently) return;
+  if (_display && !_display->isOn()) wakeForNotification();
+  char message[80];
+  snprintf(message, sizeof(message), "%s: %s\n%s",
+           severity == solo::DiagnosticLog::ERROR ? "Error" : "Warning",
+           operation, reason);
+  showAlert(message, severity == solo::DiagnosticLog::ERROR ? 2200 : 1800);
 }
 
 bool UITask::notificationAllowed(UIEventType event, uint8_t contact_type,
@@ -2317,6 +2376,7 @@ void UITask::notifyLowBattery() {
   // System warning: no sender/unread state, but the same Quiet Time sound
   // policy and screen lifetime as message notifications.
   auto decision = solo::NotificationPolicy::decide(true, isQuietTimeActive(), true);
+  reportEvent(solo::DiagnosticLog::WARNING, "Battery", "Low battery", true);
 #ifdef PIN_BUZZER
   if (decision.play_sound) {
     SoundNotifier sn(buzzer, _node_prefs, _notif_mel_buf, sizeof(_notif_mel_buf));
@@ -2344,6 +2404,7 @@ void UITask::setLowPowerMode(bool active) {
   the_mesh.setLowPowerMode(active);
 
   if (active) {
+    reportEvent(solo::DiagnosticLog::WARNING, "Power", "Low Power Mode", true);
     ((MessagesScreen*)messages_screen)->cancelDmResends();
     the_mesh.cancelSensorTelemetry();
 #if SOLO_FEAT_ADMIN
@@ -2451,7 +2512,10 @@ void UITask::setCurrScreen(UIScreen* c) {
 
 bool UITask::savePrefsIfDirty(bool& dirty) {
   if (!dirty) return false;
-  the_mesh.savePrefs();
+  // Keep the dirty flag set when persistence fails so a later exit/shutdown
+  // can retry the write. MyMesh reports the failure through the shared event
+  // path, avoiding a second popup here.
+  if (!the_mesh.savePrefs()) return false;
   dirty = false;
   return true;
 }
@@ -2657,35 +2721,40 @@ void UITask::loop() {
     setEmergencyMode(false);
   tickBootTimeSync();
   if (home) ((HomeScreen*)home)->tickSensor();
-  solo::RoomLoginCoordinator::Attempt login_timeout;
-  if (_room_login.takeTimeout(millis(), login_timeout)) {
+  solo::NodeLoginCoordinator::Attempt login_timeout;
+  if (_node_login.takeTimeout(millis(), login_timeout)) {
     the_mesh.cancelUiPendingLogin(login_timeout.pub_key);
-#if SOLO_FEAT_ADMIN
-    if (login_timeout.owner == solo::RoomLoginCoordinator::ADMIN)
-      ((AdminScreen*)admin_screen)->onRoomLoginTimeout(login_timeout.pub_key);
-    else
-#endif
-    if (login_timeout.owner == solo::RoomLoginCoordinator::SENSOR) {
-      ((HomeScreen*)home)->onSensorLoginTimeout(login_timeout.pub_key);
-    } else if (login_timeout.owner == solo::RoomLoginCoordinator::MESSAGES
-        && login_timeout.password[0] == '\0') {
-      // A blank room credential means "authenticate from the server ACL".
-      // Room servers silently discard unauthorised anonymous requests, so no
-      // response cannot prove that the credential itself was wrong. Let the
-      // user enter provisionally after the normal reply window; the server's
-      // ACL remains authoritative for every message and cannot be bypassed by
-      // this local UI state.
-      _room_login.markLoggedIn(login_timeout.pub_key);
-      ((MessagesScreen*)messages_screen)->onRoomLoginResult(login_timeout.pub_key, true, 0);
+    if (retryNodeLogin(login_timeout)) {
+      _next_refresh = 0;
     } else {
-      ((MessagesScreen*)messages_screen)->onRoomLoginTimeout(login_timeout.pub_key);
+#if SOLO_FEAT_ADMIN
+      if (login_timeout.owner == solo::NodeLoginCoordinator::ADMIN)
+        ((AdminScreen*)admin_screen)->onNodeLoginTimeout(login_timeout.pub_key);
+      else
+#endif
+      if (login_timeout.owner == solo::NodeLoginCoordinator::SENSOR) {
+        ((HomeScreen*)home)->onSensorLoginTimeout(login_timeout.pub_key);
+      } else if (login_timeout.owner == solo::NodeLoginCoordinator::MESSAGES
+          && login_timeout.password[0] == '\0') {
+        // A blank room credential means "authenticate from the server ACL".
+        // Room servers silently discard unauthorised anonymous requests, so no
+        // response cannot prove that the credential itself was wrong. Let the
+        // user enter provisionally after the normal reply window; the server's
+        // ACL remains authoritative for every message and cannot be bypassed by
+        // this local UI state.
+        _node_login.markLoggedIn(login_timeout.pub_key);
+        ((MessagesScreen*)messages_screen)->onNodeLoginResult(login_timeout.pub_key, true, 0);
+      } else {
+        ((MessagesScreen*)messages_screen)->onNodeLoginTimeout(login_timeout.pub_key);
+      }
+      _next_refresh = 0;
     }
-    _next_refresh = 0;
   }
   // Background delivery: resend pending on-device DMs whose ACK timed out, and
   // finalise the ✗ marker — runs regardless of which screen is active.
   if (!_low_power_mode || isEmergencyMode())
-    ((MessagesScreen*)messages_screen)->tickDmResends();
+    if (((MessagesScreen*)messages_screen)->tickDmResends())
+      logFailure("Message", "No ACK after retries");
 #if UI_HAS_JOYSTICK
   uint8_t joy_rot = _node_prefs ? _node_prefs->joystick_rotation : JOYSTICK_ROTATION;
   int ev = user_btn.check();
@@ -2745,6 +2814,12 @@ void UITask::loop() {
   }
 #endif
   pollCardKB();
+#if defined(CARDKB_ADDRESS) && SOLO_FEAT_CARDKB
+  if (_cardkb_was_present && !_cardkb.isPresent()) {
+    reportEvent(solo::DiagnosticLog::WARNING, "CardKB", "Disconnected", true);
+    _cardkb_was_present = false;
+  }
+#endif
   // Presence can be cleared after repeated I2C failures. Mirror it every loop
   // so the full virtual keyboard returns automatically if CardKB disconnects.
   _kb.setExternalKeyboardConnected(isCardKBConnected());
@@ -2866,6 +2941,15 @@ void UITask::loop() {
 #endif
 
   if ((int32_t)(millis() - next_batt_chck) >= 0) {
+    uint16_t radio_errors = the_mesh.getErrFlags();
+    uint16_t new_radio_errors = radio_errors & ~_reported_radio_errors;
+    if (new_radio_errors & ERR_EVENT_FULL)
+      reportEvent(solo::DiagnosticLog::ERROR, "Radio", "Queue full", true);
+    if (new_radio_errors & ERR_EVENT_CAD_TIMEOUT)
+      reportEvent(solo::DiagnosticLog::WARNING, "Radio", "Channel busy timeout", true);
+    if (new_radio_errors & ERR_EVENT_STARTRX_TIMEOUT)
+      reportEvent(solo::DiagnosticLog::ERROR, "Radio", "Receive start failed", true);
+    _reported_radio_errors |= radio_errors;
     uint16_t raw = AbstractUITask::getBattMilliVolts();
     if (raw > 0) {
       // EMA filter: alpha=0.2 (80% old, 20% new) — smooths ADC noise from uneven load
@@ -3321,7 +3405,7 @@ bool UITask::sendLocationShare(int32_t lat, int32_t lon) {
 // goes (no accidental broadcast to a default channel).
 void UITask::quickShareMyLocation() {
   int32_t lat, lon;
-  if (!currentLocation(lat, lon)) { showAlert("No GPS fix", 1000); return; }
+  if (!currentLocation(lat, lon)) { logWarning("Location", "No GPS fix"); return; }
   if (_node_prefs && _node_prefs->loc_share_enabled && sendLocationShare(lat, lon)) {
     showAlert("Position shared", 900);
     return;
@@ -3341,13 +3425,13 @@ void UITask::saveWaypoints() {
 }
 
 bool UITask::addWaypoint(int32_t lat, int32_t lon, uint32_t ts, const char* label) {
-  if (_waypoints.full()) { showAlert("Waypoints full", 1000); return false; }
+  if (_waypoints.full()) { logWarning("Waypoints", "List full"); return false; }
   if (_waypoints.add(lat, lon, ts, label)) {
     saveWaypoints();
     showAlert("Waypoint saved", 800);
     return true;
   }
-  showAlert("Waypoints full", 1000);
+  logWarning("Waypoints", "Save failed");
   return false;
 }
 
@@ -3428,7 +3512,10 @@ uint8_t UITask::getGPSMode() const {
 }
 
 void UITask::setGPSMode(uint8_t mode) {
-  if (_sensors == NULL || _node_prefs == NULL || mode >= solo::GpsMode::COUNT) return;
+  if (_sensors == NULL || _node_prefs == NULL || mode >= solo::GpsMode::COUNT) {
+    logFailure("GPS", "Setting unavailable");
+    return;
+  }
 
   _node_prefs->gps_enabled = mode == 0 ? 0 : 1;
   _node_prefs->gps_interval = solo::GpsMode::interval(mode);
@@ -3447,8 +3534,11 @@ void UITask::applyGpsPrefs() {
   if (_sensors == NULL || _node_prefs == NULL) return;
   char interval_str[12];
   snprintf(interval_str, sizeof(interval_str), "%u", _node_prefs->gps_interval);
-  _sensors->setSettingValue("gps_interval", interval_str);
-  _sensors->setSettingValue("gps", (!_low_power_mode && _node_prefs->gps_enabled) ? "1" : "0");
+  bool interval_ok = _sensors->setSettingValue("gps_interval", interval_str);
+  bool state_ok = _sensors->setSettingValue(
+      "gps", (!_low_power_mode && _node_prefs->gps_enabled) ? "1" : "0");
+  if (!interval_ok || !state_ok)
+    reportEvent(solo::DiagnosticLog::ERROR, "GPS", "Apply failed", true);
   _next_refresh = 0;
 }
 
@@ -3456,6 +3546,8 @@ void UITask::applyBluetoothPrefs() {
   if (!_node_prefs || isChildModeLocked() || _low_power_mode) return;
   if (_node_prefs->bluetooth_enabled) enableBluetooth();
   else disableBluetooth();
+  if (isBluetoothEnabled() != (_node_prefs->bluetooth_enabled != 0))
+    reportEvent(solo::DiagnosticLog::ERROR, "Bluetooth", "Apply failed", true);
   _next_refresh = 0;
 }
 
@@ -3472,13 +3564,16 @@ bool UITask::hasGPS() {
 void UITask::toggleGPS() {
   if (_low_power_mode) {
     if (!isEmergencyMode()) {
-      showAlert("Enable Emergency", 1000);
+      logWarning("GPS", "Enable Emergency");
       return;
     }
     _emergency_gps_on = !_emergency_gps_on;
     if (_sensors) {
-      _sensors->setSettingValue("gps_power", _emergency_gps_on ? "1" : "0");
-      _sensors->setSettingValue("gps", _emergency_gps_on ? "1" : "0");
+      bool power_ok = _sensors->setSettingValue(
+          "gps_power", _emergency_gps_on ? "1" : "0");
+      bool state_ok = _sensors->setSettingValue(
+          "gps", _emergency_gps_on ? "1" : "0");
+      if (!power_ok || !state_ok) logFailure("GPS", "Emergency apply failed");
     }
     showAlert(_emergency_gps_on ? "GPS: On" : "GPS: Off", 900);
     _next_refresh = 0;
