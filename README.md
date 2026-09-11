@@ -4,7 +4,7 @@ Zen extends the official [MeshCore](https://github.com/meshcore-dev/MeshCore)
 companion firmware with a standalone messaging interface for the Seeed Wio
 Tracker L1.
 
-Current release: **Zen v1.32.23**, based on **MeshCore v1.17.1**.
+Current release: **Zen v1.32.25**, based on **MeshCore v1.17.1**.
 
 ## Supported hardware
 
@@ -19,6 +19,7 @@ Both builds support BLE and USB serial. Firmware is available from the
 ## Features
 
 - Direct, channel and room messaging with full transcripts and delivery state.
+- Route-aware retries, manual resend and unread-message shortcuts.
 - Predictive T9 and ABC text entry with Australianised word completion.
 - UTF-8 text, monochrome emoji display and four insertable chat emoji.
 - Clock, unread shortcut, GPS time sync and timed GPS operation.
@@ -26,11 +27,17 @@ Both builds support BLE and USB serial. Firmware is available from the
 - Automatic CardKB support through the Grove I2C port.
 - PIN-protected Child Mode and scheduled Quiet Time.
 - On-device radio, advert, notification and home-page settings.
-- Node discovery, companion repeater mode, ringtone editor and diagnostics.
-- Remote repeater and room administration from the Node List action menu.
+- Low-battery protection, emergency mode and learned runtime estimation.
+- Node discovery, companion repeater mode, ringtone editor and RAM event log.
+- Remote repeater, room and sensor administration from the Node List action menu.
 - Sensors carousel with on-demand remote telemetry.
 
-See [FEATURES.md](./FEATURES.md) for the compact feature summary.
+See [FEATURES.md](./FEATURES.md) for the complete Zen feature summary.
+
+> [!WARNING]
+> Zen is a personal project and beta-test software. It may contain faults or
+> behave unexpectedly. Back up your device and use this firmware at your own
+> risk.
 
 ## Flashing
 
@@ -55,19 +62,16 @@ connection.
 - [Child Mode](./docs/zen_features/child_mode/child_mode.md)
 - [Quiet Time](./docs/zen_features/quiet_time/quiet_time.md)
 - [Tools](./docs/zen_features/tools_screen/tools_screen.md)
+- [Build Zen](./docs/building_zen.md)
 - [UI developer guide](./docs/design/zen_ui_framework.md)
 
 Protocol references remain under [`docs/`](./docs/).
 
-## Screenshot capture
-
-Connect by USB serial and send `S`. Disconnect the companion app first because
-USB serial is suspended during an active BLE connection.
-
 ## Development
 
-Zen tracks upstream MeshCore. After cloning, enable the repository's protected
-README merge driver once:
+See [Building Zen](./docs/building_zen.md) for local builds and tests. Zen tracks
+upstream MeshCore. After cloning, enable the repository's protected README merge
+driver once:
 
 ```sh
 git config merge.ours.driver true

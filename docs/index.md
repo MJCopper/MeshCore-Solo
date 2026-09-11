@@ -11,6 +11,7 @@
 - [Child Mode](./zen_features/child_mode/child_mode.md)
 - [Quiet Time](./zen_features/quiet_time/quiet_time.md)
 - [Tools Screen](./zen_features/tools_screen/tools_screen.md)
+- [Build Zen](./building_zen.md)
 - [Zen UI framework](./design/zen_ui_framework.md)
 
 ### Upstream MeshCore

@@ -241,7 +241,7 @@ build_wio_tracker_l1_firmwares() {
   build_firmware "WioTrackerL1_companion_dual"
 }
 
-build_solo_firmwares() {
+build_zen_firmwares() {
   build_firmware "WioTrackerL1_companion_solo_dual"
   build_firmware "WioTrackerL1Eink_companion_solo_dual"
 }
@@ -305,7 +305,7 @@ elif [[ $1 == "build-repeater-firmwares" ]]; then
 elif [[ $1 == "build-wio-tracker-l1-firmwares" ]]; then
   build_wio_tracker_l1_firmwares
 elif [[ $1 == "build-zen-firmwares" ]]; then
-  build_solo_firmwares
+  build_zen_firmwares
 elif [[ $1 == "build-room-server-firmwares" ]]; then
   build_room_server_firmwares
 elif [[ $1 == "build-kiss-radio-firmwares" ]]; then
