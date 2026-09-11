@@ -40,11 +40,12 @@ static inline int defaultOrder(uint8_t* order, int capacity) {
   if (!order || capacity <= 0) return 0;
   static const uint8_t BITS[] = {
     NodePrefs::HPB_CLOCK, NodePrefs::HPB_QUICK_MSG, NodePrefs::HPB_FAVOURITES,
+    NodePrefs::HPB_SENSORS,
 #if ENV_INCLUDE_GPS == 1
     NodePrefs::HPB_GPS,
 #endif
     NodePrefs::HPB_ADVERT, NodePrefs::HPB_BLUETOOTH, NodePrefs::HPB_RADIO,
-    NodePrefs::HPB_SENSORS, NodePrefs::HPB_TOOLS, NodePrefs::HPB_SETTINGS,
+    NodePrefs::HPB_TOOLS, NodePrefs::HPB_SETTINGS,
   };
   int count = 0;
   for (int i = 0; i < (int)(sizeof(BITS) / sizeof(BITS[0])) && count < capacity; i++)

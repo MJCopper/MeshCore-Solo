@@ -6,7 +6,7 @@ set -e
 global_usage() {
   cat - <<EOF
 Usage:
-sh build.sh <command> [target]
+bash build.sh <command> [target]
 
 Commands:
   help|usage|-h|--help: Shows this message.
@@ -21,22 +21,22 @@ Commands:
 
 Examples:
 Build firmware for the "RAK_4631_repeater" device target
-$ sh build.sh build-firmware RAK_4631_repeater
+$ bash build.sh build-firmware RAK_4631_repeater
 
 Build all firmwares for device targets containing the string "RAK_4631"
-$ sh build.sh build-matching-firmwares <build-match-spec>
+$ bash build.sh build-matching-firmwares <build-match-spec>
 
 Build all companion firmwares
-$ sh build.sh build-companion-firmwares
+$ bash build.sh build-companion-firmwares
 
 Build all repeater firmwares
-$ sh build.sh build-repeater-firmwares
+$ bash build.sh build-repeater-firmwares
 
 Build all chat room server firmwares
-$ sh build.sh build-room-server-firmwares
+$ bash build.sh build-room-server-firmwares
 
 Build all kiss radio firmwares
-$ sh build.sh build-kiss-radio-firmwares
+$ bash build.sh build-kiss-radio-firmwares
 
 Environment Variables:
   DISABLE_DEBUG=1: Disables all debug logging flags (MESH_DEBUG, MESH_PACKET_LOGGING, etc.)
@@ -46,11 +46,11 @@ Examples:
 Build without debug logging:
 $ export FIRMWARE_VERSION=v1.0.0
 $ export DISABLE_DEBUG=1
-$ sh build.sh build-firmware RAK_4631_repeater
+$ bash build.sh build-firmware RAK_4631_repeater
 
 Build with debug logging (default, uses flags from variant files):
 $ export FIRMWARE_VERSION=v1.0.0
-$ sh build.sh build-firmware RAK_4631_repeater
+$ bash build.sh build-firmware RAK_4631_repeater
 EOF
 }
 
@@ -133,8 +133,19 @@ build_firmware() {
   # set firmware build date
   FIRMWARE_BUILD_DATE=$(date '+%d-%b-%Y')
 
-  # get FIRMWARE_VERSION, which should be provided by the environment
-  if [ -z "$FIRMWARE_VERSION" ]; then
+  # Zen's source version is canonical; other targets receive it from the environment.
+  if [[ "$1" == WioTrackerL1_Zen_* ]]; then
+    SOURCE_ZEN_VERSION=$(sed -n 's/^#define FIRMWARE_VERSION "\(v[0-9][0-9.]*\)"/\1/p' examples/companion_radio/MyMesh.h)
+    if [ -z "$SOURCE_ZEN_VERSION" ]; then
+      echo "Unable to read the Zen version from examples/companion_radio/MyMesh.h"
+      exit 1
+    fi
+    if [ -n "$FIRMWARE_VERSION" ] && [ "$FIRMWARE_VERSION" != "$SOURCE_ZEN_VERSION" ]; then
+      echo "FIRMWARE_VERSION ($FIRMWARE_VERSION) does not match the Zen source version ($SOURCE_ZEN_VERSION)"
+      exit 1
+    fi
+    FIRMWARE_VERSION="$SOURCE_ZEN_VERSION"
+  elif [ -z "$FIRMWARE_VERSION" ]; then
     echo "FIRMWARE_VERSION must be set in environment"
     exit 1
   fi
@@ -165,9 +176,20 @@ build_firmware() {
 
   # build .uf2 for nrf52 boards, copy .uf2 and .zip to out folder (e.g: RAK_4631_Repeater-v1.0.0-SHA.uf2)
   if [ "$ENV_PLATFORM" == "NRF52_PLATFORM" ]; then
-    python3 bin/uf2conv/uf2conv.py .pio/build/$1/firmware.hex -c -o .pio/build/$1/firmware.uf2 -f 0xADA52840
-    cp .pio/build/$1/firmware.uf2 out/${FIRMWARE_FILENAME}.uf2 2>/dev/null || true
-    cp .pio/build/$1/firmware.zip out/${FIRMWARE_FILENAME}.zip 2>/dev/null || true
+    if [[ "$1" == WioTrackerL1_Zen_* ]]; then
+      ZEN_VERSION="${SOURCE_ZEN_VERSION#v}"
+      ZEN_ARTIFACT="$1.${ZEN_VERSION}"
+      if [ -z "$ZEN_VERSION" ] || [ ! -f ".pio/build/$1/${ZEN_ARTIFACT}.uf2" ]; then
+        echo "Zen UF2 artifact was not created for $1"
+        exit 1
+      fi
+      cp ".pio/build/$1/${ZEN_ARTIFACT}.uf2" "out/${ZEN_ARTIFACT}.uf2"
+      cp ".pio/build/$1/firmware.zip" "out/${ZEN_ARTIFACT}.ota.zip" 2>/dev/null || true
+    else
+      python3 bin/uf2conv/uf2conv.py .pio/build/$1/firmware.hex -c -o .pio/build/$1/firmware.uf2 -f 0xADA52840
+      cp .pio/build/$1/firmware.uf2 out/${FIRMWARE_FILENAME}.uf2 2>/dev/null || true
+      cp .pio/build/$1/firmware.zip out/${FIRMWARE_FILENAME}.zip 2>/dev/null || true
+    fi
   fi
 
   # for stm32, copy .bin and .hex to out folder
@@ -242,8 +264,8 @@ build_wio_tracker_l1_firmwares() {
 }
 
 build_zen_firmwares() {
-  build_firmware "WioTrackerL1_companion_solo_dual"
-  build_firmware "WioTrackerL1Eink_companion_solo_dual"
+  build_firmware "WioTrackerL1_Zen_OLED"
+  build_firmware "WioTrackerL1_Zen_E-INK"
 }
 
 build_room_server_firmwares() {

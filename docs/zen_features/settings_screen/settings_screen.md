@@ -71,8 +71,8 @@ Enter toggles a page and Left/Right changes its order. Clock is fixed first;
 Messages and Settings remain available. Position 1 is the first page after
 Clock.
 
-Default order: Messages, Favourites, GPS, Advert, Bluetooth, Radio, Sensors, Tools,
-Settings.
+Default order: Messages, Favourites, Sensors, GPS, Advert, Bluetooth, Radio,
+Tools, Settings.
 
 Sensors lists saved sensor nodes. Open a node to fetch its telemetry; Up/Down
 scrolls one value at a time, Enter refreshes and Back returns to the list.

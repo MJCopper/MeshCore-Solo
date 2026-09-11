@@ -39,7 +39,6 @@
 #endif
 
 #include "icons.h"
-#include "GfxUtils.h"   // gfx::drawLine — connects trail points on the Home map preview
 #include "ChildMode.h"
 #include "DigitEditor.h"
 #include "QuietTime.h"
@@ -179,10 +178,12 @@ public:
 #endif
 #include "NearbyScreen.h"
 #include "AutoAdvertScreen.h"
+#if SOLO_FEAT_NAVIGATION
 #include "LiveShareScreen.h"
 #include "LocatorScreen.h"
 #include "TrailScreen.h"
 #include "CompassScreen.h"
+#endif
 #include "DiagnosticsScreen.h"
 #include "RepeaterScreen.h"
 #if defined(PIN_GPIO1) && SOLO_FEAT_GPIO
@@ -571,9 +572,9 @@ class HomeScreen : public UIScreen {
     // after it is dropped too (the list is ordered high→low). A blinking icon
     // still reserves its slot while off, so the name width doesn't flicker.
     //
-    // Priority: BT > GPS fix > alarm > mute > auto-advert > trail > live-share >
+    // Priority: BT > GPS fix > alarm > mute > auto-advert > live-share >
     // repeater. Battery (drawn above) is always rightmost. The background modes
-    // (advert / trail / live-share / repeater) stay outside any BT gate — they
+    // (advert / live-share / repeater) stay outside any BT gate — they
     // keep running with Bluetooth off, so their cue must not vanish with it.
     LocationProvider* loc = _sensors ? _sensors->getLocationProvider() : nullptr;
     // Reflect the receiver's live power state, including temporary boot-time
@@ -593,7 +594,6 @@ class HomeScreen : public UIScreen {
                                                                     &ICON_ALARM,       true, false },
       { mute_on,                                                   &ICON_MUTE,        true, false },
       { advert_visible,                                             &ICON_ADVERT,      true, false },
-      { _task->trail().isActive(),                                 &ICON_TRAIL,       true, true  },
       { _node_prefs && _node_prefs->loc_share_enabled,             &ICON_MAP_CONTACT, true, true  },
       { _node_prefs && _node_prefs->client_repeat,                 &ICON_REPEATER,    true, true  },
     };
@@ -995,7 +995,7 @@ public:
     // Any blinking status-bar indicator needs a 1 s refresh to animate evenly.
     bool repeating  = _node_prefs && _node_prefs->client_repeat;
     bool loc_sharing = _node_prefs && _node_prefs->loc_share_enabled;
-    bool need_blink = auto_adv || _task->trail().isActive() || repeating || loc_sharing;
+    bool need_blink = auto_adv || repeating || loc_sharing;
     int refresh_ms;
     if (Features::IS_EINK) {
       // slow display: poll every 30 s; inbound msgs force immediate refresh via notify()
@@ -1343,15 +1343,6 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _alert_expiry = 0;
   _batt_mv = AbstractUITask::getBattMilliVolts();  // seed EMA with first reading
 
-  // Load persisted waypoints (table survives reboots, unlike the RAM trail).
-  {
-    DataStore* ds = the_mesh.getDataStore();
-    if (ds) {
-      File f = ds->openRead("/waypoints");
-      if (f) { _waypoints.readFrom(f); f.close(); }
-    }
-  }
-  
   // Initialize ping state
   _ping_active = false;
   _ping_tag = 0;
@@ -1378,7 +1369,7 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
 #if SOLO_FEAT_NAVIGATION
   live_share_screen = new LiveShareScreen(this, node_prefs);
   locator_screen  = new LocatorScreen(this, node_prefs);
-  trail_screen       = new TrailScreen(this, &_trail);
+  trail_screen       = new TrailScreen(this, nullptr);
   compass_screen     = new CompassScreen(this);
 #endif
   diag_screen        = new DiagnosticsScreen(this);
@@ -1643,13 +1634,7 @@ void UITask::gotoRingtoneEditor(int slot) {
   ((RingtoneEditorScreen*)ringtone_edit)->selectSlot(slot);
 }
 
-// Map is a sub-view variant of the Trail screen: reset via onShow(), then
-// switch into the map view.
-void UITask::gotoMapScreen() {
-  if (!solo::Features::NAVIGATION) return;
-  setCurrScreen(trail_screen);
-  ((TrailScreen*)trail_screen)->showMapView();
-}
+void UITask::gotoMapScreen() {}
 
 void UITask::gotoLocatorScreen()    { if (solo::Features::NAVIGATION) setCurrScreen(locator_screen); }
 void UITask::gotoAutoAdvertScreen() { setCurrScreen(auto_advert_screen); }
@@ -3413,30 +3398,6 @@ void UITask::quickShareMyLocation() {
   char text[40];
   snprintf(text, sizeof(text), LOCATION_MSG_TAG "%.5f,%.5f", lat / 1e6, lon / 1e6);
   shareToMessage(text);
-}
-
-void UITask::saveWaypoints() {
-  DataStore* ds = the_mesh.getDataStore();
-  if (!ds) return;
-  File f = ds->openWrite("/waypoints");
-  if (!f) return;
-  _waypoints.writeTo(f);
-  f.close();
-}
-
-bool UITask::addWaypoint(int32_t lat, int32_t lon, uint32_t ts, const char* label) {
-  if (_waypoints.full()) { logWarning("Waypoints", "List full"); return false; }
-  if (_waypoints.add(lat, lon, ts, label)) {
-    saveWaypoints();
-    showAlert("Waypoint saved", 800);
-    return true;
-  }
-  logWarning("Waypoints", "Save failed");
-  return false;
-}
-
-bool UITask::addWaypoint(int32_t lat, int32_t lon, const char* label) {
-  return addWaypoint(lat, lon, (uint32_t)rtc_clock.getCurrentTime(), label);
 }
 
 char UITask::checkDisplayOn(char c, bool allow_wake) {

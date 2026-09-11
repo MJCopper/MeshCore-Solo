@@ -561,7 +561,7 @@ struct NodePrefs {  // persisted to file
 // size unchanged. bot_actions_dm/ch/room and gpio1..4_mode (the last two
 // bumps, 7 more uint8_t total) added 8 bytes, not 7 -- one byte of tail
 // padding got consumed along the way. 2720 confirmed via a real
-// WioTrackerL1Eink_companion_solo_dual build.
+// WioTrackerL1_Zen_E-INK build.
 static_assert(sizeof(NodePrefs) == 2784,
               "NodePrefs layout changed — sync DataStore save/load + clamp, bump "
               "SCHEMA_SENTINEL, then update this size (see steps above).");

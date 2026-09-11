@@ -91,10 +91,10 @@ class MessagesScreen : public UIScreen {
   bool      _reply_mode;         // true while composing a reply (prefix is prepended)
 
   // Fullscreen-message context menu actions. Built per-message: Reply (when
-  // applicable) plus Navigate / Save waypoint when the message carries a
+  // applicable) plus Navigate when the message carries a
   // location (a {loc} string or a [WAY] share). _fs_act maps each visible row
   // back to an action so the index math survives the conditional layout.
-  enum FsAct : uint8_t { FS_REPLY, FS_NAV, FS_SAVE };
+  enum FsAct : uint8_t { FS_REPLY, FS_NAV };
   uint8_t   _fs_act[3];
   int       _fs_act_n = 0;
   // Inline navigate-to-location view layered over the fullscreen message.
@@ -229,18 +229,17 @@ class MessagesScreen : public UIScreen {
   }
 
   // Build the fullscreen-message options popup: Reply (if allowed) plus
-  // Navigate / Save waypoint when `body` carries a location. Opens _ctx_menu
+  // temporary navigation when `body` carries a location. Opens _ctx_menu
   // only when there's at least one action. Parses the location once here and
   // stashes it for the action handler.
   void buildFsMenu(const char* body, bool reply_allowed) {
     bool has_loc = geo::parseLatLon(body, _nav_lat, _nav_lon, _nav_label, sizeof(_nav_label));
-    int n = (reply_allowed ? 1 : 0) + (has_loc ? 2 : 0);
+    int n = (reply_allowed ? 1 : 0) + (has_loc ? 1 : 0);
     if (n == 0) return;
     _fs_act_n = 0;
     _ctx_menu.begin("Options", n);
     if (reply_allowed) { _ctx_menu.addItem("Reply");         _fs_act[_fs_act_n++] = FS_REPLY; }
-    if (has_loc)       { _ctx_menu.addItem("Navigate");      _fs_act[_fs_act_n++] = FS_NAV;
-                         _ctx_menu.addItem("Save waypoint"); _fs_act[_fs_act_n++] = FS_SAVE; }
+    if (has_loc)       { _ctx_menu.addItem("Navigate"); _fs_act[_fs_act_n++] = FS_NAV; }
   }
 
   // Dispatch the selected fullscreen-options row. `channel` picks which
@@ -254,24 +253,9 @@ class MessagesScreen : public UIScreen {
     if (a == FS_REPLY) {
       (channel ? _fs : _dm_fs).active = false;
       startReply(channel);
-    } else if (a == FS_NAV) {
+    } else {
       _nav_active = true;            // keep the message view active underneath
-    } else {
-      saveSharedWaypoint();
     }
-  }
-
-  // Save the location parsed from the open message as a waypoint. Uses the
-  // [WAY] label when present, else auto-names it like a manually-marked point.
-  void saveSharedWaypoint() {
-    char label[WAYPOINT_LABEL_LEN];
-    if (_nav_label[0]) {
-      strncpy(label, _nav_label, sizeof(label) - 1);
-      label[sizeof(label) - 1] = '\0';
-    } else {
-      snprintf(label, sizeof(label), "WP%d", _task->waypoints().count() + 1);
-    }
-    _task->addWaypoint(_nav_lat, _nav_lon, label);
   }
 
   void renderNav(DisplayDriver& display) {

@@ -15,8 +15,9 @@ Snsr filters; hold Enter for actions available to the selected node.
 
 Diagnostics includes a RAM-only Events tab containing the 16 most recent
 operational warnings and errors. Newest events appear first, `W` and `E` mark
-severity, and consecutive duplicates are combined. Hold Enter on Events to
-clear the log; it is also cleared by reboot. No event is written to flash.
+severity, and consecutive duplicates are combined. Use Up/Down to select an
+event and Enter to open its complete details. Hold Enter on Events to clear the
+log; it is also cleared by reboot. No event is written to flash.
 Warnings and errors use the normal popup notifier. Repeated background failures
 are rate-limited, and wake for five seconds when the display was off.
 
@@ -43,6 +44,8 @@ current value. Finish editing with Enter or Back, then choose Yes or No at the
 save confirmation. Unchanged values send nothing. After a successful write, Zen
 reads the setting back and only reports **Setting saved** when the value matches.
 The write-only administrator password is confirmed by the node's save response.
+The Neighbours status view replaces known public-key prefixes with names from
+the local contact list and leaves unknown prefixes in hexadecimal.
 Radio changes warn that the node may become unreachable; Zen's radio stays unchanged.
 Routing includes forwarding, hop limits, path hashing, RX delay, flood and direct
 TX delays, duty cycle, channel detection, Multi ACKs, interference threshold and

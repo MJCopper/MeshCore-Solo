@@ -5,6 +5,7 @@
 #include <Arduino.h>
 #include <stdarg.h>
 #include "icons.h"
+#include "FullscreenMsgView.h"
 #include "PopupMenu.h"
 #include "TabBar.h"
 #include "../MyMesh.h"
@@ -29,8 +30,12 @@ extern MyMesh the_mesh;
 class DiagnosticsScreen : public UIScreen {
   UITask* _task;
   int _scroll = 0;
+  int _event_sel = 0;
   uint8_t _tab = 0;        // persists across visits (like BotScreen's _tab)
   PopupMenu _reset_menu;   // Live tab, Hold Enter → 1-item "Reset counters" action menu (Back dismisses)
+  FullscreenMsgView _event_view;
+  char _event_title[16]{};
+  char _event_detail[96]{};
 
   enum Tab : uint8_t { TAB_LIVE, TAB_EVENTS, TAB_BATTERY, TAB_SYSTEM, TAB_FONT, TAB_COUNT };
   static const char* const TAB_LABELS[TAB_COUNT];
@@ -200,6 +205,31 @@ class DiagnosticsScreen : public UIScreen {
     }
   }
 
+  void eventTime(const solo::DiagnosticLog::Entry& event, char* out, size_t size) const {
+    if (!event.timestamp) { snprintf(out, size, "--:--"); return; }
+    int32_t local = (int32_t)(event.timestamp % 86400UL) +
+        (int32_t)(_task->getNodePrefs() ? _task->getNodePrefs()->tz_offset_hours : 0) * 3600;
+    while (local < 0) local += 86400;
+    local %= 86400;
+    snprintf(out, size, "%02ld:%02ld", (long)(local / 3600),
+             (long)((local / 60) % 60));
+  }
+
+  void openSelectedEvent() {
+    const solo::DiagnosticLog& log = _task->diagnosticLog();
+    const solo::DiagnosticLog::Entry* event = log.newest((uint8_t)_event_sel);
+    if (!event) return;
+    const char* severity = event->severity == solo::DiagnosticLog::ERROR ? "Error" :
+                           (event->severity == solo::DiagnosticLog::WARNING ? "Warning" : "Info");
+    snprintf(_event_title, sizeof(_event_title), "%s", severity);
+    char time[6];
+    eventTime(*event, time, sizeof(time));
+    snprintf(_event_detail, sizeof(_event_detail),
+             "Time: %s\nOperation: %s\nReason: %s\nCount: %u",
+             time, event->operation, event->reason, (unsigned)event->count);
+    _event_view.begin();
+  }
+
   void buildBatteryRows() {
     _row_count = 0;
     uint16_t mv = _task->getBattMilliVolts();
@@ -277,6 +307,39 @@ class DiagnosticsScreen : public UIScreen {
     drawScrollIndicator(display, start_y, visible * item_h, _line_count, visible, _scroll);
   }
 
+  // Events are selectable and use every available character without adding an
+  // ellipsis. The detail view exposes the complete stored fields.
+  void renderEventLines(DisplayDriver& display) {
+    const int item_h = display.lineStep();
+    const int start_y = display.listStart();
+    int visible = display.listVisible(item_h);
+    if (visible < 1) visible = 1;
+    if (_line_count <= 0) _event_sel = 0;
+    else if (_event_sel >= _line_count) _event_sel = _line_count - 1;
+    if (_event_sel < _scroll) _scroll = _event_sel;
+    if (_event_sel >= _scroll + visible) _scroll = _event_sel - visible + 1;
+    clampScroll(_line_count, visible);
+
+    const int reserve = scrollIndicatorReserve(display, _line_count, visible);
+    const int max_width = display.width() - reserve - 4;
+    for (int i = 0; i < visible && (_scroll + i) < _line_count; i++) {
+      int index = _scroll + i;
+      int y = start_y + i * item_h;
+      bool selected = _line_count > 0 && index == _event_sel;
+      drawRowSelection(display, y, selected, reserve);
+      char text[sizeof(_lines[0])];
+      strncpy(text, _lines[index], sizeof(text) - 1);
+      text[sizeof(text) - 1] = 0;
+      while (text[0] && display.getTextWidth(text) > max_width)
+        text[strlen(text) - 1] = 0;
+      display.setCursor(2, y);
+      display.print(text);
+      if (selected) display.setColor(DisplayDriver::LIGHT);
+    }
+    drawScrollIndicator(display, start_y, visible * item_h,
+                        _line_count, visible, _scroll);
+  }
+
   void clampScroll(int total, int visible) {
     int max_scroll = total - visible;
     if (max_scroll < 0) max_scroll = 0;
@@ -290,10 +353,12 @@ public:
   int render(DisplayDriver& display) override {
     display.setTextSize(1);
     display.setColor(DisplayDriver::LIGHT);
+    if (_event_view.active)
+      return _event_view.render(display, _event_title, _event_detail, false, false);
     tabbar::draw(display, TAB_LABELS, TAB_COUNT, _tab);
 
     switch (_tab) {
-      case TAB_EVENTS: buildEventLines(); renderLines(display); break;
+      case TAB_EVENTS: buildEventLines(); renderEventLines(display); break;
       case TAB_BATTERY: buildBatteryRows(); renderRows(display); break;
       case TAB_SYSTEM: buildSystemLines(); renderLines(display); break;
       case TAB_FONT:   buildFontLines();   renderLines(display); break;
@@ -309,11 +374,19 @@ public:
   }
 
   bool handleInput(char c) override {
+    if (_event_view.active) {
+      FullscreenMsgView::Result result = _event_view.handleInput(c);
+      if (result == FullscreenMsgView::CLOSE || result == FullscreenMsgView::REPLY ||
+          result == FullscreenMsgView::PREV || result == FullscreenMsgView::NEXT)
+        _event_view.active = false;
+      return true;
+    }
     if (_reset_menu.active) {
       auto res = _reset_menu.handleInput(c);
       if (res == PopupMenu::SELECTED && _reset_menu.selectedIndex() == 0) {
         if (_tab == TAB_EVENTS) {
           _task->clearDiagnosticLog();
+          _event_sel = _scroll = 0;
           _task->showAlert("Events cleared", 800);
         } else {
           the_mesh.resetStats(); // Dispatcher counters + forwarding + radio flags
@@ -325,8 +398,22 @@ public:
     }
     if (keyIsPrev(c)) { _tab = (_tab + TAB_COUNT - 1) % TAB_COUNT; _scroll = 0; return true; }
     if (keyIsNext(c)) { _tab = (_tab + 1) % TAB_COUNT;            _scroll = 0; return true; }
-    if (c == KEY_UP)   { if (_scroll > 0) _scroll--; return true; }
-    if (c == KEY_DOWN) { _scroll++; return true; }   // clamped in render()
+    if (c == KEY_UP) {
+      if (_tab == TAB_EVENTS) { if (_event_sel > 0) _event_sel--; }
+      else if (_scroll > 0) _scroll--;
+      return true;
+    }
+    if (c == KEY_DOWN) {
+      if (_tab == TAB_EVENTS) {
+        int count = _task->diagnosticLog().size();
+        if (_event_sel + 1 < count) _event_sel++;
+      } else _scroll++;
+      return true;
+    }
+    if (c == KEY_ENTER && _tab == TAB_EVENTS && _task->diagnosticLog().size()) {
+      openSelectedEvent();
+      return true;
+    }
     if (c == KEY_CONTEXT_MENU && (_tab == TAB_LIVE || _tab == TAB_EVENTS)) {
       _reset_menu.beginConfirm(_tab == TAB_EVENTS ? "Clear events?" : "Reset counters?",
                                _tab == TAB_EVENTS ? "Clear" : "Reset");

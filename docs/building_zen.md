@@ -16,22 +16,30 @@ python3 -m pip install --upgrade platformio
 Build one display target directly:
 
 ```sh
-pio run -e WioTrackerL1_companion_solo_dual
-pio run -e WioTrackerL1Eink_companion_solo_dual
+pio run -e WioTrackerL1_Zen_OLED
+pio run -e WioTrackerL1_Zen_E-INK
 ```
 
-The UF2 is written to `.pio/build/<target>/firmware.uf2` and the BLE-DFU package
-to `.pio/build/<target>/firmware.zip`.
+The versioned UF2 files are written directly to:
+
+```text
+.pio/build/WioTrackerL1_Zen_OLED/WioTrackerL1_Zen_OLED.<version>.uf2
+.pio/build/WioTrackerL1_Zen_E-INK/WioTrackerL1_Zen_E-INK.<version>.uf2
+```
+
+The version is taken from `FIRMWARE_VERSION` in
+`examples/companion_radio/MyMesh.h`, without its leading `v`. PlatformIO also
+creates `firmware.zip` in each target directory for BLE DFU.
 
 For release-style filenames, build both targets through the repository script:
 
 ```sh
-FIRMWARE_VERSION=vX.Y.Z sh build.sh build-zen-firmwares
+bash build.sh build-zen-firmwares
 ```
 
-Release files are written to `out/`. The script recreates that directory at the
-start of every invocation, so copy any files you want to retain before running
-it again.
+Release files are written to `out/` using the same UF2 names; BLE-DFU packages
+use `<target>.<version>.ota.zip`. The script recreates `out/` at the start of
+every invocation, so copy any files you want to retain before running it again.
 
 ## Tests
 

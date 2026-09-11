@@ -4,14 +4,14 @@ Zen extends the official [MeshCore](https://github.com/meshcore-dev/MeshCore)
 companion firmware with a standalone messaging interface for the Seeed Wio
 Tracker L1.
 
-Current release: **Zen v1.32.25**, based on **MeshCore v1.17.1**.
+Current release: **Zen v1.32.31**, based on **MeshCore v1.17.1**.
 
 ## Supported hardware
 
 | Device | Display | Release file |
 | ------ | ------- | ------------ |
-| Wio Tracker L1 OLED | 128 × 64 SSD1306/SH1106 | `zen-<version>-WioTrackerL1.uf2` |
-| Wio Tracker L1 E-ink | 250 × 122 GxEPD2 | `zen-<version>-WioTrackerL1Eink.uf2` |
+| Wio Tracker L1 OLED | 128 × 64 SSD1306/SH1106 | `WioTrackerL1_Zen_OLED.<version>.uf2` |
+| Wio Tracker L1 E-ink | 250 × 122 GxEPD2 | `WioTrackerL1_Zen_E-INK.<version>.uf2` |
 
 Both builds support BLE and USB serial. Firmware is available from the
 [releases page](https://github.com/MJCopper/MeshCore-Zen/releases).

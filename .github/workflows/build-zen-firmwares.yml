@@ -18,10 +18,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - env: WioTrackerL1_companion_solo_dual
-            device: WioTrackerL1
-          - env: WioTrackerL1Eink_companion_solo_dual
-            device: WioTrackerL1Eink
+          - env: WioTrackerL1_Zen_OLED
+            device: WioTrackerL1_Zen_OLED
+          - env: WioTrackerL1_Zen_E-INK
+            device: WioTrackerL1_Zen_E-INK
     steps:
 
       - name: Clone Repo
@@ -32,27 +32,26 @@ jobs:
 
       - name: Resolve build version
         run: |
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            echo "BUILD_VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
-          else
-            echo "BUILD_VERSION=dev-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          SOURCE_VERSION=$(sed -n 's/^#define FIRMWARE_VERSION "\(v[0-9][0-9.]*\)"/\1/p' examples/companion_radio/MyMesh.h)
+          if [ -z "$SOURCE_VERSION" ]; then
+            echo "Unable to read Zen version from MyMesh.h"
+            exit 1
           fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "$SOURCE_VERSION" ]; then
+            echo "Release tag $GITHUB_REF_NAME does not match $SOURCE_VERSION"
+            exit 1
+          fi
+          echo "BUILD_VERSION=${SOURCE_VERSION}" >> $GITHUB_ENV
 
       - name: Build Firmware
         env:
           FIRMWARE_VERSION: ${{ env.BUILD_VERSION }}
         run: /usr/bin/env bash build.sh build-firmware ${{ matrix.env }}
 
-      - name: Rename firmware
-        run: |
-          mv out/*.uf2 "out/zen-${{ env.BUILD_VERSION }}-${{ matrix.device }}.uf2" 2>/dev/null || true
-          # nRF52 DFU package (adafruit-nrfutil) — used for OTA / BLE-DFU updates.
-          mv out/*.zip "out/zen-${{ env.BUILD_VERSION }}-${{ matrix.device }}-ota.zip" 2>/dev/null || true
-
       - name: Upload Firmware
         uses: actions/upload-artifact@v4
         with:
-          name: zen-${{ matrix.device }}-firmware
+          name: ${{ matrix.device }}-firmware
           path: out
 
   release:
@@ -67,7 +66,7 @@ jobs:
       - name: Download all Zen firmwares
         uses: actions/download-artifact@v4
         with:
-          pattern: zen-*-firmware
+          pattern: WioTrackerL1_Zen_*-firmware
           merge-multiple: true
           path: out
 

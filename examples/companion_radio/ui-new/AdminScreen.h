@@ -55,6 +55,49 @@ class AdminScreen : public UIScreen {
     _view.begin();
     _phase = REPLY;
   }
+  static int hexNibble(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+  }
+  // The repeater CLI returns neighbours as KEY8:age:snr. Replace a four-byte
+  // key prefix with the locally-known contact name while retaining the remote
+  // measurements. Unknown or malformed lines remain unchanged.
+  void showNeighbours(const char* text) {
+    char formatted[sizeof(_reply)]{};
+    size_t used = 0;
+    const char* line = text;
+    while (line && *line && used + 1 < sizeof(formatted)) {
+      const char* end = strchr(line, '\n');
+      size_t line_len = end ? (size_t)(end - line) : strlen(line);
+      uint8_t prefix[4];
+      bool valid_key = line_len >= 9 && line[8] == ':';
+      for (int i = 0; i < 4 && valid_key; i++) {
+        int hi = hexNibble(line[i * 2]);
+        int lo = hexNibble(line[i * 2 + 1]);
+        if (hi < 0 || lo < 0) valid_key = false;
+        else prefix[i] = (uint8_t)((hi << 4) | lo);
+      }
+      ContactInfo* known = valid_key
+          ? the_mesh.lookupContactByPubKey(prefix, sizeof(prefix)) : nullptr;
+      const char* first = known && known->name[0] ? known->name : line;
+      size_t first_len = known && known->name[0] ? strlen(known->name)
+                                                  : (valid_key ? 8 : line_len);
+      const char* suffix = valid_key ? line + 8 : line + line_len;
+      size_t suffix_len = valid_key ? line_len - 8 : 0;
+      if (used && used + 1 < sizeof(formatted)) formatted[used++] = '\n';
+      size_t copy = first_len;
+      if (copy > sizeof(formatted) - used - 1) copy = sizeof(formatted) - used - 1;
+      memcpy(formatted + used, first, copy); used += copy;
+      copy = suffix_len;
+      if (copy > sizeof(formatted) - used - 1) copy = sizeof(formatted) - used - 1;
+      memcpy(formatted + used, suffix, copy); used += copy;
+      formatted[used] = 0;
+      line = end ? end + 1 : nullptr;
+    }
+    showReply("Neighbours", formatted);
+  }
   void login() {
     ContactInfo* current = the_mesh.lookupContactByPubKey(_target.id.pub_key, PUB_KEY_SIZE);
     bool password_supplied = kb().buf[0] != 0;
@@ -223,6 +266,11 @@ public:
     _pending = PENDING_NONE;
     if (completed == FETCH_SETTING) {
       const char* value = solo::admin::value(text);
+      if (_field && _field->kind == solo::admin::READ && value) {
+        if (_field->get && !strcmp(_field->get, "neighbors")) showNeighbours(value);
+        else showReply(_field->label, value);
+        return;
+      }
       if (value && beginEdit(value)) return;
       _task->logFailure("Admin", "Invalid setting reply");
       showReply("Cannot edit", text);
