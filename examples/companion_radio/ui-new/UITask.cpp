@@ -662,7 +662,6 @@ public:
 
   int render(DisplayDriver& display) override {
     returnToClockIfIdle();
-    _sensor_page.tick();
     if (_page == HomePage::SENSORS && _sensor_page.passwordEditing())
       return _sensor_page.renderPassword(display);
     char tmp[80];
@@ -1024,6 +1023,7 @@ public:
   void onSensorLoginTimeout(const uint8_t* key) {
     _sensor_page.onLoginTimeout(key);
   }
+  void tickSensor() { _sensor_page.tick(); }
 
   bool handleInput(char c) override {
     noteHomeInteraction();
@@ -2656,6 +2656,7 @@ void UITask::loop() {
   if (_emergency_window.active() && !_emergency_window.update(millis()))
     setEmergencyMode(false);
   tickBootTimeSync();
+  if (home) ((HomeScreen*)home)->tickSensor();
   solo::RoomLoginCoordinator::Attempt login_timeout;
   if (_room_login.takeTimeout(millis(), login_timeout)) {
     the_mesh.cancelUiPendingLogin(login_timeout.pub_key);
