@@ -1,10 +1,13 @@
 # MeshCore Zen Companion Firmware
 
+> **First installation:** Read the [flashing notes](#flashing) before installing
+> Zen, especially if the Wio Tracker is currently running different firmware.
+
 Zen extends the official [MeshCore](https://github.com/meshcore-dev/MeshCore)
 companion firmware with a standalone messaging interface for the Seeed Wio
 Tracker L1.
 
-Current release: **Zen v1.32.35**, based on **MeshCore v1.17.1**.
+Current release: **Zen v1.32.36**, based on **MeshCore v1.17.1**.
 
 ## Supported hardware
 
@@ -41,16 +44,31 @@ See [FEATURES.md](./FEATURES.md) for the complete Zen feature summary.
 
 ## Flashing
 
-1. Download the correct `.uf2` from the releases page.
-2. Press Reset twice to open the bootloader drive.
-3. Copy the `.uf2` to that drive.
+For a first installation, back up anything you want to keep. If the Wio Tracker
+is running different firmware, erase its flash with the
+[MeshCore Flasher](https://meshcore.io/flasher) before installing Zen. Erasing
+removes the stored identity, contacts, channels, messages and settings.
+
+1. Download the correct `.uf2` for your OLED or E-ink Wio Tracker from the
+   [releases page](https://github.com/MJCopper/MeshCore-Zen/releases).
+2. Connect the Wio Tracker directly to your computer with a USB data cable. A
+   charge-only cable will power the device but cannot transfer the firmware.
+3. Quickly press the Wio Tracker's **Reset** button twice. A new removable USB
+   bootloader drive should appear on the computer.
+4. Copy the downloaded `.uf2` file onto the bootloader drive. Do not copy the
+   ZIP file or place the UF2 inside a folder on the drive.
+5. Wait for the copy to finish. The bootloader drive normally disconnects and
+   the Wio Tracker restarts automatically; this indicates that flashing has
+   completed.
+6. If the bootloader drive does not appear, check that the cable supports data,
+   reconnect it, and repeat the quick double-press of **Reset**.
+
+For later Zen updates, repeat the numbered steps. An erase is normally only
+needed when changing from another firmware or when troubleshooting damaged
+stored configuration.
 
 BLE takes priority over USB serial. Disconnect BLE before using a USB companion
 connection.
-
-> [!WARNING]
-> When changing from another firmware, back up your device, erase flash with the
-> [MeshCore Flasher](https://meshcore.io/flasher), then install Zen.
 
 ## Guides
 
