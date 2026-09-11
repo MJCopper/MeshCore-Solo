@@ -91,6 +91,13 @@ inline bool radioTuple(Kind kind) { return kind >= FREQUENCY && kind <= CR; }
 inline const char* value(const char* reply) {
   return reply && reply[0] == '>' && reply[1] == ' ' ? reply + 2 : nullptr;
 }
+// Status commands in the MeshCore CLI return their text directly, while
+// `get` commands prefix values with "> ". Read-only fields accept both wire
+// formats; editable fields continue to require the explicit value prefix.
+inline const char* readValue(const char* reply) {
+  const char* parsed = value(reply);
+  return parsed ? parsed : (reply ? reply : "");
+}
 inline bool number(const char* text, float min, float max, float& result) {
   char* end;
   float parsed = strtof(text, &end);

@@ -266,9 +266,10 @@ public:
     _pending = PENDING_NONE;
     if (completed == FETCH_SETTING) {
       const char* value = solo::admin::value(text);
-      if (_field && _field->kind == solo::admin::READ && value) {
-        if (_field->get && !strcmp(_field->get, "neighbors")) showNeighbours(value);
-        else showReply(_field->label, value);
+      if (_field && _field->kind == solo::admin::READ) {
+        const char* read_value = solo::admin::readValue(text);
+        if (_field->get && !strcmp(_field->get, "neighbors")) showNeighbours(read_value);
+        else showReply(_field->label, read_value);
         return;
       }
       if (value && beginEdit(value)) return;

@@ -20,5 +20,7 @@ Rules:
 - Write versioned UF2 files directly inside their PlatformIO build directory as
   `<environment>.<version>.uf2`, with no leading `v` in `<version>`.
 - Keep local, scripted and GitHub release builds on this same naming convention.
+- After every completed repository change, compile and verify both the OLED and
+  E-ink Zen targets before handoff. Never validate only one display target.
 - Expected paths are `.pio/build/WioTrackerL1_Zen_OLED/WioTrackerL1_Zen_OLED.<version>.uf2`
   and `.pio/build/WioTrackerL1_Zen_E-INK/WioTrackerL1_Zen_E-INK.<version>.uf2`.

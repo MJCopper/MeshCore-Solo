@@ -11,6 +11,13 @@ TEST(AdminCommands, DoesNotTreatErrorAsFetchedValueOrSuccess) {
   EXPECT_FALSE(solo::admin::confirmed("Sent"));
 }
 
+TEST(AdminCommands, AcceptsRawAndPrefixedReadOnlyReplies) {
+  EXPECT_STREQ(solo::admin::readValue("A1B2C3D4:12:-7"),
+               "A1B2C3D4:12:-7");
+  EXPECT_STREQ(solo::admin::readValue("> MeshCore 1.17.1"),
+               "MeshCore 1.17.1");
+}
+
 TEST(AdminCommands, RejectsMalformedOrOutOfRangeNumbers) {
   float n = 4;
   EXPECT_FALSE(solo::admin::number("Error", 0, 20, n));
