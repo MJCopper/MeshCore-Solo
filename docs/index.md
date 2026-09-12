@@ -1,15 +1,13 @@
-# Introduction
+# MeshCore Public Archive
 
-Welcome to the MeshCore documentation.
+The Public Archive firmware runs on a Seeed Studio XIAO nRF52840 with an SX1262
+radio. It captures the built-in Public channel into a volatile 256-message RAM
+history and exposes that history through a read-only room-server interface.
 
-Below are a few quick start guides.
+## Guides
 
-- [Frequently Asked Questions](./faq.md)
-- [CLI Commands](./cli_commands.md)
-- [Companion Protocol](./companion_protocol.md)
-- [Packet Format](./packet_format.md)
-- [QR Codes](./qr_codes.md)
-
-If you find a mistake in any of our documentation, or find something is missing, please feel free to open a pull request for us to review.
-
-- [Documentation Source](https://github.com/meshcore-dev/MeshCore/tree/main/docs)
+- [Getting Started](./getting_started.md)
+- [Hardware and Wiring](./archiver_features/hardware/hardware.md)
+- [Archive Behaviour](./archiver_features/archive/archive.md)
+- [Access and Management](./archiver_features/access/access.md)
+- [Building the Firmware](./building_archiver.md)

@@ -1,128 +1,94 @@
-## About MeshCore
+# MeshCore Public Archive Firmware
 
-MeshCore is a lightweight, portable C++ library that enables multi-hop packet routing for embedded projects using LoRa and other packet radios. It is designed for developers who want to create resilient, decentralized communication networks that work without the internet.
+> **First installation:** Read the [flashing notes](#flashing) before connecting
+> the archive node to the mesh.
 
-## 🔍 What is MeshCore?
+This branch provides a read-only, RAM-based Public-channel archive for a Seeed
+Studio XIAO nRF52840 and SX1262 LoRa radio. It is based on **MeshCore v1.17.1**
+and presents archived messages through the standard MeshCore room interface.
 
-MeshCore now supports a range of LoRa devices, allowing for easy flashing without the need to compile firmware manually. Users can flash a pre-built binary using tools like Adafruit ESPTool and interact with the network through a serial console.
-MeshCore provides the ability to create wireless mesh networks, similar to Meshtastic and Reticulum but with a focus on lightweight multi-hop packet routing for embedded projects. Unlike Meshtastic, which is tailored for casual LoRa communication, or Reticulum, which offers advanced networking, MeshCore balances simplicity with scalability, making it ideal for custom embedded solutions, where devices (nodes) can communicate over long distances by relaying messages through intermediate nodes. This is especially useful in off-grid, emergency, or tactical situations where traditional communication infrastructure is unavailable.
+## Supported hardware
 
-## ⚡ Key Features
+| Component | Requirement |
+| --------- | ----------- |
+| Controller | Seeed Studio XIAO nRF52840 |
+| Radio | SX1262 module wired for the XIAO target |
+| Display | None |
+| Storage | Internal RAM; no message history is written to flash |
+| Power | USB or a suitable 3.3 V/battery supply |
 
-* Multi-Hop Packet Routing
-  * Devices can forward messages across multiple nodes, extending range beyond a single radio's reach.
-  * Supports up to a configurable number of hops to balance network efficiency and prevent excessive traffic.
-  * Nodes use fixed roles where "Companion" nodes are not repeating messages at all to prevent adverse routing paths from being used.
-* Supports LoRa Radios – Works with Heltec, RAK Wireless, and other LoRa-based hardware.
-* Decentralized & Resilient – No central server or internet required; the network is self-healing.
-* Low Power Consumption – Ideal for battery-powered or solar-powered devices.
-* Simple to Deploy – Pre-built example applications make it easy to get started.
+See [Hardware and Wiring](./docs/archiver_features/hardware/hardware.md) for the
+radio pinout and electrical assumptions.
 
-## 🎯 What Can You Use MeshCore For?
+## Software features
 
-* Off-Grid Communication: Stay connected even in remote areas.
-* Emergency Response & Disaster Recovery: Set up instant networks where infrastructure is down.
-* Outdoor Activities: Hiking, camping, and adventure racing communication.
-* Tactical & Security Applications: Military, law enforcement, and private security use cases.
-* IoT & Sensor Networks: Collect data from remote sensors and relay it back to a central location.
+- Captures text messages from MeshCore's built-in Public channel.
+- Keeps the newest 256 messages in a circular RAM buffer.
+- Presents a login-time snapshot through the standard room-server interface.
+- Allows the full available history for direct and one-hop sessions.
+- Limits sessions detected over two or more hops to the newest 20 messages.
+- Does not push newly captured messages to connected companions.
+- Gives guest-password and passwordless users the limited Guest interface.
+- Retains standard administrator login and remote-management support.
+- Rejects room posts from every ACL role.
+- Starts in leaf-node mode with packet forwarding disabled.
 
-## 🚀 How to Get Started
+See [FEATURES.md](./FEATURES.md) for the complete firmware behaviour summary.
 
-- Watch the [MeshCore QuickStart Playlist](https://www.youtube.com/watch?v=iaFltojJrAc&list=PLshzThxhw4O4WU_iZo3NmNZOv6KMrUuF9) by The Comms Channel
-- Watch the [MeshCore Technical Presentation](https://www.youtube.com/watch?v=OwmkVkZQTf4) by Liam Cottle.
-- Read through our [Frequently Asked Questions](./docs/faq.md) and [Documentation](https://docs.meshcore.io).
-- Flash the MeshCore firmware on a supported device.
-- Connect with a supported client.
+> [!WARNING]
+> Message history exists only in RAM. Restarting, resetting or removing power
+> clears the complete archive.
 
-For developers:
+## Flashing
 
-- Install [PlatformIO](https://docs.platformio.org) in [Visual Studio Code](https://code.visualstudio.com).
-- Clone and open the MeshCore repository in Visual Studio Code.
-- See the example applications you can modify and run:
-  - [Companion Radio](./examples/companion_radio) - For use with an external chat app, over BLE, USB or Wi-Fi.
-  - [KISS Modem](./examples/kiss_modem) - Serial KISS protocol bridge for host applications. ([protocol docs](./docs/kiss_modem_protocol.md))
-  - [Simple Repeater](./examples/simple_repeater) - Extends network coverage by relaying messages.
-  - [Simple Room Server](./examples/simple_room_server) - A simple BBS server for shared Posts.
-  - [Simple Secure Chat](./examples/simple_secure_chat) - Secure terminal based text communication between devices.
-  - [Simple Sensor](./examples/simple_sensor) - Remote sensor node with telemetry and alerting.
+Flashing replaces the installed firmware. Erasing first also removes the saved
+node identity, radio settings, ACL and administrator password.
 
-The Simple Secure Chat example can be interacted with through the Serial Monitor in Visual Studio Code, or with a Serial USB Terminal on Android.
+1. Build or obtain `firmware.uf2` for the `Xiao_nrf52_archiver` target.
+2. Connect the XIAO nRF52840 directly to the computer with a USB data cable.
+3. Quickly press the XIAO's **Reset** button twice. A removable bootloader drive
+   should appear.
+4. Copy `firmware.uf2` to the root of that drive.
+5. Wait for the copy to finish. The drive normally disconnects and the XIAO
+   restarts automatically.
 
-## ⚡️ MeshCore Flasher
+For a clean installation, use the nRF52 erase UF2 from the
+[MeshCore Flasher](https://meshcore.io/flasher) before copying the archive UF2.
 
-We have prebuilt firmware ready to flash on supported devices.
+## First setup
 
-- Launch https://meshcore.io/flasher
-- Select a supported device
-- Flash one of the firmware types:
-  - Companion, Repeater or Room Server
-- Once flashing is complete, you can connect with one of the MeshCore clients below.
+1. Connect the SX1262 and antenna using the documented wiring.
+2. Flash the archive firmware.
+3. Configure the correct regional radio parameters over USB serial.
+4. Change the default administrator password, which is `password` on a clean
+   installation.
+5. Advertise or discover the node as `Public Archive` in a MeshCore companion.
+6. Use an administrator login for remote management, or a guest/blank login for
+   the limited read-only room interface.
 
-## 📱 MeshCore Clients
+Saved configuration from an earlier installation takes precedence over build
+defaults.
 
-**Companion Firmware**
+## Guides
 
-The companion firmware can be connected to via BLE, USB or Wi-Fi depending on the firmware type you flashed.
+- [Getting Started](./docs/getting_started.md)
+- [Hardware and Wiring](./docs/archiver_features/hardware/hardware.md)
+- [Archive Behaviour](./docs/archiver_features/archive/archive.md)
+- [Access and Management](./docs/archiver_features/access/access.md)
+- [Building the Firmware](./docs/building_archiver.md)
 
-- Web: https://app.meshcore.nz
-- Android: https://play.google.com/store/apps/details?id=com.liamcottle.meshcore.android
-- iOS: https://apps.apple.com/us/app/meshcore/id6742354151?platform=iphone
-- NodeJS: https://github.com/liamcottle/meshcore.js
-- Python: https://github.com/fdlamotte/meshcore-cli
+## Development
 
-**Repeater and Room Server Firmware**
+Archive-specific behaviour is isolated behind `PUBLIC_CHANNEL_ARCHIVE` and the
+`Xiao_nrf52_archiver` PlatformIO environment. The standard XIAO room-server
+target remains unchanged.
 
-The repeater and room server firmware can be set up via USB in the web config tool.
+Build the flashable firmware with:
 
-- https://config.meshcore.io
-
-They can also be managed via LoRa in the mobile app by using the Remote Management feature.
-
-## 🛠 Hardware Compatibility
-
-MeshCore is designed for devices listed in the [MeshCore Flasher](https://meshcore.io/flasher)
-
-## 📜 License
-
-MeshCore is open-source software released under the MIT License. You are free to use, modify, and distribute it for personal and commercial projects.
-
-## Contributing
-
-Please submit PR's using 'dev' as the base branch!
-For minor changes just submit your PR and we'll try to review it, but for anything more 'impactful' please open an Issue first and start a discussion. It is better to sound out what it is you want to achieve first, and try to come to a consensus on what the best approach is, especially when it impacts the structure or architecture of this codebase.
-
-Here are some general principles you should try to adhere to:
-* Keep it simple. Please, don't think like a high-level lang programmer. Think embedded, and keep code concise, without any unnecessary layers.
-* No dynamic memory allocation, except during setup/begin functions.
-* Use the same brace and indenting style that's in the core source modules. (A .clang-format is probably going to be added soon, but please do NOT retroactively re-format existing code. This just creates unnecessary diffs that make finding problems harder)
-
-Help us prioritize! Please react with thumbs-up to issues/PRs you care about most. We look at reaction counts when planning work.
-
-### Running unit tests
-
-To run unit tests, run the following command:
-
-```bash
-pio test --environment native --verbose
+```sh
+pio run -e Xiao_nrf52_archiver
+pio run -e Xiao_nrf52_archiver -t create_uf2
 ```
 
-## Road-Map / To-Do
-
-There are a number of fairly major features in the pipeline, with no particular time-frames attached yet. In very rough chronological order:
-- [X] Companion radio: UI redesign
-- [X] Repeater + Room Server: add ACL's (like Sensor Node has)
-- [X] Standardise Bridge mode for repeaters
-- [ ] Repeater/Bridge: Standardise the Transport Codes for zoning/filtering
-- [X] Core + Repeater: enhanced zero-hop neighbour discovery
-- [ ] Core: round-trip manual path support
-- [ ] Companion + Apps: support for multiple sub-meshes (and 'off-grid' client repeat mode)
-- [ ] Core + Apps: support for LZW message compression
-- [ ] Core: dynamic CR (Coding Rate) for weak vs strong hops
-- [ ] Core: new framework for hosting multiple virtual nodes on one physical device
-- [ ] V2 protocol spec: discussion and consensus around V2 packet protocol, including path hashes, new encryption specs, etc
-
-## 📞 Get Support
-
-- Report bugs and request features on the [GitHub Issues](https://github.com/ripplebiz/MeshCore/issues) page.
-- Find additional guides and components on [my site](https://buymeacoffee.com/ripplebiz).
-- Join [MeshCore Discord](https://meshcore.gg) to chat with the developers and get help from the community.
+Mesh routing and the room protocol are provided by
+[MeshCore](https://github.com/meshcore-dev/MeshCore).

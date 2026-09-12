@@ -1,10 +1,9 @@
-site_name: MeshCore Docs
-site_url: https://meshcore-dev.github.io/meshcore/
-site_description: Documentation for the open source MeshCore firmware
+site_name: MeshCore Public Archive
+site_description: Hardware and software documentation for the XIAO nRF52840 Public Archive firmware
 
-repo_name: meshcore-dev/meshcore
-repo_url: https://github.com/meshcore-dev/meshcore/
-edit_uri: edit/main/docs/
+repo_name: MJCopper/MeshCore-Zen
+repo_url: https://github.com/MJCopper/MeshCore-Zen/
+edit_uri: edit/meshcore/archiver/docs/
 
 theme:
   name: material
@@ -17,3 +16,11 @@ theme:
 
 extra_css:
   - _stylesheets/extra.css
+
+nav:
+  - Overview: index.md
+  - Getting Started: getting_started.md
+  - Hardware and Wiring: archiver_features/hardware/hardware.md
+  - Archive Behaviour: archiver_features/archive/archive.md
+  - Access and Management: archiver_features/access/access.md
+  - Building: building_archiver.md
