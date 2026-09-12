@@ -522,7 +522,8 @@ class HomeScreen : public UIScreen {
     return order[((cur + dir) % n + n) % n];
   }
 
-  int renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts) {
+  int renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts,
+                             int right_x) {
     int pct = solo::BatteryPolicy::percent(batteryMilliVolts);
 
     uint8_t mode = (_node_prefs && _node_prefs->batt_display_mode < 3)
@@ -541,20 +542,20 @@ class HomeScreen : public UIScreen {
     if (mode == 1) {  // percent
       char buf[6];
       snprintf(buf, sizeof(buf),"%d%%", pct);
-      battLeftX = display.width() - display.getTextWidth(buf) - 1;
+      battLeftX = right_x - display.getTextWidth(buf);
       display.setCursor(battLeftX, 0);
       display.print(buf);
     } else if (mode == 2) {  // voltage
       char buf[8];
       snprintf(buf, sizeof(buf),"%u.%02uV", batteryMilliVolts / 1000, (batteryMilliVolts % 1000) / 10);
-      battLeftX = display.width() - display.getTextWidth(buf) - 1;
+      battLeftX = right_x - display.getTextWidth(buf);
       display.setCursor(battLeftX, 0);
       display.print(buf);
     } else {  // icon — scales with lh, same box height as the status icons beside it (ind_h)
       const int iconH = ind_h;
       const int iconW = lh * 2;
       const int bm = display.isLandscape() ? 3 : 2;  // inner margin: 3px on landscape e-ink, 2px on OLED/portrait
-      battLeftX = display.width() - iconW - 3;
+      battLeftX = right_x - iconW - 2;
       display.drawRect(battLeftX, 0, iconW, iconH);
       // Nub height/2, vertically centred by remaining-space/2 rather than a flat
       // iconH/4 margin — the flat form only centres when iconH is a multiple of
@@ -613,6 +614,28 @@ class HomeScreen : public UIScreen {
     return x;
   }
 
+  int renderRepeaterSignal(DisplayDriver& display) {
+    const int w = 9;
+    const int x = display.width() - w;
+    const int h = display.isSingleFont() ? display.getLineHeight() - 2
+                                         : display.getLineHeight();
+    uint8_t bars = the_mesh.repeaterSignalBars();
+    if (!bars) {
+      // A compact diagonal cross means no fresh relayed/repeater sample.
+      for (int i = 0; i < 6; i++) {
+        display.fillRect(x + 1 + i, i, 1, 1);
+        display.fillRect(x + 6 - i, i, 1, 1);
+      }
+    } else {
+      for (uint8_t i = 0; i < 3; i++) {
+        int bar_h = 2 + i * 2;
+        if (i < bars) display.fillRect(x + i * 3, h - bar_h, 2, bar_h);
+        else display.drawRect(x + i * 3, h - bar_h, 2, bar_h);
+      }
+    }
+    return x;
+  }
+
 public:
   HomeScreen(UITask* task, mesh::RTCClock* rtc, SensorManager* sensors, NodePrefs* node_prefs)
      : _task(task), _rtc(rtc), _sensors(sensors), _node_prefs(node_prefs),
@@ -633,7 +656,9 @@ public:
   // consistent across the home carousel.
   void renderTopBar(DisplayDriver& display) {
     display.setColor(DisplayDriver::LIGHT);
-    int right_edge = renderBatteryIndicator(display, _task->getBattMilliVolts());
+    int signal_left = renderRepeaterSignal(display);
+    int right_edge = renderBatteryIndicator(display, _task->getBattMilliVolts(),
+                                             signal_left - 2);
     display.setColor(DisplayDriver::LIGHT);
     display.drawTextEllipsized(0, 0, right_edge - 2,
                               _task->isLowPowerMode() ? "LOW POWER" : _node_prefs->node_name);
@@ -3409,6 +3434,7 @@ char UITask::checkDisplayOn(char c, bool allow_wake) {
       // allow_wake=true; notification/alarm wake uses turnDisplayOn() directly.
       if (!allow_wake) return 0;
       turnDisplayOn();
+      the_mesh.onUserDisplayWake();
 #ifdef PIN_LED
       digitalWrite(PIN_LED, LOW);  // ensure LED is off when waking display (userLedHandler takes over)
 #endif

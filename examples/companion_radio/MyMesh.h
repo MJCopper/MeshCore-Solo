@@ -7,6 +7,7 @@
 #include "solo/NodeLoginResponse.h"
 #include "solo/AdminSession.h"
 #include "solo/SensorTelemetry.h"
+#include "solo/RepeaterSignalMonitor.h"
 #include <helpers/ui/DisplayDriver.h>
 
 // Forward declaration for UITask
@@ -22,7 +23,7 @@ class UITask;
 // Zen release version. The underlying MeshCore protocol/base version is
 // reported separately through the MESHCORE_VERSION build flag.
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.32.45"
+#define FIRMWARE_VERSION "v1.32.48"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
@@ -154,7 +155,11 @@ public:
   void handleCmdFrame(size_t len);
   bool advert();
   bool advertIndicatorActive() const;
-  void sendNodeDiscoverReq();
+  bool sendNodeDiscoverReq(bool silent = false);
+  void onUserDisplayWake();
+  uint8_t repeaterSignalBars() const {
+    return _repeater_signal.bars(_prefs.sf, millis(), radioAvailable());
+  }
   void enterCLIRescue();
 
   int  getRecentlyHeard(AdvertPath dest[], int max_num);
@@ -606,6 +611,8 @@ private:
   int             _discover_count;
   uint32_t        _pending_node_discover_tag;
   unsigned long   _pending_node_discover_until;
+  bool            _pending_node_discover_silent;
+  solo::RepeaterSignalMonitor _repeater_signal;
 
   // Dedup for NODE_DISCOVER_RESP copies heard more than once: the responder's
   // zero-hop direct copy and a re-flooded copy relayed by another repeater

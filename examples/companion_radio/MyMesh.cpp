@@ -313,6 +313,22 @@ uint8_t MyMesh::getExtraAckTransmitCount() const {
 }
 
 void MyMesh::logRxRaw(float snr, float rssi, const uint8_t raw[], int len) {
+  // A non-empty flood path proves at least one relay; a direct path needs more
+  // than its destination hop to prove an intermediate relay. This excludes
+  // zero-hop companion traffic while sampling normal routed mesh activity.
+  if (raw && len >= 2) {
+    uint8_t route = raw[0] & PH_ROUTE_MASK;
+    int path_pos = (route == ROUTE_TYPE_TRANSPORT_FLOOD ||
+                    route == ROUTE_TYPE_TRANSPORT_DIRECT) ? 5 : 1;
+    if (path_pos < len) {
+      uint8_t path_count = raw[path_pos] & 63;
+      bool relayed = solo::RepeaterSignalMonitor::qualifiesRoute(
+          route == ROUTE_TYPE_FLOOD || route == ROUTE_TYPE_TRANSPORT_FLOOD,
+          route == ROUTE_TYPE_DIRECT || route == ROUTE_TYPE_TRANSPORT_DIRECT,
+          path_count);
+      if (relayed) _repeater_signal.noteSample((int)(snr * 4), millis());
+    }
+  }
   if (_serial->isConnected() && len + 3 <= MAX_FRAME_SIZE) {
     int i = 0;
     out_frame[i++] = PUSH_CODE_LOG_RX_DATA;
@@ -385,6 +401,10 @@ void MyMesh::onDiscoveredAdvert(bool was_flood) {
 }
 
 void MyMesh::onDiscoveredContact(ContactInfo &contact, bool is_new, uint8_t path_len, const uint8_t* path) {
+  // Routed adverts were already sampled by logRxRaw(); this covers a directly
+  // heard repeater advert without double-weighting the same packet.
+  if (contact.type == ADV_TYPE_REPEATER && (path_len & 63) == 0)
+    _repeater_signal.noteSample((int)(_radio->getLastSNR() * 4), millis());
   if (_serial->isConnected()) {
     if (is_new) {
       writeContactRespFrame(PUSH_CODE_NEW_ADVERT, contact);
@@ -1195,7 +1215,14 @@ bool MyMesh::onContactPathRecv(ContactInfo& contact, uint8_t* in_path, uint8_t i
 #define CTL_TYPE_NODE_DISCOVER_REQ  0x80
 #define CTL_TYPE_NODE_DISCOVER_RESP 0x90
 
-void MyMesh::sendNodeDiscoverReq() {
+bool MyMesh::sendNodeDiscoverReq(bool silent) {
+  bool scan_active = _pending_node_discover_tag != 0 &&
+                     !millisHasNowPassed(_pending_node_discover_until);
+  // A user-opened Discover screen may replace a silent wake scan immediately;
+  // silent scans never displace an interactive one.
+  if (!radioAvailable() || (scan_active && (silent || !_pending_node_discover_silent)))
+    return false;
+  if (scan_active) _repeater_signal.cancelDiscovery();
   uint8_t data[10];
   data[0] = CTL_TYPE_NODE_DISCOVER_REQ;
   // Zen's on-device Discover screen is repeater-only. Keep this standalone
@@ -1205,11 +1232,27 @@ void MyMesh::sendNodeDiscoverReq() {
   getRNG()->random(&data[2], 4);
   memcpy(&_pending_node_discover_tag, &data[2], 4);
   _pending_node_discover_until = futureMillis(8000);
-  _discover_count = 0;
+  _pending_node_discover_silent = silent;
+  if (!silent) _discover_count = 0;
   uint32_t since = 0;
   memcpy(&data[6], &since, 4);
   auto pkt = createControlData(data, sizeof(data));
-  if (pkt) sendZeroHop(pkt);
+  if (!pkt) {
+    _pending_node_discover_tag = 0;
+    _pending_node_discover_silent = false;
+    return false;
+  }
+  sendZeroHop(pkt);
+  _repeater_signal.beginDiscovery();
+  return true;
+}
+
+void MyMesh::onUserDisplayWake() {
+  uint32_t now = millis();
+  // Low Power never spends airtime on probing, including during Emergency.
+  // Notification and alarm wakes do not call this entry point.
+  if (_low_power_mode || !_repeater_signal.shouldScanOnUserWake(now, radioAvailable())) return;
+  if (sendNodeDiscoverReq(true)) _repeater_signal.noteScanAttempt(now);
 }
 
 int MyMesh::getDiscoverResults(DiscoverResult dest[], int max_count) {
@@ -1326,6 +1369,9 @@ void MyMesh::onControlDataRecv(mesh::Packet *packet) {
       uint8_t node_type = packet->payload[0] & 0x0F;
       const uint8_t* pub_key = &packet->payload[6];
       if (isDupDiscoverResp(tag, pub_key)) return;  // second copy of the same response
+      if (node_type == ADV_TYPE_REPEATER)
+        _repeater_signal.noteDiscovery((int8_t)(_radio->getLastSNR() * 4));
+      if (_pending_node_discover_silent) return;
       ContactInfo* known = lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
       if (known) {
         known->lastmod = getRTCClock()->getCurrentTime();
@@ -1549,6 +1595,8 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _discover_count = 0;
   _pending_node_discover_tag = 0;
   _pending_node_discover_until = 0;
+  _pending_node_discover_silent = false;
+  _repeater_signal.reset();
   memset(_disc_seen, 0, sizeof(_disc_seen));
   _disc_seen_head = 0;
 
@@ -3082,6 +3130,13 @@ void MyMesh::checkSerialInterface() {
 
 void MyMesh::loop() {
   BaseChatMesh::loop();
+
+  if (_pending_node_discover_tag != 0 &&
+      millisHasNowPassed(_pending_node_discover_until)) {
+    _repeater_signal.finishDiscovery(millis());
+    _pending_node_discover_tag = 0;
+    _pending_node_discover_silent = false;
+  }
 
   if (_low_power_mode && !_emergency_mode) return;
 

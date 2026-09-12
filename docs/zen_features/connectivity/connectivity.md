@@ -9,6 +9,21 @@ TX power and noise floor. Configure these under **Settings › Radio**. A preset
 changes frequency, bandwidth, spreading factor and coding rate together.
 All communicating nodes must use compatible radio settings.
 
+The toolbar signal indicator estimates recent repeater-link quality from the
+SNR of routed traffic and repeater adverts. Direct companion traffic is ignored.
+Three bars represent high link margin, two medium and one low; a cross means no
+fresh measurement or that the radio is unavailable. The value is averaged in
+RAM and expires after two hours.
+
+When the user wakes the display with Back and the last measurement is over 30
+minutes old, Zen performs one silent repeater-only discovery. Notification and
+alarm wakes do not trigger it, and unsuccessful scans are limited to one attempt
+per 30 minutes. Discovery is authoritative: the strongest response becomes the
+new reading, or the indicator changes to a cross after the eight-second window
+when no repeater answers. Manual Discover Repeaters scans behave the same way.
+See the [Signal Indicator guide](../signal_indicator/signal_indicator.md) for
+measurement sources, thresholds, timing and troubleshooting.
+
 ## GPS
 
 The GPS home page shows mode, receiver state, satellites, position and altitude.
@@ -33,4 +48,3 @@ Press Enter on the Advert home page to send a manual advert. Under
 GPS Details offers Hide or Share. GPS Details applies to manual, automatic and
 companion-triggered self adverts. The advert toolbar icon remains visible for
 five seconds after an advert is queued.
-

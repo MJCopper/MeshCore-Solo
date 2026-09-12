@@ -13,6 +13,7 @@
 - [Quiet Time](./zen_features/quiet_time/quiet_time.md)
 - [Tools Screen](./zen_features/tools_screen/tools_screen.md)
 - [Radio, GPS, Bluetooth and Adverts](./zen_features/connectivity/connectivity.md)
+- [Signal Indicator](./zen_features/signal_indicator/signal_indicator.md)
 - [Sensors](./zen_features/sensors/sensors.md)
 - [Quick Replies](./zen_features/quick_replies/quick_replies.md)
 - [Repeater Mode](./zen_features/repeater_mode/repeater_mode.md)
