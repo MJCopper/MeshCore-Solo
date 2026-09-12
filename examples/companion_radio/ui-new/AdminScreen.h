@@ -30,6 +30,8 @@ class AdminScreen : public UIScreen {
   char _value[161]{};
   char _reply[201]{};
   const char* _reply_title = "Reply";
+  bool _neighbours_reply = false;
+  int _neighbour_count = 0;
   PopupMenu _confirm;
   FullscreenMsgView _view;
   DigitEditor _frequency;
@@ -50,6 +52,8 @@ class AdminScreen : public UIScreen {
     _task->returnFromAdmin();
   }
   void showReply(const char* title, const char* text) {
+    _neighbours_reply = false;
+    _neighbour_count = 0;
     _reply_title = title;
     StrHelper::strncpy(_reply, text, sizeof(_reply));
     _view.begin();
@@ -61,42 +65,68 @@ class AdminScreen : public UIScreen {
     if (c >= 'A' && c <= 'F') return c - 'A' + 10;
     return -1;
   }
-  // The repeater CLI returns neighbours as KEY8:age:snr. Replace a four-byte
-  // key prefix with the locally-known contact name while retaining the remote
-  // measurements. Unknown or malformed lines remain unchanged.
+  // Preserve the raw rows so the selected name can marquee independently of
+  // the fixed age and signal columns, matching the Discover list.
   void showNeighbours(const char* text) {
-    char formatted[sizeof(_reply)]{};
-    size_t used = 0;
-    const char* line = text;
-    while (line && *line && used + 1 < sizeof(formatted)) {
-      const char* end = strchr(line, '\n');
-      size_t line_len = end ? (size_t)(end - line) : strlen(line);
-      uint8_t prefix[4];
-      bool valid_key = line_len >= 9 && line[8] == ':';
-      for (int i = 0; i < 4 && valid_key; i++) {
-        int hi = hexNibble(line[i * 2]);
-        int lo = hexNibble(line[i * 2 + 1]);
-        if (hi < 0 || lo < 0) valid_key = false;
-        else prefix[i] = (uint8_t)((hi << 4) | lo);
-      }
-      ContactInfo* known = valid_key
-          ? the_mesh.lookupContactByPubKey(prefix, sizeof(prefix)) : nullptr;
-      const char* first = known && known->name[0] ? known->name : line;
-      size_t first_len = known && known->name[0] ? strlen(known->name)
-                                                  : (valid_key ? 8 : line_len);
-      const char* suffix = valid_key ? line + 8 : line + line_len;
-      size_t suffix_len = valid_key ? line_len - 8 : 0;
-      if (used && used + 1 < sizeof(formatted)) formatted[used++] = '\n';
-      size_t copy = first_len;
-      if (copy > sizeof(formatted) - used - 1) copy = sizeof(formatted) - used - 1;
-      memcpy(formatted + used, first, copy); used += copy;
-      copy = suffix_len;
-      if (copy > sizeof(formatted) - used - 1) copy = sizeof(formatted) - used - 1;
-      memcpy(formatted + used, suffix, copy); used += copy;
-      formatted[used] = 0;
-      line = end ? end + 1 : nullptr;
+    StrHelper::strncpy(_reply, text, sizeof(_reply));
+    _neighbour_count = _reply[0] ? 1 : 0;
+    for (const char* p = _reply; *p; p++) if (*p == '\n' && p[1]) _neighbour_count++;
+    _reply_title = "Neighbours";
+    _neighbours_reply = true;
+    _sel = _scroll = 0;
+    _phase = REPLY;
+  }
+  bool neighbourRow(int index, char* name, size_t name_size,
+                    char* metrics, size_t metrics_size) {
+    const char* line = _reply;
+    while (index-- > 0 && line) {
+      line = strchr(line, '\n');
+      if (line) line++;
     }
-    showReply("Neighbours", formatted);
+    if (!line || !*line || !name_size || !metrics_size) return false;
+    const char* end = strchr(line, '\n');
+    size_t len = end ? (size_t)(end - line) : strlen(line);
+    uint8_t prefix[4];
+    bool valid = len >= 9 && line[8] == ':';
+    for (int i = 0; i < 4 && valid; i++) {
+      int hi = hexNibble(line[i * 2]), lo = hexNibble(line[i * 2 + 1]);
+      if (hi < 0 || lo < 0) valid = false;
+      else prefix[i] = (uint8_t)((hi << 4) | lo);
+    }
+    unsigned long age = 0;
+    int snr = 0, parsed = 0;
+    valid = valid && sscanf(line + 9, "%lu:%d%n", &age, &snr, &parsed) == 2 &&
+        parsed == (int)len - 9 && age <= UINT32_MAX &&
+        snr >= INT8_MIN && snr <= INT8_MAX;
+    if (!valid) {
+      size_t copy = len < name_size - 1 ? len : name_size - 1;
+      memcpy(name, line, copy); name[copy] = 0;
+      metrics[0] = 0;
+      return true;
+    }
+    ContactInfo* known = the_mesh.lookupContactByPubKey(prefix, sizeof(prefix));
+    if (known && known->name[0]) StrHelper::strncpy(name, known->name, name_size);
+    else {
+      size_t copy = name_size > 9 ? 8 : name_size - 1;
+      memcpy(name, line, copy); name[copy] = 0;
+    }
+    return solo::admin::formatNeighbourMetrics(metrics, metrics_size,
+                                                (uint32_t)age, snr);
+  }
+  int renderNeighbours(DisplayDriver& d) {
+    d.drawCenteredHeader("Neighbours");
+    drawList(d, _neighbour_count, _sel, _scroll,
+        [&](int i, int y, bool selected, int reserve) {
+      char name[64], metrics[20];
+      if (!neighbourRow(i, name, sizeof(name), metrics, sizeof(metrics))) return;
+      drawRowSelection(d, y, selected, reserve);
+      int right = d.width() - reserve - 2;
+      int metric_width = d.getTextWidth(metrics);
+      int name_right = metrics[0] ? right - metric_width - 4 : right;
+      d.drawTextEllipsized(2, y, name_right, name, selected);
+      if (metrics[0]) d.drawTextRightAlign(right, y, metrics);
+    });
+    return 100;
   }
   void login() {
     ContactInfo* current = the_mesh.lookupContactByPubKey(_target.id.pub_key, PUB_KEY_SIZE);
@@ -218,6 +248,8 @@ public:
     _pending = PENDING_NONE;
     _authenticated = _login_waiting = _login_used_password = false;
     _confirm.active = false;
+    _neighbours_reply = false;
+    _neighbour_count = 0;
     _field = nullptr;
     _original[0] = _value[0] = _reply[0] = 0;
   }
@@ -236,6 +268,8 @@ public:
     memset(_original, 0, sizeof(_original));
     memset(_value, 0, sizeof(_value));
     memset(_reply, 0, sizeof(_reply));
+    _neighbours_reply = false;
+    _neighbour_count = 0;
     kb().begin("", 15);
   }
   void onNodeLoginResult(const uint8_t* key, bool success, uint8_t permissions) {
@@ -317,7 +351,10 @@ public:
   int render(DisplayDriver& d) override {
     d.setTextSize(1);
     d.setColor(DisplayDriver::LIGHT);
-    if (_phase == REPLY) return _view.render(d, _reply_title, _reply, false, false);
+    if (_phase == REPLY) {
+      if (_neighbours_reply) return renderNeighbours(d);
+      return _view.render(d, _reply_title, _reply, false, false);
+    }
     if ((_phase == LOGIN && !_login_waiting) || (_phase == EDIT && _text_edit)) {
       int delay = kb().render(d);
       if (_confirm.active) _confirm.render(d);
@@ -396,6 +433,17 @@ public:
       return true;
     }
     if (_phase == REPLY) {
+      if (_neighbours_reply) {
+        if ((c == KEY_UP || keyIsPrev(c)) && _neighbour_count)
+          _sel = (_sel + _neighbour_count - 1) % _neighbour_count;
+        else if ((c == KEY_DOWN || keyIsNext(c)) && _neighbour_count)
+          _sel = (_sel + 1) % _neighbour_count;
+        else if (c == KEY_ENTER || c == KEY_CANCEL) {
+          _neighbours_reply = false;
+          _phase = LIST;
+        }
+        return true;
+      }
       if (_view.handleInput(c) != FullscreenMsgView::NONE) {
         if (_console) root(); else _phase = LIST;
       }

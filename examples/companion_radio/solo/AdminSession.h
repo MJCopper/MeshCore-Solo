@@ -50,10 +50,10 @@ public:
     return true;
   }
   void cancel(uint32_t now) {
-    if (_pending) {
-      _quarantined = true;
-      _quiet_until = now + DRAIN_MS;
-    }
+    (void)now;
+    // Each local request uses a never-reused tag, so a late reply cannot
+    // complete a later request. Local cancellation therefore needs no drain
+    // period; app traffic still establishes one in appCommand().
     _pending = false;
   }
   void close(uint32_t now) { cancel(now); _authorized = false; }

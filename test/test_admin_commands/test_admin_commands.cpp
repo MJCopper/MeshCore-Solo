@@ -18,6 +18,34 @@ TEST(AdminCommands, AcceptsRawAndPrefixedReadOnlyReplies) {
                "MeshCore 1.17.1");
 }
 
+TEST(AdminCommands, FormatsNeighbourAgeAndSignalForDisplay) {
+  char text[32];
+  EXPECT_TRUE(solo::formatQuarterDb(text, sizeof(text), 45));
+  EXPECT_STREQ(text, "11.3");
+  EXPECT_TRUE(solo::formatQuarterDb(text, sizeof(text), -7));
+  EXPECT_STREQ(text, "-1.8");
+  EXPECT_TRUE(solo::admin::formatNeighbourMetrics(text, sizeof(text), 2, -7));
+  EXPECT_STREQ(text, "now -1.8");
+  EXPECT_TRUE(solo::admin::formatNeighbourMetrics(text, sizeof(text), 45, 3));
+  EXPECT_STREQ(text, "45s 0.8");
+  EXPECT_TRUE(solo::admin::formatNeighbourMetrics(text, sizeof(text), 12 * 60, 45));
+  EXPECT_STREQ(text, "12m 11.3");
+  EXPECT_TRUE(solo::admin::formatNeighbourMetrics(text, sizeof(text), 3 * 3600, 48));
+  EXPECT_STREQ(text, "3h 12.0");
+  EXPECT_TRUE(solo::admin::formatNeighbourMetrics(text, sizeof(text), 2 * 86400, -2));
+  EXPECT_STREQ(text, "2d -0.5");
+  EXPECT_FALSE(solo::admin::formatNeighbourMetrics(text, 5, 45, -7));
+
+  EXPECT_TRUE(solo::admin::formatNeighbourLine(
+      text, sizeof(text), "Best Repeater", 13, 12 * 60, 45));
+  EXPECT_STREQ(text, "Best Repea 12m 11.3");
+  EXPECT_EQ(strlen(text), 19u);
+  EXPECT_TRUE(solo::admin::formatNeighbourLine(
+      text, sizeof(text), "RPT", 3, 12 * 60, 45));
+  EXPECT_STREQ(text, "RPT        12m 11.3");
+  EXPECT_EQ(strlen(text), 19u);
+}
+
 TEST(AdminCommands, RejectsMalformedOrOutOfRangeNumbers) {
   float n = 4;
   EXPECT_FALSE(solo::admin::number("Error", 0, 20, n));

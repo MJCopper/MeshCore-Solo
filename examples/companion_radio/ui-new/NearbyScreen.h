@@ -2,6 +2,7 @@
 #include "../GeoUtils.h"
 #include "NavView.h"
 #include "TabBar.h"
+#include "../solo/SignalFormat.h"
 
 // ── Nearby Nodes ──────────────────────────────────────────────────────────────
 // One list / detail / action-menu interaction path over two sources:
@@ -908,16 +909,17 @@ public:
           shown = fallback;
         }
         // Stored Nodes devote the complete row to the name. Discovery retains
-        // its RSSI column because signal strength is specific to scan results.
+        // a compact locally-received SNR column because it is scan-specific.
         if (_source == SRC_SCAN) {
-          // Signed RSSI fits in four characters (for example, -123). Reserve
-          // only that much so repeater names retain the rest of the row.
-          int rssi_col = display.width() - display.getCharWidth() * 4;
-          display.drawTextEllipsized(tx, y, rssi_col - tx - 2, shown,
+          char right[10];
+          solo::formatQuarterDb(right, sizeof(right), e.snr_x4);
+          // Reserve only this value's actual pixel width, leaving every other
+          // pixel to the repeater name/key and anchoring SNR at the right edge.
+          int snr_width = display.getTextWidth(right);
+          int snr_col = display.width() - reserve - 2 - snr_width;
+          display.drawTextEllipsized(tx, y, snr_col - tx - 2, shown,
                                      sel && !ctxMenuOpen());
           display.setColor(sel ? DisplayDriver::DARK : DisplayDriver::LIGHT);
-          char right[10];
-          snprintf(right, sizeof(right), "%d", (int)e.rssi);
           display.drawTextRightAlign(display.width() - reserve - 2, y, right);
         } else {
           display.drawTextEllipsized(tx, y, display.width() - reserve - tx - 2,

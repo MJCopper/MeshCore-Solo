@@ -33,19 +33,18 @@ TEST(AdminSession, MatchesTaggedReplyAndRejectsStaleAndAppReplies) {
   EXPECT_TRUE(session.complete(key, "AB|> 22", 3));
 }
 
-TEST(AdminSession, QuarantinesCancellationAndAppOverlap) {
+TEST(AdminSession, LocalCancellationRemainsUsableButAppOverlapQuarantines) {
   solo::AdminSession session;
   uint8_t key[32] = {1};
   session.authorize(key);
   session.begin(0, 1000);
   session.cancel(10);
-  EXPECT_FALSE(session.ready(key, 11));
-  EXPECT_TRUE(session.ready(key, 60010));
-  session.begin(60010, 1000);
-  session.appCommand(60020, 2000);
+  EXPECT_TRUE(session.ready(key, 11));
+  session.begin(11, 1000);
+  session.appCommand(20, 2000);
   EXPECT_FALSE(session.pending());
-  EXPECT_FALSE(session.ready(key, 122019));
-  EXPECT_TRUE(session.ready(key, 122020));
+  EXPECT_FALSE(session.ready(key, 62019));
+  EXPECT_TRUE(session.ready(key, 62020));
 }
 
 TEST(AdminSession, ExpiryAndDrainSurviveMillisRollover) {
@@ -59,8 +58,7 @@ TEST(AdminSession, ExpiryAndDrainSurviveMillisRollover) {
   EXPECT_TRUE(session.expired(256));
   EXPECT_FALSE(session.complete(key, "AA|OK", 256));
   session.cancel(256);
-  EXPECT_FALSE(session.ready(key, 257));
-  EXPECT_TRUE(session.ready(key, 60256));
+  EXPECT_TRUE(session.ready(key, 257));
 }
 
 TEST(AdminSession, BoundsWireTextAndNeverReusesRequestIds) {

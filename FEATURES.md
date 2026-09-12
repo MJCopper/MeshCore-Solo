@@ -1,6 +1,6 @@
 # Zen features
 
-Zen v1.32.35 extends MeshCore v1.17.1 companion firmware for the Wio Tracker L1.
+Zen v1.32.44 extends MeshCore v1.17.1 companion firmware for the Wio Tracker L1.
 The features below are provided by Zen in addition to the standard MeshCore
 companion protocol and radio operation.
 

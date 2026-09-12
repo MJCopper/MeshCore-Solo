@@ -45,7 +45,12 @@ save confirmation. Unchanged values send nothing. After a successful write, Zen
 reads the setting back and only reports **Setting saved** when the value matches.
 The write-only administrator password is confirmed by the node's save response.
 The Neighbours status view replaces known public-key prefixes with names from
-the local contact list and leaves unknown prefixes in hexadecimal.
+the local contact list and leaves unknown prefixes in hexadecimal. Each entry
+uses one line in `name age signal` form. The selected name scrolls horizontally
+when required, while age and signal remain fixed at the right.
+Signal is decoded from MeshCore's quarter-dB wire value; positive values omit
+the sign, negative values retain it, and both use one decimal place. SNR is
+right-aligned while the name uses all space remaining before the measurements.
 Radio changes warn that the node may become unreachable; Zen's radio stays unchanged.
 Routing includes forwarding, hop limits, path hashing, RX delay, flood and direct
 TX delays, duty cycle, channel detection, Multi ACKs, interference threshold and
@@ -66,13 +71,14 @@ opens on Cancel.
 
 Admin is unavailable while Child Mode is locked. Leaving Admin clears its
 session. Commands use tagged replies and current contact paths, without background
-polling. Phone/USB commands retain priority; after overlap, cancellation or timeout,
-wait at least one minute before sending another local command. App traffic may
-extend this wait by its response timeout. Nodes must support MeshCore's echoed
+polling. Local cancellation and timeout do not block the next command because
+reply tags reject late responses. Phone/USB commands retain priority; after app
+overlap, wait for its response timeout plus one minute. Nodes must support MeshCore's echoed
 CLI prefix; untagged replies cannot populate an editor.
 
-Discover Repeaters starts a repeater-only scan immediately. Hold Enter on a
-result to manage it or rescan.
+Discover Repeaters starts a repeater-only scan immediately. Its list shows the
+right-aligned, one-decimal locally received SNR beside each name; result details retain RSSI, local SNR and
+remote SNR. Hold Enter on a result to manage it or rescan.
 
 Stored Node List entries can be starred independently of Favourites Dial pins.
 Starred nodes sort first within the selected filter.

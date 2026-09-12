@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "SignalFormat.h"
 
 namespace solo {
 namespace admin {
@@ -97,6 +98,39 @@ inline const char* value(const char* reply) {
 inline const char* readValue(const char* reply) {
   const char* parsed = value(reply);
   return parsed ? parsed : (reply ? reply : "");
+}
+inline bool formatNeighbourMetrics(char* out, size_t size, uint32_t age_seconds,
+                                   int snr_x4) {
+  char age[12];
+  if (age_seconds < 5) snprintf(age, sizeof(age), "now");
+  else if (age_seconds < 60) snprintf(age, sizeof(age), "%lus",
+                                      (unsigned long)age_seconds);
+  else if (age_seconds < 3600) snprintf(age, sizeof(age), "%lum",
+                                        (unsigned long)(age_seconds / 60));
+  else if (age_seconds < 86400) snprintf(age, sizeof(age), "%luh",
+                                         (unsigned long)(age_seconds / 3600));
+  else snprintf(age, sizeof(age), "%lud",
+                (unsigned long)(age_seconds / 86400));
+  char signal[10];
+  if (!formatQuarterDb(signal, sizeof(signal), snr_x4)) return false;
+  int n = snprintf(out, size, "%s %s", age, signal);
+  return n >= 0 && (size_t)n < size;
+}
+inline bool formatNeighbourLine(char* out, size_t size, const char* name,
+                                size_t name_len, uint32_t age_seconds, int snr_x4,
+                                size_t line_limit = 19) {
+  char metrics[20];
+  if (!out || !size || !name ||
+      !formatNeighbourMetrics(metrics, sizeof(metrics), age_seconds, snr_x4)) return false;
+  size_t metrics_len = strlen(metrics);
+  if (line_limit <= metrics_len + 1) return false;
+  size_t keep = line_limit - metrics_len - 1;
+  if (keep > name_len) keep = name_len;
+  // Do not truncate a UTF-8 name inside a continuation sequence.
+  while (keep && keep < name_len && (((uint8_t)name[keep] & 0xC0) == 0x80)) keep--;
+  size_t padding = line_limit - keep - metrics_len;
+  int n = snprintf(out, size, "%.*s%*s%s", (int)keep, name, (int)padding, "", metrics);
+  return n >= 0 && (size_t)n < size && (size_t)n <= line_limit;
 }
 inline bool number(const char* text, float min, float max, float& result) {
   char* end;
