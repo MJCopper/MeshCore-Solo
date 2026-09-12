@@ -54,7 +54,10 @@ choices for keys 2 and 4 respectively.
 
 Hold Enter opens word alternatives. In predictive T9, Back accepts the current
 word and inserts a space; double-pressing Back accepts it with a full stop and
-one space. CardKB uses direct input, Tab for completion and Fn+M for emoji.
+one space. Double Back exits only when no predictive word is active; if the
+digits have no match, it opens the alternatives instead. A prediction shown
+after backspacing into an existing word follows the same Back behaviour.
+CardKB uses direct input, Tab for completion and Fn+M for emoji.
 
 Leaving a partly written custom message keeps it as a RAM-only draft for that
 contact, room or channel. Reopening the same transcript restores the draft.

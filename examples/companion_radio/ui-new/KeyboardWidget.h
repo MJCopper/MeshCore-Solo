@@ -404,6 +404,34 @@ struct KeyboardWidget {
     return true;
   }
 
+  // Accept the normal completion preview shown after editing an existing word.
+  // This state has no active T9 digit sequence, so it must be handled separately
+  // from acceptT9WordAndSpace()/Sentence().
+  bool acceptPreviewCompletion(const char* ending) {
+    if (!_completion_preview || predictiveT9Active()) return false;
+    char word[KB_PH_LEN] = "";
+    char suffix[KB_PH_LEN] = "";
+    char candidates[2] = "";
+    if (!_completion_preview(*this, _completion_preview_ctx,
+                             word, sizeof(word), suffix, sizeof(suffix),
+                             candidates, sizeof(candidates))) return false;
+    int suffix_len = strlen(suffix);
+    int ending_len = ending ? strlen(ending) : 0;
+    if (suffix_len > 0 && len + suffix_len <= max_len) {
+      memcpy(buf + cursor_pos, suffix, suffix_len);
+      cursor_pos += suffix_len;
+      len += suffix_len;
+      buf[len] = '\0';
+      if (ending_len > 0 && len + ending_len <= max_len) {
+        memcpy(buf + cursor_pos, ending, ending_len);
+        cursor_pos += ending_len;
+        len += ending_len;
+        buf[len] = '\0';
+      }
+    }
+    return true;  // a visible prediction always consumes Back, even at capacity
+  }
+
   const char* t9GhostSuffix() const {
     if (!predictiveT9Active() || _t9_no_match || !_t9_candidate[0]) return "";
     size_t visible = solo::T9Predictor::prefixBytes(_t9_candidate, _t9_digit_count);
@@ -472,6 +500,7 @@ struct KeyboardWidget {
   void commitT9Prediction() { }
   bool acceptT9WordAndSpace() { return false; }
   bool acceptT9WordAndSentence() { return false; }
+  bool acceptPreviewCompletion(const char*) { return false; }
   const char* t9GhostSuffix() const { return ""; }
   bool appendT9Digit(char) { return false; }
   bool backspaceT9Prediction() { return false; }
@@ -1060,7 +1089,15 @@ struct KeyboardWidget {
 
     if (c == KEY_DOUBLE_CANCEL) {
 #if SOLO_FEAT_AUTOCOMPLETE
-      if (acceptT9WordAndSentence()) return NONE;
+      // Double Back only exits when there is no active predictive word. A
+      // recognised word is completed with sentence punctuation; an unmatched
+      // digit sequence opens the same recovery list as single Back instead of
+      // unexpectedly cancelling the editor.
+      if (predictiveT9Active()) {
+        if (!acceptT9WordAndSentence() && _t9_no_match) openPlaceholders();
+        return NONE;
+      }
+      if (acceptPreviewCompletion(". ")) return NONE;
 #endif
       c = KEY_CANCEL;  // outside active predictive input, retain normal Back
     }
@@ -1071,6 +1108,7 @@ struct KeyboardWidget {
       // accept the current word and insert its separator without driving the
       // grid down to Space and back. Outside an active word it remains Cancel.
       if (acceptT9WordAndSpace()) return NONE;
+      if (acceptPreviewCompletion(" ")) return NONE;
       if (predictiveT9Active() && _t9_no_match) {
         openPlaceholders();
         return NONE;

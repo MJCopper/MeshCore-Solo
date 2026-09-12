@@ -23,7 +23,7 @@ class UITask;
 // Zen release version. The underlying MeshCore protocol/base version is
 // reported separately through the MESHCORE_VERSION build flag.
 #ifndef FIRMWARE_VERSION
-#define FIRMWARE_VERSION "v1.32.57"
+#define FIRMWARE_VERSION "v1.32.59"
 #endif
 
 #if defined(NRF52_PLATFORM) || defined(STM32_PLATFORM)
