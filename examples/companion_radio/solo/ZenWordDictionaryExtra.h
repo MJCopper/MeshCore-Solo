@@ -192,6 +192,6 @@ static const char* const EXTRA_WORDS[EXTRA_WORD_COUNT] = {
   "footage", "qualified", "replaced", "residence", "writes", "phony", "tossed", "smash",
   "native", "illusion", "depth", "wished", "technical", "lung", "visions", "fortunate",
   "perspective", "sweating", "mature", "sources", "sang", "radiation", "yacht", "larger",
-  "genuine", "strings", "shield", "insisted",
+  "genuine", "strings", "shield", "hillvue",
 };
 } // namespace zen_dictionary

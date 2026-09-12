@@ -17,6 +17,10 @@ TARGET_EXTRA_WORDS = 1500
 START_AFTER = "bail"
 WORD_RE = re.compile(r"[a-z]{3,15}")
 
+# Project-specific words retained at the end of the fixed-size dictionary so
+# adding them cannot renumber the frequency-ranked words used by context data.
+PINNED_WORDS = ("hillvue",)
+
 # Spellings which must not be reintroduced after the Australianised core.
 US_SPELLINGS = {
     "aluminum", "apologize", "apologized", "apologizes", "apologizing",
@@ -105,7 +109,8 @@ def select_words(source: list[dict], existing: set[str]) -> list[str]:
             continue
         selected.append(word)
         seen.add(word)
-        if len(selected) == TARGET_EXTRA_WORDS:
+        if len(selected) == TARGET_EXTRA_WORDS - len(PINNED_WORDS):
+            selected.extend(PINNED_WORDS)
             return selected
     raise RuntimeError(f"only found {len(selected)} suitable supplementary words")
 

@@ -192,6 +192,15 @@ TEST(SoloWordCompleter, UsesAustralianSpellingsAndEverydayTerms) {
   for (const char* word : replaced) EXPECT_EQ(0u, words.count(word)) << word;
 }
 
+TEST(SoloWordCompleter, IncludesPinnedLocalCommands) {
+  char matches[solo::WordCompleter::MAX_SUGGESTIONS]
+              [solo::WordCompleter::MAX_WORD_LEN] = {};
+  ASSERT_GT(solo::WordCompleter::suggest(
+                "hill", 4, matches,
+                solo::WordCompleter::MAX_SUGGESTIONS), 0u);
+  EXPECT_STREQ("hillvue", matches[0]);
+}
+
 TEST(SoloWordCompleter, FindsWholeWordAroundCursorAtPunctuation) {
   const char* text = "hello, schoo!";
   solo::WordCompleter::WordRange range = solo::WordCompleter::currentWord(
