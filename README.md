@@ -7,7 +7,7 @@ Zen extends the official [MeshCore](https://github.com/meshcore-dev/MeshCore)
 companion firmware with a standalone messaging interface for the Seeed Wio
 Tracker L1.
 
-Current release: **Zen v1.32.44**, based on **MeshCore v1.17.1**.
+Current release: **Zen v1.32.45**, based on **MeshCore v1.17.1**.
 
 ## Supported hardware
 
@@ -72,14 +72,22 @@ connection.
 
 ## Guides
 
+- [Getting Started](./docs/getting_started.md)
 - [Messages](./docs/zen_features/message_screen/message_screen.md)
 - [Settings](./docs/zen_features/settings_screen/settings_screen.md)
 - [Clock](./docs/zen_features/clock_screen/clock_screen.md)
 - [Favourites Dial](./docs/zen_features/favourites_dial/favourites_dial.md)
+- [Radio, GPS, Bluetooth and Adverts](./docs/zen_features/connectivity/connectivity.md)
+- [Sensors](./docs/zen_features/sensors/sensors.md)
+- [Quick Replies](./docs/zen_features/quick_replies/quick_replies.md)
 - [CardKB](./docs/zen_features/cardkb/cardkb.md)
 - [Child Mode](./docs/zen_features/child_mode/child_mode.md)
 - [Quiet Time](./docs/zen_features/quiet_time/quiet_time.md)
 - [Tools](./docs/zen_features/tools_screen/tools_screen.md)
+- [Repeater Mode](./docs/zen_features/repeater_mode/repeater_mode.md)
+- [Node Administration](./docs/zen_features/node_admin/node_admin.md)
+- [Diagnostics](./docs/zen_features/diagnostics/diagnostics.md)
+- [Battery and Low Power Mode](./docs/zen_features/power/power.md)
 - [Build Zen](./docs/building_zen.md)
 - [UI developer guide](./docs/design/zen_ui_framework.md)
 

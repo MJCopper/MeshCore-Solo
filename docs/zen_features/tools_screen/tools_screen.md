@@ -27,6 +27,9 @@ ignores the first two hours after charging, then gradually learns from six to
 24 hours of normal discharge. Samples remain RAM-only. Charging and Paused
 replace the time when appropriate.
 
+See the dedicated [Diagnostics](../diagnostics/diagnostics.md) and
+[Battery and Low Power Mode](../power/power.md) guides.
+
 ## Node administration
 
 Select a saved repeater, room or sensor in Node List, hold Enter and choose
@@ -76,6 +79,9 @@ reply tags reject late responses. Phone/USB commands retain priority; after app
 overlap, wait for its response timeout plus one minute. Nodes must support MeshCore's echoed
 CLI prefix; untagged replies cannot populate an editor.
 
+See [Node Administration](../node_admin/node_admin.md) for the concise operating
+guide.
+
 Discover Repeaters starts a repeater-only scan immediately. Its list shows the
 right-aligned, one-decimal locally received SNR beside each name; result details retain RSSI, local SNR and
 remote SNR. Hold Enter on a result to manage it or rescan.
@@ -87,3 +93,5 @@ Repeater Mode uses the current **Settings › Radio** configuration. Its fixed
 backend values are RX delay `10`, flood/direct airtime factors `0.5`/`0.3`,
 Yield `x2`, and duplicate suppression On. It continues in the background after
 leaving Tools.
+
+See the [Repeater Mode guide](../repeater_mode/repeater_mode.md).

@@ -1,10 +1,10 @@
-site_name: MeshCore Docs
-site_url: https://meshcore-dev.github.io/meshcore/
-site_description: Documentation for the open source MeshCore firmware
+site_name: MeshCore Zen
+site_url: https://mjcopper.github.io/MeshCore-Zen/
+site_description: Documentation for MeshCore Zen firmware
 
-repo_name: meshcore-dev/meshcore
-repo_url: https://github.com/meshcore-dev/meshcore/
-edit_uri: edit/main/docs/
+repo_name: MJCopper/MeshCore-Zen
+repo_url: https://github.com/MJCopper/MeshCore-Zen/
+edit_uri: edit/zen/main/docs/
 
 theme:
   name: material

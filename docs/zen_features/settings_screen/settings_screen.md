@@ -85,6 +85,8 @@ There is no background polling.
 Sensors is enabled by default on fresh settings. Enable it here on existing
 devices. It is hidden while Child Mode is locked.
 
+See the [Sensors guide](../sensors/sensors.md) for navigation and login behaviour.
+
 ## Radio
 
 TX power, preset, frequency, spreading factor, bandwidth and coding rate. Preset
@@ -105,6 +107,9 @@ validated digit editor.
 Timed GPS modes acquire a stable fix, cache it, power down, then repeat after
 the selected interval. GPS and Bluetooth changes are applied when Settings is
 closed.
+
+See [Radio, GPS, Bluetooth and Adverts](../connectivity/connectivity.md) for the
+related home-page controls.
 
 ## Keyboard
 
@@ -132,3 +137,6 @@ Ten natural built-in replies are always available. Edit up to five additional
 custom replies here; empty custom slots are omitted from the reply picker.
 Custom replies support the same time, location and active-sensor placeholders
 as message composition.
+
+See the [Quick Replies guide](../quick_replies/quick_replies.md) for use from a
+conversation.
