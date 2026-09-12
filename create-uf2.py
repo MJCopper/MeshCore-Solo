@@ -7,7 +7,8 @@ import os
 Import("env")
 
 firmware_hex = "${BUILD_DIR}/${PROGNAME}.hex"
-uf2_file = os.environ.get("UF2_FILE_PATH", "${BUILD_DIR}/${PROGNAME}.uf2")
+uf2_filename = env.GetProjectOption("custom_uf2_filename", "${PROGNAME}.uf2")
+uf2_file = os.environ.get("UF2_FILE_PATH", "${BUILD_DIR}/" + uf2_filename)
 
 def create_uf2_action(source, target, env):
     uf2_cmd = " ".join(

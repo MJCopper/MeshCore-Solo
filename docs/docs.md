@@ -1,13 +1,21 @@
 # Local Documentation
 
-This document explains how to build and view the MeshCore documentation locally.
+[Back to README](../README.md)
 
-## Building and viewing Docs
+Install MkDocs and the Material theme:
 
+```sh
+python3 -m pip install mkdocs mkdocs-material
 ```
-pip install mkdocs
-pip install mkdocs-material
+
+Preview the BME680 sensor documentation from the repository root:
+
+```sh
+mkdocs serve
 ```
 
-- `mkdocs serve` - Start the live-reloading docs server.
-- `mkdocs build` - Build the documentation site.
+Validate the complete site before publishing:
+
+```sh
+mkdocs build --strict
+```

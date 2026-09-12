@@ -1,128 +1,106 @@
-## About MeshCore
+# MeshCore BME680 Sensor Firmware
 
-MeshCore is a lightweight, portable C++ library that enables multi-hop packet routing for embedded projects using LoRa and other packet radios. It is designed for developers who want to create resilient, decentralized communication networks that work without the internet.
+> **First installation:** Read the [flashing notes](#flashing) before connecting
+> the sensor node to the mesh.
 
-## 🔍 What is MeshCore?
+This branch provides dedicated environmental-sensor firmware for a Seeed Studio
+XIAO nRF52840, an SX1262 LoRa radio and a Bosch BME680. It is based on
+**MeshCore v1.17.1** and uses the standard MeshCore sensor protocol.
 
-MeshCore now supports a range of LoRa devices, allowing for easy flashing without the need to compile firmware manually. Users can flash a pre-built binary using tools like Adafruit ESPTool and interact with the network through a serial console.
-MeshCore provides the ability to create wireless mesh networks, similar to Meshtastic and Reticulum but with a focus on lightweight multi-hop packet routing for embedded projects. Unlike Meshtastic, which is tailored for casual LoRa communication, or Reticulum, which offers advanced networking, MeshCore balances simplicity with scalability, making it ideal for custom embedded solutions, where devices (nodes) can communicate over long distances by relaying messages through intermediate nodes. This is especially useful in off-grid, emergency, or tactical situations where traditional communication infrastructure is unavailable.
+## Supported hardware
 
-## ⚡ Key Features
+| Component | Requirement |
+| --------- | ----------- |
+| Controller | Seeed Studio XIAO nRF52840 |
+| Radio | SX1262 module wired for the XIAO target |
+| Sensor | BME680 I2C breakout at address `0x76` |
+| Display | None |
+| Power | USB or a suitable 3.3 V/battery supply |
 
-* Multi-Hop Packet Routing
-  * Devices can forward messages across multiple nodes, extending range beyond a single radio's reach.
-  * Supports up to a configurable number of hops to balance network efficiency and prevent excessive traffic.
-  * Nodes use fixed roles where "Companion" nodes are not repeating messages at all to prevent adverse routing paths from being used.
-* Supports LoRa Radios – Works with Heltec, RAK Wireless, and other LoRa-based hardware.
-* Decentralized & Resilient – No central server or internet required; the network is self-healing.
-* Low Power Consumption – Ideal for battery-powered or solar-powered devices.
-* Simple to Deploy – Pre-built example applications make it easy to get started.
+The BME680 uses `D6` for SCL and `D7` for SDA. These are firmware-specific I2C
+pins because the radio occupies the XIAO's usual `D4` and `D5` connections.
+See [Hardware](./docs/sensor_features/hardware/hardware.md) for the complete
+wiring table.
 
-## 🎯 What Can You Use MeshCore For?
+## Software features
 
-* Off-Grid Communication: Stay connected even in remote areas.
-* Emergency Response & Disaster Recovery: Set up instant networks where infrastructure is down.
-* Outdoor Activities: Hiking, camping, and adventure racing communication.
-* Tactical & Security Applications: Military, law enforcement, and private security use cases.
-* IoT & Sensor Networks: Collect data from remote sensors and relay it back to a central location.
+- Temperature, relative humidity, pressure, calculated altitude and relative
+  air-quality telemetry.
+- One sensor sample per minute with the latest result cached in RAM.
+- Public-channel queries through the case-insensitive `!hillvue` command.
+- Single- and multi-value command responses with consistent labels and units.
+- Ten-sample air-quality warm-up with descriptive quality ratings.
+- RAM-only air-quality calibration and duplicate-command tracking.
+- Standard MeshCore remote telemetry and administrator management.
+- Fixed leaf-node operation: received mesh packets are never repeated.
+- Rate-limited bot responses with no scheduled sensor posts.
 
-## 🚀 How to Get Started
+See [FEATURES.md](./FEATURES.md) for the complete behaviour summary.
 
-- Watch the [MeshCore QuickStart Playlist](https://www.youtube.com/watch?v=iaFltojJrAc&list=PLshzThxhw4O4WU_iZo3NmNZOv6KMrUuF9) by The Comms Channel
-- Watch the [MeshCore Technical Presentation](https://www.youtube.com/watch?v=OwmkVkZQTf4) by Liam Cottle.
-- Read through our [Frequently Asked Questions](./docs/faq.md) and [Documentation](https://docs.meshcore.io).
-- Flash the MeshCore firmware on a supported device.
-- Connect with a supported client.
+> [!WARNING]
+> This is custom sensor firmware. Confirm the wiring, radio frequency and legal
+> transmit settings for your hardware and location before powering the node.
 
-For developers:
+## Flashing
 
-- Install [PlatformIO](https://docs.platformio.org) in [Visual Studio Code](https://code.visualstudio.com).
-- Clone and open the MeshCore repository in Visual Studio Code.
-- See the example applications you can modify and run:
-  - [Companion Radio](./examples/companion_radio) - For use with an external chat app, over BLE, USB or Wi-Fi.
-  - [KISS Modem](./examples/kiss_modem) - Serial KISS protocol bridge for host applications. ([protocol docs](./docs/kiss_modem_protocol.md))
-  - [Simple Repeater](./examples/simple_repeater) - Extends network coverage by relaying messages.
-  - [Simple Room Server](./examples/simple_room_server) - A simple BBS server for shared Posts.
-  - [Simple Secure Chat](./examples/simple_secure_chat) - Secure terminal based text communication between devices.
-  - [Simple Sensor](./examples/simple_sensor) - Remote sensor node with telemetry and alerting.
+Flashing replaces the installed firmware. Erasing first also removes the saved
+node identity, radio settings, ACL and administrator password.
 
-The Simple Secure Chat example can be interacted with through the Serial Monitor in Visual Studio Code, or with a Serial USB Terminal on Android.
+1. Build or obtain `Xiao_nrf52_bme680_sensor.uf2`.
+2. Connect the XIAO nRF52840 directly to the computer with a USB data cable. A
+   charge-only cable cannot transfer firmware.
+3. Quickly press the XIAO's **Reset** button twice. A removable bootloader drive
+   should appear on the computer.
+4. Copy `Xiao_nrf52_bme680_sensor.uf2` to the root of that drive.
+5. Wait for the copy to finish. The drive normally disconnects and the XIAO
+   restarts automatically when flashing completes.
+6. If the drive does not appear, reconnect the USB cable and repeat the quick
+   double-press of **Reset**.
 
-## ⚡️ MeshCore Flasher
+For a clean first installation, use the nRF52 erase UF2 from the
+[MeshCore Flasher](https://meshcore.io/flasher) before copying the sensor UF2.
 
-We have prebuilt firmware ready to flash on supported devices.
+## First setup
 
-- Launch https://meshcore.io/flasher
-- Select a supported device
-- Flash one of the firmware types:
-  - Companion, Repeater or Room Server
-- Once flashing is complete, you can connect with one of the MeshCore clients below.
+1. Connect the BME680 and SX1262 using the documented wiring.
+2. Flash the sensor firmware and allow the node to boot.
+3. Discover the node as a Sensor in a MeshCore companion app.
+4. Log in with the configured administrator password; the build default is
+   `password` and should be changed immediately.
+5. Set the node name and the correct regional radio parameters.
+6. Wait for the first one-minute sample before requesting telemetry. Air quality
+   reports **Warming Up** until ten successful samples have completed.
 
-## 📱 MeshCore Clients
+The node advertises as `BME680 Sensor` on a clean configuration. Saved settings
+from an earlier installation take precedence over build defaults.
 
-**Companion Firmware**
+## Guides
 
-The companion firmware can be connected to via BLE, USB or Wi-Fi depending on the firmware type you flashed.
+- [Getting Started](./docs/getting_started.md)
+- [Hardware and Wiring](./docs/sensor_features/hardware/hardware.md)
+- [Telemetry](./docs/sensor_features/telemetry/telemetry.md)
+- [Public-channel Commands](./docs/sensor_features/public_bot/public_bot.md)
+- [Access and Management](./docs/sensor_features/access/access.md)
+- [Building the Firmware](./docs/building_sensor.md)
 
-- Web: https://app.meshcore.nz
-- Android: https://play.google.com/store/apps/details?id=com.liamcottle.meshcore.android
-- iOS: https://apps.apple.com/us/app/meshcore/id6742354151?platform=iphone
-- NodeJS: https://github.com/liamcottle/meshcore.js
-- Python: https://github.com/fdlamotte/meshcore-cli
+## Development
 
-**Repeater and Room Server Firmware**
+The sensor-specific code is isolated behind `PUBLIC_CHANNEL_SENSOR_BOT` and the
+`Xiao_nrf52_bme680_sensor` PlatformIO environment. This keeps the custom
+behaviour separate from the MeshCore v1.17.1 baseline.
 
-The repeater and room server firmware can be set up via USB in the web config tool.
+Build the firmware with:
 
-- https://config.meshcore.io
-
-They can also be managed via LoRa in the mobile app by using the Remote Management feature.
-
-## 🛠 Hardware Compatibility
-
-MeshCore is designed for devices listed in the [MeshCore Flasher](https://meshcore.io/flasher)
-
-## 📜 License
-
-MeshCore is open-source software released under the MIT License. You are free to use, modify, and distribute it for personal and commercial projects.
-
-## Contributing
-
-Please submit PR's using 'dev' as the base branch!
-For minor changes just submit your PR and we'll try to review it, but for anything more 'impactful' please open an Issue first and start a discussion. It is better to sound out what it is you want to achieve first, and try to come to a consensus on what the best approach is, especially when it impacts the structure or architecture of this codebase.
-
-Here are some general principles you should try to adhere to:
-* Keep it simple. Please, don't think like a high-level lang programmer. Think embedded, and keep code concise, without any unnecessary layers.
-* No dynamic memory allocation, except during setup/begin functions.
-* Use the same brace and indenting style that's in the core source modules. (A .clang-format is probably going to be added soon, but please do NOT retroactively re-format existing code. This just creates unnecessary diffs that make finding problems harder)
-
-Help us prioritize! Please react with thumbs-up to issues/PRs you care about most. We look at reaction counts when planning work.
-
-### Running unit tests
-
-To run unit tests, run the following command:
-
-```bash
-pio test --environment native --verbose
+```sh
+pio run -e Xiao_nrf52_bme680_sensor
+pio run -e Xiao_nrf52_bme680_sensor -t create_uf2
 ```
 
-## Road-Map / To-Do
+The second command writes the flashable UF2 to:
 
-There are a number of fairly major features in the pipeline, with no particular time-frames attached yet. In very rough chronological order:
-- [X] Companion radio: UI redesign
-- [X] Repeater + Room Server: add ACL's (like Sensor Node has)
-- [X] Standardise Bridge mode for repeaters
-- [ ] Repeater/Bridge: Standardise the Transport Codes for zoning/filtering
-- [X] Core + Repeater: enhanced zero-hop neighbour discovery
-- [ ] Core: round-trip manual path support
-- [ ] Companion + Apps: support for multiple sub-meshes (and 'off-grid' client repeat mode)
-- [ ] Core + Apps: support for LZW message compression
-- [ ] Core: dynamic CR (Coding Rate) for weak vs strong hops
-- [ ] Core: new framework for hosting multiple virtual nodes on one physical device
-- [ ] V2 protocol spec: discussion and consensus around V2 packet protocol, including path hashes, new encryption specs, etc
+```text
+.pio/build/Xiao_nrf52_bme680_sensor/Xiao_nrf52_bme680_sensor.uf2
+```
 
-## 📞 Get Support
-
-- Report bugs and request features on the [GitHub Issues](https://github.com/ripplebiz/MeshCore/issues) page.
-- Find additional guides and components on [my site](https://buymeacoffee.com/ripplebiz).
-- Join [MeshCore Discord](https://meshcore.gg) to chat with the developers and get help from the community.
+Mesh networking and the sensor protocol are provided by
+[MeshCore](https://github.com/meshcore-dev/MeshCore).

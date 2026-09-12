@@ -1,10 +1,9 @@
-site_name: MeshCore Docs
-site_url: https://meshcore-dev.github.io/meshcore/
-site_description: Documentation for the open source MeshCore firmware
+site_name: MeshCore BME680 Sensor
+site_description: Hardware and software documentation for the XIAO nRF52840 BME680 sensor firmware
 
-repo_name: meshcore-dev/meshcore
-repo_url: https://github.com/meshcore-dev/meshcore/
-edit_uri: edit/main/docs/
+repo_name: MJCopper/MeshCore-Zen
+repo_url: https://github.com/MJCopper/MeshCore-Zen/
+edit_uri: edit/meshcore/sensor/docs/
 
 theme:
   name: material
@@ -17,3 +16,13 @@ theme:
 
 extra_css:
   - _stylesheets/extra.css
+
+nav:
+  - Overview: index.md
+  - Getting Started: getting_started.md
+  - Hardware and Wiring: sensor_features/hardware/hardware.md
+  - Telemetry: sensor_features/telemetry/telemetry.md
+  - Public-channel Commands: sensor_features/public_bot/public_bot.md
+  - Access and Management: sensor_features/access/access.md
+  - Building: building_sensor.md
+  - Local Documentation: docs.md

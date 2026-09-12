@@ -1,15 +1,20 @@
-# Introduction
+# BME680 Sensor Documentation
 
-Welcome to the MeshCore documentation.
+The guides cover the hardware and software provided by the
+`Xiao_nrf52_bme680_sensor` firmware.
 
-Below are a few quick start guides.
+## Start here
 
-- [Frequently Asked Questions](./faq.md)
-- [CLI Commands](./cli_commands.md)
-- [Companion Protocol](./companion_protocol.md)
-- [Packet Format](./packet_format.md)
-- [QR Codes](./qr_codes.md)
+- [Firmware overview](../README.md)
+- [Getting Started](./getting_started.md)
+- [Hardware and Wiring](./sensor_features/hardware/hardware.md)
 
-If you find a mistake in any of our documentation, or find something is missing, please feel free to open a pull request for us to review.
+## Sensor features
 
-- [Documentation Source](https://github.com/meshcore-dev/MeshCore/tree/main/docs)
+- [Telemetry](./sensor_features/telemetry/telemetry.md)
+- [Public-channel Commands](./sensor_features/public_bot/public_bot.md)
+- [Access and Management](./sensor_features/access/access.md)
+
+## Development
+
+- [Building the Firmware](./building_sensor.md)
