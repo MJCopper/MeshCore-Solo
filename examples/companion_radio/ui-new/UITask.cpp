@@ -553,7 +553,7 @@ class HomeScreen : public UIScreen {
       display.print(buf);
     } else {  // icon — scales with lh, same box height as the status icons beside it (ind_h)
       const int iconH = ind_h;
-      const int iconW = lh * 2;
+      const int iconW = lh * 2 - 4;
       const int bm = display.isLandscape() ? 3 : 2;  // inner margin: 3px on landscape e-ink, 2px on OLED/portrait
       battLeftX = right_x - iconW - 2;
       display.drawRect(battLeftX, 0, iconW, iconH);
@@ -563,7 +563,8 @@ class HomeScreen : public UIScreen {
       // so it visibly drifted off-centre once the box height changed.
       const int nub_h = iconH / 2;
       display.fillRect(battLeftX + iconW, (iconH - nub_h) / 2, 2, nub_h);
-      int fillW = (pct * (iconW - 2 * bm)) / 100;
+      const int innerW = iconW - 2 * bm;
+      int fillW = (pct * innerW) / 100;
       display.fillRect(battLeftX + bm, bm, fillW, iconH - 2 * bm);
     }
 
@@ -574,7 +575,7 @@ class HomeScreen : public UIScreen {
     // still reserves its slot while off, so the name width doesn't flicker.
     //
     // Priority: BT > GPS fix > alarm > mute > auto-advert > live-share >
-    // repeater. Battery (drawn above) is always rightmost. The background modes
+    // repeater. Battery remains ahead of the signal indicator. The background modes
     // (advert / live-share / repeater) stay outside any BT gate — they
     // keep running with Bluetooth off, so their cue must not vanish with it.
     LocationProvider* loc = _sensors ? _sensors->getLocationProvider() : nullptr;
