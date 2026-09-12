@@ -1,6 +1,6 @@
 # Zen features
 
-Zen v1.32.49 extends MeshCore v1.17.1 companion firmware for the Wio Tracker L1.
+Zen v1.32.57 extends MeshCore v1.17.1 companion firmware for the Wio Tracker L1.
 The features below are provided by Zen in addition to the standard MeshCore
 companion protocol and radio operation.
 
@@ -10,7 +10,7 @@ companion protocol and radio operation.
 | Messaging | Direct, channel and room lists with full transcripts, sender replies, unread tracking and latest-unread shortcut |
 | Delivery | Route-aware direct-message retries, path-to-flood fallback, live delivery markers, channel echo counts and manual resend |
 | Quick Replies | Ten built-in and five editable replies, with time, location and sensor placeholders |
-| Text entry | EN-US ABC and predictive T9 with a 4,000-word Australianised dictionary and command-prioritised console completion |
+| Text entry | EN-US ABC and predictive T9 with a 4,000-word Australianised dictionary, compact previous-word ranking and command-prioritised console completion |
 | Emoji | Monochrome common emoji, diamond fallback and an insertable chat emoji picker |
 | CardKB | Startup detection, direct input, automatic compact editor and screen-aware polling through Grove I2C |
 | Clock and time | Permanent first page, unread count, 12/24-hour display and background GPS/companion time synchronisation |

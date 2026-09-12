@@ -2794,6 +2794,8 @@ void UITask::loop() {
   ev = back_btn.check();
   if (ev == BUTTON_EVENT_CLICK) {
     enqueueKey(checkDisplayOn(KEY_CANCEL));
+  } else if (ev == BUTTON_EVENT_DOUBLE_CLICK) {
+    enqueueKey(checkDisplayOn(KEY_DOUBLE_CANCEL));
   } else if (ev == BUTTON_EVENT_TRIPLE_CLICK) {
     enqueueKey(handleTripleClick(KEY_SELECT));
   }

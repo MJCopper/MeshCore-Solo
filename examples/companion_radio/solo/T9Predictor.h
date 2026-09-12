@@ -119,6 +119,7 @@ public:
     if (max_results > WordCompleter::MAX_SUGGESTIONS)
       max_results = WordCompleter::MAX_SUGGESTIONS;
     uint8_t count = 0;
+    static const char* const SINGLE_WORDS[] = { "a", "I" };
     static const char* const CONTRACTIONS[] = {
       "I'm", "I'll", "I've", "I'd", "don't", "can't", "won't", "isn't",
       "it's", "you're", "you've", "we're", "they're", "that's", "there's"
@@ -133,6 +134,13 @@ public:
         if (!recent[i][0] || (digitLength(recent[i]) == digit_count) != exact ||
             !matches(recent[i], digits, digit_count)) continue;
         appendResult(recent[i], results, count, max_results, max_bytes);
+      }
+      for (size_t i = 0; i < sizeof(SINGLE_WORDS) / sizeof(SINGLE_WORDS[0]) &&
+                         count < max_results; i++) {
+        const char* word = SINGLE_WORDS[i];
+        if ((digitLength(word) == digit_count) != exact ||
+            !matches(word, digits, digit_count)) continue;
+        appendResult(word, results, count, max_results, max_bytes);
       }
       for (size_t i = 0; i < sizeof(CONTRACTIONS) / sizeof(CONTRACTIONS[0]) &&
                          count < max_results; i++) {

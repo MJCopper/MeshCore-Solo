@@ -11,6 +11,7 @@
 #include "MessageTranscriptView.h"
 #include "RecentParticipants.h"
 #include "../solo/QuickReplies.h"
+#include "../solo/MessageDraftStore.h"
 
 class MessagesScreen : public UIScreen {
   UITask* _task;
@@ -124,6 +125,7 @@ class MessagesScreen : public UIScreen {
   // shared types (AckState, ChHistEntry, DmHistEntry, MSG_TEXT_BUF) are file-
   // scope, so they're still referred to unqualified throughout this screen.
   MessageHistory _history;
+  solo::MessageDraftStore _drafts;
 
   // DM_HIST view state (the ring itself is in _history).
   int _dm_hist_sel, _dm_hist_scroll;
@@ -297,11 +299,39 @@ class MessagesScreen : public UIScreen {
   }
 
   void beginCustomMessage(bool replying = false) {
-    _reply_mode = replying;
+    char initial[solo::MessageDraftStore::TEXT_CAPACITY] = "";
+    uint8_t reply_prefix_len = 0;
+    bool restored = false;
+    if (!replying) {
+      restored = _sending_to_channel
+          ? _drafts.loadChannel((uint8_t)_sel_channel_idx, initial,
+                                sizeof(initial), &reply_prefix_len)
+          : _drafts.loadContact(_sel_contact.id.pub_key, initial,
+                                sizeof(initial), &reply_prefix_len);
+    }
+    _reply_mode = replying || (restored && reply_prefix_len > 0);
+    if (_reply_mode && restored) {
+      memcpy(_reply_prefix, initial, reply_prefix_len);
+      _reply_prefix[reply_prefix_len] = '\0';
+    }
     _quick_msgs_bypassed = true;
-    messageeditor::begin(*_kb, replying ? _reply_prefix : "",
+    messageeditor::begin(*_kb, replying ? _reply_prefix : initial,
                          sendTextLimit(), &sensors);
     _phase = KEYBOARD;
+  }
+
+  void saveCurrentDraft() {
+    uint8_t prefix_len = _reply_mode ? (uint8_t)strlen(_reply_prefix) : 0;
+    const char* text = _kb->len > prefix_len ? _kb->buf : "";
+    if (_sending_to_channel)
+      _drafts.saveChannel((uint8_t)_sel_channel_idx, text, prefix_len);
+    else
+      _drafts.saveContact(_sel_contact.id.pub_key, text, prefix_len);
+  }
+
+  void clearCurrentDraft() {
+    if (_sending_to_channel) _drafts.clearChannel((uint8_t)_sel_channel_idx);
+    else _drafts.clearContact(_sel_contact.id.pub_key);
   }
 
   void beginQuickMessagePick() {
@@ -1988,6 +2018,7 @@ public:
       if (res == KeyboardWidget::CANCELLED) {
         if (_share_mode) { _share_mode = false; _task->gotoHomeScreen(); }
         else if (_quick_msgs_bypassed) {
+          saveCurrentDraft();
           _quick_msgs_bypassed = false;
           _reply_mode = false;
           _phase = _sending_to_channel ? CHANNEL_HIST : DM_HIST;
@@ -2010,6 +2041,7 @@ public:
             expandMsg(_kb->buf, expanded, sizeof(expanded));
           }
           solo::MessageTextPolicy::trim(expanded, sendTextLimit());
+          clearCurrentDraft();
           bool ok = sendText(expanded);
           afterSend(ok, expanded);
         }

@@ -13,6 +13,7 @@
 #define KEY_NEXT           0xF1
 #define KEY_PREV           0xF2
 #define KEY_CONTEXT_MENU   0xF3
+#define KEY_DOUBLE_CANCEL  0xF4
 // A literal-ASCII input source's (e.g. an I2C CardKB) Enter, translated only
 // when the on-screen keyboard's plain grid state is active (see
 // UITask::pollCardKB()) -- means "submit the field", not KEY_ENTER's usual
@@ -70,4 +71,3 @@ public:
   // invoked centrally, a new screen can't "forget" to be reset on show.
   virtual void onShow() { }
 };
-

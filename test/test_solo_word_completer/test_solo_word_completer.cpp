@@ -5,6 +5,126 @@
 
 #include "../../examples/companion_radio/solo/WordCompleter.h"
 #include "../../examples/companion_radio/solo/T9Predictor.h"
+#include "../../examples/companion_radio/solo/SentenceCase.h"
+#include "../../examples/companion_radio/solo/ContextPredictor.h"
+#include "../../examples/companion_radio/solo/MessageDraftStore.h"
+
+static_assert(solo::WordCompleter::MAX_SUGGESTIONS == 12,
+              "Zen predictive menus expose twelve ranked suggestions");
+
+TEST(SoloMessageDraftStore, KeepsDraftsSeparateByConversation) {
+  solo::MessageDraftStore drafts;
+  uint8_t alice[] = { 1, 2, 3, 4 };
+  uint8_t bob[] = { 5, 6, 7, 8 };
+  char text[solo::MessageDraftStore::TEXT_CAPACITY];
+  drafts.saveContact(alice, "Hello Alice");
+  drafts.saveContact(bob, "Hello Bob");
+  drafts.saveChannel(2, "Hello channel");
+  ASSERT_TRUE(drafts.loadContact(alice, text, sizeof(text)));
+  EXPECT_STREQ("Hello Alice", text);
+  ASSERT_TRUE(drafts.loadContact(bob, text, sizeof(text)));
+  EXPECT_STREQ("Hello Bob", text);
+  ASSERT_TRUE(drafts.loadChannel(2, text, sizeof(text)));
+  EXPECT_STREQ("Hello channel", text);
+}
+
+TEST(SoloMessageDraftStore, EmptyTextClearsDraftAndReplyStateIsRestored) {
+  solo::MessageDraftStore drafts;
+  uint8_t alice[] = { 1, 2, 3, 4 };
+  char text[solo::MessageDraftStore::TEXT_CAPACITY];
+  uint8_t prefix_len = 0;
+  drafts.saveContact(alice, "@[Alice] hello", 9);
+  ASSERT_TRUE(drafts.loadContact(alice, text, sizeof(text), &prefix_len));
+  EXPECT_EQ(9u, prefix_len);
+  drafts.saveContact(alice, "");
+  EXPECT_FALSE(drafts.loadContact(alice, text, sizeof(text)));
+}
+
+TEST(SoloSentenceCase, RecognisesMessageSentenceBoundaries) {
+  EXPECT_TRUE(solo::SentenceCase::shouldCapitalize("", 0));
+  EXPECT_FALSE(solo::SentenceCase::shouldCapitalize("Hello ", 6));
+  EXPECT_TRUE(solo::SentenceCase::shouldCapitalize("Hello. ", 7));
+  EXPECT_TRUE(solo::SentenceCase::shouldCapitalize("Really?!  ", 10));
+  EXPECT_FALSE(solo::SentenceCase::shouldCapitalize("e.g. text", 9));
+}
+
+TEST(SoloSentenceCase, IgnoresReplyPrefixesAndDecoration) {
+  const char* reply = "@Marek ";
+  EXPECT_TRUE(solo::SentenceCase::shouldCapitalize(reply, strlen(reply)));
+  const char* decorated = "\xF0\x9F\x98\x8A \"";
+  EXPECT_TRUE(solo::SentenceCase::shouldCapitalize(decorated, strlen(decorated)));
+  EXPECT_EQ('H', solo::SentenceCase::apply('h', reply, strlen(reply)));
+}
+
+TEST(SoloContextPredictor, PromotesLikelyPrefixCompletions) {
+  char matches[solo::WordCompleter::MAX_SUGGESTIONS]
+              [solo::WordCompleter::MAX_WORD_LEN] = {};
+  ASSERT_GT(solo::ContextPredictor::suggestPrefix(
+                "thank y", 6, "y", 1, matches,
+                solo::WordCompleter::MAX_SUGGESTIONS), 0u);
+  EXPECT_STREQ("you", matches[0]);
+}
+
+TEST(SoloContextPredictor, PromotesLikelyT9Words) {
+  char matches[solo::WordCompleter::MAX_SUGGESTIONS]
+              [solo::WordCompleter::MAX_WORD_LEN] = {};
+  ASSERT_GT(solo::ContextPredictor::suggestT9(
+                "how ", 4, "273", 3, matches,
+                solo::WordCompleter::MAX_SUGGESTIONS), 0u);
+  EXPECT_STREQ("are", matches[0]);
+}
+
+TEST(SoloContextPredictor, UsesSentenceRankingAtSentenceAndReplyBoundaries) {
+  char matches[solo::WordCompleter::MAX_SUGGESTIONS]
+              [solo::WordCompleter::MAX_WORD_LEN] = {};
+  ASSERT_GT(solo::ContextPredictor::suggestPrefix(
+                "thank. y", 7, "y", 1, matches,
+                solo::WordCompleter::MAX_SUGGESTIONS), 0u);
+  EXPECT_STREQ("you", matches[0]);
+  memset(matches, 0, sizeof(matches));
+  ASSERT_GT(solo::ContextPredictor::suggestPrefix(
+                "@Marek y", 7, "y", 1, matches,
+                solo::WordCompleter::MAX_SUGGESTIONS), 0u);
+  EXPECT_STREQ("you", matches[0]);
+}
+
+TEST(SoloContextPredictor, UsesEightSuccessorsAcrossTwoThousandWords) {
+  EXPECT_EQ(2000u, zen_context_data::ENTRY_COUNT);
+  EXPECT_EQ(8u, zen_context_data::SUCCESSOR_COUNT);
+  char matches[solo::WordCompleter::MAX_SUGGESTIONS]
+              [solo::WordCompleter::MAX_WORD_LEN] = {};
+  ASSERT_GT(solo::ContextPredictor::suggestPrefix(
+                "how m", 4, "m", 1, matches,
+                solo::WordCompleter::MAX_SUGGESTIONS), 0u);
+  EXPECT_STREQ("much", matches[0]);  // fifth ranked successor of "how"
+}
+
+TEST(SoloContextPredictor, TrigramsPrecedeBigramPredictions) {
+  char matches[solo::WordCompleter::MAX_SUGGESTIONS]
+              [solo::WordCompleter::MAX_WORD_LEN] = {};
+  ASSERT_GT(solo::ContextPredictor::suggestPrefix(
+                "how are y", 8, "y", 1, matches,
+                solo::WordCompleter::MAX_SUGGESTIONS), 0u);
+  EXPECT_STREQ("you", matches[0]);
+}
+
+TEST(SoloContextPredictor, UsesContractionsAsContext) {
+  char matches[solo::WordCompleter::MAX_SUGGESTIONS]
+              [solo::WordCompleter::MAX_WORD_LEN] = {};
+  ASSERT_GT(solo::ContextPredictor::suggestPrefix(
+                "I'm g", 4, "g", 1, matches,
+                solo::WordCompleter::MAX_SUGGESTIONS), 0u);
+  EXPECT_STREQ("going", matches[0]);
+}
+
+TEST(SoloContextPredictor, RanksSentenceOpenings) {
+  char matches[solo::WordCompleter::MAX_SUGGESTIONS]
+              [solo::WordCompleter::MAX_WORD_LEN] = {};
+  ASSERT_GT(solo::ContextPredictor::suggestT9(
+                "", 0, "4", 1, matches,
+                solo::WordCompleter::MAX_SUGGESTIONS), 0u);
+  EXPECT_STREQ("I", matches[0]);
+}
 
 TEST(T9Predictor, ChoosesShorterWordWhenContractionCannotFit) {
   char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN]{};
@@ -90,6 +210,17 @@ TEST(SoloT9Predictor, MapsClassicPhoneKeypadLetters) {
   EXPECT_EQ('7', solo::T9Predictor::digitFor('s'));
   EXPECT_EQ('9', solo::T9Predictor::digitFor('z'));
   EXPECT_EQ(0, solo::T9Predictor::digitFor('\''));
+}
+
+TEST(SoloT9Predictor, ProvidesCommonSingleLetterWords) {
+  char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN] = {};
+  ASSERT_GT(solo::T9Predictor::suggest("2", 1, matches,
+                                       solo::WordCompleter::MAX_SUGGESTIONS), 0u);
+  EXPECT_STREQ("a", matches[0]);
+  memset(matches, 0, sizeof(matches));
+  ASSERT_GT(solo::T9Predictor::suggest("4", 1, matches,
+                                       solo::WordCompleter::MAX_SUGGESTIONS), 0u);
+  EXPECT_STREQ("I", matches[0]);
 }
 
 TEST(SoloT9Predictor, RanksHelloForItsCompleteSequence) {

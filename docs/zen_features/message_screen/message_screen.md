@@ -41,13 +41,24 @@ The default on-screen layout is predictive T9; ABC is selectable under
 
 - a 4,000-word Australianised completion dictionary;
 - cursor-safe UTF-8 editing and encoded-length enforcement;
-- up to eight completion choices, accepted with a trailing space;
+- up to twelve completion choices, accepted with a trailing space;
+- previous-word ranking covering 2,000 common words and eight likely followers;
+- high-confidence chat phrase prediction, contraction handling and ranked
+  sentence openings;
 - placeholders for time, GPS and active sensors;
+- automatic sentence capitalisation, including after a reply mention;
 - an emoji picker for 👍, 👎, 🙂 and 🙁.
 
+Predictive T9 includes the common single-letter words `a` and `I` as the first
+choices for keys 2 and 4 respectively.
+
 Hold Enter opens word alternatives. In predictive T9, Back accepts the current
-word and inserts a space. CardKB uses direct input, Tab for completion and Fn+M
-for emoji.
+word and inserts a space; double-pressing Back accepts it with a full stop and
+one space. CardKB uses direct input, Tab for completion and Fn+M for emoji.
+
+Leaving a partly written custom message keeps it as a RAM-only draft for that
+contact, room or channel. Reopening the same transcript restores the draft.
+Drafts are cleared when submitted and are lost when the device restarts.
 
 ## Rooms
 

@@ -1,0 +1,15 @@
+Zen's generated contextual-prediction table is derived from SUBTLEX-UK word
+bigram frequencies published by Walter van Heuven, Pawel Mandera, Emmanuel
+Keuleers and Marc Brysbaert.
+
+Source: https://psychology.nottingham.ac.uk/subtlex-uk/
+Archive SHA-256: 97abc5dc993586c88a93458ad29e7e6a50b8d20e0d7d50601b0a2bb0f9d3c1e8
+
+Citation:
+van Heuven, W. J. B., Mandera, P., Keuleers, E., & Brysbaert, M. (2014).
+SUBTLEX-UK: A new and improved word frequency database for British English.
+The Quarterly Journal of Experimental Psychology, 67, 1176-1190.
+https://doi.org/10.1080/17470218.2013.850521
+
+The original dataset is not redistributed by this repository. The generated
+table contains only ranked dictionary-word identifiers selected for Zen.

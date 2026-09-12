@@ -11,6 +11,7 @@
 #include "../solo/MessageTextPolicy.h"
 #if SOLO_FEAT_AUTOCOMPLETE
 #include "../solo/WordCompleter.h"
+#include "../solo/ContextPredictor.h"
 #endif
 
 namespace messageeditor {
@@ -21,6 +22,27 @@ namespace messageeditor {
 static const int SEND_TEXT_LIMIT = MAX_TEXT_LEN - 2;
 
 #if SOLO_FEAT_AUTOCOMPLETE
+inline uint8_t suggest(const char* text, size_t word_start,
+                       const char* prefix, size_t prefix_len,
+                       char matches[][solo::WordCompleter::MAX_WORD_LEN]) {
+  uint8_t count = solo::ContextPredictor::suggestPrefix(
+      text, word_start, prefix, prefix_len, matches,
+      solo::WordCompleter::MAX_SUGGESTIONS);
+  char fallback[solo::WordCompleter::MAX_SUGGESTIONS]
+               [solo::WordCompleter::MAX_WORD_LEN] = {};
+  uint8_t fallback_count = solo::WordCompleter::suggest(
+      prefix, prefix_len, fallback, solo::WordCompleter::MAX_SUGGESTIONS);
+  for (uint8_t i = 0; i < fallback_count &&
+                      count < solo::WordCompleter::MAX_SUGGESTIONS; i++) {
+    bool duplicate = false;
+    for (uint8_t j = 0; j < count; j++)
+      if (strcmp(matches[j], fallback[i]) == 0) { duplicate = true; break; }
+    if (!duplicate)
+      memcpy(matches[count++], fallback[i], solo::WordCompleter::MAX_WORD_LEN);
+  }
+  return count;
+}
+
 inline void refreshCompletions(KeyboardWidget& kb, void* ctx) {
   SensorManager* sensors = static_cast<SensorManager*>(ctx);
   solo::WordCompleter::WordRange word = solo::WordCompleter::currentWord(
@@ -28,9 +50,8 @@ inline void refreshCompletions(KeyboardWidget& kb, void* ctx) {
   kb.clearPlaceholders();
   kb.setCompletionRange((int)word.start, (int)word.end);
   char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
-  uint8_t count = solo::WordCompleter::suggest(
-      kb.buf + word.start, (size_t)kb.cursor_pos - word.start,
-      matches, solo::WordCompleter::MAX_SUGGESTIONS);
+  uint8_t count = suggest(kb.buf, word.start, kb.buf + word.start,
+                          (size_t)kb.cursor_pos - word.start, matches);
   for (uint8_t i = 0; i < count; i++) kb.addPlaceholder(matches[i]);
   kbAddSensorPlaceholders(kb, sensors);
 }
@@ -50,9 +71,8 @@ inline bool previewCompletion(const KeyboardWidget& kb, void*,
   size_t prefix_len = (size_t)kb.cursor_pos - range.start;
   if (prefix_len == 0) return false;
   char matches[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
-  uint8_t count = solo::WordCompleter::suggest(
-      kb.buf + range.start, prefix_len, matches,
-      solo::WordCompleter::MAX_SUGGESTIONS);
+  uint8_t count = suggest(kb.buf, range.start, kb.buf + range.start,
+                          prefix_len, matches);
   if (count == 0) return false;
   size_t match_len = strlen(matches[0]);
   if (match_len <= prefix_len) return false;
@@ -76,6 +96,7 @@ inline void enableCompletion(KeyboardWidget& kb, SensorManager* sensors) {
   kb.setPlaceholderRefresh(refreshCompletions, sensors, "Complete:", true);
   kb.setCompletionPreview(previewCompletion, nullptr);
   kb.setPredictiveT9(true);
+  kb.setContextPrediction(true);
 }
 #else
 inline void enableCompletion(KeyboardWidget& kb, SensorManager*) { kb.setPredictiveT9(false); }
@@ -84,6 +105,7 @@ inline void enableCompletion(KeyboardWidget& kb, SensorManager*) { kb.setPredict
 inline void begin(KeyboardWidget& kb, const char* initial, int max_len,
                   SensorManager* sensors) {
   kb.begin(initial, max_len);
+  kb.setSentenceCase(true);
   kb.setEmojiEnabled(true);
   kbAddSensorPlaceholders(kb, sensors);
   enableCompletion(kb, sensors);

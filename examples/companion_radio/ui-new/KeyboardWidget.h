@@ -7,8 +7,10 @@
 #include "icons.h"   // mini-icons for the special-key row (⇧ ⌫ ⎵ ✓)
 #include "../NodePrefs.h"
 #include "../Features.h"
+#include "../solo/SentenceCase.h"
 #if SOLO_FEAT_AUTOCOMPLETE
 #include "../solo/T9Predictor.h"
+#include "../solo/ContextPredictor.h"
 #endif
 
 // Layout constants shared by all keyboard users.
@@ -176,10 +178,12 @@ struct KeyboardWidget {
   bool _visible = false;
   bool _external_keyboard_connected = false;
   bool _emoji_enabled = false;
+  bool _sentence_case_enabled = false;
   EmojiPicker _emoji_picker;
   void beginFrame() { _visible = false; }
   bool isVisible() const { return _visible; }
   void setExternalKeyboardConnected(bool connected) { _external_keyboard_connected = connected; }
+  void setSentenceCase(bool enabled) { _sentence_case_enabled = enabled; }
   bool isCompact() const { return _external_keyboard_connected; }
 
   // True while the plain letter/symbol grid is the active input surface --
@@ -248,6 +252,7 @@ struct KeyboardWidget {
       char[][solo::WordCompleter::MAX_WORD_LEN], uint8_t, size_t);
   T9SuggestFn _t9_suggest = nullptr;  // per-editor dictionary; null means chat
   bool     _predictive_t9_enabled = false; // opted in by message-text fields
+  bool     _context_prediction_enabled = false;
   bool     _t9_literal_mode = false;       // in-editor fallback for names/new words
   char     _t9_digits[solo::WordCompleter::MAX_WORD_LEN] = {};
   char     _t9_candidate[solo::WordCompleter::MAX_WORD_LEN] = {};
@@ -300,10 +305,28 @@ struct KeyboardWidget {
     if (!_t9_cache_valid || _t9_cached_capacity != capacity ||
         _t9_cached_caps != _t9_predict_caps ||
         strcmp(_t9_cached_digits, _t9_digits) != 0) {
-      char raw[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN];
-      _t9_cached_count = suggestT9(
-          _t9_digits, _t9_digit_count, raw, solo::WordCompleter::MAX_SUGGESTIONS,
+      char raw[solo::WordCompleter::MAX_SUGGESTIONS][solo::WordCompleter::MAX_WORD_LEN] = {};
+      _t9_cached_count = 0;
+      if (_context_prediction_enabled)
+        _t9_cached_count = solo::ContextPredictor::suggestT9(
+            buf, (size_t)_t9_word_start, _t9_digits, _t9_digit_count, raw,
+            solo::WordCompleter::MAX_SUGGESTIONS,
+            capacity > 0 ? (size_t)capacity : 0);
+      char fallback[solo::WordCompleter::MAX_SUGGESTIONS]
+                   [solo::WordCompleter::MAX_WORD_LEN] = {};
+      uint8_t fallback_count = suggestT9(
+          _t9_digits, _t9_digit_count, fallback,
+          solo::WordCompleter::MAX_SUGGESTIONS,
           capacity > 0 ? (size_t)capacity : 0);
+      for (uint8_t i = 0; i < fallback_count &&
+                          _t9_cached_count < solo::WordCompleter::MAX_SUGGESTIONS; i++) {
+        bool duplicate = false;
+        for (uint8_t j = 0; j < _t9_cached_count; j++)
+          if (strcmp(raw[j], fallback[i]) == 0) { duplicate = true; break; }
+        if (!duplicate)
+          memcpy(raw[_t9_cached_count++], fallback[i],
+                 solo::WordCompleter::MAX_WORD_LEN);
+      }
       _t9_cached_capacity = capacity;
       for (uint8_t i = 0; i < _t9_cached_count; i++)
         formatT9Candidate(raw[i], _t9_cached_candidates[i],
@@ -366,6 +389,21 @@ struct KeyboardWidget {
     return true;
   }
 
+  bool acceptT9WordAndSentence() {
+    if (!predictiveT9Active() || _t9_no_match) return false;
+    commitT9Prediction();
+    static const char ending[] = ". ";
+    const int ending_len = sizeof(ending) - 1;
+    if (len + ending_len <= max_len) {
+      memmove(buf + cursor_pos + ending_len, buf + cursor_pos, len - cursor_pos);
+      memcpy(buf + cursor_pos, ending, ending_len);
+      cursor_pos += ending_len;
+      len += ending_len;
+      buf[len] = '\0';
+    }
+    return true;
+  }
+
   const char* t9GhostSuffix() const {
     if (!predictiveT9Active() || _t9_no_match || !_t9_candidate[0]) return "";
     size_t visible = solo::T9Predictor::prefixBytes(_t9_candidate, _t9_digit_count);
@@ -379,7 +417,8 @@ struct KeyboardWidget {
     bool starting = _t9_digit_count == 0;
     if (starting) {
       _t9_word_start = _t9_word_end = cursor_pos;
-      _t9_predict_caps = caps;
+      _t9_predict_caps = caps || (_sentence_case_enabled &&
+          solo::SentenceCase::shouldCapitalize(buf, (size_t)cursor_pos));
     }
     _t9_digits[_t9_digit_count++] = digit;
     _t9_digits[_t9_digit_count] = '\0';
@@ -432,6 +471,7 @@ struct KeyboardWidget {
   void resetT9Prediction() { }
   void commitT9Prediction() { }
   bool acceptT9WordAndSpace() { return false; }
+  bool acceptT9WordAndSentence() { return false; }
   const char* t9GhostSuffix() const { return ""; }
   bool appendT9Digit(char) { return false; }
   bool backspaceT9Prediction() { return false; }
@@ -440,6 +480,15 @@ struct KeyboardWidget {
   void setPredictiveT9(bool enabled) {
 #if SOLO_FEAT_AUTOCOMPLETE
     _predictive_t9_enabled = enabled;
+#else
+    (void)enabled;
+#endif
+  }
+
+  void setContextPrediction(bool enabled) {
+#if SOLO_FEAT_AUTOCOMPLETE
+    _context_prediction_enabled = enabled;
+    invalidateT9Cache();
 #else
     (void)enabled;
 #endif
@@ -485,6 +534,7 @@ struct KeyboardWidget {
     cursor_pos = len;
     cursor_mode = false;
     _emoji_enabled = false;
+    _sentence_case_enabled = false;
     _emoji_picker.close();
     row = col = 0;
     page = 0;
@@ -494,6 +544,7 @@ struct KeyboardWidget {
     t9_cycle = 0;
 #if SOLO_FEAT_AUTOCOMPLETE
     _predictive_t9_enabled = false;
+    _context_prediction_enabled = false;
     _t9_suggest = nullptr;
     _t9_literal_mode = false;
     _t9_predict_caps = false;
@@ -514,6 +565,9 @@ struct KeyboardWidget {
 
   // Insert one grid glyph at cursor_pos, applying Shift/caps-lock.
   void insertGlyph(const char* one, bool use_caps) {
+    if (_sentence_case_enabled && one && one[0] >= 'a' && one[0] <= 'z' &&
+        solo::SentenceCase::shouldCapitalize(buf, (size_t)cursor_pos))
+      use_caps = true;
     char shown[5];
     kbApplyCapsUtf8(one, use_caps, shown, sizeof(shown));
     int n = (int)strlen(shown);
@@ -924,7 +978,7 @@ struct KeyboardWidget {
           return NONE;
         }
         const char* ph = _ph_buf[idx];
-        int ph_len = strlen(ph);
+        char sentence_ph[KB_PH_LEN];
         // Contextual (refresh-hook) fields complete the in-progress word --
         // the text since the last space, up to the cursor -- instead of
         // appending after it, so picking a match doesn't duplicate what's
@@ -938,6 +992,14 @@ struct KeyboardWidget {
           if (!_ph_range_set)
             while (replace_start > 0 && buf[replace_start - 1] != ' ') replace_start--;
         }
+        if (_sentence_case_enabled && ph[0] >= 'a' && ph[0] <= 'z' &&
+            solo::SentenceCase::shouldCapitalize(buf, (size_t)replace_start)) {
+          snprintf(sentence_ph, sizeof(sentence_ph), "%s", ph);
+          sentence_ph[0] = solo::SentenceCase::apply(
+              sentence_ph[0], buf, (size_t)replace_start);
+          ph = sentence_ph;
+        }
+        int ph_len = strlen(ph);
         int tail_len = len - replace_end;
         // Message word completions leave the cursor ready for the next word.
         // Do not duplicate a separator already present after the replaced word,
@@ -994,6 +1056,13 @@ struct KeyboardWidget {
       // a physical button, so without this it looks like a dead key.
       if (c == KEY_ENTER || c == KEY_CANCEL || c == KEY_KB_ENTER) { cursor_mode = false; return NONE; }
       return NONE;
+    }
+
+    if (c == KEY_DOUBLE_CANCEL) {
+#if SOLO_FEAT_AUTOCOMPLETE
+      if (acceptT9WordAndSentence()) return NONE;
+#endif
+      c = KEY_CANCEL;  // outside active predictive input, retain normal Back
     }
 
     if (c == KEY_CANCEL) {

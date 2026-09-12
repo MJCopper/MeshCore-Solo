@@ -1,0 +1,14 @@
+Zen's generated trigram prediction table is derived from the public English
+NUS SMS Corpus maintained by the Web, Information Retrieval and Natural
+Language Processing Group at the National University of Singapore.
+
+Source: https://github.com/kite1988/nus-sms-corpus
+Archive SHA-256: bf73d77fce35c703dab21826cd2c1698205358c2c25b2d43da1f08671b825bdc
+
+Citation:
+Tao Chen and Min-Yen Kan (2013). Creating a Live, Public Short Message Service
+Corpus: The NUS SMS Corpus. Language Resources and Evaluation, 47(2), 299-355.
+
+The original messages are not redistributed by this repository. The generated
+table contains only 300 ranked, dictionary-filtered phrase identifiers. Zen's
+child-safe dictionary filter excludes words outside the firmware vocabulary.

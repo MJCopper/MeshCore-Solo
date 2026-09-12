@@ -15,7 +15,7 @@ public:
   // Keep enough candidates for a compact editor to fill its one-line hint;
   // callers can still request a smaller result set when space is constrained.
   // Shared candidate capacity also accommodates dotted CLI setting names.
-  enum : uint8_t { MAX_SUGGESTIONS = 8, MAX_WORD_LEN = 32 };
+  enum : uint8_t { MAX_SUGGESTIONS = 12, MAX_WORD_LEN = 32 };
 
   static size_t dictionarySize() { return WORD_COUNT; }
   static const char* wordAt(size_t index) {
