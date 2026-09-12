@@ -48,18 +48,16 @@ public:
     if (!prefix || prefix_len == 0 || max_results == 0) return 0;
     if (max_results > MAX_SUGGESTIONS) max_results = MAX_SUGGESTIONS;
     uint8_t count = 0;
+    for (size_t i = 0; i < zen_dictionary::PINNED_WORD_COUNT &&
+                       count < max_results; i++)
+      appendMatch(zen_dictionary::PINNED_WORDS[i], prefix, prefix_len,
+                  results, count);
     for (size_t i = 0; i < WORD_COUNT && count < max_results; i++) {
       const char* word = wordAt(i);
-      if (!startsWith(word, prefix, prefix_len)) continue;
-      size_t n = strLength(word);
-      // An exact match adds nothing and can hide longer, useful completions
-      // that occur later in the frequency-ranked dictionary.
-      if (n <= prefix_len) continue;
-      if (n >= MAX_WORD_LEN) n = MAX_WORD_LEN - 1;
-      for (size_t j = 0; j < n; j++) results[count][j] = word[j];
-      results[count][n] = '\0';
-      if (isUpper(prefix[0])) results[count][0] = toUpper(results[count][0]);
-      count++;
+      bool duplicate = false;
+      for (uint8_t j = 0; j < count; j++)
+        if (sameWord(word, results[j])) { duplicate = true; break; }
+      if (!duplicate) appendMatch(word, prefix, prefix_len, results, count);
     }
     return count;
   }
@@ -76,6 +74,24 @@ private:
     size_t n = 0;
     while (s[n]) n++;
     return n;
+  }
+  static bool sameWord(const char* a, const char* b) {
+    size_t i = 0;
+    while (a[i] && b[i] && toLower(a[i]) == toLower(b[i])) i++;
+    return a[i] == '\0' && b[i] == '\0';
+  }
+  static void appendMatch(const char* word, const char* prefix,
+                          size_t prefix_len, char results[][MAX_WORD_LEN],
+                          uint8_t& count) {
+    if (!startsWith(word, prefix, prefix_len)) return;
+    size_t n = strLength(word);
+    // An exact match adds nothing and can hide longer, useful completions.
+    if (n <= prefix_len) return;
+    if (n >= MAX_WORD_LEN) n = MAX_WORD_LEN - 1;
+    for (size_t j = 0; j < n; j++) results[count][j] = word[j];
+    results[count][n] = '\0';
+    if (isUpper(prefix[0])) results[count][0] = toUpper(results[count][0]);
+    count++;
   }
   static bool startsWith(const char* word, const char* prefix, size_t prefix_len) {
     for (size_t i = 0; i < prefix_len; i++) {
