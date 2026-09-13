@@ -1625,8 +1625,8 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.ringtone2_bpm_idx = 2;  // 120 bpm default
   _prefs.notif_melody_dm = solo::BuiltinMelodies::MESSAGE;
   _prefs.notif_melody_ch = solo::BuiltinMelodies::KERPLOP;
-  _prefs.notif_melody_ad = solo::BuiltinMelodies::MESSAGE;
-  _prefs.advert_sound_scope = ADVERT_SOUND_SCOPE_ALL;  // sound every advert by default
+  _prefs.notif_melody_ad = solo::BuiltinMelodies::NONE;
+  _prefs.advert_sound_scope = ADVERT_SOUND_SCOPE_ALL;  // apply to all adverts when a sound is selected
   _prefs.home_pages_mask = NodePrefs::HP_ALL;  // all available carousel pages visible by default
   solo::PrefsDefaults::apply(_prefs);
   _prefs.bot_enabled = 0;
