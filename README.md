@@ -7,7 +7,7 @@ Zen extends the official [MeshCore](https://github.com/meshcore-dev/MeshCore)
 companion firmware with a standalone messaging interface for the Seeed Wio
 Tracker L1.
 
-Current release: **Zen v1.32.63**, based on **MeshCore v1.17.1**.
+Current release: **Zen v1.32.65**, based on **MeshCore v1.17.1**.
 
 ## Supported hardware
 
@@ -44,8 +44,9 @@ See [FEATURES.md](./FEATURES.md) for the complete Zen feature summary.
 
 ## Flashing
 
-For a first installation, back up anything you want to keep. If the Wio Tracker
-is running different firmware, erase its flash with the
+For a first installation, back up anything you want to keep so it can be
+restored after flashing. If the Wio Tracker is running different firmware,
+erase its flash with the
 [MeshCore Flasher](https://meshcore.io/flasher) before installing Zen. Erasing
 removes the stored identity, contacts, channels, messages and settings.
 
@@ -62,6 +63,8 @@ removes the stored identity, contacts, channels, messages and settings.
    completed.
 6. If the bootloader drive does not appear, check that the cable supports data,
    reconnect it, and repeat the quick double-press of **Reset**.
+7. If this is your first Zen installation, use your companion app to restore
+   the backup you created before flashing.
 
 For later Zen updates, repeat the numbered steps. An erase is normally only
 needed when changing from another firmware or when troubleshooting damaged
